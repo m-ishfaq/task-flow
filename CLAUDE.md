@@ -2528,6 +2528,39 @@ system BEHAVES when the value is `'suspended'` — found reachable by direct ins
 in-product flow — without adding a way to reach it; a "suspend one member" admin action is real,
 separate, unrequested work.
 
+**A follow-up report clarified the original bug was about the ORG being suspended, not the
+membership — a DIFFERENT column this pass had left completely unsurfaced.** `resolveOrgMembership`
+has thrown a distinct `ORG_SUSPENDED` for `identity.orgs.status = 'suspended'` since Phase 12 Wave
+1's org directory shipped, long before this session — but `tenancy.orgs.list` never reported the
+org's own status at all, only the caller's membership status, so neither `OrgGate` nor the picker
+had anything to check. An org an operator suspended from the platform console still showed as a
+perfectly ordinary, clickable row; choosing it passed `OrgGate` cleanly (the caller's own
+membership was still `'active'`), and the FIRST org-scoped query on the next screen threw
+`ORG_SUSPENDED` into a query-error path built for nothing in particular — the exact "redirects
+back to the org list with no explanation" complaint the membership fix had already been built to
+prevent, just for the sibling case nobody had extended it to.
+
+**`OrgSummary`/`listMyOrgs` (`org.service.ts`) gained a second field, `orgStatus`, read alongside
+`membershipStatus` rather than folded into it — they answer different questions and a caller of
+either surface needs to tell them apart.** `'deleted'` is filtered OUT of the query rather than
+reported, mirroring `resolveOrgMembership`'s own privacy answer for that status (collapsing to "as
+if never a member") — real cascading org deletion (Phase 12 Wave 2) should make this unreachable
+in practice, but the filter keeps the two functions' answer identical rather than letting them
+accidentally diverge if that ever changes. `orgs.list`'s output schema widened to match.
+
+**`OrgGate` and `OrgPickerPage` both now check `orgStatus` FIRST, before `membershipStatus`** — an
+org suspension is the bigger fact (it refuses every member, not just the caller), so if a row
+somehow carries both at once, the org-level explanation ("This organization has been suspended" /
+suspended by a platform administrator) is the one shown, not the personal one ("Your membership is
+suspended"). `apps/mobile` got the identical two fixes: `(app)/_layout.tsx`'s remembered-org
+resolution now filters on `orgStatus === 'active'` alongside `membershipStatus === 'active'` before
+ever auto-selecting a stored id — without it, a suspended org's id, remembered from before an
+operator acted, would auto-select straight past the picker and land the caller on guarded screens
+where every query would throw `ORG_SUSPENDED` with nothing to catch it, the identical regression
+class the membership-status filter was added to prevent one paragraph earlier in this file, just
+for the column nobody had thought to filter on yet. `org-picker.tsx` renders the same
+distinguishing row text as web's picker.
+
 **The access token is in memory and the refresh is single-flight.** `localStorage` survives the
 tab and is readable by any script, so one XSS is a token an attacker keeps; a module variable
 limits the same XSS to that tab. The cost is a refresh on every page load, accepted. Single-flight

@@ -118,7 +118,7 @@ export function OrgPickerPage() {
       {!isEmpty && (
         <ul className="space-y-2">
           {orgs.data.map((org) =>
-            org.membershipStatus === 'active' ? (
+            org.orgStatus === 'active' && org.membershipStatus === 'active' ? (
               <li key={org.orgId}>
                 <button
                   type="button"
@@ -152,6 +152,12 @@ export function OrgPickerPage() {
               // way it used to (indistinguishable from an org this account was
               // never part of at all). Not a `<button>`: there is nothing to
               // do here besides know why it's not clickable.
+              //
+              // Org status is checked FIRST — the same "the bigger fact wins"
+              // rule OrgGate applies — since a suspended ORG (Phase 12 Wave
+              // 1's platform console) used to show here as an ordinary,
+              // clickable row: `membershipStatus` alone said nothing about
+              // it, and clicking through only failed on the NEXT screen.
               <li
                 key={org.orgId}
                 className="flex w-full items-center gap-3 rounded-lg border border-dashed border-line/60 bg-surface-sunken/40 p-3 opacity-70"
@@ -163,7 +169,9 @@ export function OrgPickerPage() {
                     {org.name}
                   </span>
                   <span className="block truncate text-[11px] text-ink-faint">
-                    Your membership is suspended
+                    {org.orgStatus !== 'active'
+                      ? 'This organization has been suspended'
+                      : 'Your membership is suspended'}
                   </span>
                 </span>
               </li>

@@ -145,7 +145,7 @@ function OrgPickerContent() {
           </View>
         }
         renderItem={({ item }) =>
-          item.membershipStatus === 'active' ? (
+          item.orgStatus === 'active' && item.membershipStatus === 'active' ? (
             <Pressable
               style={styles.row}
               onPress={() => {
@@ -173,6 +173,12 @@ function OrgPickerContent() {
             // one used to simply disappear from this list, indistinguishable
             // from an org this account was never part of. Not `Pressable`:
             // there is nothing to do here besides know why.
+            //
+            // Org status checked first, same as web: a suspended ORG is the
+            // bigger fact (it refuses every member, not just this one), and
+            // used to show here as an ordinary row with nothing distinguishing
+            // it — the query that would have explained why failed on the NEXT
+            // screen instead.
             <View style={[styles.row, styles.rowSuspended]}>
               <OrgMark name={item.name} />
               <View style={styles.rowText}>
@@ -180,7 +186,9 @@ function OrgPickerContent() {
                   {item.name}
                 </Text>
                 <Text style={styles.rowSlug} numberOfLines={1}>
-                  Your membership is suspended
+                  {item.orgStatus !== 'active'
+                    ? 'This organization has been suspended'
+                    : 'Your membership is suspended'}
                 </Text>
               </View>
             </View>

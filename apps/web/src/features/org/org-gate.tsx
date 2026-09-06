@@ -57,6 +57,21 @@ import { orgsQuery } from './api.js';
  * `requireOrg`'s own redirect to the picker already communicates by simply
  * not finding the org there.
  *
+ * ## The ORG can be suspended too, and that is a second, distinct reason
+ *
+ * `resolveOrgMembership` has thrown a separate `ORG_SUSPENDED` for a
+ * suspended ORG (Phase 12 Wave 1's org directory) since before this gate
+ * checked anything at all — but with no `orgStatus` in `tenancy.orgs.list`,
+ * this gate had no way to tell a suspended org apart from a perfectly normal
+ * one: it rendered `children`, the router proceeded, and the first
+ * org-scoped query after that threw an error nothing here was built to
+ * catch. A real report: exactly this — an org deactivated from the platform
+ * console still opened, then failed confusingly on the next screen instead
+ * of explaining itself up front. `matched.orgStatus` is checked FIRST, below
+ * — an org suspension is a bigger fact than a personal one (it refuses every
+ * member, not just this caller), so if somehow both are true at once the org
+ * explanation is the one shown.
+ *
  * ## Why it does not decide anything else
  *
  * "Is this id one of mine, and is it active" is a membership question, not an
@@ -96,6 +111,20 @@ export function OrgGate({ children }: { readonly children: ReactNode }) {
   const matched =
     checking && orgs.data !== undefined ? orgs.data.find((org) => org.orgId === orgId) : undefined;
 
+  /* Which of the two DISTINCT reasons a matched row is unusable, if either —
+     computed once so the render below and the effect's "still resolvable"
+     check never have to re-derive it differently. Org status wins when both
+     are true: it is the bigger fact (it refuses every member, not just this
+     caller), so that is the explanation shown. */
+  const suspension: 'org' | 'membership' | null =
+    matched === undefined
+      ? null
+      : matched.orgStatus !== 'active'
+        ? 'org'
+        : matched.membershipStatus !== 'active'
+          ? 'membership'
+          : null;
+
   useEffect(() => {
     if (!checking || orgs.data === undefined) return;
     // A row that exists but is not active is handled by rendering an
@@ -126,13 +155,21 @@ export function OrgGate({ children }: { readonly children: ReactNode }) {
     );
   }
 
-  if (matched !== undefined && matched.membershipStatus !== 'active') {
+  if (suspension !== null && matched !== undefined) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <Empty
           icon={<Ban aria-hidden="true" className="size-5" />}
-          title="Your access to this organization was suspended"
-          description={`Your membership in "${matched.name}" is no longer active. Choose a different organization, or ask an admin there to reactivate your access.`}
+          title={
+            suspension === 'org'
+              ? 'This organization has been suspended'
+              : 'Your access to this organization was suspended'
+          }
+          description={
+            suspension === 'org'
+              ? `"${matched.name}" was suspended by a platform administrator. Choose a different organization, or contact support if you believe this is a mistake.`
+              : `Your membership in "${matched.name}" is no longer active. Choose a different organization, or ask an admin there to reactivate your access.`
+          }
           action={
             <Button
               variant="primary"

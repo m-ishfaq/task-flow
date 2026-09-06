@@ -74,6 +74,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 slug: z.string(),
                 role: z.string(),
                 membershipStatus: z.string(),
+                orgStatus: z.string(),
               }),
             )
             .readonly(),

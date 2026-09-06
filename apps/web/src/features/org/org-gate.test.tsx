@@ -25,8 +25,17 @@ import { useSession } from '../../lib/session.js';
  * already on screen by the time it answers.
  */
 
-const listOrgs =
-  vi.fn<() => Promise<{ orgId: string; name: string; role: string; membershipStatus: string }[]>>();
+const listOrgs = vi.fn<
+  () => Promise<
+    {
+      orgId: string;
+      name: string;
+      role: string;
+      membershipStatus: string;
+      orgStatus: string;
+    }[]
+  >
+>();
 
 vi.mock('../../lib/trpc.js', () => ({
   api: { tenancy: { orgs: { list: { query: () => listOrgs() } } } },
@@ -83,7 +92,7 @@ describe('validating the remembered organization', () => {
     window.localStorage.setItem('taskflow.org', THEIRS);
     signedInWithStoredOrg(THEIRS);
     listOrgs.mockResolvedValue([
-      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active' },
+      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active', orgStatus: 'active' },
     ]);
 
     renderGate();
@@ -101,7 +110,7 @@ describe('validating the remembered organization', () => {
     window.localStorage.setItem('taskflow.org', MINE);
     signedInWithStoredOrg(MINE);
     listOrgs.mockResolvedValue([
-      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active' },
+      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active', orgStatus: 'active' },
     ]);
 
     renderGate();
@@ -118,7 +127,13 @@ describe('validating the remembered organization', () => {
     window.localStorage.setItem('taskflow.org', MINE);
     signedInWithStoredOrg(MINE);
     listOrgs.mockResolvedValue([
-      { orgId: MINE, name: 'Mine', role: 'member', membershipStatus: 'suspended' },
+      {
+        orgId: MINE,
+        name: 'Mine',
+        role: 'member',
+        membershipStatus: 'suspended',
+        orgStatus: 'active',
+      },
     ]);
 
     renderGate();
@@ -136,6 +151,40 @@ describe('validating the remembered organization', () => {
 
     // Only NOW, on the explicit click, does the selection actually clear —
     // `requireOrg`'s own guard is what routes to the picker from there.
+    expect(useSession.getState().orgId).toBeNull();
+  });
+
+  it('explains directly, and prefers the bigger fact, when the ORG itself is suspended', async () => {
+    /* The identical gap one level up, closed the same way: `orgStatus` used
+       to be absent from `orgs.list` entirely, so a suspended org (Phase 12
+       Wave 1's platform console) read as perfectly normal here and only
+       failed confusingly on the NEXT screen's first org-scoped query. Both
+       flags true at once asserts the "bigger fact wins" rule directly —
+       an org-level explanation, not the membership one. */
+    window.localStorage.setItem('taskflow.org', MINE);
+    signedInWithStoredOrg(MINE);
+    listOrgs.mockResolvedValue([
+      {
+        orgId: MINE,
+        name: 'Mine',
+        role: 'owner',
+        membershipStatus: 'active',
+        orgStatus: 'suspended',
+      },
+    ]);
+
+    renderGate();
+
+    expect(await screen.findByText('This organization has been suspended')).toBeInTheDocument();
+    expect(screen.getByText(/"Mine"/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Your access to this organization was suspended'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('the app')).not.toBeInTheDocument();
+    expect(useSession.getState().orgId).toBe(MINE);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Choose a different organization' }));
+
     expect(useSession.getState().orgId).toBeNull();
   });
 

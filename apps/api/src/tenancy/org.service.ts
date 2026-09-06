@@ -1,4 +1,4 @@
-import { eq, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
+import { and, eq, inArray, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -190,6 +190,22 @@ export interface OrgSummary {
    * is the read half of the identical fix.
    */
   readonly membershipStatus: string;
+  /**
+   * The ORG'S OWN status — `'active'` or `'suspended'` (`orgs_status_valid`),
+   * set only by a platform operator (Phase 12 Wave 1's org directory), never
+   * by the org itself. A DIFFERENT fact from `membershipStatus` above: a
+   * suspended org refuses every member, not just one row, and
+   * `resolveOrgMembership` has thrown a distinct `ORG_SUSPENDED` for this
+   * since before this field existed — but with no `orgStatus` anywhere in
+   * this list, neither `OrgGate` nor the picker had any way to tell that
+   * apart from an ordinary, fully-accessible org, so a suspended org still
+   * showed as a normal, clickable row until the FIRST org-scoped query after
+   * choosing it threw an error nothing on either surface was built to catch.
+   * `'deleted'` is excluded from the query below rather than surfaced here,
+   * matching `resolveOrgMembership`'s own choice to answer that case as if
+   * the caller had never been a member at all.
+   */
+  readonly orgStatus: string;
 }
 
 /**
@@ -207,6 +223,16 @@ export interface OrgSummary {
  * silently dropped it with nothing on screen explaining why. The caller
  * (`OrgPickerPage`, `OrgGate`) decides what a non-active row means to show;
  * this function's job is only to report the truth.
+ *
+ * The org's own `status` is reported alongside the membership's for the
+ * identical reason, one level up: a member of a SUSPENDED ORG is still an
+ * active member of it, so `membershipStatus` alone reads that org as
+ * perfectly normal. `status = 'deleted'` is filtered OUT here rather than
+ * reported, matching `resolveOrgMembership`'s own choice to treat that case
+ * as though the caller had never been a member — the org directory's real
+ * cascading delete (Phase 12 Wave 2) means this should be unreachable in
+ * practice, but the filter costs nothing and keeps the two functions'
+ * privacy answer identical rather than accidentally diverging.
  */
 export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]> {
   return withUserScope(userId, async (tx) =>
@@ -217,10 +243,16 @@ export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]>
         slug: schema.orgs.slug,
         role: schema.memberships.role,
         membershipStatus: schema.memberships.status,
+        orgStatus: schema.orgs.status,
       })
       .from(schema.memberships)
       .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
-      .where(eq(schema.memberships.userId, userId))
+      .where(
+        and(
+          eq(schema.memberships.userId, userId),
+          inArray(schema.orgs.status, ['active', 'suspended']),
+        ),
+      )
       .orderBy(schema.orgs.name),
   );
 }

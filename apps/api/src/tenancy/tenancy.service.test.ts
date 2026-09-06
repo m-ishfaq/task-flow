@@ -380,6 +380,35 @@ describe('the org switcher', () => {
     const mine = await orgs.listMyOrgs(COLLEAGUE);
     expect(mine).toEqual([expect.objectContaining({ orgId, membershipStatus: 'suspended' })]);
   });
+
+  /* The identical gap one level up: `resolveOrgMembership` has answered a
+     suspended ORG with a distinct `ORG_SUSPENDED` since before this field
+     existed, but with no `orgStatus` reported here, neither the picker nor
+     `OrgGate` had anything to check — a suspended org read as an ordinary
+     one right up until the first org-scoped query after choosing it threw
+     an error nothing on either surface was built to catch. */
+  it("reports the org's own suspension, distinct from the membership's", async () => {
+    const orgId = await newOrg('switch-org-suspended');
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'suspended' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    const mine = await orgs.listMyOrgs(OWNER);
+    expect(mine).toEqual([
+      expect.objectContaining({ orgId, membershipStatus: 'active', orgStatus: 'suspended' }),
+    ]);
+  });
+
+  it('omits a deleted org entirely, the same privacy answer resolveOrgMembership gives', async () => {
+    const orgId = await newOrg('switch-org-deleted');
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'deleted' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    expect(await orgs.listMyOrgs(OWNER)).toEqual([]);
+  });
 });
 
 describe('resolving the org from a request', () => {
