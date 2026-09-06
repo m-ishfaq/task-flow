@@ -32,6 +32,13 @@ export interface StandupNarrationLine {
   readonly line: string;
 }
 
+export interface StandupNarration {
+  /** Computed from the real buckets, never asked of the model — see
+      `narrate.ts`'s own header. */
+  readonly headline: string;
+  readonly lines: readonly StandupNarrationLine[];
+}
+
 /**
  * Narration is a mutation, not a query — it is a priced, budget-gated
  * completion (`completeGated`), not an idempotent read, so a component must
@@ -44,6 +51,6 @@ export interface StandupNarrationLine {
 export async function narrateStandup(
   projectId: ProjectId,
   sinceHours: number,
-): Promise<{ readonly lines: readonly StandupNarrationLine[] }> {
+): Promise<StandupNarration> {
   return api.standup.narrate.mutate({ projectId, sinceHours });
 }

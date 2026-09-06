@@ -303,6 +303,7 @@ describe('standup.narrate', () => {
 
     const result = await caller.standup.narrate({ projectId: project.projectId });
     expect(result.lines).toEqual([]);
+    expect(result.headline).toBe('Nobody has open, done, or overdue work in this window.');
 
     await admin.setOrg(orgId);
     const ledgerRows = await admin.query(`SELECT feature FROM ai.usage_ledger WHERE org_id = $1`, [

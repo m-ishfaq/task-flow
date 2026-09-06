@@ -25,7 +25,7 @@ import {
   narrateStandup,
   type StandupCard,
   type StandupMember,
-  type StandupNarrationLine,
+  type StandupNarration,
 } from './api.js';
 import { CardQuickView } from './card-quick-view.js';
 
@@ -60,7 +60,7 @@ export function StandupPage() {
   const { projectId } = useParams({ from: '/projects/$projectId/standup' });
   const orgId = useSession((state) => state.orgId) ?? '';
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
-  const [lines, setLines] = useState<readonly StandupNarrationLine[] | null>(null);
+  const [narration, setNarration] = useState<StandupNarration | null>(null);
 
   const sinceHours = 24;
   const projects = useQuery({ ...projectsQuery(orgId), enabled: orgId !== '' });
@@ -78,7 +78,7 @@ export function StandupPage() {
   const narrate = useMutation({
     mutationFn: () => narrateStandup(projectId, sinceHours),
     onSuccess: (result) => {
-      setLines(result.lines);
+      setNarration(result);
     },
   });
 
@@ -116,17 +116,21 @@ export function StandupPage() {
         <ErrorView error={narrate.error} title="Could not summarize the standup" />
       )}
 
-      {lines !== null && (
+      {narration !== null && (
         <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-accent">
             <Sparkles aria-hidden="true" className="size-3.5" />
             Summary
           </p>
-          {lines.length === 0 ? (
-            <p className="mt-1.5 text-sm text-ink-faint">Nothing to report.</p>
+          {/* A plain count over real data, not something the model was asked
+              to conclude — `narrate.ts`'s own header on why this is computed
+              rather than generated. */}
+          <p className="mt-1.5 text-xs text-ink-muted">{narration.headline}</p>
+          {narration.lines.length === 0 ? (
+            <p className="mt-2 text-sm text-ink-faint">Nothing to report.</p>
           ) : (
             <ul className="mt-2 space-y-1.5">
-              {lines.map((entry) => (
+              {narration.lines.map((entry) => (
                 <li key={entry.userId} className="text-sm leading-relaxed text-ink">
                   <span className="font-medium">{nameOf(entry.userId)}</span>
                   <span className="text-ink-muted"> — {entry.line}</span>

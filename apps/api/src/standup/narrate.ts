@@ -45,6 +45,22 @@ import type { StandupResult } from './standup.service.js';
  * fall back to raw prose for (§2's "have the model return real structured
  * data" decision — a caller depending on this shape should see a clear
  * failure, not a differently-shaped success).
+ *
+ * ## The `headline` is computed, never asked of the model
+ *
+ * The second version's own per-person LINES were structurally correct but
+ * substantively thin: nothing in the first prompt told the model the name
+ * would already be shown next to its line (so lines started "Aoife has...",
+ * doubling the UI's own bold name), and "call out anything overdue" gave a
+ * lazy-but-complete model an easy exit — "has no overdue tasks" — that says
+ * nothing about what the person is actually doing. Both are prompt fixes,
+ * below. `headline` is a THIRD, deliberately different kind of fix: an
+ * aggregate ("6 of 18 people have overdue work, 4 cards done in the last
+ * 24h") is exactly the sort of fact this codebase never asks a model to
+ * produce when it can be counted directly — the same "classification stays
+ * deterministic" rule this file's own per-member fallback already follows.
+ * It costs no extra completion and cannot be wrong the way a model's own
+ * arithmetic over 18 people's buckets could be.
  */
 export interface NarrateStandupDeps {
   readonly keys: KeyProvider;
@@ -56,6 +72,12 @@ export interface StandupNarrationLine {
       the CALLER renders one list item per entry, so the model's job is
       just the sentence. */
   readonly line: string;
+}
+
+export interface StandupNarration {
+  /** Computed, not asked of the model — see this file's own header. */
+  readonly headline: string;
+  readonly lines: readonly StandupNarrationLine[];
 }
 
 const EMIT_LINES_TOOL_NAME = 'emit_standup_lines';
@@ -72,7 +94,7 @@ export async function narrateStandup(
   deps: NarrateStandupDeps,
   actor: { readonly orgId: OrgId; readonly userId: UserId; readonly requestId: RequestId },
   standup: StandupResult,
-): Promise<{ readonly lines: readonly StandupNarrationLine[] }> {
+): Promise<StandupNarration> {
   const [{ provider, providerName, model }, membershipId] = await Promise.all([
     resolveAiProvider(actor.orgId, deps.keys),
     loadMembershipId(actor.orgId, actor.userId),
@@ -90,13 +112,15 @@ export async function narrateStandup(
       messages: [
         {
           role: 'system',
-          content:
-            'You write one-line standup updates from structured card data. Call ' +
-            `${EMIT_LINES_TOOL_NAME} exactly once, with one entry per member id given to you — ` +
-            'never fewer, never an id not given. Each line is a single short sentence (under 20 ' +
-            'words): what they finished, what is still open, and call out anything overdue by ' +
-            'name if it exists. Do not invent facts not in the data, and do not write anything ' +
-            'outside the tool call.',
+          content: [
+            'You write one-line standup updates from structured card data.',
+            `Call ${EMIT_LINES_TOOL_NAME} exactly once, with one entry per member id given to you — never fewer, never an id not given.`,
+            'Each line is a short clause (under 20 words) that sits directly next to the person\'s name in the UI — the name is ALREADY shown, so never repeat it and never start the sentence with it. Write as if continuing "<Name> — ", e.g. "wrapped up the search index audit; two cards still open", not "Name has finished...".',
+            'Always say something concrete about their ACTUAL work — what they finished, or what they are currently working on (name a card or two if it helps) — never just a bare statement that nothing is overdue. "Nothing overdue" on its own is not an acceptable line; pair it with what they ARE doing.',
+            'Call out anything overdue by its card reference (e.g. "MOB-156") when it exists.',
+            'Vary sentence structure across people — do not answer every line with the same template.',
+            'Do not invent facts not in the data, and do not write anything outside the tool call.',
+          ].join(' '),
         },
         {
           role: 'user',
@@ -131,7 +155,10 @@ export async function narrateStandup(
     },
   );
 
-  return { lines: linesFromCompletion(result, standup.members) };
+  return {
+    headline: headlineFor(standup),
+    lines: linesFromCompletion(result, standup.members),
+  };
 }
 
 /**
@@ -181,4 +208,33 @@ function fallbackLineFor(member: StandupResult['members'][number]): string {
     return `${String(member.recentlyDone.length)} done recently, ${String(member.stillOpen.length)} still open.`;
   }
   return `${String(member.stillOpen.length)} still open.`;
+}
+
+/**
+ * The aggregate line — a plain count over data `queryStandup` already
+ * assembled, exported so `narrate.test.ts` can prove it directly. Never
+ * empty-string: a project with genuinely nothing to report still gets an
+ * honest "Nobody has open, done, or overdue work in this window" rather
+ * than a blank header where a sentence was expected.
+ */
+export function headlineFor(standup: StandupResult): string {
+  const total = standup.members.length;
+  if (total === 0) return 'Nobody has open, done, or overdue work in this window.';
+
+  const overdueCount = standup.members.filter((member) => member.overdue.length > 0).length;
+  const doneCount = standup.members.reduce((sum, member) => sum + member.recentlyDone.length, 0);
+  const urgentCount = standup.urgentSprintCards.length;
+
+  const parts = [`${String(total)} ${total === 1 ? 'person' : 'people'}`];
+  parts.push(
+    overdueCount === 0
+      ? 'nobody overdue'
+      : `${String(overdueCount)} ${overdueCount === 1 ? 'person' : 'people'} with overdue work`,
+  );
+  parts.push(`${String(doneCount)} ${doneCount === 1 ? 'card' : 'cards'} done recently`);
+  if (urgentCount > 0) {
+    parts.push(`${String(urgentCount)} urgent sprint ${urgentCount === 1 ? 'card' : 'cards'} open`);
+  }
+
+  return parts.join(' · ');
 }

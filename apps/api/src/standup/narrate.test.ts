@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiCompletionResult } from '@taskflow/contracts';
-import { linesFromCompletion } from './narrate.js';
-import type { StandupMember } from './standup.service.js';
+import { headlineFor, linesFromCompletion } from './narrate.js';
+import type { StandupMember, StandupResult } from './standup.service.js';
 
 /**
  * `linesFromCompletion` — the pure parse/merge half of `narrate.ts` — with
@@ -96,3 +96,39 @@ describe('linesFromCompletion', () => {
 function card(reference: string): StandupMember['overdue'][number] {
   return { cardId: reference, reference, title: 'A card', priority: null, dueDate: null };
 }
+
+describe('headlineFor', () => {
+  function standup(members: readonly StandupMember[], urgentCount = 0): StandupResult {
+    return {
+      sprint: null,
+      urgentSprintCards: Array.from({ length: urgentCount }, (_, i) => card(`URG-${String(i)}`)),
+      members,
+    };
+  }
+
+  it('is a real, non-empty sentence for a project with nobody at all', () => {
+    expect(headlineFor(standup([]))).toBe('Nobody has open, done, or overdue work in this window.');
+  });
+
+  it('counts overdue people, done cards, and urgent sprint cards independently', () => {
+    const result = headlineFor(
+      standup(
+        [
+          member('u1', { overdue: [card('A-1'), card('A-2')] }),
+          member('u2', { recentlyDone: [card('B-1')] }),
+          member('u3'),
+        ],
+        3,
+      ),
+    );
+
+    expect(result).toBe(
+      '3 people · 1 person with overdue work · 1 card done recently · 3 urgent sprint cards open',
+    );
+  });
+
+  it('omits the urgent-sprint-cards clause entirely when there are none', () => {
+    const result = headlineFor(standup([member('u1')], 0));
+    expect(result).toBe('1 person · nobody overdue · 0 cards done recently');
+  });
+});

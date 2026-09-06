@@ -99,6 +99,7 @@ export function createStandupRouter(deps: StandupRouterDeps) {
       .input(StandupInput)
       .output(
         z.object({
+          headline: z.string(),
           lines: z.array(z.object({ userId: z.string(), line: z.string() }).strict()).readonly(),
         }),
       )

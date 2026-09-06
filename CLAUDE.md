@@ -1141,6 +1141,38 @@ malformed-input cases directly against a hand-built `AiCompletionResult` — fas
 while `router.test.ts`'s existing end-to-end case still proves the real wiring (a stubbed `fetch`
 answering with Anthropic's actual `tool_use` content-block shape, not a plain-text one).
 
+**Structured output alone was not enough — the tool call forced a SHAPE, and said nothing about
+the CONTENT, so the first prompt still produced lines nobody would want to read.** Found by
+looking at real narrated output: every line started by repeating the person's own name a second
+time ("Aoife — Aoife has two overdue items...") because the prompt never told the model the name
+would already be shown next to it, and a person with nothing overdue got a bare "has no overdue
+tasks" — a lazy, technically-complete answer to "call out anything overdue" that says nothing
+about what they are actually doing. Both are PROMPT fixes, not shape fixes: the system prompt now
+explicitly says the name is already shown ("never repeat it, never start the sentence with it"),
+requires the line say something concrete about the person's actual work rather than only whether
+anything is overdue, and asks for card references (not just counts) and varied sentence structure
+across people so eighteen lines do not all read as the same template with different numbers
+substituted in.
+
+**`headline` is a fourth field, computed and never asked of the model, added for a genuinely
+different reason than the line-content fix above.** The project owner asked to "see it in all" —
+an aggregate across the whole roster ("how many people have overdue work, how many cards got
+done") — and the answer is a `Array.filter`/`.reduce` over data `queryStandup` already assembled,
+not a fifth thing to ask an LLM to count correctly over eighteen people's buckets. `headlineFor`
+is exported and unit-tested directly, the same "classification stays deterministic" rule this
+section's own line-fallback logic already follows — an aggregate that could be wrong in a way a
+plain count cannot is strictly worse than one more `completeGated` call would have been worth.
+
+**The apparent duplicate member row (two people both displayed as the same first name) was
+diagnosed, not silently fixed, because it isn't this feature's bug.** `queryStandup`'s per-member
+bucket is a `Map<string, ...>` keyed on the real `userId`, so it is structurally impossible for
+one person to produce two entries — two identical-looking rows can only mean two DIFFERENT
+`userId`s whose display names happen to collide, which `packages/seed`'s own
+`displayNameNicknameShare` config (a fraction of demo profiles display a bare first name instead
+of a full name) makes a real, expected possibility in fake data. Told to the project owner as a
+diagnosis with the reasoning, not assumed away — this codebase's own "verify before you claim a
+fix" discipline applied to a report, not just to code.
+
 **The fix for the page is collapsing every member to a name-plus-counts row by default, never
 merging or hiding anyone regardless of activity.** `MemberRow` opens to the identical
 three-bucket layout the first version always showed, now with the whole page width to itself
