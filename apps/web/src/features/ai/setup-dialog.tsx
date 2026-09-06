@@ -174,6 +174,14 @@ function SetupForm({
               type="number"
               min={1}
               inputMode="numeric"
+              /* Browser-drawn spin buttons are the one native control this
+                 app's dark theme never restyled — they render as a jarring
+                 light-grey box against `surface-sunken`. Hidden here rather
+                 than in the shared `Input` primitive, since `inputMode:
+                 numeric` already gives every other numeric field a clean
+                 mobile keypad with no visual side effect; this is the first
+                 place a raw `type="number"` spinner was ever visible. */
+              className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               value={teamSize}
               onChange={(event) => {
                 setTeamSize(event.target.value);
@@ -183,10 +191,17 @@ function SetupForm({
 
           <div className="space-y-1">
             <p className="text-xs font-medium text-ink-muted">What do you want to start with?</p>
-            <div className="flex gap-2">
+            <div className="flex items-stretch gap-2">
+              {/* `h-auto` overrides `Button`'s own fixed `h-9` (md size) —
+                  correct everywhere else a label is one line, but "Handbook +
+                  engineering wiki" wraps to two, so the fixed height let it
+                  overflow past its sibling instead of the row growing to fit
+                  both evenly. `flex-1` keeps the two options equal width
+                  regardless of label length. */}
               <Button
                 type="button"
                 variant={includeWiki ? 'secondary' : 'primary'}
+                className="h-auto flex-1 whitespace-normal py-2 text-center leading-snug"
                 onClick={() => {
                   setIncludeWiki(false);
                 }}
@@ -196,6 +211,7 @@ function SetupForm({
               <Button
                 type="button"
                 variant={includeWiki ? 'primary' : 'secondary'}
+                className="h-auto flex-1 whitespace-normal py-2 text-center leading-snug"
                 onClick={() => {
                   setIncludeWiki(true);
                 }}
