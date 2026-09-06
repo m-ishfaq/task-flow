@@ -16,6 +16,7 @@ import {
   InvalidRankError,
   between,
   errors,
+  unsafeAsId,
   type CardId,
   type ListId,
   type OrgId,
@@ -359,6 +360,90 @@ export async function getCard(
       priority: rest.priority as Priority | null,
       reference: referenceOf(projectKey, number),
       capabilities: { moderateComments },
+    };
+  });
+}
+
+export interface CardByReference {
+  readonly cardId: string;
+  readonly reference: string;
+  readonly title: string;
+  readonly boardId: string;
+  readonly projectId: string;
+  readonly statusId: string | null;
+}
+
+const REFERENCE_PATTERN = /^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/;
+
+/**
+ * `WEB-142` -> the card it names, or a NOT_FOUND naming exactly what was
+ * looked up. Added for the AI assistant's `find_card` tool
+ * (`apps/api/src/ai/tools/lookup.ts`): a card is the single most commonly
+ * REFERENCED entity in an ordinary request ("move WEB-709", "what's the
+ * status of API-6"), and yet — unlike every other entity type
+ * `lookup.ts`'s tools already resolve by name — nothing in this codebase
+ * could turn a human-typed reference into a real id. `search` does not fill
+ * this gap: it indexes card CONTENT (title, description text), never the
+ * project-key-plus-number reference, so a search for "WEB-709" matches
+ * nothing and the assistant had no way to reach a card a person named the
+ * exact way this app displays it everywhere else.
+ *
+ * The key half is uppercased before the query — `router.ts`'s own
+ * `ProjectKey` schema transforms every key to uppercase before it is ever
+ * stored, so a lowercase or mixed-case reference a person actually types
+ * ("web-709") would silently match nothing without this.
+ */
+export async function getCardByReference(
+  actor: WorkActor,
+  input: { readonly reference: string },
+): Promise<CardByReference> {
+  const match = REFERENCE_PATTERN.exec(input.reference.trim());
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw errors.notFound(
+      `"${input.reference}" is not a valid card reference (expected something like WEB-142).`,
+    );
+  }
+  const key = match[1].toUpperCase();
+  const number = Number.parseInt(match[2], 10);
+
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        cardId: schema.cards.id,
+        orgId: schema.cards.orgId,
+        boardId: schema.cards.boardId,
+        projectId: schema.cards.projectId,
+        title: schema.cards.title,
+        statusId: schema.cards.statusId,
+        number: schema.cards.number,
+        projectKey: schema.projects.key,
+      })
+      .from(schema.cards)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.cards.projectId))
+      .where(
+        and(
+          eq(schema.projects.key, key),
+          eq(schema.cards.number, number),
+          isNull(schema.cards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const card = rows[0];
+    if (!card) {
+      throw errors.notFound(`No card found with reference "${key}-${String(number)}".`);
+    }
+
+    const cardId = unsafeAsId<'CardId'>(card.cardId);
+    enforceOn(actor, 'card:read', { type: 'card', id: cardId }, card, ancestorsOfCard(card));
+
+    return {
+      cardId: card.cardId,
+      reference: referenceOf(card.projectKey, card.number),
+      title: card.title,
+      boardId: card.boardId,
+      projectId: card.projectId,
+      statusId: card.statusId,
     };
   });
 }

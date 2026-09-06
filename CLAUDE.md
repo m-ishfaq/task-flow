@@ -1008,6 +1008,54 @@ way `windowForRequest` and `neighbours.ts` already are, rather than only through
 component. `MessageBubble`'s assistant bubble now wraps `<MarkdownLite text={message.content} />`
 in the same bg/padding/rounding the bare `<p>` used to carry directly.
 
+**`find_card` closes the one lookup gap `lookup.ts`'s tools had left open — a card by the
+reference every OTHER surface in this app already names it by.** Found from a real transcript:
+"move WEB-709" had no path to a real `cardId` at all, `search` matched nothing (it indexes card
+CONTENT, never the reference), and the model fell back to a plain listing of ~50 unfiltered cards
+and guessed wrong. `getCardByReference` (`work/card.service.ts`) parses `"WEB-142"` into a project
+key and number, uppercasing the key first — `router.ts`'s own `ProjectKey` schema transforms every
+key to uppercase before it is ever stored, so a lowercase reference a person actually types would
+silently match nothing without that step — then the same `card:read` `enforceOn` check every other
+card read already goes through. `lookup.test.ts` gained a `find_card` block covering the real
+match, the case-insensitive match, a reference that parses but does not exist, and text that is not
+a valid reference shape at all — the same "children before parents" teardown fix
+(`work.cards` before `work.sprints`/org) this file's own §4 Wave 3 section already documents,
+needed the moment this test file started creating a card too.
+
+**The system prompt now tells the model directly to use `find_card` for a named reference, since
+nothing about the tool's own existence tells the model WHEN to reach for it over `search`.** The
+same paragraph that already banned inventing an id now names the specific failure mode this closes:
+`search` looking like the obvious tool for "WEB-142" and quietly returning nothing.
+
+**The capabilities panel and empty state were both real instances of the "excessive text nobody
+reads" complaint, found from a screenshot rather than a transcript.** `CAPABILITIES`' items were
+trimmed to true one-liners (padding words removed, not information), and a new `REFERENCE_HINTS`
+row ("Point at things: A card (WEB-142) · A person (@Priya) · A project, board, sprint, or label
+(just its name)") teaches the conventions the assistant is actually reliable at resolving now that
+`find_card` exists — phrased as conventions that work, not a special trigger syntax the input
+enforces, since no such syntax is wired up yet. The empty state's own description used to restate
+the same "ask a question about your projects..." text the panel above it already shows whenever the
+panel is open on a fresh conversation — real duplication on screen at once, fixed by showing that
+description only when the panel is collapsed (`exactOptionalPropertyTypes` needs a conditional
+prop spread here, not `description={condition ? text : undefined}`, since the target's own
+`description?: string` refuses an explicit `undefined` under that setting).
+
+**The reference-hints row hit the identical collapse-on-copy bug this file's own `tool-results.tsx`
+entry just documented for a `Badge` row — caught before shipping, not after.** Three adjacent
+`<span>`s separated only by `gap-x-3` CSS spacing collapse into one run-on line on a plain-text
+copy; fixed the same way, a literal `" · "` string between entries rather than layout spacing
+alone.
+
+**Deliberately not built in this pass: a real `@`-mention autocomplete in the input.** The request
+was for one; Chat already has a full TipTap-based `@mention` extension
+(`lib/tiptap/mention-extension.ts`) with a real suggestion dropdown, but it is built on a
+ProseMirror editor instance and Chat's own rich-text wire format — the assistant's input is a plain
+`<textarea>` sending a plain string (`ChatMessageWire`'s `user` variant), so reusing it as-is is not
+possible, and the real engineering choice (does a picked mention embed a resolved id the backend
+can use directly, or only a display string the model still has to resolve via a lookup tool, the
+same as typing it by hand) is a genuine scope decision, not a small addition — deferred to a direct
+conversation with the project owner rather than guessed at.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

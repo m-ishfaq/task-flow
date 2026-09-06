@@ -549,6 +549,38 @@ function renderListSprints(result: ToolResultMessage, call: ToolCallWire): React
 }
 
 /* -------------------------------------------------------------------------- *
+ * find_card
+ * -------------------------------------------------------------------------- */
+
+function renderFindCard(result: ToolResultMessage, ctx: ToolResultRenderContext): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!isRecord(parsed)) return null;
+  const cardId = stringField(parsed, 'cardId');
+  const reference = stringField(parsed, 'reference');
+  const title = stringField(parsed, 'title');
+  if (cardId === null || reference === null || title === null) return null;
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        <EntityRow
+          icon={<Kanban aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
+          primary={
+            <>
+              <span className="font-mono text-[10px] text-ink-faint">{reference}</span> {title}
+            </>
+          }
+          onClick={() => {
+            ctx.onOpenCard(cardId as CardId);
+          }}
+        />
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * card_create / card_update / card_assign / card_set_status / card_add_labels
  * -------------------------------------------------------------------------- */
 
@@ -756,6 +788,7 @@ const RENDERERS: Readonly<
   list_labels: (result) => renderListLabels(result),
   list_members: (result) => renderListMembers(result),
   list_sprints: (result, call) => renderListSprints(result, call),
+  find_card: (result, _call, ctx) => renderFindCard(result, ctx),
   card_create: (result, _call, ctx) => renderCardCreate(result, ctx),
   card_update: (result, call, ctx) => renderCardUpdate(result, call, ctx),
   card_assign: (result, call, ctx) => renderCardAssign(result, call, ctx),

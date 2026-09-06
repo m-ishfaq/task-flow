@@ -222,7 +222,10 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'Every id-shaped field you pass to a tool (projectId, boardId, listId, cardId, ' +
                 'userId, labelId, sprintId, channelId, spaceId) must be a REAL id that a tool ' +
                 'result already in this conversation actually returned — never invent, guess, ' +
-                'or reuse an id from a different kind of entity. If you do not yet have the id ' +
+                'or reuse an id from a different kind of entity. When the user names a card by ' +
+                'its reference (e.g. "WEB-142"), call `find_card` to resolve it — `search` does ' +
+                'not index card references, only their content, so it will not find one. If you ' +
+                'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +
                 'turn. You can only do what a tool in your list lets you do; if the user asks ' +

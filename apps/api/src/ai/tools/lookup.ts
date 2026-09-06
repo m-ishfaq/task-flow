@@ -6,6 +6,7 @@ import { listBoards } from '../../work/board.service.js';
 import { listLists } from '../../work/list.service.js';
 import { listLabels } from '../../work/label.service.js';
 import { listSprints } from '../../work/sprint.service.js';
+import { getCardByReference } from '../../work/card.service.js';
 import { listMembers } from '../../tenancy/member.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
@@ -41,6 +42,15 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * taking a `userId` (`card_assign`, `card_create`'s own `assigneeIds`,
  * `chat_post_message`'s `mention` segments) can now reach one from a name
  * in the same turn.
+ *
+ * `find_card` closes the identical gap for the entity people name MOST
+ * often — a card, by its reference ("WEB-142") — found from a real
+ * transcript where "move WEB-709" had no path to a real `cardId` at all.
+ * `search` cannot fill it for the same structural reason it cannot for
+ * projects/boards/labels above, but for content rather than entity type: it
+ * indexes what a card SAYS, never the reference number every other surface
+ * in this app displays it by. See `getCardByReference`'s own header in
+ * `work/card.service.ts`.
  */
 
 function actorOf(ctx: ToolContext): WorkActor {
@@ -211,6 +221,47 @@ export function createListSprintsTool(): ToolDefinition {
         status: sprint.status,
       }));
       return { content: JSON.stringify(summarized) };
+    },
+  });
+}
+
+const FindCardInput = z.object({ reference: z.string().min(1).max(20) }).strict();
+
+/**
+ * The lookup gap every other tool in this file already closed for its own
+ * entity type, left open for the most commonly referenced entity of all — a
+ * CARD. Found from a real transcript: asked to move "WEB-709", the model had
+ * no way to reach a real `cardId` from that reference at all. `search` looks
+ * like the obvious fallback and is not one — it indexes card CONTENT (title,
+ * description text), never the reference itself, so searching "WEB-709"
+ * matches nothing; the model fell back to guessing, then to a plain listing
+ * of ~50 unfiltered cards, and picked the wrong one. `getCardByReference`
+ * (`work/card.service.ts`) is the real fix; this is its tool wrapper.
+ */
+export function createFindCardTool(): ToolDefinition {
+  return defineTool({
+    name: 'find_card',
+    description:
+      'Resolves a card\'s human-readable reference (like "WEB-142") to its real id. Use this ' +
+      'whenever the user names a card by its reference rather than giving you an id directly — ' +
+      '"move WEB-709", "what\'s the status of API-6". This is the only reliable way to reach a ' +
+      "card's id from its reference — `search` indexes card content, never the reference itself.",
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        reference: {
+          type: 'string',
+          description: 'The card\'s reference, e.g. "WEB-142".',
+        },
+      },
+      required: ['reference'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: FindCardInput,
+    async execute(ctx, input) {
+      const card = await getCardByReference(actorOf(ctx), { reference: input.reference });
+      return { content: JSON.stringify(card) };
     },
   });
 }

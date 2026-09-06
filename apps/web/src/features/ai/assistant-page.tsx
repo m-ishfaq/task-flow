@@ -109,33 +109,34 @@ const CAPABILITIES: readonly { readonly heading: string; readonly items: readonl
   {
     heading: 'Look things up',
     items: [
-      'Search cards, chat messages, docs pages, and comments',
-      'List what is assigned to you and still pending',
-      'Look up a project’s boards, lists, labels, sprints, and members — you can mention any ' +
-        'of these by name and it will find the right one',
+      'Search cards, messages, docs, and comments',
+      'What’s assigned to you and still open',
+      'A project’s boards, sprints, labels, and members',
     ],
   },
   {
-    heading: 'Make changes — always asks you to confirm first',
+    heading: 'Make changes — always confirmed first',
     items: [
-      'Create a card — title, description, assignees, labels, priority, due date, and sprint ' +
-        'all in the same request if you mention them, not one at a time',
-      'Update a card’s title, description, dates, or priority',
-      'Assign people to a card',
-      'Move a card to a different status',
-      'Tag a card with one or more labels',
+      'Create a card with assignees, labels, priority, due date, and sprint all at once',
+      'Update, assign, move, or tag a card',
       'Create a sprint, or add cards to one',
-      'Post a message in a channel',
-      'Create a new Docs page',
+      'Post a message, or create a Docs page',
     ],
   },
 ];
 
+/** How to point at a specific thing — the conventions the assistant is
+    reliably good at resolving, not a special input syntax it enforces. */
+const REFERENCE_HINTS: readonly { readonly label: string; readonly example: string }[] = [
+  { label: 'A card', example: 'WEB-142' },
+  { label: 'A person', example: '@Priya' },
+  { label: 'A project, board, sprint, or label', example: 'just its name' },
+];
+
 const EXAMPLE_PROMPTS: readonly string[] = [
   'What am I working on this week?',
-  'Create a card in the Website project, Delivery board, Todo list, titled "Fix login bug", ' +
-    'assign it to Priya, tag it Bug, and set it due Friday',
-  'Move MOB-42 to In Review',
+  'Create a card in Website / Delivery / Todo, "Fix login bug", assign @Priya, tag Bug, due Friday',
+  'Move WEB-142 to In Review',
 ];
 
 export function AssistantPage() {
@@ -253,7 +254,14 @@ export function AssistantPage() {
           <Empty
             icon={<Sparkles aria-hidden="true" className="size-5" />}
             title="Nothing here yet"
-            description="Ask a question about your projects, cards or people — the assistant only ever sees and does what you can."
+            // The panel above already explains what to ask and how to
+            // reference things when it's open — repeating that here is
+            // exactly the duplication a real report called out. Only when
+            // it's collapsed does this need to say anything more than
+            // "type below."
+            {...(showCapabilities
+              ? {}
+              : { description: 'Open "What can I do?" above, or just ask.' })}
           />
         ) : (
           messages
@@ -349,6 +357,18 @@ function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: s
           </div>
         ))}
       </div>
+      {/* A literal " · " between entries, not CSS gap alone — the identical
+          collapse-on-copy bug `tool-results.tsx`'s own header now documents
+          for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
+      <p className="border-t border-line/60 pt-3 text-xs text-ink-faint">
+        <span className="font-semibold text-ink-muted">Point at things: </span>
+        {REFERENCE_HINTS.map((hint, index) => (
+          <span key={hint.label}>
+            {index > 0 && ' · '}
+            {hint.label} (<span className="font-mono text-ink-muted">{hint.example}</span>)
+          </span>
+        ))}
+      </p>
       <div className="space-y-1.5 border-t border-line/60 pt-3">
         <p className="text-xs font-semibold text-ink-muted">Try one</p>
         <div className="flex flex-wrap gap-1.5">

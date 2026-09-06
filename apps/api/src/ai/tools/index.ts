@@ -2,6 +2,7 @@ import type { SearchProvider } from '@taskflow/contracts';
 import { createSearchTool } from './search.js';
 import { createMyCardsTool } from './my-cards.js';
 import {
+  createFindCardTool,
   createListBoardsTool,
   createListLabelsTool,
   createListMembersTool,
@@ -86,6 +87,11 @@ export interface ToolRegistryDeps {
  * `card.ts`'s own comment on `card_create` for why bundling several real
  * service calls behind one tool call changes nothing about what a caller
  * may do, only how many times a human has to approve it.
+ *
+ * `find_card` (`lookup.ts`) closes the same gap one more entity type over —
+ * a card by its own reference ("WEB-142") — found from a real transcript
+ * where "move WEB-709" had no path to a real `cardId` at all; `search`
+ * indexes card content, never the reference number.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -96,6 +102,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListLabelsTool(),
     createListMembersTool(),
     createListSprintsTool(),
+    createFindCardTool(),
     createCardCreateTool(),
     createCardUpdateTool(),
     createCardAssignTool(),

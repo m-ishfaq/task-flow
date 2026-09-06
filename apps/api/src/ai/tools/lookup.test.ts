@@ -11,8 +11,10 @@ import * as boards from '../../work/board.service.js';
 import * as lists from '../../work/list.service.js';
 import * as labelsSvc from '../../work/label.service.js';
 import * as sprintsSvc from '../../work/sprint.service.js';
+import * as cardsSvc from '../../work/card.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import {
+  createFindCardTool,
   createListBoardsTool,
   createListLabelsTool,
   createListMembersTool,
@@ -46,7 +48,10 @@ async function removeOrg(orgId: string): Promise<void> {
   // Children before parents: work.sprints has no ON DELETE CASCADE to
   // work.projects, the identical fixture-ordering fix
   // work.service.test.ts's own removeOrg and sprint.service.test.ts already
-  // document.
+  // document. work.cards needed the same fix the moment this file started
+  // creating one (find_card), the identical ordering card.test.ts's own
+  // removeOrg already carries.
+  await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.sprints WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
@@ -282,5 +287,81 @@ describe('list_sprints', () => {
     });
 
     expect(result.content).toBe('This project has no sprints yet.');
+  });
+});
+
+describe('find_card', () => {
+  async function seedCard(orgId: OrgId): Promise<{ readonly cardId: string }> {
+    const actor = await ownerActor(orgId);
+    const project = await projects.createProject(actor, {
+      name: 'Website',
+      key: 'WEB',
+      description: null,
+    });
+    const board = await boards.createBoard(actor, {
+      projectId: project.projectId,
+      name: 'Delivery',
+    });
+    const list = await lists.createList(actor, {
+      boardId: board.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+    const created = await cardsSvc.createCard(actor, {
+      listId: list.listId,
+      title: 'Fix login bug',
+      description: null,
+    });
+    return { cardId: created.cardId };
+  }
+
+  it('resolves a real reference to its cardId', async () => {
+    const orgId = await newOrg('lookup-find-card');
+    const { cardId } = await seedCard(orgId);
+
+    const tool = createFindCardTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      reference: 'WEB-1',
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { cardId: string; reference: string };
+    expect(parsed).toEqual(expect.objectContaining({ cardId, reference: 'WEB-1' }));
+  });
+
+  it('is case-insensitive on the project key, matching how a person actually types it', async () => {
+    const orgId = await newOrg('lookup-find-card-case');
+    const { cardId } = await seedCard(orgId);
+
+    const tool = createFindCardTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      reference: 'web-1',
+    });
+
+    const parsed = JSON.parse(result.content) as { cardId: string };
+    expect(parsed.cardId).toBe(cardId);
+  });
+
+  it('reports an error, never a crash, for a reference that does not exist', async () => {
+    const orgId = await newOrg('lookup-find-card-missing');
+    await seedCard(orgId);
+
+    const tool = createFindCardTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      reference: 'WEB-999',
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
+  it('reports an error for text that is not a valid reference shape at all', async () => {
+    const orgId = await newOrg('lookup-find-card-malformed');
+
+    const tool = createFindCardTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      reference: 'not a reference',
+    });
+
+    expect(result.isError).toBe(true);
   });
 });
