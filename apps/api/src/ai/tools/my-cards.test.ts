@@ -196,6 +196,7 @@ describe('my_cards', () => {
     const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {});
 
     const parsed = JSON.parse(result.content) as readonly {
+      cardId: string;
       reference: string;
       title: string;
       dueDate: string | null;
@@ -203,6 +204,7 @@ describe('my_cards', () => {
     }[];
     expect(parsed).toEqual([
       {
+        cardId: card.cardId,
         reference: 'WEB-1',
         title: 'Still in progress',
         priority: 'high',

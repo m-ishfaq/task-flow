@@ -771,6 +771,33 @@ human-facing restatement kept in sync by hand — the same trade `packages/token
 for staying in sync with `apps/web/src/styles.css`'s `@theme` block by hand rather than a
 build-time dependency.
 
+**A follow-up report on the same `my_cards` result — real data, but "hard to read and act on
+it" — was a presentation problem the prompt alone could not fix, so it got a real UI, not more
+prompt tuning.** The assistant's own text reply was a numbered list the MODEL had retyped from
+`my_cards`' JSON — accurate, but unclickable, and only as trustworthy as the model's own
+transcription of data the frontend already had verbatim. `my-cards.ts` gained a `cardId` field
+(previously omitted, on `search.ts`'s own "plumbing the model has no use for" reasoning — but the
+FRONTEND does), and `assistant-page.tsx`'s `MessageBubble` now looks up the real `tool_result` a
+`my_cards` call produced (matched by `toolCallId`, from a `toolResultsById` map — a `switch` on
+`role`, not `===`, the identical guardrail-7 collision this file's own `DisplayableMessage`
+handling already documents) and, when it parses as a real card list, renders it as one — reference,
+title, priority, due date, each opening `CardQuickView`.
+
+**`CardQuickView` moved from `features/standup` to `features/work`, and its `onClose` was
+generalized to hand the caller the loaded card rather than invalidating a query itself.** The
+component's own cache-refresh side effect (re-fetching the standup buckets a card edit could have
+changed) was specific to the ONE feature that first needed it; the assistant page needs no such
+refresh, and a shared component has no business knowing which sibling views exist. `onClose` now
+receives the card (or `undefined` if it never loaded) and each caller decides what, if anything,
+to invalidate — `standup-page.tsx` still does its own project-scoped standup invalidation, moved
+into its own `onClose` callback verbatim; the assistant page does nothing extra at all.
+
+**The system prompt (`router.ts`) was told the app already shows a `my_cards` list separately, and
+asked for one short sentence of commentary instead of a restated table** — the same "classification
+stays deterministic, the model only adds real color" instinct this section's `my_cards` entry and
+the standup redesign both already apply, extended to PRESENTATION: once the UI renders the real
+data, a model's prose restatement of the same fields is redundant, not merely verbose.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

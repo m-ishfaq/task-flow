@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Bot, ChevronDown, ChevronUp, Send, Sparkles } from 'lucide-react';
+import type { CardId } from '@taskflow/contracts';
 import { Button, Empty, PageHeader, Textarea } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
+import { useSession } from '../../lib/session.js';
+import { formatDate } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
+import { CardQuickView } from '../work/card-quick-view.js';
+import type { Priority } from '../work/api.js';
+import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
 import { sendChatTurn, type ChatMessageWire, type ToolCallWire } from './api.js';
 
 /**
@@ -48,6 +55,20 @@ import { sendChatTurn, type ChatMessageWire, type ToolCallWire } from './api.js'
  * the exact phrasing that reaches a given tool and edit it before it goes
  * anywhere — "how do I call this" answered by example, not by exposing the
  * tool name itself, which nobody chatting with the assistant needs to know.
+ *
+ * ## A `my_cards` result renders as a real, clickable list — not the model's prose
+ *
+ * A real transcript showed the failure mode plainly: asked for pending
+ * tasks, the assistant answered with a numbered list retyped by the model
+ * from the tool's JSON, unclickable and only as accurate as the model's own
+ * transcription. `myCardsEntriesFrom` looks for the real `tool_result` a
+ * `my_cards` call produced (matched by `toolCallId`, not re-derived from the
+ * model's reply) and, when it parses, renders the actual cards — reference,
+ * title, priority, due date, each opening `CardQuickView` — the exact same
+ * component and the exact same board detail panel the standup view already
+ * opens a card through. The system prompt (`router.ts`) now tells the model
+ * this list is shown separately and asks it to add only genuine commentary
+ * rather than restate every field back in prose.
  */
 
 const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
@@ -100,6 +121,8 @@ export function AssistantPage() {
   const [showCapabilities, setShowCapabilities] = useState(
     () => (useAssistantSeedStore.getState().seed ?? []).length === 0,
   );
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const [openCardId, setOpenCardId] = useState<CardId | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -144,6 +167,7 @@ export function AssistantPage() {
   };
 
   const busy = turn.isPending;
+  const resultsById = toolResultsById(messages);
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 p-6">
@@ -188,7 +212,14 @@ export function AssistantPage() {
         ) : (
           messages
             .filter(isDisplayable)
-            .map((message, index) => <MessageBubble key={index} message={message} />)
+            .map((message, index) => (
+              <MessageBubble
+                key={index}
+                message={message}
+                resultsById={resultsById}
+                onOpenCard={setOpenCardId}
+              />
+            ))
         )}
 
         {busy && (
@@ -237,6 +268,16 @@ export function AssistantPage() {
           <Send aria-hidden="true" className="size-4" />
         </Button>
       </form>
+
+      {openCardId !== null && (
+        <CardQuickView
+          orgId={orgId}
+          cardId={openCardId}
+          onClose={() => {
+            setOpenCardId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -296,6 +337,7 @@ function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: s
  * 'user'` would.
  */
 type DisplayableMessage = Extract<ChatMessageWire, { role: 'user' | 'assistant' }>;
+type ToolResultMessage = Extract<ChatMessageWire, { role: 'tool_result' }>;
 
 function isDisplayable(message: ChatMessageWire): message is DisplayableMessage {
   switch (message.role) {
@@ -307,7 +349,80 @@ function isDisplayable(message: ChatMessageWire): message is DisplayableMessage 
   }
 }
 
-function MessageBubble({ message }: { readonly message: DisplayableMessage }) {
+/** Every `tool_result`, keyed by the `toolCallId` it answers — how a
+    displayed assistant turn finds the REAL data behind one of its own
+    `toolCalls`, rather than trusting the model's own retelling of it.
+    A `switch` on `role`, not `===` — the identical `AiMessage.role`/guardrail
+    7 name collision this file's own header already documents for
+    `MessageBubble`. */
+function toolResultsById(
+  messages: readonly ChatMessageWire[],
+): ReadonlyMap<string, ToolResultMessage> {
+  const byId = new Map<string, ToolResultMessage>();
+  for (const message of messages) {
+    switch (message.role) {
+      case 'tool_result':
+        byId.set(message.toolCallId, message);
+        break;
+      case 'user':
+      case 'assistant':
+        break;
+    }
+  }
+  return byId;
+}
+
+interface MyCardsEntry {
+  readonly cardId: string;
+  readonly reference: string;
+  readonly title: string;
+  readonly priority: string | null;
+  readonly dueDate: string | null;
+}
+
+function isMyCardsEntry(value: unknown): value is MyCardsEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry['cardId'] === 'string' &&
+    typeof entry['reference'] === 'string' &&
+    typeof entry['title'] === 'string' &&
+    (entry['priority'] === null || typeof entry['priority'] === 'string') &&
+    (entry['dueDate'] === null || typeof entry['dueDate'] === 'string')
+  );
+}
+
+/** `null` covers every case where this call is not a well-formed `my_cards`
+    list — a different tool, a declined/errored result, or (`my_cards`'
+    own "nothing pending"/"no cards" replies) a plain string — so the
+    caller falls back to the ordinary "Used <tool>" chip for all of them
+    rather than needing to special-case each one here. */
+function myCardsEntriesFrom(
+  call: ToolCallWire,
+  resultsById: ReadonlyMap<string, ToolResultMessage>,
+): readonly MyCardsEntry[] | null {
+  if (call.name !== 'my_cards') return null;
+  const result = resultsById.get(call.id);
+  if (result === undefined || result.isError === true) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.content);
+  } catch {
+    return null;
+  }
+  return Array.isArray(parsed) && parsed.every(isMyCardsEntry) ? parsed : null;
+}
+
+function MessageBubble({
+  message,
+  resultsById,
+  onOpenCard,
+}: {
+  readonly message: DisplayableMessage;
+  readonly resultsById: ReadonlyMap<string, ToolResultMessage>;
+  readonly onOpenCard: (cardId: CardId) => void;
+}) {
   switch (message.role) {
     case 'user':
       return (
@@ -326,18 +441,96 @@ function MessageBubble({ message }: { readonly message: DisplayableMessage }) {
                 {message.content}
               </p>
             )}
-            {(message.toolCalls ?? []).map((call) => (
-              <p
-                key={call.id}
-                className="rounded-lg border border-line/60 bg-surface px-2.5 py-1.5 text-xs text-ink-faint"
-              >
-                Used <span className="font-mono text-ink-muted">{call.name}</span>
-              </p>
-            ))}
+            {(message.toolCalls ?? []).map((call) => {
+              const cards = myCardsEntriesFrom(call, resultsById);
+              return cards !== null ? (
+                <ul key={call.id} className="space-y-1">
+                  {cards.map((card) => (
+                    <AssistantCardRow
+                      key={card.cardId}
+                      card={card}
+                      onOpen={() => {
+                        onOpenCard(card.cardId as CardId);
+                      }}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p
+                  key={call.id}
+                  className="rounded-lg border border-line/60 bg-surface px-2.5 py-1.5 text-xs text-ink-faint"
+                >
+                  Used <span className="font-mono text-ink-muted">{call.name}</span>
+                </p>
+              );
+            })}
           </div>
         </div>
       );
   }
+}
+
+/**
+ * One `my_cards` entry, rendered like `StandupCardRow` (the standup view's
+ * identical shape for the identical reason) — reference, title, a priority
+ * dot, and the due date, clicking through to the real card via
+ * `CardQuickView`.
+ */
+function AssistantCardRow({
+  card,
+  onOpen,
+}: {
+  readonly card: MyCardsEntry;
+  readonly onOpen: () => void;
+}) {
+  const priority = isPriority(card.priority) ? card.priority : null;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-start gap-1.5 rounded-lg border border-line/60 bg-surface px-2.5 py-1.5 text-left text-xs hover:border-accent"
+      >
+        {priority !== null && (
+          <span
+            aria-hidden="true"
+            title={PRIORITY_LABEL[priority]}
+            className={cn(
+              'mt-1 size-2 shrink-0 rounded-full ring-1 ring-ink/10',
+              PRIORITY_SWATCH[priority],
+            )}
+          />
+        )}
+        <span className="shrink-0 font-mono text-[10px] text-ink-faint">{card.reference}</span>
+        <span className="min-w-0 flex-1 break-words text-ink">{card.title}</span>
+        {card.dueDate !== null && (
+          <span
+            className={cn(
+              'shrink-0 text-[10px] whitespace-nowrap',
+              isPastDue(card.dueDate) ? 'text-danger' : 'text-ink-faint',
+            )}
+          >
+            {formatDate(card.dueDate)}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+function isPriority(value: string | null): value is Priority {
+  return value === 'urgent' || value === 'high' || value === 'normal' || value === 'low';
+}
+
+/**
+ * Kept as a plain function called FROM a render body rather than inlined —
+ * `lib/format.ts`'s own `oooStatus` note is the precedent: the React
+ * Compiler's purity rule flags `Date.now()`/`new Date()` written directly in
+ * a component, so the clock has to live one call behind that.
+ */
+function isPastDue(dueDate: string): boolean {
+  return new Date(dueDate).getTime() < Date.now();
 }
 
 /**

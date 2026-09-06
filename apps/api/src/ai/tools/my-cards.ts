@@ -44,6 +44,18 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * the distinct status ids actually present, and excludes `done` before the
  * model ever sees a card. What reaches the model is already "pending" —
  * there is nothing left for it to classify.
+ *
+ * ## `cardId` is in the result, unlike `search`'s "plumbing the model has no
+ * use for" ids
+ *
+ * A second real complaint — a person reading the model's own prose summary
+ * of this same data had no way to actually DO anything with it — is what
+ * this field is for. `assistant-page.tsx` renders a `my_cards` result as a
+ * real, clickable card list (reusing `CardQuickView`, the same board detail
+ * panel the standup view opens) rather than trusting the model's paragraph
+ * to be the only way a person sees this data; that rendering needs a real
+ * `cardId` to open, which `search`'s own compact projection never needed to
+ * carry for its own metadata fields.
  */
 
 const MyCardsInput = z.object({}).strict();
@@ -93,6 +105,7 @@ export function createMyCardsTool(): ToolDefinition {
       }
 
       const summarized = pending.map((card) => ({
+        cardId: card.cardId,
         reference: card.reference,
         title: card.title,
         priority: card.priority,

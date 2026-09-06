@@ -208,7 +208,13 @@ export function createAiRouter(deps: AiRouterDeps) {
                 `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC) — use this as ` +
                 'the reference point for any relative date the user asks about ("this week", ' +
                 '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
-                'date, never a pre-computed relative answer.',
+                'date, never a pre-computed relative answer. ' +
+                'When a tool returns a list of cards (e.g. my_cards, search), the app already ' +
+                'shows the user a real, clickable list of them right below your reply — do NOT ' +
+                'restate every title, due date and priority back in a numbered list of your own, ' +
+                'which only duplicates what they can already see and click. Instead, reply with ' +
+                'one short sentence of genuine commentary (a count, what stands out, a pattern) ' +
+                'and let the app show the details.',
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },

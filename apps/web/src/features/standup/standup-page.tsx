@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -28,7 +28,7 @@ import {
   type StandupCard,
   type StandupMember,
 } from './api.js';
-import { CardQuickView } from './card-quick-view.js';
+import { CardQuickView } from '../work/card-quick-view.js';
 
 /**
  * The standup view (ai/phase-15-ai-copilot-and-permissions.md §5).
@@ -77,6 +77,7 @@ import { CardQuickView } from './card-quick-view.js';
 export function StandupPage() {
   const { projectId } = useParams({ from: '/projects/$projectId/standup' });
   const orgId = useSession((state) => state.orgId) ?? '';
+  const queryClient = useQueryClient();
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
   const [callout, setCallout] = useState<StandupCallout | null>(null);
 
@@ -197,7 +198,19 @@ export function StandupPage() {
         <CardQuickView
           orgId={orgId}
           cardId={openCardId}
-          onClose={() => {
+          onClose={(card) => {
+            /* The standup buckets are computed from assignee/priority/status,
+               all of which this panel can change — so closing it is the
+               point at which the standup view needs to be told it may be
+               stale. Scoped to this project's standup entries specifically
+               (no `sinceHours` in the key prefix), not the whole `projects`
+               branch — a card edit has no bearing on the project list,
+               boards, or label vocabulary also living under that prefix. */
+            if (card !== undefined) {
+              void queryClient.invalidateQueries({
+                queryKey: ['org', orgId, 'projects', card.projectId, 'standup'],
+              });
+            }
             setOpenCardId(null);
           }}
         />
