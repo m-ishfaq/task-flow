@@ -10,9 +10,11 @@ import {
   createListSprintsTool,
 } from './lookup.js';
 import {
+  createCardAddCommentTool,
   createCardAddLabelsTool,
   createCardAssignTool,
   createCardCreateTool,
+  createCardMoveTool,
   createCardSetStatusTool,
   createCardUpdateTool,
 } from './card.js';
@@ -92,6 +94,15 @@ export interface ToolRegistryDeps {
  * a card by its own reference ("WEB-142") — found from a real transcript
  * where "move WEB-709" had no path to a real `cardId` at all; `search`
  * indexes card content, never the reference number.
+ *
+ * `card_move` and `card_add_comment` (`card.ts`) close two more gaps the
+ * SAME transcript found the moment `find_card` let it actually reach a
+ * card: moving a card between lists/boards had no tool at all (the model
+ * tried `card_set_status` — a different concept, a card's STATUS field, not
+ * its board/list — and `sprint_add_cards`, mistaking a board for a sprint,
+ * both failing), and commenting on a card had no tool either (the model
+ * reached for `chat_post_message`, a different subsystem entirely — a chat
+ * channel message, not a card comment).
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -108,6 +119,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createCardAssignTool(),
     createCardSetStatusTool(),
     createCardAddLabelsTool(),
+    createCardMoveTool(),
+    createCardAddCommentTool(),
     createSprintCreateTool(),
     createSprintAddCardsTool(),
     createChatPostMessageTool(),

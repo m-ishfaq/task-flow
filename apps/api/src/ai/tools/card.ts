@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  BoardIdSchema,
   CardIdSchema,
   LabelIdSchema,
   ListIdSchema,
@@ -16,12 +17,16 @@ import {
   getCard,
   updateCard,
   setCardStatus,
+  listCards,
+  moveCard,
 } from '../../work/card.service.js';
 import { listCardLabels, setCardLabels } from '../../work/label.service.js';
 import { assignSprint } from '../../work/sprint.service.js';
+import { createComment } from '../../work/comment.service.js';
 import { plainParagraph, RichTextDocument, type RichTextNode } from '../../work/richtext.js';
 import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
+import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segments.js';
 
 /**
  * The single-card write tools (§4.1's table: `card_create`, `card_update`,
@@ -447,6 +452,140 @@ export function createCardAddLabelsTool(): ToolDefinition {
       ];
       const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: union });
       return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_move — a different LIST, possibly a different BOARD, never a status
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Found missing from a real transcript: "move it to Bug Triage" (a board
+ * name) had no tool to reach at all. The model tried `card_set_status`
+ * (wrong concept — a card's STATUS, per `card.service.ts`'s own
+ * `setCardStatus`, is a project-level field entirely separate from which
+ * LIST/BOARD it sits on) and `sprint_add_cards` (wrong entity — a board is
+ * not a sprint), both failing with a bare "Not found." This wraps the real
+ * `moveCard`, which — per its own doc comment — CAN cross boards within the
+ * same project (never across projects; the service itself refuses that).
+ *
+ * `boardId` is a required input alongside `listId` rather than looked up
+ * inside the tool, because the model already has both from `list_boards`'
+ * own nested `{boardId, lists: [{listId}]}` shape — asking for it here
+ * avoids a second lookup this tool would otherwise need just to find the
+ * target list's own board.
+ *
+ * There is no `beforeCardId`/`afterCardId` input — a human dragging a card
+ * has a drop position in mind; a model does not, and asking it to guess
+ * neighbours would produce an arbitrary, unreviewable position. This always
+ * appends to the END of the target list: `moveCard` derives the new rank as
+ * `between(rankOf(beforeCardId), rankOf(afterCardId))` — the LOWER bound is
+ * `beforeCardId`, so the current LAST card (by rank, read via `listCards`)
+ * becomes `beforeCardId` and `afterCardId` stays null (no upper bound),
+ * putting the moved card after every existing one. Passing the last card as
+ * `afterCardId` instead — the more intuitive-sounding name for "goes after
+ * this" — is backwards and was caught by a real test asserting the actual
+ * resulting order, not just that the move succeeded.
+ */
+const CardMoveInput = z
+  .object({
+    cardId: CardIdSchema,
+    boardId: BoardIdSchema,
+    listId: ListIdSchema,
+  })
+  .strict();
+
+export function createCardMoveTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_move',
+    description:
+      'Moves a card to a different list, appending it to the end. This can move a card to a ' +
+      'different BOARD within the same project (e.g. from one board\'s "In Progress" to ' +
+      'another board\'s "To Do"), but never to a different project. This is NOT the same as ' +
+      "a card's priority or status — use `card_update`/`card_set_status` for those. Use " +
+      '`list_boards` first to find the target board and list ids.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card to move.' },
+        boardId: { type: 'string', description: "The target list's own board id." },
+        listId: { type: 'string', description: 'The id of the list to move the card into.' },
+      },
+      required: ['cardId', 'boardId', 'listId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardMoveInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const onBoard = await listCards(actor, { boardId: input.boardId });
+      const inTargetList = onBoard
+        .filter((card) => card.listId === input.listId)
+        .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0));
+      const last = inTargetList.at(-1);
+
+      const result = await moveCard(actor, {
+        cardId: input.cardId,
+        targetListId: input.listId,
+        beforeCardId: last === undefined ? null : unsafeAsId<'CardId'>(last.cardId),
+        afterCardId: null,
+      });
+      return {
+        content: JSON.stringify({ listId: result.listId, wipExceeded: result.wipExceeded }),
+      };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_add_comment
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Found missing from a real transcript: "add a comment to the card...and
+ * tag @Rosa" had no tool for it at all, and the model reached for
+ * `chat_post_message` instead — a completely different subsystem (a card
+ * comment is Work's own `comment:create`, never a Chat channel message).
+ * Wraps `createComment` the identical way `chat_post_message` wraps
+ * `sendMessage`: the model composes ordered text/mention SEGMENTS
+ * (`segments.ts`, shared with that tool) rather than a markup string, and a
+ * mentioned person is notified through the SAME path a human's own comment
+ * box would use — there is no second, assistant-only notification
+ * mechanism.
+ */
+const CardAddCommentInput = z
+  .object({
+    cardId: CardIdSchema,
+    segments: z.array(MessageSegment).min(1).max(50),
+  })
+  .strict();
+
+export function createCardAddCommentTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_add_comment',
+    description:
+      'Adds a top-level comment to a card, optionally @mentioning people by user id. Provide ' +
+      'the comment as an ordered list of text and mention segments. Use this for a comment on ' +
+      'a card — never `chat_post_message`, which posts to a chat channel, not a card.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card to comment on.' },
+        segments: SEGMENT_JSON_SCHEMA,
+      },
+      required: ['cardId', 'segments'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardAddCommentInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const result = await createComment(actor, {
+        cardId: input.cardId,
+        body: segmentsToRichText(input.segments),
+      });
+      return { content: JSON.stringify({ commentId: result.commentId }) };
     },
   });
 }

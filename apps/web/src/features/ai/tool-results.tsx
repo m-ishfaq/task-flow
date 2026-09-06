@@ -638,6 +638,8 @@ const renderCardUpdate = cardWriteRenderer('Card updated');
 const renderCardAssign = cardWriteRenderer('Assignees updated');
 const renderCardSetStatus = cardWriteRenderer('Status updated');
 const renderCardAddLabels = cardWriteRenderer('Labels updated');
+const renderCardMove = cardWriteRenderer('Card moved');
+const renderCardAddComment = cardWriteRenderer('Comment added');
 
 /* -------------------------------------------------------------------------- *
  * sprint_create / sprint_add_cards
@@ -794,6 +796,8 @@ const RENDERERS: Readonly<
   card_assign: (result, call, ctx) => renderCardAssign(result, call, ctx),
   card_set_status: (result, call, ctx) => renderCardSetStatus(result, call, ctx),
   card_add_labels: (result, call, ctx) => renderCardAddLabels(result, call, ctx),
+  card_move: (result, call, ctx) => renderCardMove(result, call, ctx),
+  card_add_comment: (result, call, ctx) => renderCardAddComment(result, call, ctx),
   sprint_create: (result, call) => renderSprintCreate(result, call),
   sprint_add_cards: (result) => renderSprintAddCards(result),
   chat_post_message: (result, call) => renderChatPostMessage(result, call),

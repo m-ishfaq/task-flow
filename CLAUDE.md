@@ -1135,6 +1135,66 @@ earns the "zero error" property. Documented in the constant's own comment rather
 accepted as a minor inconsistency, since it is exactly the kind of gap a person could reasonably
 expect not to exist.
 
+**A real transcript, made possible by `find_card` actually letting the assistant REACH a card,
+surfaced the next two gaps immediately behind it: moving a card between lists/boards had no tool,
+and neither did commenting on one.** "Move it to Bug Triage" (a board name) failed twice — the
+model tried `card_set_status` (a different concept entirely: a card's STATUS, per
+`card.service.ts`'s own `setCardStatus`, is a project-level field with no relationship to which
+list or board a card sits on) and `sprint_add_cards` (mistaking a board for a sprint) — both ending
+in a bare "Not found." (now at least correctly attributed to the right tool, per this file's own
+earlier `registry.ts` fix). "Add a comment... and tag @Rosa" reached for `chat_post_message`
+instead, a completely different subsystem — a card comment is Work's own `comment:create`, never a
+Chat channel message.
+
+**`card_move` wraps the real `moveCard`, which the tool registry had simply never reached before —
+`card_set_status` was never it, by design.** `moveCard`'s own doc comment already states it can
+cross BOARDS within the same project (never across projects, refused by the service itself), which
+is exactly "move it to Bug Triage" when Bug Triage is another board in the same project. The tool
+takes `cardId`, `boardId`, and `listId` — `boardId` requested explicitly rather than looked up
+inside the tool, since the model already has it from `list_boards`' own nested
+`{boardId, lists: [{listId}]}` shape, avoiding a second lookup purely for this tool's convenience.
+
+**There is no `beforeCardId`/`afterCardId` input, on purpose — a model has no drag position to
+report — and always appending to the END of the target list caught a real bug in its own first
+implementation.** `moveCard` derives the new rank as `between(rankOf(beforeCardId),
+rankOf(afterCardId))` — `beforeCardId` is the LOWER bound (the neighbour that sorts before the
+moved card), `afterCardId` the upper. The first version of `card_move` passed the target list's
+current last card as `afterCardId`, reading the name literally ("goes after this one") rather than
+by the actual bound it names — which is backwards, and puts the moved card BEFORE the existing
+last card, not after it. `card.test.ts`'s own test asserts the actual resulting ORDER of the target
+list post-move, not merely that the call succeeded, and failed on the first version — exactly the
+"a real test, not a mock that could agree with a wrong implementation" property this codebase's own
+Wave 2 section already states for confirm-before-execute. Fixed by passing the last card as
+`beforeCardId` and leaving `afterCardId` null.
+
+**`card_add_comment` wraps `createComment`, reusing `chat_post_message`'s own segment shape rather
+than inventing a second one.** The ordered text/mention SEGMENTS `chat_post_message` already
+composes (`chat.ts`'s own header: "a direct, lossless map onto the one paragraph `sendMessage`'s
+`body` becomes") apply identically here — `createComment`'s `body` is the same `RichTextNode` shape
+— so the schema, JSON schema, and segments-to-rich-text mapping moved to a new shared
+`apps/api/src/ai/tools/segments.ts` rather than being copied a second time, with `chat.ts` updated
+to import from it instead of keeping its own local copy.
+
+**Exporting that shared schema surfaced a real TypeScript declaration-emit trap worth knowing
+before it happens again: `tsc` refused to compile with TS4023, "has or is using name 'brand' from
+external module... but cannot be named."** A Zod schema referencing a branded type
+(`UserIdSchema`'s `UserId` brand) compiles fine as long as the schema constant is never itself
+EXPORTED with its type left to bare inference — every existing tool file's own input schemas
+(`CardCreateInput`, `CardAssignInput`, ...) are local, unexported consts, which is why none of them
+had ever hit this. The moment the identical schema needed to be exported for `card.ts` to reuse, the
+declaration emitter needed a NAMEABLE type for it and could not synthesize one from
+`@taskflow/contracts`' own internal brand symbol. Fixed by giving the export an explicit type
+annotation — a hand-written `MessageSegment` type (naming the exported `UserId`, not the
+unexported brand symbol) and `z.ZodType<MessageSegment, z.ZodTypeDef, unknown>` on the schema
+const — rather than relying on inference to produce a nameable type on its own.
+
+**The system prompt gained one more rule this same transcript's very first exchange named
+directly:** the model created a card in a project/board/list the user never specified, and the
+user's own follow-up — "but u did not ask me anything about it" — confirmed that was the wrong
+call. `router.ts` now tells the model to ASK which project, board, or list a create-or-move request
+belongs in in whenever the user's own message does not say, rather than silently picking one — even
+one mentioned earlier in the conversation — unless the most recent message clearly implies it.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

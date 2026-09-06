@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { ChannelIdSchema, MessageIdSchema, UserIdSchema } from '@taskflow/contracts';
-import type { RichTextNode } from '../../work/richtext.js';
+import { ChannelIdSchema, MessageIdSchema } from '@taskflow/contracts';
 import { sendMessage } from '../../chat/message.service.js';
 import type { ChatActor } from '../../chat/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
+import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segments.js';
 
 /**
  * `chat_post_message` (§4.1's table, §4.3 item 4 — "cross-member
@@ -43,18 +43,13 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * own `isValidId` check inside `RichTextDocument` still refuses a malformed
  * id cleanly rather than posting garbage, for whichever caller does not
  * look one up first.
+ *
+ * The segment shape and the segments -> rich-text mapping now live in
+ * `segments.ts`, shared with `card_add_comment` (`card.ts`) — the identical
+ * "map onto the one paragraph a human's composer would produce" logic, and
+ * a second copy would be exactly the kind of drift a third caller would
+ * have no reason to notice.
  */
-
-const MessageSegment = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), text: z.string().max(2_000) }).strict(),
-  z
-    .object({
-      type: z.literal('mention'),
-      userId: UserIdSchema,
-      label: z.string().trim().min(1).max(120),
-    })
-    .strict(),
-]);
 
 const ChatPostMessageInput = z
   .object({
@@ -63,20 +58,6 @@ const ChatPostMessageInput = z
     parentMessageId: MessageIdSchema.nullable().optional(),
   })
   .strict();
-
-function bodyOf(segments: readonly z.infer<typeof MessageSegment>[]): RichTextNode {
-  const content = segments
-    // An empty text segment contributes a degenerate node no editor would
-    // ever produce — dropped here rather than rejected, since it costs
-    // nothing to just not include it.
-    .filter((segment) => segment.type !== 'text' || segment.text.length > 0)
-    .map((segment) =>
-      segment.type === 'text'
-        ? { type: 'text', text: segment.text }
-        : { type: 'mention', attrs: { userId: segment.userId, label: segment.label } },
-    );
-  return { type: 'doc', content: [{ type: 'paragraph', content }] };
-}
 
 export function createChatPostMessageTool(): ToolDefinition {
   return defineTool({
@@ -87,30 +68,7 @@ export function createChatPostMessageTool(): ToolDefinition {
       type: 'object',
       properties: {
         channelId: { type: 'string', description: 'The id of the channel or DM to post in.' },
-        segments: {
-          type: 'array',
-          description: 'The message body, as ordered text/mention segments.',
-          items: {
-            oneOf: [
-              {
-                type: 'object',
-                properties: { type: { const: 'text' }, text: { type: 'string' } },
-                required: ['type', 'text'],
-                additionalProperties: false,
-              },
-              {
-                type: 'object',
-                properties: {
-                  type: { const: 'mention' },
-                  userId: { type: 'string', description: 'The mentioned user id.' },
-                  label: { type: 'string', description: 'The display text, e.g. their name.' },
-                },
-                required: ['type', 'userId', 'label'],
-                additionalProperties: false,
-              },
-            ],
-          },
-        },
+        segments: SEGMENT_JSON_SCHEMA,
         parentMessageId: {
           type: ['string', 'null'],
           description: 'Reply to this message, or omit for a top-level post.',
@@ -125,7 +83,7 @@ export function createChatPostMessageTool(): ToolDefinition {
       const actor: ChatActor = { subject: ctx.subject, requestId: ctx.requestId };
       const result = await sendMessage(actor, {
         channelId: input.channelId,
-        body: bodyOf(input.segments),
+        body: segmentsToRichText(input.segments),
         parentMessageId: input.parentMessageId ?? null,
       });
       return { content: JSON.stringify({ messageId: result.messageId }) };

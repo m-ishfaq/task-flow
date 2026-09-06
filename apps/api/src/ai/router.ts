@@ -244,7 +244,11 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'list while composing, and the id is ALREADY the real, correct id. Use it ' +
                 'directly in a tool call exactly as given; never call a list_* tool to ' +
                 'independently resolve it, and never repeat the raw `{{type:id}}` text back ' +
-                'to the user — refer to them only by the label before it.',
+                'to the user — refer to them only by the label before it. If a request to ' +
+                'create or move something does not say which project, board, or list it goes ' +
+                'in, ASK which one they mean before calling a write tool — do not guess or ' +
+                'silently pick one, even one mentioned earlier in the conversation, unless the ' +
+                "user's most recent message clearly implies it.",
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },

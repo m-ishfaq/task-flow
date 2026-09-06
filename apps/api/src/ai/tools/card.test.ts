@@ -15,9 +15,11 @@ import * as labelsSvc from '../../work/label.service.js';
 import * as sprintsSvc from '../../work/sprint.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import {
+  createCardAddCommentTool,
   createCardAddLabelsTool,
   createCardAssignTool,
   createCardCreateTool,
+  createCardMoveTool,
   createCardSetStatusTool,
   createCardUpdateTool,
 } from './card.js';
@@ -442,5 +444,162 @@ describe('card_add_labels', () => {
 
   it('declares requiresConfirmation: true', () => {
     expect(createCardAddLabelsTool().requiresConfirmation).toBe(true);
+  });
+});
+
+describe('card_move', () => {
+  it('moves a card to a list on a DIFFERENT board within the same project', async () => {
+    const orgId = await newOrg('card-move-cross-board');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Needs to move boards',
+      description: null,
+    });
+
+    const otherBoard = await boards.createBoard(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug Triage',
+    });
+    const targetList = await lists.createList(actor, {
+      boardId: otherBoard.boardId,
+      name: 'Backlog',
+      wipLimit: null,
+    });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardMoveTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      cardId: created.cardId,
+      boardId: otherBoard.boardId,
+      listId: targetList.listId,
+    });
+
+    expect(result.isError).toBeUndefined();
+    const after = await cardsSvc.getCard(actor, { cardId: created.cardId });
+    expect(after.listId).toBe(targetList.listId);
+    expect(after.boardId).toBe(otherBoard.boardId);
+  });
+
+  it('appends to the END of the target list, after any existing cards', async () => {
+    const orgId = await newOrg('card-move-appends');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const moving = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'The one moving',
+      description: null,
+    });
+
+    const board = await boards.createBoard(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug Triage',
+    });
+    const targetList = await lists.createList(actor, {
+      boardId: board.boardId,
+      name: 'Backlog',
+      wipLimit: null,
+    });
+    const existing = await cardsSvc.createCard(actor, {
+      listId: targetList.listId,
+      title: 'Already there',
+      description: null,
+    });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardMoveTool();
+    await tool.execute(ownerCtx(subject), {
+      cardId: moving.cardId,
+      boardId: board.boardId,
+      listId: targetList.listId,
+    });
+
+    const onBoard = await cardsSvc.listCards(actor, { boardId: board.boardId });
+    const inList = onBoard
+      .filter((card) => card.listId === targetList.listId)
+      .sort((a, b) => (a.rank < b.rank ? -1 : 1));
+    expect(inList.map((card) => card.cardId)).toEqual([existing.cardId, moving.cardId]);
+  });
+
+  it('refuses a guest', async () => {
+    const orgId = await newOrg('card-move-guest');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Should not move',
+      description: null,
+    });
+    const board = await boards.createBoard(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug Triage',
+    });
+    const targetList = await lists.createList(actor, {
+      boardId: board.boardId,
+      name: 'Backlog',
+      wipLimit: null,
+    });
+
+    const tool = createCardMoveTool();
+    const result = await tool.execute(guestCtx(orgId), {
+      cardId: created.cardId,
+      boardId: board.boardId,
+      listId: targetList.listId,
+    });
+
+    expect(result.isError).toBe(true);
+    const after = await cardsSvc.getCard(actor, { cardId: created.cardId });
+    expect(after.listId).toBe(listId);
+  });
+
+  it('declares requiresConfirmation: true', () => {
+    expect(createCardMoveTool().requiresConfirmation).toBe(true);
+  });
+});
+
+describe('card_add_comment', () => {
+  it('adds a comment with a mention, using the SAME segment shape chat_post_message does', async () => {
+    const orgId = await newOrg('card-add-comment');
+    const { actor, listId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Needs a comment',
+      description: null,
+    });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardAddCommentTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      cardId: created.cardId,
+      segments: [
+        { type: 'text', text: 'You need to see this ' },
+        { type: 'mention', userId: OWNER, label: 'Owner' },
+      ],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { commentId: string };
+    expect(parsed.commentId).toBeTruthy();
+  });
+
+  it('refuses a guest', async () => {
+    const orgId = await newOrg('card-add-comment-guest');
+    const { listId } = await seedList(orgId);
+    const actor = await ownerActor(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Should stay uncommented',
+      description: null,
+    });
+
+    const tool = createCardAddCommentTool();
+    const result = await tool.execute(guestCtx(orgId), {
+      cardId: created.cardId,
+      segments: [{ type: 'text', text: 'Should not post' }],
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
+  it('declares requiresConfirmation: true', () => {
+    expect(createCardAddCommentTool().requiresConfirmation).toBe(true);
   });
 });
