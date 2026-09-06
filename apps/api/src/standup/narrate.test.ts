@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AiCompletionResult } from '@taskflow/contracts';
-import { headlineFor, linesFromCompletion } from './narrate.js';
+import { headlineFor, linesFromCompletion, maxOutputTokensFor } from './narrate.js';
 import type { StandupMember, StandupResult } from './standup.service.js';
 
 /**
@@ -130,5 +130,23 @@ describe('headlineFor', () => {
   it('omits the urgent-sprint-cards clause entirely when there are none', () => {
     const result = headlineFor(standup([member('u1')], 0));
     expect(result).toBe('1 person · nobody overdue · 0 cards done recently');
+  });
+});
+
+describe('maxOutputTokensFor', () => {
+  it('floors at 800 for a small team, so a tiny project still gets a cheap call', () => {
+    expect(maxOutputTokensFor(0)).toBe(800);
+    expect(maxOutputTokensFor(1)).toBe(800);
+    expect(maxOutputTokensFor(11)).toBe(800);
+  });
+
+  it('scales linearly with member count once the floor is exceeded', () => {
+    expect(maxOutputTokensFor(20)).toBe(1_400);
+    expect(maxOutputTokensFor(40)).toBe(2_800);
+  });
+
+  it('caps at 4,000 for a very large team, so one narration cannot spend unboundedly', () => {
+    expect(maxOutputTokensFor(100)).toBe(4_000);
+    expect(maxOutputTokensFor(1_000)).toBe(4_000);
   });
 });

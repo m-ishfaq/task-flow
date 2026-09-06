@@ -1211,6 +1211,24 @@ as the primary surface... an optional emailed copy can reuse the existing notifi
 later if wanted, but is not required for this wave") — a real, explicitly named deferral, not an
 oversight.
 
+**A FIXED `maxOutputTokens` broke against a real team, found from production logs rather than any
+test in this codebase's own (smaller) fixtures.** `narrateStandup` originally capped
+`emit_standup_lines`' completion at a flat 800 tokens; a project of ~18 members, each needing a
+full `userId` (a uuid, ~15-20 tokens) plus the richer per-person sentence the prompt fix above now
+requires (a card reference, concrete work described, not just a bare count), pushed the JSON tool
+arguments past that budget. The model's output was truncated mid-argument, `packages/ai`'s
+`toolCallFromWire` failed to `JSON.parse` the cut-off string, and `standup.narrate` 500'd with
+`OpenAI returned malformed tool-call arguments` — the provider's own error handling doing exactly
+its documented job (fail loud on malformed JSON rather than hand a tool corrupted input), which is
+why the fix belongs in the caller's token budget, not in loosening that check. `maxOutputTokensFor`
+replaces the constant: scaled by member count (`memberCount * 70`) rather than a second fixed
+number, floored at 800 so a small project still gets a cheap call and ceilinged at 4,000 so a very
+large roster cannot turn one narration into unbounded spend. Exported and unit-tested directly in
+`narrate.test.ts` against the floor, the linear middle, and the ceiling — the same "prove the pure
+half without a database" pattern this file's `linesFromCompletion`/`headlineFor` already use —
+rather than trusted only through `router.test.ts`'s small fixture, which is exactly the kind of
+case that let the original fixed budget go unnoticed until real data hit it.
+
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·

@@ -101,6 +101,7 @@ export async function narrateStandup(
   ]);
 
   const memberIds = standup.members.map((member) => member.userId);
+  const maxOutputTokens = maxOutputTokensFor(memberIds.length);
 
   const result = await completeGated(
     provider,
@@ -151,7 +152,7 @@ export async function narrateStandup(
         },
       ],
       effort: 'low',
-      maxOutputTokens: 800,
+      maxOutputTokens,
     },
   );
 
@@ -208,6 +209,28 @@ function fallbackLineFor(member: StandupResult['members'][number]): string {
     return `${String(member.recentlyDone.length)} done recently, ${String(member.stillOpen.length)} still open.`;
   }
   return `${String(member.stillOpen.length)} still open.`;
+}
+
+/**
+ * A FIXED token budget breaks the moment a project has enough members that
+ * `emit_standup_lines`' own JSON — one `userId` (a full uuid) plus a real
+ * sentence per person — no longer fits in it: the model's output gets
+ * truncated mid-argument, `JSON.parse` fails in `packages/ai`'s
+ * `toolCallFromWire`, and the whole request errors out rather than
+ * silently handing a tool malformed input (its own comment already names
+ * truncation as the likely cause). A team of ~18 genuinely does not fit in
+ * 800 tokens once every line has to carry a real card reference, which the
+ * system prompt above now asks for — found in production against real
+ * team size, not in this codebase's own (smaller) test fixtures.
+ *
+ * Scaled by member count rather than a second fixed constant, with a floor
+ * so a tiny project still gets a cheap call and a ceiling so a very large
+ * one cannot turn one narration into an unbounded spend. Exported so
+ * `narrate.test.ts` can assert the actual numbers directly rather than
+ * only via the wall this function exists to avoid hitting.
+ */
+export function maxOutputTokensFor(memberCount: number): number {
+  return Math.min(4_000, Math.max(800, memberCount * 70));
 }
 
 /**
