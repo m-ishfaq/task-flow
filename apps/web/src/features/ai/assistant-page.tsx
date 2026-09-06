@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Bot, Send, Sparkles } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Send, Sparkles } from 'lucide-react';
 import { Button, Empty, PageHeader, Textarea } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
@@ -33,7 +33,52 @@ import { sendChatTurn, type ChatMessageWire, type ToolCallWire } from './api.js'
  * call's id in one list or the other — approved ones in
  * `confirmedToolCallIds`, nothing else — so a person choosing "Decline" on
  * one out of three pending actions gets exactly that, not all three held open.
+ *
+ * ## What the assistant can do was nowhere on this page
+ *
+ * A real conversation showed a person having to discover the assistant's
+ * actual capabilities by trial and error — trying `search` for something it
+ * cannot do, with no indication anywhere that a different tool existed for
+ * it. `CAPABILITIES` is a hand-curated, human-language restatement of the
+ * tool registry (`apps/api/src/ai/tools/index.ts`), not a generated one —
+ * a tool's own `description`/`jsonSchema` is written for the MODEL and
+ * reads like an API reference, the same reason `search`'s own tool
+ * description is not what a person should see. `EXAMPLE_PROMPTS` fills a
+ * text box on click rather than sending immediately, so a person can see
+ * the exact phrasing that reaches a given tool and edit it before it goes
+ * anywhere — "how do I call this" answered by example, not by exposing the
+ * tool name itself, which nobody chatting with the assistant needs to know.
  */
+
+const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
+  {
+    heading: 'Look things up',
+    items: [
+      'Search cards, chat messages, docs pages, and comments',
+      'List what is assigned to you and still pending',
+      'Look up a project’s boards, lists, and labels',
+    ],
+  },
+  {
+    heading: 'Make changes — always asks you to confirm first',
+    items: [
+      'Create a card, with a title and description',
+      'Update a card’s title, description, dates, or priority',
+      'Assign people to a card',
+      'Move a card to a different status',
+      'Tag a card with one or more labels',
+      'Create a sprint, or add cards to one',
+      'Post a message in a channel',
+      'Create a new Docs page',
+    ],
+  },
+];
+
+const EXAMPLE_PROMPTS: readonly string[] = [
+  'What am I working on this week?',
+  'Create a card in the Website project titled "Fix login bug" and tag it Bug',
+  'Move MOB-42 to In Review',
+];
 
 export function AssistantPage() {
   /* A seed set by the §6 bootstrap dialog before it navigated here — READ
@@ -49,6 +94,12 @@ export function AssistantPage() {
   );
   const [pendingToolCalls, setPendingToolCalls] = useState<readonly ToolCallWire[]>([]);
   const [draft, setDraft] = useState('');
+  // Open by default on a fresh conversation — exactly when a person most
+  // needs to see what the assistant can do — and toggled from the header
+  // afterward via the same button.
+  const [showCapabilities, setShowCapabilities] = useState(
+    () => (useAssistantSeedStore.getState().seed ?? []).length === 0,
+  );
   const listRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -99,7 +150,30 @@ export function AssistantPage() {
       <PageHeader
         title="Assistant"
         description="Ask about your work, or let it make a change — every write waits for your OK first."
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setShowCapabilities((current) => !current);
+            }}
+          >
+            {showCapabilities ? (
+              <ChevronUp aria-hidden="true" className="size-3.5" />
+            ) : (
+              <ChevronDown aria-hidden="true" className="size-3.5" />
+            )}
+            What can I do?
+          </Button>
+        }
       />
+
+      {showCapabilities && (
+        <CapabilitiesPanel
+          onUseExample={(prompt) => {
+            setDraft(prompt);
+          }}
+        />
+      )}
 
       <div
         ref={listRef}
@@ -163,6 +237,48 @@ export function AssistantPage() {
           <Send aria-hidden="true" className="size-4" />
         </Button>
       </form>
+    </div>
+  );
+}
+
+/**
+ * `CAPABILITIES`, rendered — grouped exactly as they're written above, plus
+ * clickable example prompts that fill the draft box rather than sending it,
+ * so a person can see the exact wording that reaches a tool and edit it
+ * before anything happens.
+ */
+function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: string) => void }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-surface-sunken/50 p-4 text-sm">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {CAPABILITIES.map((group) => (
+          <div key={group.heading} className="space-y-1.5">
+            <p className="text-xs font-semibold text-ink-muted">{group.heading}</p>
+            <ul className="space-y-1 text-xs text-ink-faint">
+              {group.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1.5 border-t border-line/60 pt-3">
+        <p className="text-xs font-semibold text-ink-muted">Try one</p>
+        <div className="flex flex-wrap gap-1.5">
+          {EXAMPLE_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => {
+                onUseExample(prompt);
+              }}
+              className="rounded-full border border-line/60 bg-surface px-2.5 py-1 text-xs text-ink hover:border-accent hover:text-accent"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

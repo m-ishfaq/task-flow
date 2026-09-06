@@ -1,7 +1,9 @@
 import type { SearchProvider } from '@taskflow/contracts';
 import { createSearchTool } from './search.js';
 import { createMyCardsTool } from './my-cards.js';
+import { createListBoardsTool, createListLabelsTool, createListProjectsTool } from './lookup.js';
 import {
+  createCardAddLabelsTool,
   createCardAssignTool,
   createCardCreateTool,
   createCardSetStatusTool,
@@ -60,15 +62,26 @@ export interface ToolRegistryDeps {
  * all — `search`'s field set has no `assignee` and no due date, a
  * structural gap no amount of prompt tuning on `search` alone could close.
  * See `my-cards.ts`'s own header for the full diagnosis.
+ *
+ * `list_projects`/`list_boards`/`list_labels` (`lookup.ts`) and
+ * `card_add_labels` close the identical gap one level up: a real request to
+ * "create a card in project X... tag it Y" had no way to resolve either
+ * name to the id every write tool actually requires — there was nothing in
+ * the whole registry that could ever produce a project, board, list, or
+ * label id from its name. See `lookup.ts`'s own header.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
     createSearchTool(deps.searchProvider),
     createMyCardsTool(),
+    createListProjectsTool(),
+    createListBoardsTool(),
+    createListLabelsTool(),
     createCardCreateTool(),
     createCardUpdateTool(),
     createCardAssignTool(),
     createCardSetStatusTool(),
+    createCardAddLabelsTool(),
     createSprintCreateTool(),
     createSprintAddCardsTool(),
     createChatPostMessageTool(),

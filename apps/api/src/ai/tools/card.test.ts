@@ -11,8 +11,10 @@ import * as boards from '../../work/board.service.js';
 import * as lists from '../../work/list.service.js';
 import * as statuses from '../../work/status.service.js';
 import * as cardsSvc from '../../work/card.service.js';
+import * as labelsSvc from '../../work/label.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import {
+  createCardAddLabelsTool,
   createCardAssignTool,
   createCardCreateTool,
   createCardSetStatusTool,
@@ -295,5 +297,68 @@ describe('card_set_status', () => {
     });
 
     expect(result.isError).toBe(true);
+  });
+});
+
+describe('card_add_labels', () => {
+  it('adds a label without removing one already on the card', async () => {
+    const orgId = await newOrg('card-add-labels-additive');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Needs two labels',
+      description: null,
+    });
+    const bug = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug',
+      color: '#dc2626',
+    });
+    const urgent = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Urgent',
+      color: '#f97316',
+    });
+    await labelsSvc.setCardLabels(actor, { cardId: created.cardId, labelIds: [bug.labelId] });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardAddLabelsTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      cardId: created.cardId,
+      labelIds: [urgent.labelId],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { labelIds: readonly string[] };
+    expect(new Set(parsed.labelIds)).toEqual(new Set([bug.labelId, urgent.labelId]));
+  });
+
+  it('refuses a guest', async () => {
+    const orgId = await newOrg('card-add-labels-guest');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Should stay unlabeled',
+      description: null,
+    });
+    const bug = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug',
+      color: '#dc2626',
+    });
+
+    const tool = createCardAddLabelsTool();
+    const result = await tool.execute(guestCtx(orgId), {
+      cardId: created.cardId,
+      labelIds: [bug.labelId],
+    });
+
+    expect(result.isError).toBe(true);
+    const labels = await labelsSvc.listCardLabels(actor, { cardId: created.cardId });
+    expect(labels).toEqual([]);
+  });
+
+  it('declares requiresConfirmation: true', () => {
+    expect(createCardAddLabelsTool().requiresConfirmation).toBe(true);
   });
 });

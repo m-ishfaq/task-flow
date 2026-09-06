@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   CardIdSchema,
+  LabelIdSchema,
   ListIdSchema,
   Priority,
   StatusIdSchema,
@@ -15,6 +16,7 @@ import {
   updateCard,
   setCardStatus,
 } from '../../work/card.service.js';
+import { listCardLabels, setCardLabels } from '../../work/label.service.js';
 import { plainParagraph, RichTextDocument, type RichTextNode } from '../../work/richtext.js';
 import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
@@ -25,7 +27,10 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * `card_update` below, since there is no separate `setCardPriority` SERVICE
  * to wrap; priority "rides" `updateCard` for the identical reason
  * `card.service.ts`'s own doc comment gives a human editor no separate
- * route for it either).
+ * route for it either). `card_add_labels`, added later from a real request
+ * to "tag" a card by name, wraps `setCardLabels` the same ADDITIVE way
+ * `card_assign` wraps `assignCard` — see that tool's own comment below for
+ * why the real service's full-replace semantics would be a mistake here.
  *
  * **Every one of these requires confirmation (§4.2), including create and
  * update** — the spec draft's own §4.2 illustrative text says single-card
@@ -274,6 +279,59 @@ export function createCardSetStatusTool(): ToolDefinition {
         statusId: input.statusId,
       });
       return { content: JSON.stringify({ statusId: result.statusId }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_add_labels — ADDITIVE, never a replace
+ * ---------------------------------------------------------------------- */
+
+const CardAddLabelsInput = z
+  .object({
+    cardId: CardIdSchema,
+    labelIds: z.array(LabelIdSchema).min(1),
+  })
+  .strict();
+
+export function createCardAddLabelsTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_add_labels',
+    description:
+      'Adds one or more labels to a card, keeping any labels already on it. Use `list_labels` ' +
+      "first to find a label's id from the name the user gave — this tool takes only ids, " +
+      'never label names.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ids of the labels to add, from `list_labels`.',
+        },
+      },
+      required: ['cardId', 'labelIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardAddLabelsInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      // The real service REPLACES the whole set (`setCardLabels`'s own doc
+      // comment: concurrent editors sending deltas would fight). "Add this
+      // label" spoken in chat means ADD, exactly like `card_assign` below —
+      // reading the current set first and union-ing is what makes silently
+      // stripping every other tag on the card impossible.
+      const existing = await listCardLabels(actor, { cardId: input.cardId });
+      const union = [
+        ...new Set([
+          ...existing.map((label) => unsafeAsId<'LabelId'>(label.labelId)),
+          ...input.labelIds,
+        ]),
+      ];
+      const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: union });
+      return { content: JSON.stringify(result) };
     },
   });
 }

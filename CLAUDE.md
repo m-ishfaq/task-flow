@@ -739,6 +739,38 @@ The system prompt (`router.ts`) also gained today's date, since a tool result on
 raw due date — nothing previously gave the model a reference point to resolve "this week" or
 "overdue" against.
 
+**A second real gap, found the same way: "create a card in project X... tag it Y" had no way to
+resolve either NAME to an id — closed by `lookup.ts`'s three read tools plus a new write tool,
+`card_add_labels`.** Every write tool in this registry takes an id
+(`listId`/`cardId`/`labelId`/...), never a name, and until now nothing in the registry could ever
+PRODUCE one from a name a person actually typed — `search`'s entity types
+(`card`/`message`/`page`/`comment`/`transcript`) have no `project`/`board`/`label` at all, because
+Phase 8 indexed content people write, not the vocabulary a project is organized with. `list_boards`
+deliberately nests each board's lists in one response rather than requiring a separate
+`list_lists` call — a card is always created into a specific LIST, so a project resolved by
+`list_projects` needs exactly two more calls (`list_boards`, then `card_create`) to reach one,
+not three. `card_add_labels` wraps `setCardLabels` — the real service's own doc comment says it
+REPLACES the whole set, for the same "concurrent editors sending deltas would fight" reason
+`assignCard` does — the same ADDITIVE fix `card_assign` already applies: read the card's current
+labels first, union with the requested ones, then call the real replace. If a label the user names
+is not found by `list_labels`, the tool's own description tells the model to say so rather than
+guess a close match — there is no fuzzy matching or on-the-fly label creation here, a deliberate,
+narrower scope than "tag it Y" might suggest; inventing a label nobody asked for by name is a worse
+failure mode than asking the person to create it first.
+
+**A third gap in the same report — nobody using the assistant could tell what it was capable of —
+was a pure discoverability problem, not a missing tool, and got a UI fix instead of a new tool.**
+`apps/web/src/features/ai/assistant-page.tsx` gained a "What can I do?" panel (open by default on
+a fresh conversation, toggleable afterward from the header) listing every capability in plain
+language, plus clickable example prompts that fill the message box without sending it — so a
+person can see the exact phrasing that reaches a tool and edit it before anything happens. The
+panel's content (`CAPABILITIES`) is hand-curated, not generated from the tool registry: a tool's
+own `description`/`jsonSchema` is written for the MODEL and reads like an API reference (the same
+reason `search`'s own tool description is not what a person should see), so this is a second,
+human-facing restatement kept in sync by hand — the same trade `packages/tokens` already accepts
+for staying in sync with `apps/web/src/styles.css`'s `@theme` block by hand rather than a
+build-time dependency.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·
