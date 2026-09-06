@@ -7,6 +7,7 @@ import type {
   AiToolCall,
   AiToolDefinition,
 } from '@taskflow/contracts';
+import { COMPLETION_TIMEOUT_MS } from './timeout.js';
 
 export interface GeminiConfig {
   readonly apiKey: string;
@@ -166,6 +167,7 @@ export class GeminiProvider implements AiProvider {
             ? {}
             : { tools: [{ functionDeclarations: request.tools.map(toolToGemini) }] }),
         }),
+        signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS),
       },
     );
 

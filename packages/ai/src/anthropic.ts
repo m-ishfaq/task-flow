@@ -7,6 +7,7 @@ import type {
   AiToolCall,
   AiToolDefinition,
 } from '@taskflow/contracts';
+import { COMPLETION_TIMEOUT_MS } from './timeout.js';
 
 export interface AnthropicConfig {
   readonly apiKey: string;
@@ -137,6 +138,7 @@ export class AnthropicProvider implements AiProvider {
           ? {}
           : { tools: request.tools.map(toolToAnthropic) }),
       }),
+      signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS),
     });
 
     if (!response.ok) {

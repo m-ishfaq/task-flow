@@ -35,6 +35,30 @@ describe('GeminiProvider', () => {
     expect(new GeminiProvider({ apiKey: 'test-key' }).isLive).toBe(true);
   });
 
+  /* See `AnthropicProvider`'s identical test — `timeout.ts`'s own header has
+     the full story: a stalled connection with no timeout left the assistant
+     page's buttons disabled forever, with no error to recover from. */
+  it('bounds the request with a timeout signal, so a stalled connection rejects instead of hanging forever', async () => {
+    let capturedInit: RequestInit | undefined;
+    stubFetch((_input, init) => {
+      capturedInit = init;
+      return jsonResponse(200, {
+        candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+      });
+    });
+
+    const provider = new GeminiProvider({ apiKey: 'test-key' });
+    await provider.complete({
+      orgId: ORG_ID,
+      model: 'gemini-1.5-pro',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+
+    expect(capturedInit?.signal).toBeInstanceOf(AbortSignal);
+    expect(capturedInit?.signal?.aborted).toBe(false);
+  });
+
   it('sends the API key as a header, never a query parameter, and pulls the system message into systemInstruction', async () => {
     let capturedUrl: string | URL | undefined;
     let capturedInit: RequestInit | undefined;

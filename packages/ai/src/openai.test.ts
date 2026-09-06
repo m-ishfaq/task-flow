@@ -35,6 +35,30 @@ describe('OpenAiProvider', () => {
     expect(new OpenAiProvider({ apiKey: 'test-key' }).isLive).toBe(true);
   });
 
+  /* See `AnthropicProvider`'s identical test — `timeout.ts`'s own header has
+     the full story: a stalled connection with no timeout left the assistant
+     page's buttons disabled forever, with no error to recover from. */
+  it('bounds the request with a timeout signal, so a stalled connection rejects instead of hanging forever', async () => {
+    let capturedInit: RequestInit | undefined;
+    stubFetch((_input, init) => {
+      capturedInit = init;
+      return jsonResponse(200, {
+        choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    });
+
+    const provider = new OpenAiProvider({ apiKey: 'test-key' });
+    await provider.complete({
+      orgId: ORG_ID,
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+
+    expect(capturedInit?.signal).toBeInstanceOf(AbortSignal);
+    expect(capturedInit?.signal?.aborted).toBe(false);
+  });
+
   it('sends a bearer token and keeps the system message inside messages', async () => {
     let capturedInit: RequestInit | undefined;
     stubFetch((_input, init) => {

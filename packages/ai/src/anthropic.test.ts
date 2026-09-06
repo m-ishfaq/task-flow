@@ -44,6 +44,36 @@ describe('AnthropicProvider', () => {
     expect(new AnthropicProvider({ apiKey: 'test-key' }).isLive).toBe(true);
   });
 
+  /* Found from a real report: a stalled connection to Anthropic (nothing
+     exotic — a TLS hang, a connection accepted and never answered) left
+     `complete`'s promise pending forever, which meant every button on the
+     assistant page gated on that one mutation's `isPending` (Approve,
+     Decline, send) stayed disabled with no error and no way to recover
+     short of a reload. A `signal` on the request is what turns a wedged
+     fetch into an ordinary rejection the caller can actually handle —
+     `timeout.ts`'s own header has the full story. */
+  it('bounds the request with a timeout signal, so a stalled connection rejects instead of hanging forever', async () => {
+    let capturedInit: RequestInit | undefined;
+    stubFetch((_input, init) => {
+      capturedInit = init;
+      return jsonResponse(200, {
+        content: [{ type: 'text', text: 'hi' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    });
+
+    const provider = new AnthropicProvider({ apiKey: 'test-key' });
+    await provider.complete({
+      orgId: ORG_ID,
+      model: 'claude-test',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+
+    expect(capturedInit?.signal).toBeInstanceOf(AbortSignal);
+    expect(capturedInit?.signal?.aborted).toBe(false);
+  });
+
   it('sends the API key, version header, and pulls system messages out of the array', async () => {
     let capturedInit: RequestInit | undefined;
     stubFetch((_input, init) => {

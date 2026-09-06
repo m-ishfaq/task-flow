@@ -737,6 +737,37 @@ to revisit. `aiTokenBudgetMonthlyCents: 100` follows 0094's own stated reasoning
 cap exactly — "enough to prove the feature works, never enough to be worth abusing" — applied to
 the one ceiling that migration predates and could not have set.
 
+**None of the three real `AiProvider`s ever put a timeout on their own outbound `fetch` call —
+found from a real report of the assistant page's Approve/Decline buttons staying disabled
+forever, with "Thinking…" never clearing.** A stalled connection to the provider (a TLS hang, a
+connection accepted and never answered — real, if rare, failure modes for a third-party HTTPS
+endpoint this deployment does not control) left `AiProvider.complete`'s promise pending
+indefinitely, and every control gated on the assistant page's one mutation (`turn.isPending`) —
+Approve, Decline, the composer, the send button — is disabled for exactly as long as that promise
+takes to settle. A promise that never settles is a UI that never recovers, with no error to show
+and no route back except a hard reload.
+
+**`packages/ai/src/timeout.ts`'s `COMPLETION_TIMEOUT_MS` (90s) plus `signal:
+AbortSignal.timeout(...)` on each provider's `fetch` call is the fix — the identical mechanism
+`apps/worker/src/webhooks/delivery.ts`'s own `TIMEOUT_MS` already uses for the same "bound a
+request to a third party this deployment does not control" problem.** A timed-out `fetch` REJECTS
+rather than hanging, which is a case every provider's code already handles correctly (the same
+path an ordinary network failure or a non-2xx response already takes) — so the fix needed no new
+error handling, only a bound on how long the attempt gets before it counts as one. 90 seconds
+rather than `delivery.ts`'s 15: a webhook is one HTTP round trip to an endpoint an operator
+configured; a completion is a real LLM inference call, slower by nature and slower still with
+tools attached or a large system prompt, so a much tighter bound would misclassify a legitimately
+slow-but-working answer as wedged. This bounds each INDIVIDUAL provider call, not
+`ai.chat.send`'s whole request — a multi-round tool-calling turn (up to `MAX_TOOL_ITERATIONS`
+real completions) can still legitimately take longer in total; the fix is that it now always
+either finishes or fails within a bounded time, never hangs forever on one stuck call within it.
+
+**Each provider's own test file gained a case proving a real `AbortSignal` is actually attached to
+the request, not just that the timeout constant exists somewhere.** `capturedInit?.signal` is
+asserted to be an `AbortSignal` instance and not yet aborted — proving the wiring reaches the real
+`fetch` call, the same "test the property, not that it compiles" standard this package's other
+provider tests already hold themselves to.
+
 ### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
 
 `apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·

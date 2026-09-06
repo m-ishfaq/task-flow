@@ -7,6 +7,7 @@ import type {
   AiToolCall,
   AiToolDefinition,
 } from '@taskflow/contracts';
+import { COMPLETION_TIMEOUT_MS } from './timeout.js';
 
 export interface OpenAiConfig {
   readonly apiKey: string;
@@ -130,6 +131,7 @@ export class OpenAiProvider implements AiProvider {
           ? {}
           : { tools: request.tools.map(toolToOpenAi) }),
       }),
+      signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS),
     });
 
     if (!response.ok) {
