@@ -4,10 +4,11 @@
 (the `AiProvider` abstraction and the token/spend budget gate) have SHIPPED, per §10's own build
 order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SHIPPED; §4 Wave 2
 (single-card write tools — `card.create`/`card.update`/`card.assign`/`card.set_status` — plus
-confirm-before-execute, §4.2) has SHIPPED; the rest of §4.3 (sprint planning, cross-member
-tagging), plus §5–§8 (the standup view, the doc-space bootstrap, GitHub/PR review,
-onboarding/offboarding automation) remain DRAFT — not yet approved for build, and nothing in
-those sections has been implemented.** Written up per this repo's own convention (see
+confirm-before-execute, §4.2) has SHIPPED; §4 Wave 3 (sprint planning — `sprint.create`,
+`sprint.add_cards`) has SHIPPED; §4.3's last remaining item (cross-member tagging), plus §5–§8
+(the standup view, the doc-space bootstrap, GitHub/PR review, onboarding/offboarding automation)
+remain DRAFT — not yet approved for build, and nothing in those sections has been implemented.**
+Written up per this repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
 silently rewritten, per that same convention, each time a wave shipped without this header being
@@ -64,7 +65,16 @@ and how confirm-before-execute needed no new persistence at all. `card.set_prior
 `card.update` rather than becoming a fifth tool, since there is no separate `setCardPriority`
 service to wrap.
 
-**§4.3's remaining waves (sprint planning, cross-member tagging), §5 (the standup view), §6 (the
+**§4 Wave 3 — sprint planning — has shipped, and unlike Wave 2 the spec draft agreed with itself
+on confirmation for once.** §4.2 names "sprint creation" and "moving many cards" BY NAME as
+examples needing confirmation, so `sprint.create` and `sprint.add_cards` both requiring it is the
+spec's own unambiguous text, not a conservative reading of a contradiction the way Wave 2's
+`card.create`/`card.update` needed. See CLAUDE.md's own "Phase 15 §4 Wave 3" section for why
+`sprint.add_cards` loops the real per-card `assignSprint` (there is no bulk version) and reports
+each card's own success or failure rather than aborting the batch on the first one, a deliberate
+departure from how `apps/worker`'s unattended automation rules handle a failed action.
+
+**§4.3's last remaining item (cross-member tagging/discussion), §5 (the standup view), §6 (the
 doc-space bootstrap), §7 (GitHub/PR review), and §8 (onboarding/offboarding automation) remain
 exactly as drafted below: designed, not built.** None of §5's standup screen or §7's PR
 review/merge tools have any code behind them yet. This spec intentionally covers several waves

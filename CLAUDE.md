@@ -290,11 +290,12 @@ more, in this case.
 **One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
 permission grants) shipped and was then substantially extended — see its own section below.
 §2+§3 (the `AiProvider` abstraction and the token/spend budget gate), §4 Wave 1 (the tool-calling
-assistant, read-only tools) and §4 Wave 2 (single-card write tools plus confirm-before-execute)
-have since shipped too — see their own sections below. §4.3's remaining waves (sprint planning,
-cross-member tagging), plus §5 (the standup view), §6 (new-org Docs bootstrap), §7 (GitHub PR
-review — its own spec flags this as needing a separate review pass), and §8 (onboarding/offboarding
-automation) remain exactly as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed,
+assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-before-execute) and
+§4 Wave 3 (sprint planning tools) have since shipped too — see their own sections below. §4.3's
+last remaining item (cross-member tagging), plus §5 (the standup view), §6 (new-org Docs
+bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and
+§8 (onboarding/offboarding automation) remain exactly as drafted in
+`ai/phase-15-ai-copilot-and-permissions.md` — designed,
 not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
@@ -723,6 +724,42 @@ choose. `ToolContext` gained a `requestId` alongside `subject` for the identical
 needs one — every write tool builds a real `WorkActor` to call the real `apps/api/src/work` service,
 so the domain event it emits carries a real request id into the audit trail, reading "AI, on behalf
 of `<user>`, did X," never "AI did X."
+
+### Phase 15 §4 Wave 3 — sprint planning tools (SHIPPED)
+
+`apps/api/src/ai/tools/sprint.ts`. Spec: same file, §4.3 item 3 ("sprint planning (multi-card,
+higher blast radius)"). Deliberately not built: cross-member tagging/discussion (§4.3 item 4,
+mostly existing plumbing per the spec's own note), the standup view (§5), doc-space bootstrap
+(§6), GitHub/PR integration (§7), onboarding/offboarding automation (§8).
+
+**Unlike Wave 2's `card.create`/`card.update`, the spec has no internal contradiction to resolve
+here** — §4.2 names "sprint creation" itself, by name, as an example of an action needing
+confirmation, and "moving many cards" as its own named example of a bulk operation that does too.
+Both `sprint.create` and `sprint.add_cards` require confirmation, consistent with Wave 2's
+across-the-board policy but this time with the spec's unambiguous agreement rather than a
+deliberately conservative reading of a contradiction.
+
+**There is no bulk `assignSprint` in the service layer, so `sprint.add_cards` loops the real
+per-card one — sequentially, the same ordering guarantee every write tool in this registry
+keeps — and reports each card's OWN outcome rather than aborting the whole batch on the first
+failure.** This is a deliberate departure from `apps/worker`'s automation executor, which stops a
+RULE at its first failed action because a rule runs unattended and a partial run with nobody
+watching needs a clean, unambiguous point to retry from. This tool runs only after a human has
+already confirmed moving these specific cards; abandoning the other 49 because card 3 was already
+in a completed sprint would be worse for them, not safer, since they can see exactly which cards
+failed and why and decide what to do about only those. `sprint.test.ts` proves the property
+directly: one bogus card id alongside one real one still moves the real one and reports the bogus
+one's failure by name, rather than either silently dropping the failure or refusing the whole
+batch.
+
+**Teardown for this test file needed the `work.sprints` row deleted before `work.projects`** —
+`card.test.ts`'s simpler fixture (no sprints) can delete an org straight through and let
+whatever cascade exists handle the rest, but a sprint referencing a project with no `ON DELETE
+CASCADE` between them means the identical straight-through teardown here hits
+`sprints_project_fk` the first time a test actually creates one. Fixed the same way
+`work.service.test.ts`'s own `removeOrg` and `tenancy-seed.ts`'s `clearTenant` already document:
+children before parents, explicit about every table rather than relying on a cascade path that
+may not exist for a table a fixture only started touching later.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
