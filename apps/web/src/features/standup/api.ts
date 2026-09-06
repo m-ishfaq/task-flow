@@ -14,7 +14,7 @@ import { keys } from '../../lib/query.js';
 
 type Outputs = Awaited<ReturnType<typeof api.standup.query.query>>;
 
-export type StandupCard = Wire<Outputs>['members'][number]['recentlyDone'][number];
+export type StandupCard = Wire<Outputs>['members'][number]['yesterday'][number];
 export type StandupMember = Wire<Outputs>['members'][number];
 export type StandupResult = Wire<Outputs>;
 
@@ -27,16 +27,11 @@ export function standupQuery(orgId: string, projectId: ProjectId, sinceHours = 2
   });
 }
 
-export interface StandupNarrationLine {
-  readonly userId: string;
-  readonly line: string;
-}
-
-export interface StandupNarration {
-  /** Computed from the real buckets, never asked of the model — see
-      `narrate.ts`'s own header. */
-  readonly headline: string;
-  readonly lines: readonly StandupNarrationLine[];
+export interface StandupCallout {
+  /** One short team-wide paragraph — never per-member; see `narrate.ts`'s
+      own header on why per-member AI lines were dropped once `query` began
+      returning real Yesterday/Today/Overdue/Urgent card lists directly. */
+  readonly callout: string;
 }
 
 /**
@@ -44,13 +39,12 @@ export interface StandupNarration {
  * completion (`completeGated`), not an idempotent read, so a component must
  * ask for it explicitly rather than have it fire on mount or refetch.
  *
- * One line per member (`lines`), not a single prose paragraph — the route
- * forces the model's answer through a tool call rather than trusting free
- * text to come back in any particular shape (`narrate.ts`'s own header).
+ * The whole standup screen renders from `standupQuery` alone with no AI
+ * call — `narrate` adds only an optional team-level callout on top.
  */
 export async function narrateStandup(
   projectId: ProjectId,
   sinceHours: number,
-): Promise<StandupNarration> {
+): Promise<StandupCallout> {
   return api.standup.narrate.mutate({ projectId, sinceHours });
 }

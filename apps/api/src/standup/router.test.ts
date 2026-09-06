@@ -207,6 +207,7 @@ describe('standup.query', () => {
     const result = await caller.standup.query({ projectId: project.projectId });
     expect(result.sprint).toBeNull();
     expect(result.members).toEqual([]);
+    expect(result.headline).toBe('Nobody has open, done, or overdue work in this window.');
   });
 });
 
@@ -269,12 +270,13 @@ describe('standup.narrate', () => {
       isDefault: true,
     });
 
-    /* No cards exist for this fresh project, so `standup.members` is empty
-       and `narrate.ts` asks the model to call the tool with a matching
-       empty `lines` array — the stub mirrors Anthropic's real `tool_use`
-       content-block shape (`packages/ai/src/anthropic.ts`'s own
-       `AnthropicContentBlock`), not a plain-text response, since the route
-       now REQUIRES the model to answer through the tool. */
+    /* No cards exist for this fresh project, but `narrate` still asks the
+       model for a team-level callout (query's own `headline` is what covers
+       "nothing to report" now — see `standup.service.ts`'s own header) —
+       the stub mirrors Anthropic's real `tool_use` content-block shape
+       (`packages/ai/src/anthropic.ts`'s own `AnthropicContentBlock`), not a
+       plain-text response, since the route now REQUIRES the model to answer
+       through the tool. */
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -285,8 +287,8 @@ describe('standup.narrate', () => {
                 {
                   type: 'tool_use',
                   id: 'toolu_standup_router_test',
-                  name: 'emit_standup_lines',
-                  input: { lines: [] },
+                  name: 'emit_team_callout',
+                  input: { callout: 'Nothing stands out — this project has no cards yet.' },
                 },
               ],
               stop_reason: 'tool_use',
@@ -302,8 +304,7 @@ describe('standup.narrate', () => {
     const caller = callerFactory(context);
 
     const result = await caller.standup.narrate({ projectId: project.projectId });
-    expect(result.lines).toEqual([]);
-    expect(result.headline).toBe('Nobody has open, done, or overdue work in this window.');
+    expect(result.callout).toBe('Nothing stands out — this project has no cards yet.');
 
     await admin.setOrg(orgId);
     const ledgerRows = await admin.query(`SELECT feature FROM ai.usage_ledger WHERE org_id = $1`, [

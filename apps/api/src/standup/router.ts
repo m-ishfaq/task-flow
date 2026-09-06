@@ -19,10 +19,14 @@ import { narrateStandup } from './narrate.js';
  * by calling `queryStandup` rather than accepting a client-supplied blob of
  * "standup data" to narrate. A route that trusted the client's own copy of
  * this data would let a caller narrate cards belonging to a project they
- * cannot read by simply typing the JSON themselves. `narrate`'s output is
- * one line per member (`lines`), not a single prose paragraph — see
- * `narrate.ts`'s own header on why that shape is forced through a tool
- * call rather than trusted to a text completion's own formatting habits.
+ * cannot read by simply typing the JSON themselves.
+ *
+ * `query` alone is a complete standup screen — `members` carries real
+ * Yesterday/Today/Overdue/Urgent card lists and `headline` is a plain count,
+ * neither needing AI. `narrate` adds exactly one optional thing on top: a
+ * short team-wide `callout` paragraph, gated behind the two extra
+ * permissions above — see `narrate.ts`'s own header on why per-member AI
+ * lines were dropped entirely rather than kept alongside the real data.
  */
 
 const StandupInput = z
@@ -61,13 +65,15 @@ const StandupOutput = z
           .object({
             userId: z.string(),
             name: z.string().nullable(),
-            recentlyDone: z.array(StandupCard).readonly(),
-            stillOpen: z.array(StandupCard).readonly(),
+            yesterday: z.array(StandupCard).readonly(),
+            today: z.array(StandupCard).readonly(),
             overdue: z.array(StandupCard).readonly(),
+            urgent: z.array(StandupCard).readonly(),
           })
           .strict(),
       )
       .readonly(),
+    headline: z.string(),
   })
   .strict();
 
@@ -97,12 +103,7 @@ export function createStandupRouter(deps: StandupRouterDeps) {
       feature: { flag: 'aiAssistant', display: 'AI Assistant' },
     })
       .input(StandupInput)
-      .output(
-        z.object({
-          headline: z.string(),
-          lines: z.array(z.object({ userId: z.string(), line: z.string() }).strict()).readonly(),
-        }),
-      )
+      .output(z.object({ callout: z.string() }).strict())
       .mutation(async ({ input, ctx }) => {
         const actor = actorOf(ctx);
         const standup = await queryStandup(actor, {

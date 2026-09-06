@@ -6,7 +6,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Circle,
+  Flame,
+  PlayCircle,
   Sparkles,
 } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
@@ -23,9 +24,9 @@ import { cn } from '../../lib/cn.js';
 import {
   standupQuery,
   narrateStandup,
+  type StandupCallout,
   type StandupCard,
   type StandupMember,
-  type StandupNarration,
 } from './api.js';
 import { CardQuickView } from './card-quick-view.js';
 
@@ -54,13 +55,30 @@ import { CardQuickView } from './card-quick-view.js';
  * decision, not an oversight: a standup is a roll call, and skipping
  * someone because their day looked ordinary is exactly the kind of "quiet
  * default" this file's own reviewer rejected). Expanding a row shows the
- * identical three-bucket layout the first version always showed.
+ * real Yesterday/Today/Overdue/Urgent breakdown described below.
+ *
+ * ## REDESIGNED: real Yesterday/Today/Overdue/Urgent, and AI is now optional
+ *
+ * The second version still asked a model to write one prose sentence per
+ * person, blending "still open" (the whole non-done backlog, not just
+ * active work) into a line like "still working on X and Y" — which read as
+ * arbitrary because it effectively was: the model was picking two cards out
+ * of a person's entire backlog with no signal for which ones actually
+ * represented "today". `standup.service.ts` now buckets deterministically
+ * into what a real standup actually asks — done recently (yesterday), an
+ * `active`-status card (today), overdue, and urgent/high priority — and
+ * this page renders those real lists directly. No AI call is needed to see
+ * a complete, meaningful standup: `headline` and every member's four
+ * buckets come from `query` alone. "Narrate" now adds exactly one optional
+ * thing on top — a short team-wide callout for a cross-person pattern (a
+ * shared blocker, one person carrying an unusual load) — never a per-person
+ * line, since a person's own status is already shown next to their name.
  */
 export function StandupPage() {
   const { projectId } = useParams({ from: '/projects/$projectId/standup' });
   const orgId = useSession((state) => state.orgId) ?? '';
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
-  const [narration, setNarration] = useState<StandupNarration | null>(null);
+  const [callout, setCallout] = useState<StandupCallout | null>(null);
 
   const sinceHours = 24;
   const projects = useQuery({ ...projectsQuery(orgId), enabled: orgId !== '' });
@@ -78,13 +96,11 @@ export function StandupPage() {
   const narrate = useMutation({
     mutationFn: () => narrateStandup(projectId, sinceHours),
     onSuccess: (result) => {
-      setNarration(result);
+      setCallout(result);
     },
   });
 
   const project = (projects.data ?? []).find((entry) => entry.projectId === projectId);
-  const nameOf = (userId: string): string =>
-    standup.data?.members.find((member) => member.userId === userId)?.name ?? userId;
 
   if (standup.isError)
     return <ErrorView error={standup.error} title="Could not load the standup" />;
@@ -106,38 +122,29 @@ export function StandupPage() {
               }}
             >
               <Sparkles aria-hidden="true" className="size-3.5" />
-              {narrate.isPending ? 'Summarizing…' : 'Narrate'}
+              {narrate.isPending ? 'Looking for patterns…' : 'Narrate'}
             </Button>
           )
         }
       />
 
+      {/* A plain count over real data, needing no AI call — `query`'s own
+          `headline` field, shown as soon as the standup loads. */}
+      {standup.data !== undefined && (
+        <p className="text-sm text-ink-muted">{standup.data.headline}</p>
+      )}
+
       {narrate.isError && (
         <ErrorView error={narrate.error} title="Could not summarize the standup" />
       )}
 
-      {narration !== null && (
+      {callout !== null && (
         <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-accent">
             <Sparkles aria-hidden="true" className="size-3.5" />
-            Summary
+            Team callout
           </p>
-          {/* A plain count over real data, not something the model was asked
-              to conclude — `narrate.ts`'s own header on why this is computed
-              rather than generated. */}
-          <p className="mt-1.5 text-xs text-ink-muted">{narration.headline}</p>
-          {narration.lines.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-faint">Nothing to report.</p>
-          ) : (
-            <ul className="mt-2 space-y-1.5">
-              {narration.lines.map((entry) => (
-                <li key={entry.userId} className="text-sm leading-relaxed text-ink">
-                  <span className="font-medium">{nameOf(entry.userId)}</span>
-                  <span className="text-ink-muted"> — {entry.line}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="mt-1.5 text-sm leading-relaxed text-ink">{callout.callout}</p>
         </div>
       )}
 
@@ -215,9 +222,10 @@ function MemberRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const nothing =
-    member.recentlyDone.length === 0 &&
-    member.stillOpen.length === 0 &&
-    member.overdue.length === 0;
+    member.yesterday.length === 0 &&
+    member.today.length === 0 &&
+    member.overdue.length === 0 &&
+    member.urgent.length === 0;
 
   return (
     <div>
@@ -242,21 +250,27 @@ function MemberRow({
         <span className="flex shrink-0 items-center gap-3 text-xs">
           <CountBadge
             icon={<CheckCircle2 aria-hidden="true" className="size-3.5" />}
-            count={member.recentlyDone.length}
+            count={member.yesterday.length}
             tone="success"
-            label="done recently"
+            label="done yesterday"
           />
           <CountBadge
-            icon={<Circle aria-hidden="true" className="size-3.5" />}
-            count={member.stillOpen.length}
-            tone="neutral"
-            label="still open"
+            icon={<PlayCircle aria-hidden="true" className="size-3.5" />}
+            count={member.today.length}
+            tone="active"
+            label="in progress today"
           />
           <CountBadge
             icon={<AlertTriangle aria-hidden="true" className="size-3.5" />}
             count={member.overdue.length}
             tone="danger"
             label="overdue"
+          />
+          <CountBadge
+            icon={<Flame aria-hidden="true" className="size-3.5" />}
+            count={member.urgent.length}
+            tone="urgent"
+            label="urgent"
           />
         </span>
       </button>
@@ -266,23 +280,29 @@ function MemberRow({
           {nothing ? (
             <p className="text-xs text-ink-faint">Nothing to report for this window.</p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Bucket
-                label="Done recently"
+                label="Yesterday"
                 icon={<CheckCircle2 aria-hidden="true" className="size-3.5 text-success" />}
-                cards={member.recentlyDone}
+                cards={member.yesterday}
                 onManage={onManage}
               />
               <Bucket
-                label="Still open"
-                icon={<Circle aria-hidden="true" className="size-3.5 text-ink-faint" />}
-                cards={member.stillOpen}
+                label="Today"
+                icon={<PlayCircle aria-hidden="true" className="size-3.5 text-accent" />}
+                cards={member.today}
                 onManage={onManage}
               />
               <Bucket
                 label="Overdue"
                 icon={<AlertTriangle aria-hidden="true" className="size-3.5 text-danger" />}
                 cards={member.overdue}
+                onManage={onManage}
+              />
+              <Bucket
+                label="Urgent"
+                icon={<Flame aria-hidden="true" className="size-3.5 text-priority-urgent" />}
+                cards={member.urgent}
                 onManage={onManage}
               />
             </div>
@@ -293,10 +313,11 @@ function MemberRow({
   );
 }
 
-const COUNT_BADGE_TONE: Readonly<Record<'success' | 'neutral' | 'danger', string>> = {
+const COUNT_BADGE_TONE: Readonly<Record<'success' | 'active' | 'danger' | 'urgent', string>> = {
   success: 'text-success',
-  neutral: 'text-ink-faint',
+  active: 'text-accent',
   danger: 'text-danger',
+  urgent: 'text-priority-urgent',
 };
 
 /** A count with its icon, dimmed to near-invisible at zero — a badge that answers
@@ -309,7 +330,7 @@ function CountBadge({
 }: {
   readonly icon: React.ReactNode;
   readonly count: number;
-  readonly tone: 'success' | 'neutral' | 'danger';
+  readonly tone: 'success' | 'active' | 'danger' | 'urgent';
   readonly label: string;
 }) {
   return (

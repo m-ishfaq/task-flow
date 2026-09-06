@@ -1229,6 +1229,60 @@ half without a database" pattern this file's `linesFromCompletion`/`headlineFor`
 rather than trusted only through `router.test.ts`'s small fixture, which is exactly the kind of
 case that let the original fixed budget go unnoticed until real data hit it.
 
+**REDESIGNED again, this time replacing the whole per-member narration with real
+Yesterday/Today/Overdue/Urgent buckets and an optional team-level callout.** The project owner's
+own comparison made the gap concrete: a real daily standup answers "what did you do yesterday,
+what are you doing today, what's blocking you" — the ClickUp workflow this screen exists to
+replace is exactly "filter the sprint by member and look at their cards," and the AI-prose design
+was answering a different, worse question. Looking at real narrated output (18 people, pasted
+directly) showed why: every line read as arbitrary busywork ("still working on X and Y") because
+`stillOpen` was the ENTIRE non-done backlog — a card nobody had opened and a card someone was
+actively coding were indistinguishable, so the model had no real signal for which two cards
+represented "today" and was effectively guessing.
+
+**The fix is a data-model change, not a prompt change — `work.statuses.category` (`not_started` /
+`active` / `done`) already had the distinction the old bucketing threw away.**
+`standup.service.ts`'s `StandupMember` now carries `yesterday` (done within the window, unchanged
+from the old `recentlyDone`), `today` (status category `active` and not done — a real "what am I
+doing right now", not the whole backlog), `overdue` (unchanged), and `urgent` (`urgent`/`high`
+priority, not done, and NOT already in `overdue`, kept disjoint from it so a card past its due
+date is never double-counted under two headings). `not_started` backlog cards are excluded from
+every bucket on purpose, not merely unbucketed — a standup is not the place to dump an entire
+backlog, and a member who wants that already has the board. `headlineFor` moved from `narrate.ts`
+into `standup.service.ts` and is now returned directly on `StandupResult` — it needs no AI call,
+so `query` alone is now a complete, meaningful standup screen with no button to click.
+
+**`narrate.ts` no longer produces a per-member line at all — its whole job shrank to one optional,
+team-wide callout paragraph.** Once real Yesterday/Today/Overdue/Urgent lists are the page's
+primary content, a per-person AI SENTENCE describing the same data is redundant with what the page
+already renders directly next to that person's name — the "classification stays deterministic"
+rule extended one step further: not just the bucketing but the PRESENTATION of one person's own
+status is a fact, not something worth a completion to paraphrase. What a model is actually suited
+for is the one thing buckets alone cannot show: a pattern across the WHOLE roster a PM would
+otherwise have to find by eyeballing eighteen rows — several people blocked on the same
+dependency, or one person carrying an unusually heavy load relative to everyone else.
+`emit_team_callout` (replacing `emit_standup_lines`) takes exactly `{ callout: string }`, and the
+model is explicitly told it is fine to say nothing stands out rather than inventing a pattern to
+fill space. `calloutFromCompletion` (replacing `linesFromCompletion`) still fails LOUD on a
+declined or malformed response — but for a different reason than before: the old fallback-per-line
+design existed because the UI structurally needed one line per member and could not afford to
+silently drop anyone, while this route's entire output IS the callout, so there is nothing sensible
+to fall back to.
+
+**The old per-member token-budget fix (`maxOutputTokensFor`, scaled by team size) is gone along
+with the mechanism it protected — replaced by a single fixed `MAX_OUTPUT_TOKENS = 400`.** This is
+not a regression back to the bug a few paragraphs up: that bug existed because the OUTPUT scaled
+with team size (one JSON entry per member); a short callout paragraph does not scale with team
+size even though the INPUT payload still does, so a fixed output budget is the correct choice here
+specifically, not merely the simpler one.
+
+**The web page changed to match**: the always-visible headline banner now reads directly from
+`standup.data.headline` rather than only appearing after a narrate click, each member row grew a
+fourth count badge and expanded section (Yesterday / Today / Overdue / Urgent, using `PlayCircle`
+for "today" and `Flame` for "urgent" — distinct icons from the existing done/overdue ones so a
+four-badge row still scans at a glance), and the "Narrate" panel shrank to a single paragraph with
+no per-person list. `MemberRow`'s "nothing to report" check now looks at all four buckets.
+
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·

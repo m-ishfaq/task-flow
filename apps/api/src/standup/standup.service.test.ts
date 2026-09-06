@@ -169,7 +169,7 @@ afterAll(async () => {
 });
 
 describe('queryStandup', () => {
-  it('buckets a member’s cards into recently-done / still-open / overdue', async () => {
+  it('buckets a member’s cards into yesterday / today / overdue', async () => {
     const fixture = await scaffold('standup-buckets');
     await members.addMember(
       fixture.orgId,
@@ -184,8 +184,18 @@ describe('queryStandup', () => {
       statusId: fixture.doneStatusId,
     });
 
-    const openCard = await makeCard(fixture.owner, fixture, 'In progress, no due date');
-    await cards.assignCard(fixture.owner, { cardId: openCard.cardId, assigneeIds: [MEMBER] });
+    // Active status — this is what makes a card "today", not merely "not done".
+    const activeCard = await makeCard(fixture.owner, fixture, 'In progress, no due date');
+    await cards.assignCard(fixture.owner, { cardId: activeCard.cardId, assigneeIds: [MEMBER] });
+    await cards.setCardStatus(fixture.owner, {
+      cardId: activeCard.cardId,
+      statusId: fixture.doingStatusId,
+    });
+
+    // Untouched backlog — not_started, never assigned an active status. Must
+    // NOT appear in "today": a standup is not the place for the whole backlog.
+    const backlogCard = await makeCard(fixture.owner, fixture, 'Untouched backlog item');
+    await cards.assignCard(fixture.owner, { cardId: backlogCard.cardId, assigneeIds: [MEMBER] });
 
     const overdueCard = await makeCard(fixture.owner, fixture, 'Overdue');
     await cards.assignCard(fixture.owner, { cardId: overdueCard.cardId, assigneeIds: [MEMBER] });
@@ -203,13 +213,53 @@ describe('queryStandup', () => {
     const result = await queryStandup(fixture.owner, { projectId: fixture.projectId });
     const member = result.members.find((entry) => entry.userId === MEMBER);
     expect(member).toBeDefined();
-    expect(member?.recentlyDone.map((card) => card.cardId)).toEqual([doneCard.cardId]);
-    expect(member?.stillOpen.map((card) => card.cardId).sort()).toEqual(
-      [openCard.cardId, overdueCard.cardId].sort(),
-    );
+    expect(member?.yesterday.map((card) => card.cardId)).toEqual([doneCard.cardId]);
+    expect(member?.today.map((card) => card.cardId)).toEqual([activeCard.cardId]);
     expect(member?.overdue.map((card) => card.cardId)).toEqual([overdueCard.cardId]);
-    // The done card is not ALSO reported as still open or overdue.
-    expect(member?.stillOpen).not.toContain(doneCard.cardId);
+    // Neither the done card nor the untouched backlog card show up in "today".
+    expect(member?.today.map((card) => card.cardId)).not.toContain(doneCard.cardId);
+    expect(member?.today.map((card) => card.cardId)).not.toContain(backlogCard.cardId);
+  });
+
+  it('reports urgent/high priority separately from overdue, and never both for the same card', async () => {
+    const fixture = await scaffold('standup-urgent');
+    const urgentCard = await makeCard(fixture.owner, fixture, 'Needs eyes now');
+    await cards.assignCard(fixture.owner, { cardId: urgentCard.cardId, assigneeIds: [OWNER] });
+    const urgentDetail = await cards.getCard(fixture.owner, { cardId: urgentCard.cardId });
+    await cards.updateCard(fixture.owner, {
+      cardId: urgentCard.cardId,
+      version: urgentDetail.version,
+      title: urgentDetail.title,
+      description: null,
+      dueDate: null,
+      startDate: null,
+      priority: 'urgent',
+    });
+
+    // Both overdue AND urgent-priority — must land in `overdue` only, never
+    // double-counted into `urgent` too (standup.service.ts's own header).
+    const overdueUrgentCard = await makeCard(fixture.owner, fixture, 'Overdue and urgent');
+    await cards.assignCard(fixture.owner, {
+      cardId: overdueUrgentCard.cardId,
+      assigneeIds: [OWNER],
+    });
+    const overdueUrgentDetail = await cards.getCard(fixture.owner, {
+      cardId: overdueUrgentCard.cardId,
+    });
+    await cards.updateCard(fixture.owner, {
+      cardId: overdueUrgentCard.cardId,
+      version: overdueUrgentDetail.version,
+      title: overdueUrgentDetail.title,
+      description: null,
+      dueDate: new Date('2020-01-01T00:00:00.000Z'),
+      startDate: null,
+      priority: 'urgent',
+    });
+
+    const result = await queryStandup(fixture.owner, { projectId: fixture.projectId });
+    const ownerEntry = result.members.find((entry) => entry.userId === OWNER);
+    expect(ownerEntry?.urgent.map((card) => card.cardId)).toEqual([urgentCard.cardId]);
+    expect(ownerEntry?.overdue.map((card) => card.cardId)).toEqual([overdueUrgentCard.cardId]);
   });
 
   it('a card with two assignees appears in both members’ buckets', async () => {
@@ -222,15 +272,19 @@ describe('queryStandup', () => {
 
     const shared = await makeCard(fixture.owner, fixture, 'Pair-programmed');
     await cards.assignCard(fixture.owner, { cardId: shared.cardId, assigneeIds: [OWNER, MEMBER] });
+    await cards.setCardStatus(fixture.owner, {
+      cardId: shared.cardId,
+      statusId: fixture.doingStatusId,
+    });
 
     const result = await queryStandup(fixture.owner, { projectId: fixture.projectId });
     const ownerEntry = result.members.find((entry) => entry.userId === OWNER);
     const memberEntry = result.members.find((entry) => entry.userId === MEMBER);
-    expect(ownerEntry?.stillOpen.map((card) => card.cardId)).toEqual([shared.cardId]);
-    expect(memberEntry?.stillOpen.map((card) => card.cardId)).toEqual([shared.cardId]);
+    expect(ownerEntry?.today.map((card) => card.cardId)).toEqual([shared.cardId]);
+    expect(memberEntry?.today.map((card) => card.cardId)).toEqual([shared.cardId]);
   });
 
-  it('excludes a done card from "recently done" once it falls outside the window', async () => {
+  it('excludes a done card from "yesterday" once it falls outside the window', async () => {
     const fixture = await scaffold('standup-window');
     const card = await makeCard(fixture.owner, fixture, 'Done a while ago');
     await cards.setCardStatus(fixture.owner, {
@@ -253,7 +307,7 @@ describe('queryStandup', () => {
       sinceHours: 24,
     });
     const ownerEntry = result.members.find((entry) => entry.userId === OWNER);
-    expect(ownerEntry?.recentlyDone).toEqual([]);
+    expect(ownerEntry?.yesterday).toEqual([]);
   });
 
   it('shows the active sprint’s urgent/high cards, never a done one', async () => {

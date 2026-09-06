@@ -13,10 +13,9 @@ import { resolveAiProvider } from '../ai/provider-resolver.js';
 import type { StandupResult } from './standup.service.js';
 
 /**
- * Narrating a standup's raw data into one short line per person
+ * Narrating a standup into a short, TEAM-LEVEL callout
  * (ai/phase-15-ai-copilot-and-permissions.md §5 — "AI narrates the raw list
- * into a short summary per person... reuses §2's provider... no new write
- * path").
+ * into a short summary... reuses §2's provider... no new write path").
  *
  * A single `completeGated` call, not the §4 tool-calling loop
  * (`runAssistantTurn`): there is nothing for the model to DO here, only text
@@ -31,77 +30,64 @@ import type { StandupResult } from './standup.service.js';
  * of its own — so it can narrate no more than the person asking could
  * already see.
  *
- * ## The response is forced through a tool call, not read as free text
+ * ## REDESIGNED: this file no longer writes a per-member line
  *
- * The first version asked for "one paragraph, plain sentences" and rendered
- * whatever text came back — which reads exactly as loosely as it sounds: a
- * single run-on paragraph mixing every person's status with no structure to
- * key off, because nothing about a text completion GUARANTEES the shape a
- * caller asked for in prose. `AiCompletionRequest.tools` already exists for
- * §4's tool-calling loop, and it forces the same guarantee here for free —
- * `emit_standup_lines` is a one-tool "response schema", not something the
- * model can execute code with; `stopReason` other than `'tool_use'` is
- * treated as the model declining to comply, not something to silently
- * fall back to raw prose for (§2's "have the model return real structured
- * data" decision — a caller depending on this shape should see a clear
- * failure, not a differently-shaped success).
+ * Two earlier versions of this file asked the model for one sentence per
+ * team member — first as free text, then (once that read as one run-on
+ * paragraph) forced through a tool call for shape, then prompt-tuned for
+ * content. Both were the wrong layer for the job: `standup.service.ts` now
+ * buckets every member's cards into real Yesterday/Today/Overdue/Urgent
+ * lists (a real product redesign, not a prompt fix — see that file's own
+ * header), and once that data exists, a per-person AI SENTENCE describing
+ * it is redundant with data the page already renders directly — the classic
+ * "classification stays deterministic" rule extended one step further: not
+ * just the BUCKETING but the PRESENTATION of a person's own status is a
+ * fact, not something worth spending a completion asking a model to
+ * paraphrase.
  *
- * ## The `headline` is computed, never asked of the model
- *
- * The second version's own per-person LINES were structurally correct but
- * substantively thin: nothing in the first prompt told the model the name
- * would already be shown next to its line (so lines started "Aoife has...",
- * doubling the UI's own bold name), and "call out anything overdue" gave a
- * lazy-but-complete model an easy exit — "has no overdue tasks" — that says
- * nothing about what the person is actually doing. Both are prompt fixes,
- * below. `headline` is a THIRD, deliberately different kind of fix: an
- * aggregate ("6 of 18 people have overdue work, 4 cards done in the last
- * 24h") is exactly the sort of fact this codebase never asks a model to
- * produce when it can be counted directly — the same "classification stays
- * deterministic" rule this file's own per-member fallback already follows.
- * It costs no extra completion and cannot be wrong the way a model's own
- * arithmetic over 18 people's buckets could be.
+ * What a model IS suited for is the one thing this screen still lacks
+ * with buckets alone: a pattern across the WHOLE roster that a PM would
+ * otherwise have to find by eyeballing eighteen rows — three people blocked
+ * on the same dependency, or one person visibly overloaded relative to
+ * everyone else. `narrateStandup` now produces exactly one such paragraph,
+ * never a per-member line, and the model is free to say nothing stands out
+ * — this is genuinely optional editorial color on top of data the page
+ * already shows in full without it, not a structural piece the UI depends
+ * on to avoid dropping anyone (the old per-line design's actual reason for
+ * forcing a tool call and a fallback line per member no longer applies,
+ * because there is no longer a per-member slot an omission could leave
+ * empty).
  */
 export interface NarrateStandupDeps {
   readonly keys: KeyProvider;
 }
 
-export interface StandupNarrationLine {
-  readonly userId: string;
-  /** One short sentence — no headers, no bullets inside the string itself;
-      the CALLER renders one list item per entry, so the model's job is
-      just the sentence. */
-  readonly line: string;
+export interface StandupCallout {
+  /** One short paragraph (2-4 sentences) — team-wide patterns, or an honest
+      "nothing stands out" when there genuinely is none. Never per-member. */
+  readonly callout: string;
 }
 
-export interface StandupNarration {
-  /** Computed, not asked of the model — see this file's own header. */
-  readonly headline: string;
-  readonly lines: readonly StandupNarrationLine[];
-}
+const EMIT_CALLOUT_TOOL_NAME = 'emit_team_callout';
 
-const EMIT_LINES_TOOL_NAME = 'emit_standup_lines';
+const EmitCalloutInput = z.object({ callout: z.string().min(1).max(600) }).strict();
 
-const EmitLinesInput = z
-  .object({
-    lines: z
-      .array(z.object({ userId: z.string(), line: z.string().min(1).max(240) }).strict())
-      .max(200),
-  })
-  .strict();
+/** The paragraph is short and its length does not grow with team size (unlike
+    the old per-member design this replaces, whose fixed budget truncated
+    against a real ~18-person team — see CLAUDE.md's account of that bug). A
+    fixed budget is correct here specifically because the OUTPUT shape no
+    longer scales with input size, even though the input payload still does. */
+const MAX_OUTPUT_TOKENS = 400;
 
 export async function narrateStandup(
   deps: NarrateStandupDeps,
   actor: { readonly orgId: OrgId; readonly userId: UserId; readonly requestId: RequestId },
   standup: StandupResult,
-): Promise<StandupNarration> {
+): Promise<StandupCallout> {
   const [{ provider, providerName, model }, membershipId] = await Promise.all([
     resolveAiProvider(actor.orgId, deps.keys),
     loadMembershipId(actor.orgId, actor.userId),
   ]);
-
-  const memberIds = standup.members.map((member) => member.userId);
-  const maxOutputTokens = maxOutputTokensFor(memberIds.length);
 
   const result = await completeGated(
     provider,
@@ -114,150 +100,71 @@ export async function narrateStandup(
         {
           role: 'system',
           content: [
-            'You write one-line standup updates from structured card data.',
-            `Call ${EMIT_LINES_TOOL_NAME} exactly once, with one entry per member id given to you — never fewer, never an id not given.`,
-            'Each line is a short clause (under 20 words) that sits directly next to the person\'s name in the UI — the name is ALREADY shown, so never repeat it and never start the sentence with it. Write as if continuing "<Name> — ", e.g. "wrapped up the search index audit; two cards still open", not "Name has finished...".',
-            'Always say something concrete about their ACTUAL work — what they finished, or what they are currently working on (name a card or two if it helps) — never just a bare statement that nothing is overdue. "Nothing overdue" on its own is not an acceptable line; pair it with what they ARE doing.',
-            'Call out anything overdue by its card reference (e.g. "MOB-156") when it exists.',
-            'Vary sentence structure across people — do not answer every line with the same template.',
+            "You are given a team's standup data: for each member, cards done recently (yesterday), cards actively in progress (today), overdue cards, and urgent/high-priority cards.",
+            `Call ${EMIT_CALLOUT_TOOL_NAME} exactly once with ONE short paragraph (2-4 sentences) for a project manager scanning this before a daily standup.`,
+            "Only report patterns visible ACROSS multiple people, or a single person carrying a genuinely unusual load — never restate one person's own list, which is already shown next to their name.",
+            'Good examples: several people blocked on the same dependency or overdue in the same area; one person with far more overdue or urgent work than everyone else; a sprint with unusually many urgent cards concentrated on few people.',
+            'If nothing like that is present, say so plainly in one short sentence — do not invent a pattern to fill space.',
             'Do not invent facts not in the data, and do not write anything outside the tool call.',
           ].join(' '),
         },
         {
           role: 'user',
-          content: JSON.stringify({ memberIds, standup }),
+          content: JSON.stringify({
+            sprint: standup.sprint,
+            urgentSprintCards: standup.urgentSprintCards,
+            members: standup.members,
+          }),
         },
       ],
       tools: [
         {
-          name: EMIT_LINES_TOOL_NAME,
-          description: 'Report one short status line per team member for the standup view.',
+          name: EMIT_CALLOUT_TOOL_NAME,
+          description: 'Report one short team-wide callout paragraph for the standup view.',
           inputSchema: {
             type: 'object',
             properties: {
-              lines: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    userId: { type: 'string' },
-                    line: { type: 'string' },
-                  },
-                  required: ['userId', 'line'],
-                },
-              },
+              callout: { type: 'string' },
             },
-            required: ['lines'],
+            required: ['callout'],
           },
         },
       ],
       effort: 'low',
-      maxOutputTokens,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   );
 
-  return {
-    headline: headlineFor(standup),
-    lines: linesFromCompletion(result, standup.members),
-  };
+  return { callout: calloutFromCompletion(result) };
 }
 
 /**
- * The pure half of `narrateStandup` — parsing and merging, with no network
- * or database dependency, so it is tested directly against a hand-built
+ * The pure half of `narrateStandup` — parsing, with no network or database
+ * dependency, so it is tested directly against a hand-built
  * `AiCompletionResult` rather than only through `router.test.ts`'s
- * real-Postgres-plus-stubbed-`fetch` end-to-end path. Exported for exactly
- * that: `narrate.test.ts` proves the merge-with-fallback and malformed-
- * input cases here, fast and without a database.
- */
-export function linesFromCompletion(
-  result: AiCompletionResult,
-  members: StandupResult['members'],
-): readonly StandupNarrationLine[] {
-  if (result.stopReason !== 'tool_use' || result.toolCalls.length === 0) {
-    throw errors.internal(undefined, 'The assistant did not return a structured standup summary.');
-  }
-
-  const call = result.toolCalls.find((entry) => entry.name === EMIT_LINES_TOOL_NAME);
-  if (call === undefined) {
-    throw errors.internal(undefined, 'The assistant did not return a structured standup summary.');
-  }
-
-  const parsed = EmitLinesInput.safeParse(call.input);
-  if (!parsed.success) {
-    throw errors.internal(undefined, 'The assistant returned a malformed standup summary.');
-  }
-
-  /* Every real member gets a line — the model's own omissions do not
-     silently disappear a person from the summary. `Map` dedupes a
-     misbehaving model naming the same id twice; the LAST one wins, matching
-     "later wins" every other last-write-in-a-batch shape in this codebase
-     already uses. */
-  const byMember = new Map(parsed.data.lines.map((entry) => [entry.userId, entry.line]));
-
-  return members.map((member) => ({
-    userId: member.userId,
-    line: byMember.get(member.userId) ?? fallbackLineFor(member),
-  }));
-}
-
-function fallbackLineFor(member: StandupResult['members'][number]): string {
-  if (member.overdue.length > 0) {
-    return `${String(member.overdue.length)} overdue, ${String(member.stillOpen.length)} still open.`;
-  }
-  if (member.recentlyDone.length > 0) {
-    return `${String(member.recentlyDone.length)} done recently, ${String(member.stillOpen.length)} still open.`;
-  }
-  return `${String(member.stillOpen.length)} still open.`;
-}
-
-/**
- * A FIXED token budget breaks the moment a project has enough members that
- * `emit_standup_lines`' own JSON — one `userId` (a full uuid) plus a real
- * sentence per person — no longer fits in it: the model's output gets
- * truncated mid-argument, `JSON.parse` fails in `packages/ai`'s
- * `toolCallFromWire`, and the whole request errors out rather than
- * silently handing a tool malformed input (its own comment already names
- * truncation as the likely cause). A team of ~18 genuinely does not fit in
- * 800 tokens once every line has to carry a real card reference, which the
- * system prompt above now asks for — found in production against real
- * team size, not in this codebase's own (smaller) test fixtures.
+ * real-Postgres-plus-stubbed-`fetch` end-to-end path.
  *
- * Scaled by member count rather than a second fixed constant, with a floor
- * so a tiny project still gets a cheap call and a ceiling so a very large
- * one cannot turn one narration into an unbounded spend. Exported so
- * `narrate.test.ts` can assert the actual numbers directly rather than
- * only via the wall this function exists to avoid hitting.
+ * Still fails LOUD on a declined or malformed response, unlike the more
+ * forgiving "fall back to a computed line" the old per-member design used —
+ * that fallback existed because the UI structurally needed one line per
+ * member and could not afford to drop anyone; this route's entire output IS
+ * the callout, so if the model cannot produce one, the caller should see a
+ * clear failure rather than a silently empty success.
  */
-export function maxOutputTokensFor(memberCount: number): number {
-  return Math.min(4_000, Math.max(800, memberCount * 70));
-}
-
-/**
- * The aggregate line — a plain count over data `queryStandup` already
- * assembled, exported so `narrate.test.ts` can prove it directly. Never
- * empty-string: a project with genuinely nothing to report still gets an
- * honest "Nobody has open, done, or overdue work in this window" rather
- * than a blank header where a sentence was expected.
- */
-export function headlineFor(standup: StandupResult): string {
-  const total = standup.members.length;
-  if (total === 0) return 'Nobody has open, done, or overdue work in this window.';
-
-  const overdueCount = standup.members.filter((member) => member.overdue.length > 0).length;
-  const doneCount = standup.members.reduce((sum, member) => sum + member.recentlyDone.length, 0);
-  const urgentCount = standup.urgentSprintCards.length;
-
-  const parts = [`${String(total)} ${total === 1 ? 'person' : 'people'}`];
-  parts.push(
-    overdueCount === 0
-      ? 'nobody overdue'
-      : `${String(overdueCount)} ${overdueCount === 1 ? 'person' : 'people'} with overdue work`,
-  );
-  parts.push(`${String(doneCount)} ${doneCount === 1 ? 'card' : 'cards'} done recently`);
-  if (urgentCount > 0) {
-    parts.push(`${String(urgentCount)} urgent sprint ${urgentCount === 1 ? 'card' : 'cards'} open`);
+export function calloutFromCompletion(result: AiCompletionResult): string {
+  if (result.stopReason !== 'tool_use' || result.toolCalls.length === 0) {
+    throw errors.internal(undefined, 'The assistant did not return a team callout.');
   }
 
-  return parts.join(' · ');
+  const call = result.toolCalls.find((entry) => entry.name === EMIT_CALLOUT_TOOL_NAME);
+  if (call === undefined) {
+    throw errors.internal(undefined, 'The assistant did not return a team callout.');
+  }
+
+  const parsed = EmitCalloutInput.safeParse(call.input);
+  if (!parsed.success) {
+    throw errors.internal(undefined, 'The assistant returned a malformed team callout.');
+  }
+
+  return parsed.data.callout;
 }

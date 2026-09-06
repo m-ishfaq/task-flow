@@ -19,6 +19,28 @@ import { orgOf, type WorkActor } from '../work/shared.js';
  * role-only). Moving or reassigning a card FROM this view (a later UI
  * concern, not this query) needs no new authorization either — it is the
  * same `card.move`/`card.assign` the board already gates.
+ *
+ * ## The buckets are Yesterday / Today / Overdue / Urgent, not "done vs. open"
+ *
+ * The first version bucketed every non-done card into one `stillOpen` pile —
+ * which meant a card nobody had opened yet (status category `not_started`)
+ * and a card someone was actively working on (`active`) were
+ * indistinguishable, and a narration or UI built on top of that pile had no
+ * way to say "here's what I'm doing today" versus "here's my whole backlog".
+ * That is a real standup's actual shape (yesterday / today / blockers), and
+ * a member's real answer to "what are you doing today" is the cards in an
+ * `active`-category status, not everything they haven't finished. `today`
+ * is exactly that — `not_started` cards are excluded from every bucket here
+ * on purpose, not merely unbucketed: a standup is not the place to dump an
+ * entire backlog, and a member who wants that already has the board.
+ *
+ * `overdue` and `urgent` are kept DISJOINT rather than allowing a card into
+ * both: an overdue card is already the more severe fact, so a card past its
+ * due date is reported there and excluded from `urgent` even if it also
+ * carries a high/urgent priority — reporting the same card twice under two
+ * headings would read as double-counting on a screen whose whole point is a
+ * fast scan. `today` is independent of both — an active card can be
+ * overdue, urgent, both, or neither, and still shows in `today` regardless.
  */
 
 export interface StandupCard {
@@ -32,9 +54,18 @@ export interface StandupCard {
 export interface StandupMember {
   readonly userId: string;
   readonly name: string | null;
-  readonly recentlyDone: readonly StandupCard[];
-  readonly stillOpen: readonly StandupCard[];
+  /** Done within `sinceHours` — "what did you do yesterday". */
+  readonly yesterday: readonly StandupCard[];
+  /** Status category `active` and not done — "what are you doing today". Deliberately
+      NOT every open card: see this file's own header on why `not_started` backlog is
+      excluded rather than folded in here. */
+  readonly today: readonly StandupCard[];
+  /** Not done, past its due date — regardless of status category, so an overdue
+      `not_started` card still surfaces even though it never made `today`. */
   readonly overdue: readonly StandupCard[];
+  /** Not done, `urgent`/`high` priority, and NOT already in `overdue` — see this
+      file's own header on why the two buckets are kept disjoint. */
+  readonly urgent: readonly StandupCard[];
 }
 
 export interface StandupSprint {
@@ -48,6 +79,9 @@ export interface StandupResult {
   /** The active sprint's urgent/high cards, "shown by default" per §5 — never-done ones only. */
   readonly urgentSprintCards: readonly StandupCard[];
   readonly members: readonly StandupMember[];
+  /** A plain count over the data above — see `headlineFor`'s own comment for why this
+      is computed here rather than asked of a model. */
+  readonly headline: string;
 }
 
 const URGENT_PRIORITIES = new Set(['urgent', 'high']);
@@ -132,12 +166,17 @@ export async function queryStandup(
 
     const byMember = new Map<
       string,
-      { recentlyDone: StandupCard[]; stillOpen: StandupCard[]; overdue: StandupCard[] }
+      {
+        yesterday: StandupCard[];
+        today: StandupCard[];
+        overdue: StandupCard[];
+        urgent: StandupCard[];
+      }
     >();
     const bucketFor = (userId: string) => {
       const existing = byMember.get(userId);
       if (existing !== undefined) return existing;
-      const created = { recentlyDone: [], stillOpen: [], overdue: [] };
+      const created = { yesterday: [], today: [], overdue: [], urgent: [] };
       byMember.set(userId, created);
       return created;
     };
@@ -146,14 +185,18 @@ export async function queryStandup(
       if (row.assigneeIds.length === 0) continue;
       const summary = cardOf(row);
       const isDone = row.statusCategory === 'done';
+      const isActive = row.statusCategory === 'active';
       const isOverdue = !isDone && row.dueDate !== null && row.dueDate.getTime() < now.getTime();
       const isRecentlyDone = isDone && row.updatedAt.getTime() >= cutoff.getTime();
+      const isUrgent =
+        !isDone && !isOverdue && row.priority !== null && URGENT_PRIORITIES.has(row.priority);
 
       for (const userId of row.assigneeIds) {
         const bucket = bucketFor(userId);
-        if (isRecentlyDone) bucket.recentlyDone.push(summary);
-        else if (!isDone) bucket.stillOpen.push(summary);
+        if (isRecentlyDone) bucket.yesterday.push(summary);
+        if (isActive && !isDone) bucket.today.push(summary);
         if (isOverdue) bucket.overdue.push(summary);
+        if (isUrgent) bucket.urgent.push(summary);
       }
     }
 
@@ -180,8 +223,45 @@ export async function queryStandup(
           : { sprintId: sprint.id, name: sprint.name, endsOn: sprint.endsOn },
       urgentSprintCards,
       members,
+      headline: headlineFor(members, urgentSprintCards),
     };
   });
+}
+
+/**
+ * The aggregate line — a plain count over data this query already
+ * assembled, computed here rather than asked of a model (this file's own
+ * header — "classification stays deterministic"). Moved out of `narrate.ts`
+ * when that route stopped producing per-member content at all: a headline
+ * needs no AI call, so `query` returns it directly and the page can render
+ * a real agenda before anyone clicks "Narrate". Never empty-string: a
+ * project with genuinely nothing to report still gets an honest "Nobody has
+ * open, done, or overdue work in this window" rather than a blank header
+ * where a sentence was expected.
+ */
+export function headlineFor(
+  members: readonly StandupMember[],
+  urgentSprintCards: readonly StandupCard[],
+): string {
+  const total = members.length;
+  if (total === 0) return 'Nobody has open, done, or overdue work in this window.';
+
+  const overdueCount = members.filter((member) => member.overdue.length > 0).length;
+  const doneCount = members.reduce((sum, member) => sum + member.yesterday.length, 0);
+  const urgentCount = urgentSprintCards.length;
+
+  const parts = [`${String(total)} ${total === 1 ? 'person' : 'people'}`];
+  parts.push(
+    overdueCount === 0
+      ? 'nobody overdue'
+      : `${String(overdueCount)} ${overdueCount === 1 ? 'person' : 'people'} with overdue work`,
+  );
+  parts.push(`${String(doneCount)} ${doneCount === 1 ? 'card' : 'cards'} done recently`);
+  if (urgentCount > 0) {
+    parts.push(`${String(urgentCount)} urgent sprint ${urgentCount === 1 ? 'card' : 'cards'} open`);
+  }
+
+  return parts.join(' · ');
 }
 
 /**
