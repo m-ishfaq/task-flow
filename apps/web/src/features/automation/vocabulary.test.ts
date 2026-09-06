@@ -4,6 +4,7 @@ import {
   ARGUMENTS,
   INTEGRATION_PROVIDER_OF,
   TELEPHONY_ACTIONS,
+  TRIGGER_OPTIONS,
   blankAction,
   describeAction,
   needsProject,
@@ -122,6 +123,100 @@ describe('offeredActions — the product-surface flag', () => {
     for (const [type, label] of offeredActions(true)) {
       expect(ACTION_LABELS[type]).toBe(label);
     }
+  });
+});
+
+describe('§8 — onboarding/offboarding automation vocabulary', () => {
+  it('offers both membership triggers, card-less like the connector events', () => {
+    const events = TRIGGER_OPTIONS.map((option) => option.event);
+    expect(events).toContain('member.added');
+    expect(events).toContain('member.offboarding_started');
+  });
+
+  it('labels all six actions', () => {
+    expect(ACTION_LABELS['channel.add_member']).toBe('Add them to a channel');
+    expect(ACTION_LABELS['channel.remove_member']).toBe('Remove them from a channel');
+    expect(ACTION_LABELS['docs.grant_space_access']).toBe(
+      'Give them viewer access to a Docs space',
+    );
+    expect(ACTION_LABELS['identity.revoke_sessions']).toBe('Sign them out everywhere');
+    expect(ACTION_LABELS['member_grant.revoke_all']).toBe(
+      'Revoke every individual permission they hold',
+    );
+    expect(ACTION_LABELS['cards.bulk_reassign']).toBe('Reassign their cards to someone else');
+  });
+
+  it('declares the one argument each action that takes one needs, and none for the two that take none', () => {
+    /* None of these six carries a `userId` — every one acts on the member the
+       TRIGGER named, the same discipline `apps/worker`'s own executor
+       enforces server-side. A `userId` field here would be a picker offering
+       to reach past the person the rule fired for. */
+    expect((ARGUMENTS['channel.add_member'] ?? []).map((spec) => spec.field)).toEqual([
+      'channelId',
+    ]);
+    expect((ARGUMENTS['channel.remove_member'] ?? []).map((spec) => spec.field)).toEqual([
+      'channelId',
+    ]);
+    expect((ARGUMENTS['docs.grant_space_access'] ?? []).map((spec) => spec.field)).toEqual([
+      'spaceId',
+    ]);
+    expect(ARGUMENTS['identity.revoke_sessions']).toEqual([]);
+    expect(ARGUMENTS['member_grant.revoke_all']).toEqual([]);
+    /* The one exception: `toUserId` names the REPLACEMENT assignee, not who
+       the rule acts on — there is no other way to say who a departing
+       member's cards go to. */
+    expect((ARGUMENTS['cards.bulk_reassign'] ?? []).map((spec) => spec.field)).toEqual([
+      'toUserId',
+    ]);
+  });
+
+  it('picks the channel/space/member kinds, never a bare text id', () => {
+    expect(ARGUMENTS['channel.add_member']?.[0]?.kind).toBe('channel');
+    expect(ARGUMENTS['channel.remove_member']?.[0]?.kind).toBe('channel');
+    expect(ARGUMENTS['docs.grant_space_access']?.[0]?.kind).toBe('space');
+    expect(ARGUMENTS['cards.bulk_reassign']?.[0]?.kind).toBe('member');
+  });
+
+  it('seeds a blank draft for every one of the six, with no field pre-filled', () => {
+    expect(blankAction('channel.add_member').value).toEqual({
+      type: 'channel.add_member',
+      channelId: '',
+    });
+    expect(blankAction('channel.remove_member').value).toEqual({
+      type: 'channel.remove_member',
+      channelId: '',
+    });
+    expect(blankAction('docs.grant_space_access').value).toEqual({
+      type: 'docs.grant_space_access',
+      spaceId: '',
+    });
+    expect(blankAction('identity.revoke_sessions').value).toEqual({
+      type: 'identity.revoke_sessions',
+    });
+    expect(blankAction('member_grant.revoke_all').value).toEqual({
+      type: 'member_grant.revoke_all',
+    });
+    expect(blankAction('cards.bulk_reassign').value).toEqual({
+      type: 'cards.bulk_reassign',
+      toUserId: '',
+    });
+  });
+
+  it('offers all six unconditionally — no deployment flag, unlike telephony', () => {
+    const offered = offeredActions(false).map(([type]) => type);
+    expect(offered).toContain('channel.add_member');
+    expect(offered).toContain('channel.remove_member');
+    expect(offered).toContain('docs.grant_space_access');
+    expect(offered).toContain('identity.revoke_sessions');
+    expect(offered).toContain('member_grant.revoke_all');
+    expect(offered).toContain('cards.bulk_reassign');
+  });
+
+  it('keeps the space picker org-scoped, never demanding a project first', () => {
+    /* A Docs space belongs to the org directly, not to a project — unlike
+       list/status/label, `docs.grant_space_access` must never need a
+       project chosen before its own picker can offer anything. */
+    expect(needsProject('docs.grant_space_access')).toBe(false);
   });
 });
 

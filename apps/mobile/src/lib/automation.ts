@@ -64,10 +64,11 @@ export interface TriggerOption {
  * Wave 1's triggers, copied verbatim from `vocabulary.ts`'s own
  * `TRIGGER_OPTIONS` — a closed, hand-maintained list deliberately
  * narrower than the server's full event registry (over a hundred names,
- * most of which nobody would build a rule on). The two connector events
- * at the bottom are excluded from `automation-editor.tsx`'s own trigger
- * picker (see that file's header) but stay here so a rule built on web
- * that uses one still reads correctly when opened read-only on a phone.
+ * most of which nobody would build a rule on). The connector events and
+ * the two §8 membership events at the bottom are excluded from
+ * `automation-editor.tsx`'s own trigger picker (see that file's header)
+ * but stay here so a rule built on web that uses one still reads
+ * correctly when opened read-only on a phone.
  */
 export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'card.created', label: 'A card is created' },
@@ -85,15 +86,32 @@ export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'card.field_set', label: "A card's custom field changes" },
   { event: 'integration.slack_event', label: 'A Slack event arrives (message, reaction, …)' },
   { event: 'integration.github_event', label: 'A GitHub event arrives (push, issue, …)' },
+  /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — present here purely for
+     `triggerLabel`/`describeAction`'s sake: none of §8's six actions are in
+     `ARGUMENTS` below (no space/no-argument picker on this platform yet), so
+     `EDITOR_TRIGGER_OPTIONS` excludes these two for the identical reason it
+     already excludes the connector events. */
+  { event: 'member.added', label: 'Someone joins the organization' },
+  {
+    event: 'member.offboarding_started',
+    label: 'A member is flagged as leaving (does not remove them)',
+  },
 ];
 
 /** Triggers `automation-editor.tsx`'s picker offers — every `TRIGGER_OPTIONS`
- *  entry except the two connector events, which name no card and therefore
- *  every card-mutating action this editor can build would record a failed
- *  run against them (`vocabulary.ts`'s own note on why those two exist). */
+ *  entry except the connector events and the two §8 membership events, none
+ *  of which name a card, and none of which this editor has a compatible
+ *  ACTION for either (`vocabulary.ts`'s own note on why the connector pair
+ *  exists; §8's pair is the identical shape one level down). */
+const NON_EDITOR_TRIGGERS: ReadonlySet<string> = new Set([
+  'integration.slack_event',
+  'integration.github_event',
+  'member.added',
+  'member.offboarding_started',
+]);
+
 export const EDITOR_TRIGGER_OPTIONS: readonly TriggerOption[] = TRIGGER_OPTIONS.filter(
-  (option) =>
-    option.event !== 'integration.slack_event' && option.event !== 'integration.github_event',
+  (option) => !NON_EDITOR_TRIGGERS.has(option.event),
 );
 
 export function triggerLabel(event: string): string {
@@ -116,6 +134,20 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'sms.send': 'Send an SMS',
   'slack.post_message': 'Post a Slack message',
   'github.create_issue': 'Open a GitHub issue',
+  /* §8 — labelled for DISPLAY only (`describeAction`/`actionOutcomeOf`), the
+     identical "readable but not editable here" treatment `call_webhook` and
+     the two connector actions above already get: none of the six are in
+     `ARGUMENTS` below, so `EDITABLE_ACTION_TYPES` excludes them and
+     `canEditOnMobile` refuses to offer "Edit" for a rule holding one —
+     without this table entry a rule built on web using one of these would
+     have shown its bare type string ("channel.add_member") instead of a
+     sentence, on the run history and the rule list alike. */
+  'channel.add_member': 'Add them to a channel',
+  'channel.remove_member': 'Remove them from a channel',
+  'docs.grant_space_access': 'Give them viewer access to a Docs space',
+  'identity.revoke_sessions': 'Sign them out everywhere',
+  'member_grant.revoke_all': 'Revoke every individual permission they hold',
+  'cards.bulk_reassign': 'Reassign their cards to someone else',
 };
 
 /**

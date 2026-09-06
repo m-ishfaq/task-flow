@@ -1898,9 +1898,79 @@ builder cannot construct a rule using any of them. There is also no button anywh
 new `tenancy.members.startOffboarding` route. This is the identical "shipped backend, no consumer"
 gap this file's own Phase 15 §4/AI-Models-tab entries already document twice — found here a third
 time, by the same kind of direct code check rather than trusting the spec's own account of what
-shipped. Not yet fixed; flagged for a follow-up pass (a person picking a trigger has to see
-"someone joins/leaves" as an option, and an action picker has to offer the six actions, before §8
-is reachable by anyone who isn't editing `automation_rules` rows by hand).
+shipped. **Fixed in a follow-up pass — see the §8 UI wiring section, right after the §4.3 sprint
+planning entry below, for what shipped.**
+
+### Phase 15 — §8's UI wiring: the trigger, the six actions, and the offboarding button (SHIPPED)
+
+`apps/web/src/features/automation/{vocabulary,action-pickers}.tsx` ·
+`apps/web/src/features/admin/settings-page.tsx` · `apps/mobile/src/lib/automation.ts`. Closes the
+gap the paragraph directly above this section documents: §8 (`ai/phase-15-ai-copilot-and-
+permissions.md` §8) had shipped a trigger, six automation actions, and a member-facing route with
+zero UI path to any of them — a rule using one could only ever be written by hand against the raw
+API, and nothing could ever fire `member.offboarding_started` at all.
+
+**`member.added`/`member.offboarding_started` join `TRIGGER_OPTIONS` as a SECOND card-less
+exception, the same shape the Wave 4 slice 3 connector events already are.** Both carry a `userId`,
+never a `cardId` — every one of §8's six actions is written against that instead
+(`apps/worker/src/automation/executor.ts`'s own `userIdOf`, the identical discipline `cardIdOf`
+already applies to every card trigger). No new filtering mechanism needed: the builder already
+offers every action regardless of the selected trigger and lets a mismatched combination fail
+honestly at runtime (`trigger_not_evaluable`) — the same accepted shape a card action paired with a
+connector event already has, extended one trigger pair further.
+
+**The six actions needed one new `ArgumentKind`, `'space'`, and nothing else structurally new.**
+`channel.add_member`/`channel.remove_member` reuse the existing `channel` picker unchanged;
+`cards.bulk_reassign`'s `toUserId` reuses `member`; `identity.revoke_sessions` and
+`member_grant.revoke_all` take zero arguments, which `ARGUMENTS`' own empty-array entries already
+make `actionsComplete` treat as complete with nothing to render underneath — the two-arg-and-fewer
+shapes this table already had covered every case but one. `docs.grant_space_access`'s `spaceId` is
+the exception: `SpacePicker` (`action-pickers.tsx`) is a new, small component reusing
+`spacesQuery(orgId)` from the Docs feature, org-scoped like `ChannelPicker` right above it in the
+same file — a Docs space belongs to the org directly, never to a project, so (unlike
+`list`/`status`/`label`) it needed no entry in `PROJECT_SCOPED` and no project-choice step first.
+
+**None of the six carries a `userId` field of its own — a rule always acts on the member the
+TRIGGER named, never one a rule author could type in.** This mirrors the server-side refusal
+`action-schema.test.ts` already proves (a `.strict()` Zod schema with no `userId` key), so the
+absence here is not merely cosmetic: even if a picker offered one, the server would reject the
+saved rule. `cards.bulk_reassign`'s `toUserId` is the one field naming a second person, and it is
+labelled "Reassign to" rather than left to read as the trigger's own subject, since it names the
+REPLACEMENT assignee, not who the rule is about.
+
+**"Start offboarding" (`settings-page.tsx`'s `MemberRow`) is the first and only thing in the
+product that can fire `member.offboarding_started` at all — without it, every rule built on the
+trigger above would sit forever unfired.** Gated on `member:remove`, the same permission `Remove`
+already floors on and the identical capability (`removeMembers`) already read from
+`SettingsCapabilities` — flagging someone as leaving is a strictly smaller action than removing
+them outright, so reusing the permission rather than inventing a narrower one is deliberate, not
+a shortcut. Not a `ConfirmButton` like Remove: the route itself carries no step-up and writes no
+column at all (`member.service.ts`'s own header — "nothing here is destructive or hard to undo"),
+and calling it twice is explicitly harmless by design, so a confirm step would be friction over a
+control this codebase's own contract already treats as safe to click twice. Feedback is a toast
+(`useToast`), not a visible row change, because there genuinely is no row change to show —
+`startOffboarding` writes an event and nothing else — and a silently-successful button invites a
+confused second click the toast is what actually prevents.
+
+**`apps/mobile` gets the DISPLAY half only, not a matching editor — a deliberate, narrower scope
+consistent with a boundary that already existed before this pass.** Mobile's own
+`automation.ts`/`automation-editor.tsx` already draws a line between what it can EDIT and what it
+can only READ: `call_webhook` and the two connector actions have real labels in `ACTION_LABELS`
+but no entry in mobile's own (smaller) `ARGUMENTS` table, so `EDITABLE_ACTION_TYPES` excludes them
+and `canEditOnMobile` refuses "Edit" for a rule holding one, while the rule list and run history
+still describe them correctly. The six §8 actions get the identical treatment — labelled for
+`describeAction`/`actionOutcomeOf`, absent from `ARGUMENTS` — rather than a second native `space`
+picker and a full parallel builder: without the label entries, a rule built on WEB using any of
+the six would have shown its bare type string ("channel.add_member") instead of a sentence the
+moment someone opened it on a phone, a real regression this pass caught and closed rather than
+shipped alongside the web changes. Building a native space picker and full edit support for these
+six, matching web exactly, is real, separate work this pass does not attempt.
+
+**Deliberately not built in this pass: any UI surface for §8's four still-deferred checklist
+items** (starter cards, notify-the-manager, default permission bundles, connector-access
+revocation) — see this file's own §8 section for why each needed a real design decision rather
+than more wiring. This pass closes the gap for the SIX ACTIONS AND TRIGGER that already existed
+in the engine with nothing pointing at them; it does not expand §8's own scope.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

@@ -11,9 +11,9 @@
  *
  * One entry in `TRIGGER_OPTIONS`, and the event must carry a `cardId` — see
  * that list's own note — unless it is a deliberately card-less trigger like
- * the connector events at the bottom, which say so in their label. Nothing
- * else: the server validates a trigger against the live registry, so a name
- * that exists is already accepted.
+ * the connector events and the two §8 membership events at the bottom, which
+ * say so in their label. Nothing else: the server validates a trigger
+ * against the live registry, so a name that exists is already accepted.
  *
  * ## Adding an action — five places, deliberately
  *
@@ -51,12 +51,24 @@ export interface TriggerOption {
  * work on — the engine records `trigger_not_evaluable` and refuses. Offering
  * one here would be offering a rule that cannot work.
  *
- * The two connector events at the bottom are the deliberate exception (§7.5):
+ * The connector events near the bottom are the deliberate exception (§7.5):
  * an inbound Slack/GitHub event carries no card because it ISN'T one, so a
  * rule whose actions need the trigger's card records a failed run — the
  * honest shape for a rule built wrong — while a rule using the non-card
  * actions (chat post, webhook call, and slice 4's connector actions) works
  * exactly as built.
+ *
+ * The two §8 events at the very bottom are a SECOND card-less exception, for
+ * the identical reason: `member.added`/`member.offboarding_started` carry a
+ * `userId`, never a `cardId`, and every one of §8's six actions is written
+ * against that instead (`apps/worker/src/automation/executor.ts`'s own
+ * `userIdOf`, the same discipline `cardIdOf` already applies to the trigger
+ * above it). Found missing entirely: the trigger events, the six actions,
+ * and the argument pickers they need had shipped on the backend with no UI
+ * path to ANY of them at all — a rule using one could only ever be written
+ * by hand against the raw API, the same "shipped backend, no consumer" gap
+ * this codebase's own AI-assistant frontend and AI Models tab already
+ * document once each.
  */
 export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'card.created', label: 'A card is created' },
@@ -75,6 +87,13 @@ export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   /* Wave 4 slice 3 (§7.5) — no card, deliberately; see the header note. */
   { event: 'integration.slack_event', label: 'A Slack event arrives (message, reaction, …)' },
   { event: 'integration.github_event', label: 'A GitHub event arrives (push, issue, …)' },
+  /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — no card, deliberately;
+     see the header note above. */
+  { event: 'member.added', label: 'Someone joins the organization' },
+  {
+    event: 'member.offboarding_started',
+    label: 'A member is flagged as leaving (does not remove them)',
+  },
 ];
 
 /** Every action the executor implements, labelled for a person. */
@@ -103,6 +122,15 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
      recorded reason, which is the honest place for it. */
   'slack.post_message': 'Post a Slack message',
   'github.create_issue': 'Open a GitHub issue',
+  /* §8 — onboarding/offboarding automation. Unconditional like the connector
+     pair above: none of these reach a network the org does not control or
+     cost anything to run. All six act on the member the TRIGGER named. */
+  'channel.add_member': 'Add them to a channel',
+  'channel.remove_member': 'Remove them from a channel',
+  'docs.grant_space_access': 'Give them viewer access to a Docs space',
+  'identity.revoke_sessions': 'Sign them out everywhere',
+  'member_grant.revoke_all': 'Revoke every individual permission they hold',
+  'cards.bulk_reassign': 'Reassign their cards to someone else',
 };
 
 export type ActionValue =
@@ -140,7 +168,17 @@ export type ActionValue =
       readonly integrationId: string;
       readonly title: string;
       readonly body: string;
-    };
+    }
+  /* §8 — none of these six carries a `userId` of its own; every one acts on
+     the member the TRIGGER named (`apps/worker`'s own `AutomationAction`
+     comment). `cards.bulk_reassign`'s `toUserId` is the one exception, and
+     it names the REPLACEMENT assignee, not who the rule acts on. */
+  | { readonly type: 'channel.add_member'; readonly channelId: string }
+  | { readonly type: 'channel.remove_member'; readonly channelId: string }
+  | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
+  | { readonly type: 'identity.revoke_sessions' }
+  | { readonly type: 'member_grant.revoke_all' }
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
 
 /**
  * How to EDIT each argument of each action.
@@ -166,6 +204,9 @@ export type ArgumentKind =
   | 'member'
   | 'channel'
   | 'webhook'
+  /** A Docs space (§8's `docs.grant_space_access`) — org-scoped, like a
+      channel: Docs spaces belong to the org directly, never to a project. */
+  | 'space'
   /**
    * A connected Slack workspace or GitHub repository (Wave 4 slice 4, §7.6).
    *
@@ -253,6 +294,16 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
     { field: 'title', label: 'Title', kind: 'text' },
     { field: 'body', label: 'Body (optional)', kind: 'text', optional: true },
   ],
+  /* §8. `identity.revoke_sessions` and `member_grant.revoke_all` take no
+     arguments at all — an empty list here is what makes `actionsComplete`
+     (below) treat them as complete the moment they are added, with nothing
+     for the builder to render underneath. */
+  'channel.add_member': [{ field: 'channelId', label: 'Channel', kind: 'channel' }],
+  'channel.remove_member': [{ field: 'channelId', label: 'Channel', kind: 'channel' }],
+  'docs.grant_space_access': [{ field: 'spaceId', label: 'Space', kind: 'space' }],
+  'identity.revoke_sessions': [],
+  'member_grant.revoke_all': [],
+  'cards.bulk_reassign': [{ field: 'toUserId', label: 'Reassign to', kind: 'member' }],
 };
 
 /**
@@ -425,6 +476,18 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
         key: identity,
         value: { type: 'github.create_issue', integrationId: '', title: '', body: '' },
       };
+    case 'channel.add_member':
+      return { key: identity, value: { type: 'channel.add_member', channelId: '' } };
+    case 'channel.remove_member':
+      return { key: identity, value: { type: 'channel.remove_member', channelId: '' } };
+    case 'docs.grant_space_access':
+      return { key: identity, value: { type: 'docs.grant_space_access', spaceId: '' } };
+    case 'identity.revoke_sessions':
+      return { key: identity, value: { type: 'identity.revoke_sessions' } };
+    case 'member_grant.revoke_all':
+      return { key: identity, value: { type: 'member_grant.revoke_all' } };
+    case 'cards.bulk_reassign':
+      return { key: identity, value: { type: 'cards.bulk_reassign', toUserId: '' } };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };
   }

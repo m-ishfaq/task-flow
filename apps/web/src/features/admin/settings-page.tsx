@@ -33,6 +33,7 @@ import {
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useBranding } from '../../lib/branding-context.js';
+import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import {
   membersQuery,
@@ -181,6 +182,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const { guard, dialog } = useStepUp();
   const currentUserId = useSession((state) => state.userId);
   const { productName } = useBranding();
+  const toast = useToast();
 
   /* Same cache as OrgSection's own query (identical key), so this costs no
      extra request — React Query dedupes by key. Undefined only while the
@@ -239,6 +241,38 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       guard(error, () => {
         remove.mutate(userId);
       });
+    },
+  });
+
+  /**
+   * §8's own UI trigger — until this, nothing in the product could ever
+   * FIRE `member.offboarding_started`, the trigger event every one of §8's
+   * six new automation actions is written against (`ARGUMENTS` in
+   * `vocabulary.ts`), so a rule built on it could never actually run.
+   *
+   * `member:remove`, matching `startOffboarding`'s own route — the same
+   * permission `Remove` already gates, since flagging someone as leaving is
+   * a strictly smaller action than actually removing them. No step-up
+   * (`use-step-up.ts`'s `guard`): the route itself carries none, per its own
+   * comment — nothing here is destructive or hard to undo, unlike `remove`.
+   *
+   * Success gets a toast rather than a visible row change, because there IS
+   * no row change to show — `startOffboarding` writes no column at all
+   * (`member.service.ts`'s own header), only the event. A silent success
+   * here would read as "did that even do anything?" and invite a re-click,
+   * which the route itself treats as harmless but still isn't the point.
+   */
+  const startOffboarding = useMutation({
+    mutationFn: (target: { userId: UserId; email: string }) =>
+      api.tenancy.members.startOffboarding.mutate({ userId: target.userId }),
+    onSuccess: (_result, target) => {
+      toast.show(`Offboarding started for ${target.email}`, {
+        description: 'Any automation rules watching for this will run shortly.',
+        tone: 'success',
+      });
+    },
+    onError: (error) => {
+      toast.failure('Could not start offboarding', error);
     },
   });
 
@@ -420,11 +454,18 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                   busy={changeRole.isPending || remove.isPending}
                   canChangeRole={capabilities.manageMembers}
                   canRemove={capabilities.removeMembers}
+                  offboardingBusy={startOffboarding.isPending}
                   onRoleChange={(next) => {
                     changeRole.mutate({ userId: member.userId as UserId, role: next });
                   }}
                   onRemove={() => {
                     remove.mutate(member.userId as UserId);
+                  }}
+                  onStartOffboarding={() => {
+                    startOffboarding.mutate({
+                      userId: member.userId as UserId,
+                      email: member.email,
+                    });
                   }}
                 />
               ))}
@@ -1097,10 +1138,19 @@ interface MemberRowProps {
   readonly busy: boolean;
   /** member:manage — role changes are repeated per row; hide rather than show fifty disabled selects. */
   readonly canChangeRole: boolean;
-  /** member:remove — same reasoning as canChangeRole. */
+  /** member:remove — same reasoning as canChangeRole. Also gates "Start
+      offboarding" (§8), which shares the identical permission its own route
+      floors on: flagging someone as leaving is a strictly smaller action
+      than removing them outright. */
   readonly canRemove: boolean;
+  /** Separate from `busy` — offboarding writes no visible state a shared
+      "something is in flight" disable would need to protect, and coupling
+      it to role-change/remove's own pending state would gray out the wrong
+      button while a DIFFERENT mutation on the SAME row is running. */
+  readonly offboardingBusy: boolean;
   readonly onRoleChange: (role: Role) => void;
   readonly onRemove: () => void;
+  readonly onStartOffboarding: () => void;
 }
 
 function MemberRow({
@@ -1109,8 +1159,10 @@ function MemberRow({
   busy,
   canChangeRole,
   canRemove,
+  offboardingBusy,
   onRoleChange,
   onRemove,
+  onStartOffboarding,
 }: MemberRowProps) {
   return (
     <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
@@ -1159,13 +1211,30 @@ function MemberRow({
           when it does. A control that only exists under a pointer is a control
           that does not exist for a keyboard. */}
       {canRemove && (
-        <ConfirmButton
-          label="Remove"
-          confirmLabel={`Remove ${member.email}`}
-          disabled={busy}
-          onConfirm={onRemove}
-          className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-        />
+        <>
+          {/* §8's own UI trigger. Plain, not `ConfirmButton` — unlike Remove
+              this writes no column and cannot be gotten wrong in a way that
+              needs a second click to confirm (`startOffboarding`'s own route
+              comment: "nothing here is destructive or hard to undo"), and it
+              is safe to click twice on purpose (idempotent — see
+              `member.service.ts`). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={offboardingBusy}
+            onClick={onStartOffboarding}
+            className="text-ink-muted opacity-0 hover:text-ink focus-visible:opacity-100 md:group-hover:opacity-100"
+          >
+            Start offboarding
+          </Button>
+          <ConfirmButton
+            label="Remove"
+            confirmLabel={`Remove ${member.email}`}
+            disabled={busy}
+            onConfirm={onRemove}
+            className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          />
+        </>
       )}
     </li>
   );
