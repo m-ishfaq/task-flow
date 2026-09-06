@@ -209,12 +209,16 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'the reference point for any relative date the user asks about ("this week", ' +
                 '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
                 'date, never a pre-computed relative answer. ' +
-                'When a tool returns a list of cards (e.g. my_cards, search), the app already ' +
-                'shows the user a real, clickable list of them right below your reply — do NOT ' +
-                'restate every title, due date and priority back in a numbered list of your own, ' +
-                'which only duplicates what they can already see and click. Instead, reply with ' +
-                'one short sentence of genuine commentary (a count, what stands out, a pattern) ' +
-                'and let the app show the details.',
+                'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
+                "list_labels, list_members, list_sprints, and every write tool's own result — " +
+                'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
+                'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
+                'numbered list, or a table of your own — that only duplicates what they can ' +
+                'already see and click, in a worse, unclickable form. After a READ tool, reply ' +
+                'with at most one short sentence of genuine commentary (a count, what stands ' +
+                'out, a pattern worth noticing) and nothing else. After a WRITE tool, a brief ' +
+                'confirmation sentence is fine ("Created it and assigned Priya"), but never ' +
+                'repeat the fields back — the confirmation shown to the user already has them.',
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },

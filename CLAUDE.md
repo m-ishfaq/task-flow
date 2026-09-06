@@ -833,6 +833,63 @@ property this whole fix rests on: bundling several real service calls behind one
 nothing about what a caller is allowed to do — every call still runs through its own real `can()`
 check — only how many times a human has to click "Approve."
 
+**The `my_cards` fix above was a one-off, and the very next report proved it — `list_projects`
+and `list_boards` results still came back as the model's own retyped bullet tree.** Every tool in
+the registry has always returned real, well-formed JSON as `ToolResult.content`; that was never
+the gap. The gap was that `assistant-page.tsx`'s `MessageBubble` only knew how to interpret ONE
+tool's shape (`my_cards`), so every other tool call fell back to a plain "Used `<tool>`" chip with
+no data in it — and since the model still has to say SOMETHING, it filled the silence by
+transcribing the tool's JSON into prose of its own, which is exactly the "not a clean way to
+present info" complaint repeating itself one tool later. Patching `list_projects` next would have
+left `list_labels` broken, then `list_members`, then every future tool the registry ever grows —
+the same one-test-case-at-a-time trap the report named directly, asking for the whole rendering
+surface fixed at once rather than iteratively.
+
+**`apps/web/src/features/ai/tool-results.tsx` is that whole surface — one renderer per tool, keyed
+by tool NAME through a `RENDERERS` lookup table, dispatched generically from `MessageBubble`.**
+Adding a new tool to the registry now costs one new renderer function and one map entry, not
+another pass through `assistant-page.tsx`'s message-rendering logic. Every renderer reads the REAL
+`tool_result` message (`toolResultsById`, moved here unchanged from `assistant-page.tsx`) —
+never the model's narration of it — and checks `result.isError` first, rendering its own
+tool-specific error presentation rather than falling through to one generic error box; a failed
+`sprint_add_cards` needs to show which cards failed and why, which a generic "something went
+wrong" cannot. `renderToolResult(call, resultsById, ctx)` returns `null` for an unrecognized shape
+or a still-missing renderer, and `MessageBubble` falls back to the plain "Used `<tool>`" chip in
+that case — the fallback that started this whole complaint is now the edge case, not the norm.
+
+**Write-tool renderers read entity identity from `call.input`, not from the service's own output —
+deliberately, to keep the fix entirely frontend-side.** `card_update`, `card_assign`,
+`card_set_status`, and `card_add_labels` all require `cardId` in their INPUT schema, but their
+SERVICE outputs (`{version}`, `{assigneeIds}`, `{statusId}`, `{labelIds}`) never carry it back —
+enriching four backend services and their tests to echo an id the caller already sent would be
+real, avoidable churn. `cardWriteRenderer(verb)` is a small factory that reads
+`call.input['cardId']` and renders the shared `CardActionResult` chip (a checkmark, the verb, and
+an "Open card" link into `CardQuickView`) — one function producing `renderCardUpdate`,
+`renderCardAssign`, `renderCardSetStatus`, and `renderCardAddLabels`, since all four only differ by
+their confirmation verb.
+
+**Every list result links to the real page it names, using the actual route tree
+(`apps/web/src/router.tsx`) rather than a guessed URL** — `list_projects` links each row to
+`/projects/$projectId`, `list_boards` to `/boards/$boardId` with its lists as `Badge` chips beneath,
+`list_members` to `/people/$userId`, `list_sprints` to the project's `/projects/$projectId/sprints`
+view (no per-sprint route exists to link to one directly), `chat_post_message` to `/chat?channel=`,
+and `docs_create_page` to `/docs?space=&page=`. Building these surfaced a real TanStack Router
+typing quirk worth knowing before adding another one: whether a route's `params`/`search` prop
+needs a branded id (`as UserId`, `as ChannelId`) or accepts a plain `string` depends entirely on
+whether that route's `parseParams`/`validateSearch` actually parses through the branded Zod schema
+or passes the value through raw — `boardRoute` and `projectSettingsRoute` do the former and need
+the cast; `personRoute`, `chatRoute`'s `channel`, and `docsRoute`'s `space`/`page` do the latter and
+flag the cast as an `@typescript-eslint/no-unnecessary-type-assertion` error. There is no way to
+know which a given route needs without reading its actual `parseParams`/`validateSearch` — guessing
+either way compiles until lint catches it.
+
+**The system prompt's "don't restate what a tool already rendered" instruction, previously
+`my_cards`/`search`-specific, is now written for every tool in the registry by name** — the same
+generalization the frontend just made, made once more in `router.ts` so the model's own behavior
+matches what the UI actually shows: at most one sentence of genuine commentary after a READ tool,
+never a restated list; a brief confirmation sentence after a WRITE tool that never repeats the
+fields the confirmation chip already shows.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·
