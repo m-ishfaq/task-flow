@@ -1046,15 +1046,94 @@ entry just documented for a `Badge` row — caught before shipping, not after.**
 copy; fixed the same way, a literal `" · "` string between entries rather than layout spacing
 alone.
 
-**Deliberately not built in this pass: a real `@`-mention autocomplete in the input.** The request
-was for one; Chat already has a full TipTap-based `@mention` extension
-(`lib/tiptap/mention-extension.ts`) with a real suggestion dropdown, but it is built on a
-ProseMirror editor instance and Chat's own rich-text wire format — the assistant's input is a plain
-`<textarea>` sending a plain string (`ChatMessageWire`'s `user` variant), so reusing it as-is is not
-possible, and the real engineering choice (does a picked mention embed a resolved id the backend
-can use directly, or only a display string the model still has to resolve via a lookup tool, the
-same as typing it by hand) is a genuine scope decision, not a small addition — deferred to a direct
-conversation with the project owner rather than guessed at.
+**A real `@`/`#`/`&`/`%`/`~` mention picker was deferred here as a genuine scope decision needing
+the project owner's own choice — asked directly, and shipped the same session once both answers
+came back.** `apps/web/src/features/ai/{entity-reference.ts,entity-mention-extension.ts,
+assistant-composer.tsx}`. The two open questions this paragraph itself named: what a picked mention
+actually sends (a display string the model still resolves via a lookup tool, or an embedded id),
+and which entities get a picker at all. The answer to the first was "zero error" stated directly —
+which a display-string-only mention cannot promise on its own, since the MODEL still has to
+independently resolve it, the exact step that can still go wrong (two members sharing a display
+name is a real, documented possibility in this codebase's own seed data — see `packages/seed`'s
+`displayNameNicknameShare`, cited once already in this file's Phase 15 §5 section for exactly this
+collision). The answer to the second was "for all" of people/projects/boards/sprints/lists, with
+the trigger character for the four non-person types left to be decided.
+
+**The wire format needed no change at all — `Label{{type:id}}` is a plain-text suffix, not a new
+`ChatSendInput` field.** `entity-reference.ts`'s own header states the reasoning: `ai.chat.send`'s
+`content` stays an ordinary string, so nothing about `ChatMessageWire`, the server's Zod schemas, or
+the tool-calling loop changes — only the system prompt (`router.ts`) needed a new paragraph telling
+the model to trust an id arriving this way rather than re-resolving it, and `stripReferenceEmbeds`
+strips the suffix back out for DISPLAY of a person's own sent bubble, which otherwise would show the
+raw id sitting behind their `@Priya Nakamura`. `{{type:uuid}}` (ASCII, a closed type enum, a real
+UUID shape required inside) is deliberately over-specific rather than a bare `{{...}}` — a person
+pasting a Handlebars or MediaWiki-style `{{template}}` into a message must never have that text
+silently eaten by a strip function meant only for what the picker itself inserts;
+`entity-reference.test.ts` asserts exactly that non-collision directly.
+
+**Reusing Chat's own `mention-extension.ts` turned out not to be possible, and the real reason is
+worth knowing before trying again:** it is built on a ProseMirror editor instance and serializes
+into Chat's own rich-text JSON, which already carries `userId` structurally — nothing about it needs
+an assistant-specific embed trick, because Chat never throws the structure away. The assistant does
+throw it away (down to a plain string), which is the one thing Chat's node was never built to do.
+`entity-mention-extension.ts` is a NEW, purpose-built generalization of the same underlying pattern
+(a TipTap `Node` on `@tiptap/suggestion`) rather than a Chat/Docs code change — one factory function
+taking `{name, char, type, pluginKey, fetchItems, emptyHint}`, instantiated five times from
+`assistant-composer.tsx`, where the runtime data (`queryClient`, `orgId`, the current document's own
+content) actually lives.
+
+**A plain `<textarea>` was considered and rejected for a reason beyond "TipTap is what Chat already
+uses" — string-index tracking cannot survive an edit near an inserted mention.** Splicing a
+mention's display text into a plain string and remembering `{start, end, type, id}` breaks the
+moment a person edits text before or after it: the recorded range drifts, and there is no way to
+tell "three characters were deleted before the mention" from "part of the mention itself was
+deleted." A TipTap atomic inline node does not have this problem — it is a single indivisible unit
+that carries its `refId` regardless of what is typed around it, the identical guarantee Chat's own
+`@mention` already relies on. The genuine complexity of a real editor instance is spent buying
+correctness a string-splicing approach cannot actually deliver, not convenience.
+
+**Registering five `Suggestion()` plugins in one editor crashes unless each gets its own
+`PluginKey` — the library's own default silently shares one across every instance that does not set
+one explicitly.** `@tiptap/suggestion`'s `Suggestion({pluginKey = SuggestionPluginKey, ...})`
+defaults to the SAME exported singleton, fine for Chat/Docs (one mention type each) and fatal here:
+ProseMirror refuses to build an editor state with two plugins sharing a key at all. Each of the five
+entity types gets its own `PluginKey`, created once in `assistant-composer.tsx` (a lazy `useState`
+initializer, not a fresh one per render, since `isAnyMentionSuggestionActive`'s lookups need the
+SAME reference across renders to keep resolving) and threaded into the factory. The consequence
+reaches further than plugin registration: `rich-text-editor.tsx`'s own `handleKeyDown` checks ONE
+`SuggestionPluginKey.getState()` to tell "Enter should pick the highlighted candidate" from "Enter
+should submit" — with five independent keys, that check has to ask all five,
+`isAnyMentionSuggestionActive` doing exactly that.
+
+**Board/sprint/list pickers require a project (or board) already mentioned earlier in the SAME
+draft — a real, documented boundary, not a corner cut for time.** `work/api.ts` has no org-wide
+"every board" or "every sprint" query; `boardsQuery`/`sprintsQuery` take a `projectId`,
+`listsQuery` a `boardId`, matching the actual hierarchy a board belongs to a project and a list to a
+board. Inventing new backend routes purely so this ONE picker could search org-wide would be new
+surface for a UI convenience a real workflow does not need anyway — "in Website's Delivery board"
+is how a person phrases this regardless. `firstMentionInDoc` walks the CURRENT ProseMirror document
+for the first node of the prerequisite type and reads its `refId`; typing `&`/`%` before a project,
+or `~` before a board, shows "Mention a project first." / "Mention a board first." instead of an
+empty list that looks like the org simply has none.
+
+**The placeholder text is a small React-managed overlay, not `@tiptap/extension-placeholder`.**
+Adding a new dependency for one small affordance in an already-large change was not worth it; the
+overlay is built from `empty` state this component already tracks via `onUpdate` (shown only while
+`editor.isEmpty`), rather than the official extension's usual mechanism — a ProseMirror decoration
+carrying `content: attr(data-placeholder)` on the exact empty `<p>` node, which the FIRST version of
+this file got wrong by setting `data-placeholder` on `editorProps.attributes` instead (the OUTER
+`contentEditable` div, not the inner paragraph CSS's `attr()` actually needs it on) — caught before
+shipping by reasoning through the CSS rule rather than by a runtime check, since a broken placeholder
+is easy to miss visually behind an already-empty-looking input.
+
+**The example prompts in `CapabilitiesPanel` show trigger characters as literal pre-fill text, and
+clicking one does NOT produce a real resolved mention.** `insertPlainText` inserts exactly the
+characters shown — `#Website` lands as four ordinary characters, not a `projectMention` node with a
+real `refId` — since a static string has no candidate to resolve against. The example demonstrates
+PHRASING; retyping the trigger character after clicking one in is what actually opens a picker and
+earns the "zero error" property. Documented in the constant's own comment rather than silently
+accepted as a minor inconsistency, since it is exactly the kind of gap a person could reasonably
+expect not to exist.
 
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 

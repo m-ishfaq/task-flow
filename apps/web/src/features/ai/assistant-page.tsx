@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Bot, ChevronDown, ChevronUp, Send, Sparkles } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
-import { Button, Empty, PageHeader, Textarea } from '../../components/primitives.js';
+import { Button, Empty, PageHeader } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 import { MarkdownLite } from './markdown-lite.js';
+import { AssistantComposer, type AssistantComposerHandle } from './assistant-composer.js';
+import { stripReferenceEmbeds } from './entity-reference.js';
 import { sendChatTurn, windowForRequest, type ChatMessageWire, type ToolCallWire } from './api.js';
 import { renderToolResult, toolResultsById } from './tool-results.js';
 
@@ -125,17 +127,30 @@ const CAPABILITIES: readonly { readonly heading: string; readonly items: readonl
   },
 ];
 
-/** How to point at a specific thing — the conventions the assistant is
-    reliably good at resolving, not a special input syntax it enforces. */
+/** How to point at a specific thing. The first four are real triggers —
+    typing the character opens a picker that inserts an already-resolved
+    reference, never a name the model has to look up and possibly
+    mismatch. A card's reference and a label's name are the two exceptions:
+    a card is typed directly (find_card resolves it), and a label has no
+    picker since tagging a card is itself a confirmed step. */
 const REFERENCE_HINTS: readonly { readonly label: string; readonly example: string }[] = [
-  { label: 'A card', example: 'WEB-142' },
   { label: 'A person', example: '@Priya' },
-  { label: 'A project, board, sprint, or label', example: 'just its name' },
+  { label: 'A project', example: '#Website' },
+  { label: 'A board', example: '&Delivery' },
+  { label: 'A sprint', example: '%Sprint 14' },
+  { label: 'A list', example: '~Todo' },
+  { label: 'A card', example: 'WEB-142' },
 ];
 
+/* Plain text, inserted via `insertPlainText` on click — these demonstrate
+   the PHRASING, not a real picker interaction, so a trigger character shown
+   here (e.g. `#Website`) lands as literal characters, not a resolved
+   mention. Retyping the `#` after clicking one in is what actually opens
+   the picker and gets the "zero error" benefit `entity-reference.ts`'s own
+   header describes. */
 const EXAMPLE_PROMPTS: readonly string[] = [
   'What am I working on this week?',
-  'Create a card in Website / Delivery / Todo, "Fix login bug", assign @Priya, tag Bug, due Friday',
+  'Create a card in #Website / &Delivery / ~Todo, "Fix login bug", assign @Priya, due Friday',
   'Move WEB-142 to In Review',
 ];
 
@@ -152,7 +167,8 @@ export function AssistantPage() {
     () => useAssistantSeedStore.getState().seed ?? [],
   );
   const [pendingToolCalls, setPendingToolCalls] = useState<readonly ToolCallWire[]>([]);
-  const [draft, setDraft] = useState('');
+  const composerRef = useRef<AssistantComposerHandle>(null);
+  const [draftEmpty, setDraftEmpty] = useState(true);
   // Open by default on a fresh conversation — exactly when a person most
   // needs to see what the assistant can do — and toggled from the header
   // afterward via the same button.
@@ -200,11 +216,16 @@ export function AssistantPage() {
   }, [messages, pendingToolCalls]);
 
   const send = () => {
-    const content = draft.trim();
+    // `getText()` is the composer's ENRICHED serialization — any mentioned
+    // person/project/board/sprint/list carries its real id inline
+    // (`entity-reference.ts`'s own header), not just what a person sees
+    // while typing. That is exactly what should be sent; only DISPLAY of a
+    // sent message strips it back out (`MessageBubble`'s `user` case).
+    const content = composerRef.current?.getText().trim() ?? '';
     if (content === '') return;
     const next = [...messages, { role: 'user' as const, content }];
     setMessages(next);
-    setDraft('');
+    composerRef.current?.clear();
     turn.mutate({ messages: windowForRequest(next) });
   };
 
@@ -241,7 +262,8 @@ export function AssistantPage() {
       {showCapabilities && (
         <CapabilitiesPanel
           onUseExample={(prompt) => {
-            setDraft(prompt);
+            composerRef.current?.insertPlainText(prompt);
+            composerRef.current?.focus();
           }}
         />
       )}
@@ -297,27 +319,19 @@ export function AssistantPage() {
           send();
         }}
       >
-        <Textarea
-          aria-label="Message the assistant"
-          placeholder="Ask the assistant…"
-          rows={2}
-          value={draft}
-          disabled={busy || pendingToolCalls.length > 0}
-          onChange={(event) => {
-            setDraft(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          className="flex-1"
-        />
+        <div className="flex-1">
+          <AssistantComposer
+            ref={composerRef}
+            disabled={busy || pendingToolCalls.length > 0}
+            onSubmit={send}
+            onEmptyChange={setDraftEmpty}
+            placeholder="Ask the assistant… (@ for a person, # project, & board, % sprint, ~ list)"
+          />
+        </div>
         <Button
           type="submit"
           variant="primary"
-          disabled={busy || draft.trim() === '' || pendingToolCalls.length > 0}
+          disabled={busy || draftEmpty || pendingToolCalls.length > 0}
         >
           <Send aria-hidden="true" className="size-4" />
         </Button>
@@ -425,10 +439,13 @@ function MessageBubble({
 }) {
   switch (message.role) {
     case 'user':
+      // The composer's own serialization embeds a resolved id after every
+      // mention (`entity-reference.ts`'s own header) — real for the model
+      // to read, never for a person to see in their own sent bubble.
       return (
         <div className="flex justify-end">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 text-sm text-white">
-            {message.content}
+            {stripReferenceEmbeds(message.content)}
           </p>
         </div>
       );

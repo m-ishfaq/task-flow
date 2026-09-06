@@ -238,7 +238,13 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'just the last — do not silently drop part of a request because you answered ' +
                 'another part of it. Do not re-call a list_* tool for information a result ' +
                 'earlier in this same conversation already gave you; reuse what you already ' +
-                'have instead of fetching it again.',
+                "have instead of fetching it again. The user's own message may contain a " +
+                'reference in the exact form `Label{{type:id}}` (type is one of user, project, ' +
+                'board, sprint, or list) — this is a person or entity they picked from a real ' +
+                'list while composing, and the id is ALREADY the real, correct id. Use it ' +
+                'directly in a tool call exactly as given; never call a list_* tool to ' +
+                'independently resolve it, and never repeat the raw `{{type:id}}` text back ' +
+                'to the user — refer to them only by the label before it.',
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },
