@@ -720,6 +720,25 @@ both fire independently — a member with no grant is refused before any provide
 and an owner on a plan without the flag gets `PLAN_REQUIRED` even though their role alone would
 grant `ai:use`.
 
+**`search` alone could not answer "what are my pending tasks" at all — a real, structural gap, not
+a prompt problem — found from a real transcript where the model tried `search` four times and gave
+up.** `packages/filter/src/fields.ts`'s `SEARCH_FIELDS` (`type`/`title`/`text`/`author`/`updated`/
+`created`/`archived`) and `CARD_FIELDS` (`assignee`/`status`/`due`/...) are deliberately DISJOINT
+(Phase 8's own header), so a TQL query filtering by assignee or due date is valid syntax against
+the wrong resource and fails validation every time — and `search`'s own tool description made this
+worse by offering `"status = open AND assignee = @me"` as its EXAMPLE query, actively steering the
+model toward a shape that can never work. Fixed two ways: `search`'s description and example were
+rewritten to use only real search fields and explicitly say what it cannot do, and a new `my_cards`
+tool (`my-cards.ts`) wraps `listMyCards` — the same real, per-row-authorized, cross-board query
+`work.cards.mine` (My Tasks) already runs — to answer the actual question. "Pending" is filtered
+INSIDE the tool, deterministically, via one batched lookup of each returned card's status category
+(`listMyCards`'s own output carries only an opaque `statusId`, no category) — the identical
+"classification stays deterministic" rule this file's standup section already applies, extended
+here so the model is never handed a raw status id and trusted to guess whether it means "done."
+The system prompt (`router.ts`) also gained today's date, since a tool result only ever carries a
+raw due date — nothing previously gave the model a reference point to resolve "this week" or
+"overdue" against.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

@@ -204,7 +204,11 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'permissions of the person you are talking to — you cannot see or do anything ' +
                 'they could not do themselves. Some actions require the person to confirm ' +
                 'before they run; when that happens, tell them what you are asking to do and ' +
-                'wait for their answer rather than assuming it. Be concise.',
+                'wait for their answer rather than assuming it. Be concise. ' +
+                `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC) — use this as ` +
+                'the reference point for any relative date the user asks about ("this week", ' +
+                '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
+                'date, never a pre-computed relative answer.',
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },

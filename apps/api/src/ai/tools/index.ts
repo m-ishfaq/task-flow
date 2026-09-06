@@ -1,5 +1,6 @@
 import type { SearchProvider } from '@taskflow/contracts';
 import { createSearchTool } from './search.js';
+import { createMyCardsTool } from './my-cards.js';
 import {
   createCardAssignTool,
   createCardCreateTool,
@@ -53,10 +54,17 @@ export interface ToolRegistryDeps {
  * real request is the only thing a wire-shape assumption like this can be
  * proven against — the identical lesson `openai.ts`'s truncation bug and
  * this codebase's other "green suite, live carrier" stories already teach.
+ *
+ * `my_cards` (`my-cards.ts`) was added after `search` alone was shown, from
+ * a real transcript, unable to answer "what are my pending tasks" at
+ * all — `search`'s field set has no `assignee` and no due date, a
+ * structural gap no amount of prompt tuning on `search` alone could close.
+ * See `my-cards.ts`'s own header for the full diagnosis.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
     createSearchTool(deps.searchProvider),
+    createMyCardsTool(),
     createCardCreateTool(),
     createCardUpdateTool(),
     createCardAssignTool(),
