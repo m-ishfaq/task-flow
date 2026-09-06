@@ -1846,6 +1846,38 @@ for "today" and `Flame` for "urgent" — distinct icons from the existing done/o
 four-badge row still scans at a glance), and the "Narrate" panel shrank to a single paragraph with
 no per-person list. `MemberRow`'s "nothing to report" check now looks at all four buckets.
 
+**`StandupCardRow` packed reference + title + due date into one horizontal flex line, and inside
+the four-column bucket grid that left the title almost no width — found from a real screenshot, not
+a layout review: a title like "Audit WIP limits under concurrent edits" wrapped to one or two words
+per line for a dozen lines.** The row's remaining width after two `shrink-0` metadata spans (a
+mono-font reference and a due date) is generous at the page's full width (the top-level
+urgent-sprint list, where this row is also used) and often under 100px inside a bucket column — the
+same title text, two very different outcomes, from the same component. Fixed by stacking the row
+into two lines instead of one: a compact metadata line (priority dot, reference, due date) above,
+the title on its OWN full-width line below. The title now always gets the whole row's width to wrap
+into regardless of how narrow the surrounding column is, so the fix holds at both the wide
+top-level list and the narrow bucket grid without a media query telling it which one it's in.
+
+**§6 (new-org Docs bootstrap) and §8 (onboarding/offboarding automation) are both real, verified
+gaps in DISCOVERABILITY, not incomplete features — checked against the actual code, not assumed.**
+§6 has a real trigger (`org-picker-page.tsx`'s `markOrgForBootstrap`, fired the moment `orgs.create`
+succeeds) but it is a one-shot `sessionStorage` flag by design (`bootstrap-flag.ts`'s own header —
+"§6 is an OFFER, not a state machine"), so it is only ever seen once, in the same browser tab, at
+the moment a NEW org is created — an existing org will never show it, and there is no menu item to
+summon it again. §8 is a step further: a search across `apps/web/src` for every one of its six new
+automation action types (`channel.add_member`, `channel.remove_member`, `docs.grant_space_access`,
+`member_grant.revoke_all`, `identity.revoke_sessions`, `cards.bulk_reassign`) and for
+`startOffboarding`/`offboarding_started` returns ZERO matches. `apps/web/src/features/automation/
+vocabulary.ts`'s `TRIGGER_OPTIONS` has no `member.added` or `member.offboarding_started` entry, and
+its `ACTION_LABELS`/`ActionValue`/`ARGUMENTS` have none of the six new action types — the rule
+builder cannot construct a rule using any of them. There is also no button anywhere that calls the
+new `tenancy.members.startOffboarding` route. This is the identical "shipped backend, no consumer"
+gap this file's own Phase 15 §4/AI-Models-tab entries already document twice — found here a third
+time, by the same kind of direct code check rather than trusting the spec's own account of what
+shipped. Not yet fixed; flagged for a follow-up pass (a person picking a trigger has to see
+"someone joins/leaves" as an option, and an action picker has to offer the six actions, before §8
+is reachable by anyone who isn't editing `automation_rules` rows by hand).
+
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·

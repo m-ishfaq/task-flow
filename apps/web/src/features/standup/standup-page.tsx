@@ -397,6 +397,18 @@ function Bucket({
   );
 }
 
+/**
+ * A card's title on its OWN line, metadata (priority dot, reference, due
+ * date) on a compact line above it. The previous single-row flex layout
+ * packed reference + title + due date into one horizontal line and gave the
+ * title whatever width was left over — fine at the top-level urgent-sprint
+ * list (the full page width), and unreadable inside a four-column bucket
+ * grid, where "left over" was often under 100px: a real title wrapped to
+ * one or two words per line for a dozen lines, found from a real screenshot
+ * rather than a layout review. Stacking metadata above the title instead
+ * means the title always gets the FULL row width to wrap into, regardless
+ * of how narrow the surrounding column is.
+ */
 function StandupCardRow({
   card,
   onManage,
@@ -411,25 +423,27 @@ function StandupCardRow({
       <button
         type="button"
         onClick={onManage}
-        className="flex w-full items-start gap-1.5 rounded-lg border border-line/60 bg-surface-sunken px-2 py-1.5 text-left text-xs hover:border-accent"
+        className="flex w-full flex-col gap-1 rounded-lg border border-line/60 bg-surface-sunken px-2 py-1.5 text-left text-xs hover:border-accent"
       >
-        {priority !== null && (
-          <span
-            aria-hidden="true"
-            title={PRIORITY_LABEL[priority]}
-            className={cn(
-              'mt-1 size-2 shrink-0 rounded-full ring-1 ring-ink/10',
-              PRIORITY_SWATCH[priority],
-            )}
-          />
-        )}
-        <span className="shrink-0 font-mono text-[10px] text-ink-faint">{card.reference}</span>
-        <span className="min-w-0 flex-1 break-words text-ink">{card.title}</span>
-        {card.dueDate !== null && (
-          <span className="shrink-0 text-[10px] whitespace-nowrap text-ink-faint">
-            {formatDate(card.dueDate)}
-          </span>
-        )}
+        <span className="flex items-center gap-1.5">
+          {priority !== null && (
+            <span
+              aria-hidden="true"
+              title={PRIORITY_LABEL[priority]}
+              className={cn(
+                'size-2 shrink-0 rounded-full ring-1 ring-ink/10',
+                PRIORITY_SWATCH[priority],
+              )}
+            />
+          )}
+          <span className="shrink-0 font-mono text-[10px] text-ink-faint">{card.reference}</span>
+          {card.dueDate !== null && (
+            <span className="ml-auto shrink-0 text-[10px] whitespace-nowrap text-ink-faint">
+              {formatDate(card.dueDate)}
+            </span>
+          )}
+        </span>
+        <span className="break-words text-ink">{card.title}</span>
       </button>
     </li>
   );
