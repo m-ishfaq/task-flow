@@ -6,10 +6,11 @@ order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SH
 (single-card write tools — `card.create`/`card.update`/`card.assign`/`card.set_status` — plus
 confirm-before-execute, §4.2) has SHIPPED; §4 Wave 3 (sprint planning — `sprint.create`,
 `sprint.add_cards`) has SHIPPED; §4.3's last item (`chat.post_message`, cross-member
-tagging/discussion) has SHIPPED, closing §4.3's entire wave order; §5–§8 (the standup view, the
-doc-space bootstrap, GitHub/PR review, onboarding/offboarding automation) remain DRAFT — not yet
-approved for build, and nothing in those sections has been implemented.** Written up per this
-repo's own convention (see
+tagging/discussion) has SHIPPED, closing §4.3's entire wave order; `docs.create_page` (§4.1's
+table's own last unbuilt tool, no wave ever scheduled it) has also SHIPPED; §5 (the standup
+view), §6's actual bootstrap FLOW, §7 (GitHub/PR review), and §8 (onboarding/offboarding
+automation) remain DRAFT — not yet approved for build, and nothing in those sections has been
+implemented.** Written up per this repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
 silently rewritten, per that same convention, each time a wave shipped without this header being
@@ -84,9 +85,18 @@ deliberate choice rather than a reflexive extension of Wave 2's policy — see C
 notification it fires, is read before anyone could undo it) and for how the model composes a
 message as ordered text/mention SEGMENTS rather than markup the tool would have to parse.
 
-**§5 (the standup view), §6 (the doc-space bootstrap), §7 (GitHub/PR review), and §8
-(onboarding/offboarding automation) remain exactly as drafted below: designed, not built.** None
-of §5's standup screen or §7's PR review/merge tools have any code behind them yet. This spec
+**`docs.create_page` has shipped — the one tool §4.1's own table named that no §4.3 wave ever
+scheduled, since §4.3's ordering runs through cross-member tagging and stops.** Title-only page
+creation, because that is genuinely all the real `createPage` service can do (Docs pages are
+tree-only; content is written exclusively through `apps/collab`'s Yjs sync) — not a scope choice
+this tool makes on its own. Requires confirmation despite §6 calling a created page "safe by
+construction" and "trivially reversible," a stronger case for auto-execute than any other tool
+here has had; see CLAUDE.md's own section on why the uniform rule wins anyway.
+
+**§5 (the standup view), §6's actual bootstrap FLOW (the new-org prompt and the "team size, wiki
+vs. handbook" question sequence — the tool it would call already exists), §7 (GitHub/PR review),
+and §8 (onboarding/offboarding automation) remain exactly as drafted below: designed, not built.**
+None of §5's standup screen or §7's PR review/merge tools have any code behind them yet. This spec
 intentionally covers several waves under one phase number because they share one foundation (§1)
 and were scoped together in one planning conversation — later waves may be split into their own
 `ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got their own

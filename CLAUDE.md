@@ -292,9 +292,11 @@ permission grants) shipped and was then substantially extended — see its own s
 §2+§3 (the `AiProvider` abstraction and the token/spend budget gate), §4 Wave 1 (the tool-calling
 assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-before-execute), §4
 Wave 3 (sprint planning tools) and §4.3's last item (`chat.post_message`) have since shipped too —
-see their own sections below. That closes §4.3's entire wave order. §5 (the standup view), §6
-(new-org Docs bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate
-review pass), and §8 (onboarding/offboarding automation) remain exactly as drafted in
+see their own sections below. That closes §4.3's entire wave order. `docs.create_page` — §4.1's
+table named it, no wave scheduled it — has also shipped (title-only page creation; see its own
+section). §5 (the standup view), §6's actual bootstrap FLOW (the tool it will call already
+exists), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and §8
+(onboarding/offboarding automation) remain exactly as drafted in
 `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
@@ -765,8 +767,8 @@ may not exist for a table a fixture only started touching later.
 
 `apps/api/src/ai/tools/chat.ts`. Spec: same file, §4.1's table and §4.3 item 4 ("cross-member
 tagging/discussion — already mostly exists via `mention` + Chat, mainly assistant wiring, not new
-primitives"). With this, every wave §4.3 names is shipped; what remains in Phase 15 is §5 onward,
-never scheduled by §4.3 at all.
+primitives"). With this, every wave §4.3 names is shipped. _(§4.1's table named one more tool no
+wave had built — `docs.create_page` — shipped in a follow-up pass; see its own section below.)_
 
 **This is the one write tool where §4.2's own text is unopposed, and it still requires
 confirmation.** §4.2 names `chat.post_message` alongside `card.create`/`card.update` as "cheap to
@@ -792,6 +794,33 @@ their own sections). A mention today needs a `userId` the conversation already s
 way. Real, not fatal: `mention`'s own `isValidId` check inside `RichTextDocument` means a malformed
 id refuses cleanly rather than posting garbage, the same as every other rich-text boundary in this
 codebase.
+
+### Phase 15 — `docs.create_page` (SHIPPED, §4.1's table's last unbuilt tool)
+
+`apps/api/src/ai/tools/docs.ts`. Spec: same file, §4.1's table ("used by the org-onboarding
+bootstrap, §6") and §6 itself. Deliberately not built: §6's actual bootstrap FLOW — the new-org
+prompt offering to run the assistant, and the conversational "team size, wiki vs. handbook"
+question sequence — which needs a UI trigger this pass does not add; only the tool the flow would
+call.
+
+**Title only, no body content — because that is genuinely all the real `createPage` service can
+do, not a scope-narrowing choice this tool makes on its own.** Docs Wave 1 shipped `docs.pages` as
+tree-only with no body column at all; a page's actual prose is written exclusively through
+`apps/collab`'s Hocuspocus/Yjs sync, "the one process allowed to write from a socket handler."
+There is no honest "create this page with this text" call for an ordinary HTTP caller to make —
+this tool included — so a page the assistant creates is a titled, empty node in the tree, exactly
+what §6's own description asks for ("a starter Docs space — a handful of pages... using the
+`docs.create_page` tool," never pre-filled prose). Whoever opens the new page still writes its
+content the normal way.
+
+**Requires confirmation despite §6 making the strongest case yet for skipping it.** §6 calls a
+created page "safe by construction" and "trivially reversible" — stronger language than §4.2 uses
+for `chat.post_message`, and §4.2 does not even list `docs.create_page` among its own "cheap to
+undo" examples, so that argument is this codebase's reading of §6, not the spec's own text. Kept
+confirmation-gated anyway: one uniform rule (nothing writes without a human's explicit yes) is
+simpler to reason about and audit than deciding tool-by-tool which risk is low enough to skip, and
+consistency is worth more here than the marginal convenience of auto-executing the one tool with
+the best argument for it.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
