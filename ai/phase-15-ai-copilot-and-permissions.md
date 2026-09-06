@@ -5,10 +5,11 @@
 order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SHIPPED; §4 Wave 2
 (single-card write tools — `card.create`/`card.update`/`card.assign`/`card.set_status` — plus
 confirm-before-execute, §4.2) has SHIPPED; §4 Wave 3 (sprint planning — `sprint.create`,
-`sprint.add_cards`) has SHIPPED; §4.3's last remaining item (cross-member tagging), plus §5–§8
-(the standup view, the doc-space bootstrap, GitHub/PR review, onboarding/offboarding automation)
-remain DRAFT — not yet approved for build, and nothing in those sections has been implemented.**
-Written up per this repo's own convention (see
+`sprint.add_cards`) has SHIPPED; §4.3's last item (`chat.post_message`, cross-member
+tagging/discussion) has SHIPPED, closing §4.3's entire wave order; §5–§8 (the standup view, the
+doc-space bootstrap, GitHub/PR review, onboarding/offboarding automation) remain DRAFT — not yet
+approved for build, and nothing in those sections has been implemented.** Written up per this
+repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
 silently rewritten, per that same convention, each time a wave shipped without this header being
@@ -74,13 +75,22 @@ spec's own unambiguous text, not a conservative reading of a contradiction the w
 each card's own success or failure rather than aborting the batch on the first one, a deliberate
 departure from how `apps/worker`'s unattended automation rules handle a failed action.
 
-**§4.3's last remaining item (cross-member tagging/discussion), §5 (the standup view), §6 (the
-doc-space bootstrap), §7 (GitHub/PR review), and §8 (onboarding/offboarding automation) remain
-exactly as drafted below: designed, not built.** None of §5's standup screen or §7's PR
-review/merge tools have any code behind them yet. This spec intentionally covers several waves
-under one phase number because they share one foundation (§1) and were scoped together in one
-planning conversation — later waves may be split into their own `ai/phase-1N-*.md` files once
-build starts, the way Phase 12's waves eventually got their own sections.
+**§4.3's last item — `chat.post_message` — has shipped, closing §4.3's entire wave order.** Unlike
+Wave 2's `card.create`/`card.update`, §4.2's own text is UNOPPOSED here: it names
+`chat.post_message` alongside those two as "cheap to undo... can execute directly once permitted,"
+and §4.3 never separately contradicts that for this tool. It requires confirmation anyway, a
+deliberate choice rather than a reflexive extension of Wave 2's policy — see CLAUDE.md's own
+"Phase 15 §4.3's last item" section for the reasoning (a posted message, and any `mention`
+notification it fires, is read before anyone could undo it) and for how the model composes a
+message as ordered text/mention SEGMENTS rather than markup the tool would have to parse.
+
+**§5 (the standup view), §6 (the doc-space bootstrap), §7 (GitHub/PR review), and §8
+(onboarding/offboarding automation) remain exactly as drafted below: designed, not built.** None
+of §5's standup screen or §7's PR review/merge tools have any code behind them yet. This spec
+intentionally covers several waves under one phase number because they share one foundation (§1)
+and were scoped together in one planning conversation — later waves may be split into their own
+`ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got their own
+sections.
 
 ⚠ **This phase touches four surfaces CLAUDE.md already requires human review for** —
 `packages/policy` (§1), any webhook signature verification (§4.3), and it adds a fifth:

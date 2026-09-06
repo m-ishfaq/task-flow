@@ -290,13 +290,12 @@ more, in this case.
 **One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
 permission grants) shipped and was then substantially extended — see its own section below.
 §2+§3 (the `AiProvider` abstraction and the token/spend budget gate), §4 Wave 1 (the tool-calling
-assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-before-execute) and
-§4 Wave 3 (sprint planning tools) have since shipped too — see their own sections below. §4.3's
-last remaining item (cross-member tagging), plus §5 (the standup view), §6 (new-org Docs
-bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and
-§8 (onboarding/offboarding automation) remain exactly as drafted in
-`ai/phase-15-ai-copilot-and-permissions.md` — designed,
-not built.
+assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-before-execute), §4
+Wave 3 (sprint planning tools) and §4.3's last item (`chat.post_message`) have since shipped too —
+see their own sections below. That closes §4.3's entire wave order. §5 (the standup view), §6
+(new-org Docs bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate
+review pass), and §8 (onboarding/offboarding automation) remain exactly as drafted in
+`ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -728,9 +727,10 @@ of `<user>`, did X," never "AI did X."
 ### Phase 15 §4 Wave 3 — sprint planning tools (SHIPPED)
 
 `apps/api/src/ai/tools/sprint.ts`. Spec: same file, §4.3 item 3 ("sprint planning (multi-card,
-higher blast radius)"). Deliberately not built: cross-member tagging/discussion (§4.3 item 4,
-mostly existing plumbing per the spec's own note), the standup view (§5), doc-space bootstrap
-(§6), GitHub/PR integration (§7), onboarding/offboarding automation (§8).
+higher blast radius)"). Deliberately not built in this wave: cross-member tagging/discussion
+(§4.3 item 4, mostly existing plumbing per the spec's own note — see its own section below, since
+it shipped in a later pass), the standup view (§5), doc-space bootstrap (§6), GitHub/PR
+integration (§7), onboarding/offboarding automation (§8).
 
 **Unlike Wave 2's `card.create`/`card.update`, the spec has no internal contradiction to resolve
 here** — §4.2 names "sprint creation" itself, by name, as an example of an action needing
@@ -760,6 +760,38 @@ CASCADE` between them means the identical straight-through teardown here hits
 `work.service.test.ts`'s own `removeOrg` and `tenancy-seed.ts`'s `clearTenant` already document:
 children before parents, explicit about every table rather than relying on a cascade path that
 may not exist for a table a fixture only started touching later.
+
+### Phase 15 §4.3's last item — `chat.post_message` (SHIPPED, closes §4.3's wave order)
+
+`apps/api/src/ai/tools/chat.ts`. Spec: same file, §4.1's table and §4.3 item 4 ("cross-member
+tagging/discussion — already mostly exists via `mention` + Chat, mainly assistant wiring, not new
+primitives"). With this, every wave §4.3 names is shipped; what remains in Phase 15 is §5 onward,
+never scheduled by §4.3 at all.
+
+**This is the one write tool where §4.2's own text is unopposed, and it still requires
+confirmation.** §4.2 names `chat.post_message` alongside `card.create`/`card.update` as "cheap to
+undo... can execute directly once permitted," and unlike those two, §4.3 never separately
+contradicts that for this tool — there was no genuine ambiguity here the way Wave 2's had one to
+resolve. The choice to gate it anyway is deliberate, not a reflex extension of Wave 2's policy: a
+posted message is read — and a `mention` notifies its target — before anyone could undo it,
+unlike a card field only the people already looking at that card would ever notice change.
+Loosening this to auto-execute, matching §4.2's text exactly, is real, separate, reviewable work
+later, the same posture this registry already takes toward every other write tool.
+
+**The model composes the message as ordered SEGMENTS, not a markup string the tool would have to
+parse.** A `text` segment becomes a `text` node; a `mention` segment (naming a `userId` and the
+`label` to display) becomes a `mention` node — the exact TipTap shape a human's own composer
+produces, mapped directly rather than reconstructed from parsed `@name` syntax. This is what makes
+`mentionedUserIds` (Phase 9's notification extraction) see the tag: the tool calls the real
+`sendMessage`, so a person the assistant mentions is notified through the SAME path a human
+mentioning them would use, not a second one invented for the assistant.
+
+**There is still no tool that resolves a person's NAME to a `userId`** — the identical
+discoverability gap `card.create`'s `listId` and `sprint.add_cards`'s `sprintId` already have (see
+their own sections). A mention today needs a `userId` the conversation already supplied some other
+way. Real, not fatal: `mention`'s own `isValidId` check inside `RichTextDocument` means a malformed
+id refuses cleanly rather than posting garbage, the same as every other rich-text boundary in this
+codebase.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

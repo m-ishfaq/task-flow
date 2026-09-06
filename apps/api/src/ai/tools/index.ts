@@ -7,6 +7,7 @@ import {
   createCardUpdateTool,
 } from './card.js';
 import { createSprintAddCardsTool, createSprintCreateTool } from './sprint.js';
+import { createChatPostMessageTool } from './chat.js';
 import type { ToolDefinition } from './registry.js';
 
 export type { ToolContext, ToolDefinition, ToolResult } from './registry.js';
@@ -26,11 +27,14 @@ export interface ToolRegistryDeps {
  * `card.update` (also covers `card.set_priority`; see `card.ts`'s own
  * header), `card.assign`, `card.set_status` — every one gated by
  * `requiresConfirmation: true` (`assistant.ts`'s confirm-before-execute
- * gate, §4.2). Wave 3 adds sprint planning — `sprint.create`,
+ * gate, §4.2). Wave 3 added sprint planning — `sprint.create`,
  * `sprint.add_cards` (see `sprint.ts`'s own header) — "multi-card, higher
- * blast radius" per §4.3's own wave order, also confirmation-gated. Still
- * deliberately NOT here: `summarize_sprint`/`summarize_channel`,
- * `chat.post_message`, `docs.create_page`, `web_search` — later waves.
+ * blast radius" per §4.3's own wave order, also confirmation-gated. §4.3's
+ * last item adds `chat.post_message` (see `chat.ts`'s own header for why
+ * it stays confirmation-gated despite §4.2's own text calling it "cheap to
+ * undo"). That closes §4.3's wave order entirely. Still deliberately NOT
+ * here: `summarize_sprint`/`summarize_channel`, `docs.create_page`,
+ * `web_search` — §5/§6/optional, never scheduled by §4.3's own ordering.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -41,5 +45,6 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createCardSetStatusTool(),
     createSprintCreateTool(),
     createSprintAddCardsTool(),
+    createChatPostMessageTool(),
   ];
 }
