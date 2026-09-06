@@ -822,6 +822,116 @@ simpler to reason about and audit than deciding tool-by-tool which risk is low e
 consistency is worth more here than the marginal convenience of auto-executing the one tool with
 the best argument for it.
 
+### Phase 15 §8 — onboarding/offboarding automation (SHIPPED, a real subset)
+
+`apps/worker/src/automation/{types,executor,loop-protection}.ts` (the six new action types) ·
+`apps/api/src/automation/{router,automation.service}.ts` (the matching write-boundary schemas) ·
+`apps/api/src/tenancy/{events,member.service,member-grant.service}.ts` (`member.offboarding_started`,
+`startOffboarding`, `revokeAll`) · `apps/api/src/work/{events,card.service}.ts`
+(`card.bulk_reassigned`, `bulkReassignCards`) · `apps/api/src/identity/identity.service.ts`
+(`logoutEverywhere`'s new `reason` parameter and narrowed deps type). Spec: same file, §8
+("no new subsystem, two new trigger events and a handful of new actions"). This section ships six
+of §8's ten checklist items — the ones a real service call already exists for, or needed only a
+small, reviewable one — and documents the other four as deliberate deferrals below rather than
+half-building them.
+
+**The onboarding trigger already existed and needed no new code.** §8's draft names
+`membership.created`; the real event, registered since Phase 2, is `member.added`
+(`apps/api/src/tenancy/events.ts`) — the identical "the spec's draft event name doesn't match the
+schema" gap this file's Phase 15 §2+§3 section already documents for `ai.usage_ledger`. Every
+onboarding rule below is written against `member.added`.
+
+**Offboarding needed a genuinely new trigger, and it changes nothing about the membership row.**
+`member.offboarding_started` (`tenancy/events.ts`) is raised by a new `tenancy.members.startOffboarding`
+route (`member:remove`, no step-up — nothing here is destructive) that writes no column at all; its
+only effect is the event. This is the "distinct from immediate removal" §8 asks for: an admin can
+flag someone as leaving and let the checklist run (session revocation, card reassignment, grant
+cleanup) while the person is still, technically, a member — `removeMember` remains the only thing
+that actually ends the membership, called separately, same as today. Calling `startOffboarding`
+twice is not an error, on purpose: there is no state here a second call could corrupt.
+
+**All six new actions act on the member the TRIGGER named, never a `userId` the rule stores** —
+`userIdOf(event)` in `executor.ts` is `cardIdOf`'s exact discipline (§4's own established pattern)
+applied to §8: `member.added`/`member.offboarding_started` both carry `userId` in their payload, no
+action's Zod schema has a `userId` field of its own (`.strict()` refuses one), and
+`action-schema.test.ts` asserts that refusal directly. The one action naming a SECOND person,
+`cards.bulk_reassign`'s `toUserId`, is the replacement assignee — there is no other way to say who a
+departing member's work goes to.
+
+**`channel.add_member` / `channel.remove_member` wrap the existing `addChannelMember`/
+`removeChannelMember` (Phase 5) and need no authorization check of their own in the executor** —
+both already carry `channel:manage` internally, the identical "the service checks itself" shape
+`card.assign` etc. already rely on. Message history is untouched by a removal for the ordinary
+reason it always has been: `removeChannelMember` only deletes the membership tuple, never a message
+row, so §8's "without deleting their message history" item needed no new mechanism at all — the
+existing service already has that property.
+
+**`docs.grant_space_access` and `member_grant.revoke_all`/`identity.revoke_sessions` are the three
+actions that needed an authorization check INSIDE THE EXECUTOR, because the services they call do
+not check themselves.** `grant.service.ts`'s `grant()`, `member-grant.service.ts`'s `revokeAll()`
+(new — see below), and `identity.service.ts`'s `logoutEverywhere()` all rely on their tRPC ROUTE's
+`route({ permission: 'member:manage' })` for authorization, exactly as `grants.grant`'s route
+comment says: "writing a tuple is granting access to a specific thing, so it sits behind
+`member:manage`." A worker call bypasses every route, so `executor.ts`'s three new cases call
+`can(actor.subject, 'member:manage')` themselves before reaching the service — the identical
+reasoning `enqueueWebhookDelivery` already gives for checking `webhook:manage` INSIDE itself rather
+than trusting a route that cannot see this caller. `docs.grant_space_access` fixes the relation at
+`'viewer'` rather than taking one as a field, on purpose: an unattended rule handing out `'editor'`
+or `'owner'` on a space is a bigger blast radius than "let the new hire read the handbook" needs.
+
+**`member-grant.service.ts` gained `revokeAll` — a loop of the same conditional UPDATE `revoke()`
+already makes, not a new bulk statement** — because each permission is its own `memberGrantRevoked`
+event (guardrail 6), and an admin auditing "what could this person still do the day they left"
+wants the list, not a count. Idempotent on zero active grants, the common case for most members.
+
+**`identity.service.ts`'s `logoutEverywhere` gained a `reason` parameter (`'logout_all'` default,
+`'admin'` for offboarding) and a narrowed deps type — `Pick<IdentityDeps, 'events' | 'now'>` instead
+of the full interface.** The narrowing is what makes this the one identity mutation callable from
+OUTSIDE the identity module without fabricating a `config`/`checkBreached`/`deliver` the caller
+holds none of. `identity.sessions` carries no RLS at all (Phase 12 Wave 2), so there is no
+per-resource question for `can()` to ask here the way there is for a grant on one space — ending a
+colleague's sessions is folded into the same `member:manage` bucket that already covers role changes
+and removal.
+
+**`cards.bulk_reassign` is a genuinely new mutation shape, exactly as §8 itself calls it out
+("own audit event since it's a new mutation shape, not a loop of existing ones").** No bulk
+`assignCard` exists, so `bulkReassignCards` (`work/card.service.ts`) queries every non-archived card
+carrying `fromUserId` (`uuidArrayContains`, the same named expression Docs' ancestor lookups use) and
+updates each — but authorization is still PER CARD, inside the loop, because a relationship tuple can
+restrict `card:update` on one board and not another (§8.2's worked example). A card the rule owner
+cannot touch is reported in the result's `failed` list rather than thrown — the `sprint.add_cards`
+precedent for a confirmed bulk operation: abandoning every other card because one board refused would
+be worse for the org, not safer. One event, `card.bulk_reassigned`, names every card the operation
+actually touched; `apps/api/src/tenancy/audit.projection.ts` resolves it to the departing member
+(`fromUserId`) rather than to any one card, since there is no single card to name and "what happened
+to this departing member's work" is the question an offboarding audit actually asks.
+
+**Four of §8's ten checklist items are deliberately NOT built, and each needed a real design
+decision this pass did not make, not just more typing:**
+
+- **Onboarding item 3 (starter checklist cards / "clone template cards").** There is no `card.create`
+  automation action and no card-template-cloning concept in the engine at all; inventing either is
+  real, separate work, not a one-line addition to this pass's six.
+- **Onboarding item 4 (notify the manager).** `platform/notification.projection.ts`'s `plan*`
+  functions are deliberately PURE — no database read — and "who is this new hire's manager" needs
+  one (`people.membership_profiles.manager_user_id`, Phase 11.5). Breaking that purity for one
+  notification kind is a design decision for that file, not something to slip in here.
+- **Onboarding item 5 (apply the role's default permission-grant bundle).** There is no "role →
+  default `member_grants`" config table anywhere in this codebase yet — building one is new state,
+  not a new action wrapping existing state, and deserves its own review.
+- **Offboarding item 3's connector half ("connected-tool access (repo, telephony)").** The telephony
+  half is already covered: `call:place`/`sms:send`/`phoneNumber:read` are ordinary `member_grants`
+  permissions, which `member_grant.revoke_all` already revokes. The connector half does not apply to
+  this codebase's actual model — Slack/GitHub connector rows are ORG-scoped credentials
+  (`apps/worker`'s own `integration-action.service.ts`), not per-member, so there is nothing
+  per-departing-member to revoke there.
+
+Offboarding item 5 ("final audit entry confirming the checklist completed") needed no new code
+either, for a different reason: `automation_runs` already records every rule's full outcome
+(`RunOutcome` — status, per-action results, duration) on every execution, which already answers
+"did the checklist complete and what happened" more precisely than a single confirmation entry
+would.
+
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·

@@ -7,10 +7,12 @@ order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SH
 confirm-before-execute, §4.2) has SHIPPED; §4 Wave 3 (sprint planning — `sprint.create`,
 `sprint.add_cards`) has SHIPPED; §4.3's last item (`chat.post_message`, cross-member
 tagging/discussion) has SHIPPED, closing §4.3's entire wave order; `docs.create_page` (§4.1's
-table's own last unbuilt tool, no wave ever scheduled it) has also SHIPPED; §5 (the standup
-view), §6's actual bootstrap FLOW, §7 (GitHub/PR review), and §8 (onboarding/offboarding
-automation) remain DRAFT — not yet approved for build, and nothing in those sections has been
-implemented.** Written up per this repo's own convention (see
+table's own last unbuilt tool, no wave ever scheduled it) has also SHIPPED; §8 (onboarding/
+offboarding automation) has SHIPPED A REAL SUBSET — six of its ten checklist items, each backed by
+a real service call, with the other four named and deferred rather than half-built (see below);
+§5 (the standup view), §6's actual bootstrap FLOW, and §7 (GitHub/PR review) remain DRAFT — not
+yet approved for build, and nothing in those sections has been implemented.** Written up per this
+repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
 silently rewritten, per that same convention, each time a wave shipped without this header being
@@ -93,9 +95,29 @@ this tool makes on its own. Requires confirmation despite §6 calling a created 
 construction" and "trivially reversible," a stronger case for auto-execute than any other tool
 here has had; see CLAUDE.md's own section on why the uniform rule wins anyway.
 
+**§8 (onboarding/offboarding automation) has shipped six of its ten checklist items — the ones a
+real service call already existed for, or needed only one small, reviewable addition.** The
+onboarding trigger needed no new code (`member.added` already existed; §8's draft name,
+`membership.created`, was never the real event); offboarding got a genuinely new one,
+`member.offboarding_started`, raised by a new `tenancy.members.startOffboarding` route that writes
+nothing but the event — the membership itself is untouched, and `removeMember` remains the only
+thing that ends it. Six new automation actions: `channel.add_member`/`channel.remove_member`
+(wrapping Phase 5's `addChannelMember`/`removeChannelMember`, which already check
+`channel:manage`), `docs.grant_space_access` (fixed at the `viewer` relation, wrapping
+`grant.service.ts`), `identity.revoke_sessions` (wrapping a widened `logoutEverywhere`),
+`member_grant.revoke_all` (a new loop over the existing per-permission `revoke()`), and
+`cards.bulk_reassign` (a genuinely new mutation — its own `card.bulk_reassigned` event, per-card
+authorization, and a `sprint.add_cards`-style partial-failure result). Three of those six needed an
+authorization check written INSIDE the worker's executor, because the services they wrap rely on
+their tRPC route for `member:manage` and a worker call never goes through a route — see CLAUDE.md's
+own "Phase 15 §8" section for exactly which three and why, and for the four items (onboarding's
+starter-checklist cards, manager notification, and default permission bundle; offboarding's
+connector-access half) that were deliberately left out because each needed a real design decision
+this pass did not make, not just more typing.
+
 **§5 (the standup view), §6's actual bootstrap FLOW (the new-org prompt and the "team size, wiki
-vs. handbook" question sequence — the tool it would call already exists), §7 (GitHub/PR review),
-and §8 (onboarding/offboarding automation) remain exactly as drafted below: designed, not built.**
+vs. handbook" question sequence — the tool it would call already exists), and §7 (GitHub/PR
+review) remain exactly as drafted below: designed, not built.**
 None of §5's standup screen or §7's PR review/merge tools have any code behind them yet. This spec
 intentionally covers several waves under one phase number because they share one foundation (§1)
 and were scoped together in one planning conversation — later waves may be split into their own
@@ -420,30 +442,55 @@ CLAUDE.md's existing rule — add this file to that list once it exists.
 
 ## 8. Onboarding / offboarding automation
 
+**SHIPPED, a real subset: onboarding items 1–2 and offboarding items 1, 2 and 4, plus half of
+item 3, are built; onboarding items 3–5 and the rest of offboarding item 3 are deliberately not.**
+See CLAUDE.md's own "Phase 15 §8" section for exactly what shipped and why each deferral needed a
+real design decision rather than more typing. Two corrections to this section's own text, found
+while building it: the onboarding trigger named below, `membership.created`, was never a real
+event — the actual one, registered since Phase 2, is `member.added`, and every shipped onboarding
+action runs on that instead. And item 4's "existing session-revocation path" did not exist in a
+form an org-scoped caller (or the automation worker) could reach — `logoutEverywhere` existed but
+took the full `IdentityDeps` and had no `'admin'` reason — so it gained a narrower deps type and
+that reason as part of shipping this item, rather than being purely reused as written.
+
 Both are "when X happens, run this checklist" — precisely what the automation engine already
 does. No new subsystem, two new trigger events and a handful of new actions:
 
-**Onboarding**, triggered on `membership.created`:
+**Onboarding**, triggered on `membership.created` (SHIPPED against the real event, `member.added`):
 
-1. Add to the team's default channels (new action, `channel.add_member`)
-2. Grant Docs access to the handbook/wiki space (existing permission model)
-3. Assign a starter onboarding checklist of cards (existing `card.create`, or a "clone template
-   cards" action)
-4. Notify the manager / People contact (existing notification path)
-5. Apply the role's default permission-grant bundle from §1 (so "new Engineer" gets the right
-   `member_grants` automatically, not by someone remembering to click each toggle)
+1. **SHIPPED.** Add to the team's default channels (new action, `channel.add_member`)
+2. **SHIPPED.** Grant Docs access to the handbook/wiki space (existing permission model — fixed at
+   the `viewer` relation)
+3. **Not built.** Assign a starter onboarding checklist of cards (existing `card.create`, or a
+   "clone template cards" action) — there is no `card.create` automation action or card-template
+   concept in the engine to wrap
+4. **Not built.** Notify the manager / People contact (existing notification path) —
+   `notification.projection.ts`'s planning functions are deliberately pure (no database read), and
+   resolving "who is this person's manager" needs one
+5. **Not built.** Apply the role's default permission-grant bundle from §1 (so "new Engineer" gets
+   the right `member_grants` automatically, not by someone remembering to click each toggle) —
+   there is no "role → default grants" config table yet to apply
 
-**Offboarding**, triggered on a new `membership.offboarding_started` event (raised by an admin
+**Offboarding**, triggered on a new `membership.offboarding_started` event (SHIPPED as
+`member.offboarding_started`, raised by a new `tenancy.members.startOffboarding` route — an admin
 action, distinct from immediate removal):
 
-1. Revoke active sessions immediately (existing session-revocation path)
-2. Reassign open/in-progress cards to someone else — **new** action, `cards.bulk_reassign`
-   (bulk, so needs the §4.2 confirm treatment if ever exposed to the assistant directly, and its
-   own audit event since it's a new mutation shape, not a loop of existing ones)
-3. Revoke `member_grants` rows (§1) and connected-tool access (repo, telephony)
-4. Remove from channels, **without deleting** their message history — reuses the existing
-   legal-hold/retention mechanism from Phase 5, not a new deletion path
-5. Final audit entry confirming the checklist completed
+1. **SHIPPED.** Revoke active sessions immediately — `identity.revoke_sessions`, wrapping a
+   widened `logoutEverywhere` (see above; the "existing" path needed a small real change)
+2. **SHIPPED.** Reassign open/in-progress cards to someone else — **new** action,
+   `cards.bulk_reassign` (its own `card.bulk_reassigned` audit event since it's a new mutation
+   shape, not a loop of existing ones; confirmed to also need per-card authorization, since a
+   relationship tuple can restrict one board and not another)
+3. **Half shipped.** Revoke `member_grants` rows (§1) — **SHIPPED**, `member_grant.revoke_all` —
+   and connected-tool access (repo, telephony) — **not applicable as drafted**: telephony access is
+   already `member_grants` permissions, covered by the same action; connector (Slack/GitHub) rows
+   are org-scoped credentials, not per-member, so there is nothing per-departing-member to revoke
+4. **SHIPPED.** Remove from channels, **without deleting** their message history —
+   `channel.remove_member` needed no legal-hold/retention mechanism at all: the existing
+   `removeChannelMember` already only deletes the membership tuple, never a message row
+5. **Not a gap — already covered.** Final audit entry confirming the checklist completed:
+   `automation_runs` already records every rule's full outcome (status, per-action results,
+   duration) on every execution, which answers this more precisely than a separate entry would.
 
 ---
 

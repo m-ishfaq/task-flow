@@ -174,6 +174,22 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         ),
 
       /**
+       * Flags a member as leaving, distinct from `remove` above (§8 of
+       * ai/phase-15-ai-copilot-and-permissions.md). Writes nothing to the
+       * membership — it exists to give an org's `member.offboarding_started`
+       * automation rules something to run against (session revocation, card
+       * reassignment, grant cleanup) before the person is actually removed.
+       * No step-up: unlike `remove` and `transferOwnership`, nothing here is
+       * destructive or hard to undo.
+       */
+      startOffboarding: route({ permission: 'member:remove' })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ started: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          members.startOffboarding(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
        * The single, atomic ownership handoff (Phase 12 Wave 1, §3.5).
        *
        * `member:manage` is Owner-only in the role matrix, so this route is

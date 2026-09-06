@@ -9,6 +9,7 @@ import {
   schema,
   withOrgScope,
   outboxWriter,
+  uuidArrayContains,
   type SQL,
 } from '@taskflow/db';
 import {
@@ -30,6 +31,7 @@ import {
   cardAssigned,
   cardCreated,
   cardMoved,
+  cardsBulkReassigned,
   cardStatusChanged,
   cardUpdated,
   listRebalanced,
@@ -884,6 +886,101 @@ export async function assignCard(
     ]);
 
     return { assigneeIds };
+  });
+}
+
+export interface BulkReassignResult {
+  /** Card ids the operation actually changed. */
+  readonly reassigned: readonly string[];
+  /** A card it could not touch, and why — never thrown, so one board the
+   *  rule owner cannot edit does not abort every other card's reassignment. */
+  readonly failed: readonly { readonly cardId: string; readonly error: string }[];
+}
+
+/**
+ * Offboarding automation's `cards.bulk_reassign` (ai/phase-15-ai-copilot-and-
+ * permissions.md §8, offboarding item 2) — hands every open card
+ * `fromUserId` is carrying to `toUserId`, in one operation.
+ *
+ * A genuinely NEW mutation shape, not `assignCard` looped: every other bulk
+ * action in this codebase (`sprint.add_cards`) loops a PER-ITEM service call
+ * because each item is independently meaningful. This one is a single
+ * intent — "everything this person had, someone else now has" — so it gets
+ * its own event (`card.bulk_reassigned`) naming every card touched, rather
+ * than one `card.assigned` per card that would read as N unrelated changes.
+ *
+ * Authorization is still PER CARD, because permission is: a rule owner can
+ * hold `card:update` on one board and not another via a relationship tuple,
+ * and `enforceOn` is what already knows how to ask that question correctly.
+ * A card the owner cannot touch is reported in `failed` rather than thrown —
+ * the `sprint.add_cards` precedent for a bulk operation a human already
+ * confirmed touching a named set of resources: abandoning every other card
+ * because one board refused would be worse for the org, not safer.
+ *
+ * Archived cards are excluded — reassigning work that is already done is not
+ * "open/in-progress" work in the sense offboarding cares about, and Wave 1
+ * has no product surface for un-archiving one via this path anyway.
+ */
+export async function bulkReassignCards(
+  actor: WorkActor,
+  input: { readonly fromUserId: UserId; readonly toUserId: UserId },
+): Promise<BulkReassignResult> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const target = await tx
+      .select({ userId: schema.memberships.userId })
+      .from(schema.memberships)
+      .where(
+        and(eq(schema.memberships.userId, input.toUserId), eq(schema.memberships.status, 'active')),
+      )
+      .limit(1);
+    if (!target[0]) {
+      throw errors.validation({ toUserId: 'Not a member of this organization.' });
+    }
+
+    const rows = await tx
+      .select({ id: schema.cards.id })
+      .from(schema.cards)
+      .where(
+        and(
+          uuidArrayContains(schema.cards.assigneeIds, input.fromUserId),
+          isNull(schema.cards.archivedAt),
+        ),
+      );
+
+    const reassigned: string[] = [];
+    const failed: { readonly cardId: string; readonly error: string }[] = [];
+
+    for (const row of rows) {
+      const cardId = row.id as CardId;
+      try {
+        const card = await loadCard(tx, cardId);
+        enforceOn(actor, 'card:update', { type: 'card', id: cardId }, card, ancestorsOfCard(card));
+
+        const next = card.assigneeIds.filter((id) => id !== input.fromUserId);
+        if (!next.includes(input.toUserId)) next.push(input.toUserId);
+
+        await tx
+          .update(schema.cards)
+          .set({ assigneeIds: next, updatedAt: new Date() })
+          .where(eq(schema.cards.id, cardId));
+
+        reassigned.push(cardId);
+      } catch (error) {
+        failed.push({ cardId, error: error instanceof Error ? error.message : 'unknown error' });
+      }
+    }
+
+    if (reassigned.length > 0) {
+      await outboxWriter.append(tx, [
+        createEvent(
+          cardsBulkReassigned,
+          { cardIds: reassigned, fromUserId: input.fromUserId, toUserId: input.toUserId },
+          envelopeOf(actor),
+        ),
+      ]);
+    }
+
+    return { reassigned, failed };
   });
 }
 

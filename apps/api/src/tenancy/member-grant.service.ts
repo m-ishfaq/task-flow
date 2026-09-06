@@ -189,6 +189,65 @@ export async function revoke(
   });
 }
 
+/**
+ * Revokes every active individual grant a member holds — offboarding
+ * automation's `member_grant.revoke_all` (ai/phase-15-ai-copilot-and-
+ * permissions.md §8, offboarding item 3).
+ *
+ * A loop of the same conditional UPDATE `revoke()` already makes, not a
+ * single bulk statement: each permission is its own `memberGrantRevoked`
+ * event (guardrail 6), and an admin auditing "what could this person still
+ * do the day they left" wants the list, not a count. Idempotent on "nothing
+ * left to revoke" for the identical reason `revoke()` is — a membership
+ * with zero active grants is not an error, it is the common case for most
+ * members, who hold none at all.
+ */
+export async function revokeAll(
+  orgId: OrgId,
+  userId: UserId,
+  actor: Actor,
+): Promise<{ readonly revoked: readonly string[] }> {
+  return withOrgScope(orgId, async (tx) => {
+    const membership = await findActiveMembership(tx, orgId, userId);
+    if (!membership) throw errors.notFound();
+
+    const rows = await tx
+      .select({ id: schema.memberGrants.id, permission: schema.memberGrants.permission })
+      .from(schema.memberGrants)
+      .where(
+        and(
+          eq(schema.memberGrants.membershipId, membership.id),
+          isNull(schema.memberGrants.revokedAt),
+        ),
+      );
+
+    if (rows.length === 0) return { revoked: [] };
+
+    await tx
+      .update(schema.memberGrants)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(schema.memberGrants.membershipId, membership.id),
+          isNull(schema.memberGrants.revokedAt),
+        ),
+      );
+
+    await outboxWriter.append(
+      tx,
+      rows.map((row) =>
+        createEvent(
+          memberGrantRevoked,
+          { grantId: row.id, membershipId: membership.id, userId, permission: row.permission },
+          { orgId, actorId: actor.userId, requestId: actor.requestId },
+        ),
+      ),
+    );
+
+    return { revoked: rows.map((row) => row.permission) };
+  });
+}
+
 /** Every active individual grant in the org — the admin "Permissions" screen. */
 export async function listGrants(orgId: OrgId): Promise<readonly MemberGrantSummary[]> {
   return withOrgScope(orgId, async (tx) =>

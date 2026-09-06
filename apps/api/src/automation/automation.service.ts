@@ -115,7 +115,16 @@ export type AutomationActionInput =
       readonly integrationId: string;
       readonly title: string;
       readonly body: string;
-    };
+    }
+  /* §8 — onboarding/offboarding automation. See the worker's own
+     AutomationAction union for why all six act on the trigger's own member
+     and carry no `userId` of their own. */
+  | { readonly type: 'channel.add_member'; readonly channelId: string }
+  | { readonly type: 'channel.remove_member'; readonly channelId: string }
+  | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
+  | { readonly type: 'identity.revoke_sessions' }
+  | { readonly type: 'member_grant.revoke_all' }
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
 
 /**
  * Events an action emits, for the save-time self-trigger check.
@@ -155,6 +164,12 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
      carries the same reasoning. */
   'slack.post_message': ['integration.message_posted'],
   'github.create_issue': ['integration.issue_created'],
+  'channel.add_member': ['channel.member_added'],
+  'channel.remove_member': ['channel.member_removed'],
+  'docs.grant_space_access': ['grant.created'],
+  'identity.revoke_sessions': ['session.revoked'],
+  'member_grant.revoke_all': ['member_grant.revoked'],
+  'cards.bulk_reassign': ['card.bulk_reassigned'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;

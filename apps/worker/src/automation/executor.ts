@@ -1,9 +1,22 @@
-import { unsafeAsId, unsafeAsPhoneNumber, type CardId, type RequestId } from '@taskflow/contracts';
+import {
+  errors,
+  unsafeAsId,
+  unsafeAsPhoneNumber,
+  type CardId,
+  type RequestId,
+  type UserId,
+} from '@taskflow/contracts';
+import { InMemoryEventBus, type EventBus } from '@taskflow/events';
+import { can } from '@taskflow/policy';
 import { resolveOrgMembership } from '@taskflow/api/tenancy/resolve';
 import * as cards from '@taskflow/api/work/cards';
 import * as comments from '@taskflow/api/work/comments';
 import * as labels from '@taskflow/api/work/labels';
 import * as messages from '@taskflow/api/chat/messages';
+import * as channels from '@taskflow/api/chat/channels';
+import * as grants from '@taskflow/api/tenancy/grants';
+import * as memberGrants from '@taskflow/api/tenancy/member-grants';
+import * as sessions from '@taskflow/api/identity/sessions';
 import * as webhooks from '@taskflow/api/automation/webhooks';
 import * as integrationActions from '@taskflow/api/automation/integration-actions';
 import type { IntegrationActionDeps } from '@taskflow/api/automation/integration-actions';
@@ -104,6 +117,16 @@ export interface ExecutorDeps {
    * the org controls.
    */
   readonly integrations?: IntegrationActionDeps;
+  /**
+   * §8 — what `identity.revoke_sessions` publishes through. Defaults to a
+   * fresh `InMemoryEventBus`, the identical default `buildIdentityDeps` uses
+   * when nobody injects one (`apps/api/src/identity/deps.ts`): nothing in
+   * this process subscribes to it either way, so a rule ending a departing
+   * member's sessions gets the same real effect (the rows in
+   * `identity.sessions` are what `refresh()` actually checks) whether or not
+   * anything is listening for the event.
+   */
+  readonly events?: EventBus;
 }
 
 export function createActionExecutor(deps: ExecutorDeps = {}): ActionExecutor {
@@ -400,6 +423,92 @@ async function runAction(
       });
       return;
     }
+
+    case 'channel.add_member': {
+      /* `addChannelMember` carries its own `channel:manage` check (or
+         `channel:read` for the self-join case, which cannot apply here: the
+         actor is the RULE OWNER, not the member being added). */
+      await channels.addChannelMember(actor, {
+        channelId: unsafeAsId<'ChannelId'>(action.channelId),
+        userId: userIdOf(event),
+      });
+      return;
+    }
+
+    case 'channel.remove_member': {
+      await channels.removeChannelMember(actor, {
+        channelId: unsafeAsId<'ChannelId'>(action.channelId),
+        userId: userIdOf(event),
+      });
+      return;
+    }
+
+    case 'docs.grant_space_access': {
+      /* `grants.grant` (`tenancy/grant.service.ts`) does its OWN validation
+         but no `can()` check — its route floors on `member:manage`, and a
+         worker call bypasses every route. So the check runs HERE, the
+         identical reasoning `enqueueWebhookDelivery` gives for checking
+         `webhook:manage` inside itself: a rule must never be able to do
+         something its owner could not, and nothing else stands between this
+         call and the tuple table. */
+      if (!can(actor.subject, 'member:manage').allowed) {
+        throw errors.forbidden('The rule owner may not grant access to this organization.');
+      }
+      await grants.grant(
+        actor.subject.orgId,
+        {
+          subjectType: 'user',
+          subjectId: userIdOf(event),
+          relation: 'viewer',
+          objectType: 'space',
+          objectId: action.spaceId,
+          expiresAt: null,
+        },
+        { userId: actor.subject.userId, requestId: actor.requestId },
+      );
+      return;
+    }
+
+    case 'identity.revoke_sessions': {
+      /* Global, not org-scoped — `identity.sessions` carries no RLS (see
+         CLAUDE.md's Phase 12 Wave 2 section), so there is no per-resource
+         question for `can()` to answer here the way there is for a grant on
+         one space. Ending a colleague's sessions is the same "managing
+         another member's account state" bucket `member:manage` already
+         covers for role changes and removal. */
+      if (!can(actor.subject, 'member:manage').allowed) {
+        throw errors.forbidden("The rule owner may not end another member's sessions.");
+      }
+      await sessions.logoutEverywhere(
+        { events: eventsFor(deps) },
+        { userId: userIdOf(event) },
+        'admin',
+      );
+      return;
+    }
+
+    case 'member_grant.revoke_all': {
+      if (!can(actor.subject, 'member:manage').allowed) {
+        throw errors.forbidden("The rule owner may not revoke another member's permission grants.");
+      }
+      await memberGrants.revokeAll(actor.subject.orgId, userIdOf(event), {
+        userId: actor.subject.userId,
+        requestId: actor.requestId,
+      });
+      return;
+    }
+
+    case 'cards.bulk_reassign': {
+      /* Authorization is PER CARD, inside `bulkReassignCards` itself — see
+         its own header. A card the rule owner cannot touch is reported in
+         the result's `failed` list rather than thrown, so one board does
+         not abort every other card's reassignment. */
+      await cards.bulkReassignCards(actor, {
+        fromUserId: userIdOf(event),
+        toUserId: unsafeAsId<'UserId'>(action.toUserId),
+      });
+      return;
+    }
   }
 }
 
@@ -419,6 +528,11 @@ function integrationsFor(deps: ExecutorDeps): IntegrationActionDeps {
     throw new Error('connector actions are not configured on this instance');
   }
   return deps.integrations;
+}
+
+/** The event bus `identity.revoke_sessions` publishes through — see `ExecutorDeps.events`. */
+function eventsFor(deps: ExecutorDeps): EventBus {
+  return deps.events ?? new InMemoryEventBus();
 }
 
 /**
@@ -505,4 +619,21 @@ function cardIdOf(event: TriggerEvent): CardId {
     throw new Error(`${event.name} carries no cardId, so this action has nothing to act on`);
   }
   return unsafeAsId<'CardId'>(cardId);
+}
+
+/**
+ * The member an onboarding/offboarding action operates on — `cardIdOf`'s
+ * exact discipline, applied to §8's triggers. `member.added` and
+ * `member.offboarding_started` both carry `userId`, and neither of the six
+ * §8 action types names a `userId` of its own (`cards.bulk_reassign`'s
+ * `toUserId` is a SECOND person, the replacement, never the trigger's own
+ * member) — so a rule on either trigger can only ever act on the person it
+ * fired for, never an arbitrary member the rule's author picks.
+ */
+function userIdOf(event: TriggerEvent): UserId {
+  const userId = event.payload['userId'];
+  if (typeof userId !== 'string') {
+    throw new Error(`${event.name} carries no userId, so this action has nothing to act on`);
+  }
+  return unsafeAsId<'UserId'>(userId);
 }

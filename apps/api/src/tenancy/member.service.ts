@@ -11,7 +11,13 @@ import {
 } from '@taskflow/policy';
 import { leaveAllActiveSessionsFor } from '../rtc/participants.js';
 import { rtcSessionEnded, rtcSessionLeft } from '../rtc/events.js';
-import { memberAdded, memberRemoved, memberRoleChanged, ownershipTransferred } from './events.js';
+import {
+  memberAdded,
+  memberOffboardingStarted,
+  memberRemoved,
+  memberRoleChanged,
+  ownershipTransferred,
+} from './events.js';
 import type { Actor } from './org.service.js';
 
 /**
@@ -300,6 +306,42 @@ export async function removeMember(
     await outboxWriter.append(tx, events);
 
     return { removed: true as const };
+  });
+}
+
+/**
+ * Flags a member as leaving — offboarding automation's trigger
+ * (ai/phase-15-ai-copilot-and-permissions.md §8), and nothing else. Writes
+ * no column; the membership is untouched and `removeMember` remains the
+ * only thing that actually ends it. Calling this on the same person twice
+ * is not an error — a checklist an admin wants to re-run (a rule was edited,
+ * a step failed) is a legitimate reason to fire it again, and there is no
+ * state here that a second call could corrupt.
+ */
+export async function startOffboarding(
+  orgId: OrgId,
+  target: { readonly userId: UserId },
+  actor: Actor,
+): Promise<{ readonly started: true }> {
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.memberships.id })
+      .from(schema.memberships)
+      .where(eq(schema.memberships.userId, target.userId))
+      .limit(1);
+
+    const membership = rows[0];
+    if (!membership) throw errors.notFound();
+
+    await outboxWriter.append(tx, [
+      createEvent(
+        memberOffboardingStarted,
+        { membershipId: membership.id, userId: target.userId, initiatedBy: actor.userId },
+        { orgId, actorId: actor.userId, requestId: actor.requestId },
+      ),
+    ]);
+
+    return { started: true as const };
   });
 }
 

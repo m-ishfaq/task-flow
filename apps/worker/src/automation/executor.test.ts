@@ -261,3 +261,102 @@ describe('the executor — the outbound connector actions (§7.6)', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * §8 (ai/phase-15-ai-copilot-and-permissions.md) — onboarding/offboarding
+ * automation.
+ *
+ * `docs.grant_space_access`, `identity.revoke_sessions` and
+ * `member_grant.revoke_all` all wrap a service (`grant.service.ts`,
+ * `identity.service.ts`'s `logoutEverywhere`, `member-grant.service.ts`'s
+ * `revokeAll`) whose OWN authorization lives at the tRPC route, not inside
+ * the function — so the executor is the only thing standing between a rule
+ * and those calls. These three tests are the property that check exists at
+ * all: a `guest` (who holds no `member:manage`) is refused before the
+ * service is ever reached, matching the `never reaches the provider`
+ * discipline the connector tests above already use for the identical
+ * reason.
+ */
+describe('the executor — §8 onboarding/offboarding actions', () => {
+  const guestMember = { orgId: ORG, role: 'guest' as const, tuples: [], memberGrants: [] };
+  const memberEvent: TriggerEvent = {
+    ...event,
+    name: 'member.added',
+    payload: { userId: '018f4d1e-7c3a-7b2e-8f1a-0000000000fa' },
+  };
+
+  it('refuses docs.grant_space_access for a rule owner without member:manage', async () => {
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(guestMember),
+    });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.added',
+        actions: [
+          { type: 'docs.grant_space_access', spaceId: '018f4d1e-7c3a-7b2e-8f1a-0000000000fb' },
+        ],
+      }),
+      event: memberEvent,
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('grant access');
+  });
+
+  it('refuses identity.revoke_sessions for a rule owner without member:manage', async () => {
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(guestMember),
+    });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.offboarding_started',
+        actions: [{ type: 'identity.revoke_sessions' }],
+      }),
+      event: { ...memberEvent, name: 'member.offboarding_started' },
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('sessions');
+  });
+
+  it('refuses member_grant.revoke_all for a rule owner without member:manage', async () => {
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(guestMember),
+    });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.offboarding_started',
+        actions: [{ type: 'member_grant.revoke_all' }],
+      }),
+      event: { ...memberEvent, name: 'member.offboarding_started' },
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('permission grants');
+  });
+
+  it('fails cleanly when the trigger carries no userId, the same discipline cardIdOf enforces for cards', async () => {
+    const admin = { orgId: ORG, role: 'admin' as const, tuples: [], memberGrants: [] };
+    const executor = createActionExecutor({ resolveMembership: vi.fn().mockResolvedValue(admin) });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.added',
+        actions: [
+          { type: 'channel.add_member', channelId: '018f4d1e-7c3a-7b2e-8f1a-0000000000fc' },
+        ],
+      }),
+      event: { ...event, name: 'member.added', payload: {} },
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('no userId');
+  });
+});

@@ -248,6 +248,28 @@ export const cardArchived = defineEvent(
 );
 
 /**
+ * Offboarding automation's bulk reassignment (ai/phase-15-ai-copilot-and-
+ * permissions.md §8) — its OWN event rather than one `card.assigned` per
+ * card, because a loop of the existing event would tell an audit reader "N
+ * unrelated cards changed assignee" when what actually happened is one
+ * operation: everything `fromUserId` was carrying got handed to `toUserId`
+ * at once. `cardIds` is every card the operation actually touched — a card
+ * skipped because the rule owner lacked `card:update` on its board is not
+ * in this list, and is recorded as its own failed `ActionResult` instead
+ * (`bulkReassignCards`'s own header).
+ */
+export const cardsBulkReassigned = defineEvent(
+  'card.bulk_reassigned',
+  z
+    .object({
+      cardIds: z.array(z.string()).readonly(),
+      fromUserId: z.string(),
+      toUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
  * A list's ranks were renormalized (§10.1).
  *
  * Not a user action, and the only event here that no human caused — which is

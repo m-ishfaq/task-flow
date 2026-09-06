@@ -75,6 +75,27 @@ export const memberRemoved = defineEvent(
 );
 
 /**
+ * An admin flagged a member as leaving (ai/phase-15-ai-copilot-and-
+ * permissions.md §8, offboarding) — distinct from `member.removed` on
+ * purpose. This event changes NOTHING about the membership row; it exists
+ * only to give the automation engine something to trigger an offboarding
+ * checklist on (session revocation, card reassignment, grant cleanup)
+ * BEFORE the person is actually removed, so those steps run against a
+ * membership that still resolves rather than racing its own deletion. The
+ * actual removal is a separate, later `removeMember` call, same as today.
+ */
+export const memberOffboardingStarted = defineEvent(
+  'member.offboarding_started',
+  z
+    .object({
+      membershipId: z.string(),
+      userId: z.string(),
+      initiatedBy: z.string(),
+    })
+    .strict(),
+);
+
+/**
  * Ownership was handed from one member to another in a single atomic action
  * (Phase 12 Wave 1, ai/phase-12-admin.md §3.5).
  *

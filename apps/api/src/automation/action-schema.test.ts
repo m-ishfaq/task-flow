@@ -124,3 +124,59 @@ describe('the connector action schema (Wave 4 §7.6)', () => {
     expect(schema.safeParse({ ...SLACK, text: '' }).success).toBe(false);
   });
 });
+
+/**
+ * §8 (ai/phase-15-ai-copilot-and-permissions.md) — onboarding/offboarding
+ * automation's actions, at the WRITE boundary. Unconditional, like the
+ * connector pair above: no deployment flag hides them.
+ */
+describe('the §8 onboarding/offboarding action schemas', () => {
+  const schema = buildAutomationActionSchema(false);
+  const UUID = '018f4d1e-7c3a-7b2e-8f1a-0000000000f3';
+
+  it('admits all six regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const withFlag = buildAutomationActionSchema(enabled);
+      expect(withFlag.safeParse({ type: 'channel.add_member', channelId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'channel.remove_member', channelId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'docs.grant_space_access', spaceId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'identity.revoke_sessions' }).success).toBe(true);
+      expect(withFlag.safeParse({ type: 'member_grant.revoke_all' }).success).toBe(true);
+      expect(withFlag.safeParse({ type: 'cards.bulk_reassign', toUserId: UUID }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it('refuses a userId field on any of them — a rule may only act on the member its trigger named', () => {
+    /* `.strict()` is the control here, identical to the connector schema's
+       own "refuses a repository named by the rule" test: an extra field a
+       rule author could set is a capability the executor's `userIdOf`
+       discipline exists specifically to deny. */
+    expect(
+      schema.safeParse({ type: 'channel.add_member', channelId: UUID, userId: UUID }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ type: 'identity.revoke_sessions', userId: UUID }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'member_grant.revoke_all', userId: UUID }).success).toBe(false);
+  });
+
+  it('refuses a channel/space/user named by anything but a row id', () => {
+    expect(schema.safeParse({ type: 'channel.add_member', channelId: 'general' }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'docs.grant_space_access', spaceId: 'handbook' }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'cards.bulk_reassign', toUserId: 'not-a-uuid' }).success).toBe(
+      false,
+    );
+  });
+});

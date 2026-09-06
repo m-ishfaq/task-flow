@@ -487,6 +487,49 @@ describe('membership management', () => {
     await members.removeMember(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
     expect(await loadTuples(orgId, COLLEAGUE)).toHaveLength(0);
   });
+
+  describe('startOffboarding (ai/phase-15-ai-copilot-and-permissions.md §8)', () => {
+    it('writes an event and nothing else — the membership is untouched', async () => {
+      const orgId = await newOrg('offboarding-one');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'member' },
+        actorOf(OWNER),
+      );
+
+      const result = await members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
+      expect(result).toEqual({ started: true });
+
+      // Still an ordinary, active member — only `removeMember` ends that.
+      const roster = await members.listMembers(orgId);
+      expect(roster.find((member) => member.userId === COLLEAGUE)?.status).toBe('active');
+
+      await drainOutboxFully();
+      const entries = await audit.listAuditEntries(orgId, { limit: 50, before: null });
+      expect(entries[0]).toMatchObject({ action: 'member.offboarding_started' });
+    });
+
+    it('can be called more than once — there is no state here a second call could corrupt', async () => {
+      const orgId = await newOrg('offboarding-two');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'member' },
+        actorOf(OWNER),
+      );
+
+      await members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
+      await expect(
+        members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER)),
+      ).resolves.toEqual({ started: true });
+    });
+
+    it('404s for someone who was never a member here', async () => {
+      const orgId = await newOrg('offboarding-three');
+      await expect(
+        members.startOffboarding(orgId, { userId: OUTSIDER }, actorOf(OWNER)),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+  });
 });
 
 describe('the tuple loader', () => {
@@ -1210,5 +1253,50 @@ describe('member grants (ai/phase-15-ai-copilot-and-permissions.md §1)', () => 
     const list = await memberGrants.listGrants(orgId);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ userId: COLLEAGUE, permission: 'call:place' });
+  });
+
+  describe('revokeAll (offboarding automation, §8)', () => {
+    it('revokes every active grant a member holds, and reports which', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-one');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'guest' },
+        actorOf(OWNER),
+      );
+      await memberGrants.grant(
+        orgId,
+        { userId: COLLEAGUE, permission: 'call:place' },
+        actorOf(OWNER),
+      );
+      await memberGrants.grant(
+        orgId,
+        { userId: COLLEAGUE, permission: 'sms:send' },
+        actorOf(OWNER),
+      );
+
+      const result = await memberGrants.revokeAll(orgId, COLLEAGUE, actorOf(OWNER));
+      expect([...result.revoked].sort()).toEqual(['call:place', 'sms:send']);
+      expect(await memberGrants.listGrants(orgId)).toEqual([]);
+    });
+
+    it('is a no-op, not an error, for a member holding zero grants', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-two');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'guest' },
+        actorOf(OWNER),
+      );
+
+      await expect(memberGrants.revokeAll(orgId, COLLEAGUE, actorOf(OWNER))).resolves.toEqual({
+        revoked: [],
+      });
+    });
+
+    it('404s for someone outside the organization', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-three');
+      await expect(memberGrants.revokeAll(orgId, OUTSIDER, actorOf(OWNER))).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
   });
 });

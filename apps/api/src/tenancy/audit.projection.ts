@@ -69,6 +69,11 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'member.added': { type: 'member', key: 'userId' },
   'member.role_changed': { type: 'member', key: 'userId' },
   'member.removed': { type: 'member', key: 'userId' },
+  /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — offboarding automation's
+     trigger. Resolves exactly like `member.added`/`member.removed`: the fact
+     is about the account, and "what happened when this person left" is the
+     question a reader of the audit log asks about it. */
+  'member.offboarding_started': { type: 'member', key: 'userId' },
   /* Phase 12 Wave 1. The handoff resolves to the ORG — the fact being
      recorded is "this org changed owners", and the org is what an access
      review asks about. */
@@ -108,6 +113,14 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.moved': { type: 'card', key: 'cardId' },
   'card.assigned': { type: 'card', key: 'cardId' },
   'card.archived': { type: 'card', key: 'cardId' },
+  /* Offboarding automation's bulk reassignment (§8) touches MANY cards, so
+     there is no single `cardId` to key on the way every other card.* event
+     does — resolving to the card, plural, would need a resource shape this
+     table does not have. Keyed on `fromUserId` (type `member`) instead: the
+     compliance question this event answers is "what happened to this
+     departing member's work", the same framing `member.removed` already
+     resolves to the account rather than to anything the account touched. */
+  'card.bulk_reassigned': { type: 'member', key: 'fromUserId' },
 
   /* Sprints (Phase 10.5, migration 0054) resolve to their PROJECT, on exactly
      the reasoning `list.*` resolves to its board: there is no `sprint`

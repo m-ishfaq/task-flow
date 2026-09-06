@@ -103,7 +103,21 @@ export type AutomationAction =
       readonly integrationId: string;
       readonly title: string;
       readonly body: string;
-    };
+    }
+  /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — onboarding/offboarding
+     automation. All six act on the member the TRIGGER named (`member.added`
+     or `member.offboarding_started`'s own `userId`), the identical "this
+     card" discipline `cardIdOf` already enforces for the card actions above
+     — a rule cannot reach past the person its trigger fired for. */
+  | { readonly type: 'channel.add_member'; readonly channelId: string }
+  | { readonly type: 'channel.remove_member'; readonly channelId: string }
+  /* Fixed at 'viewer' rather than a caller-supplied relation — an unattended
+     rule handing out 'editor' or 'owner' on a Docs space is a bigger blast
+     radius than "let the new hire read the handbook" needs. */
+  | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
+  | { readonly type: 'identity.revoke_sessions' }
+  | { readonly type: 'member_grant.revoke_all' }
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -121,6 +135,12 @@ export const ACTION_TYPES = [
   'sms.send',
   'slack.post_message',
   'github.create_issue',
+  'channel.add_member',
+  'channel.remove_member',
+  'docs.grant_space_access',
+  'identity.revoke_sessions',
+  'member_grant.revoke_all',
+  'cards.bulk_reassign',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];
