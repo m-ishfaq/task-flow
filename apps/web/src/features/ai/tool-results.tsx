@@ -3,7 +3,9 @@ import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
   CheckCircle2,
+  CircleDot,
   FileText,
+  Hash,
   Kanban,
   LayoutGrid,
   MessageCircle,
@@ -549,6 +551,91 @@ function renderListSprints(result: ToolResultMessage, call: ToolCallWire): React
 }
 
 /* -------------------------------------------------------------------------- *
+ * list_statuses
+ * -------------------------------------------------------------------------- */
+
+function renderListStatuses(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const statuses: { statusId: string; name: string; category: string }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const statusId = stringField(entry, 'statusId');
+    const name = stringField(entry, 'name');
+    const category = stringField(entry, 'category');
+    if (statusId === null || name === null || category === null) return null;
+    statuses.push({ statusId, name, category });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {statuses.map((status) => (
+          <EntityRow
+            key={status.statusId}
+            icon={<CircleDot aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
+            primary={status.name}
+            secondary={<Badge>{status.category}</Badge>}
+          />
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * list_channels
+ * -------------------------------------------------------------------------- */
+
+function renderListChannels(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const channels: {
+    channelId: string;
+    name: string | null;
+    participantIds: string[];
+  }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const channelId = stringField(entry, 'channelId');
+    const name = entry['name'];
+    const participantsRaw = entry['participantIds'];
+    if (
+      channelId === null ||
+      (name !== null && typeof name !== 'string') ||
+      !Array.isArray(participantsRaw) ||
+      !participantsRaw.every((id): id is string => typeof id === 'string')
+    ) {
+      return null;
+    }
+    channels.push({ channelId, name, participantIds: participantsRaw });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {channels.map((channel) => (
+          <EntityRow
+            key={channel.channelId}
+            icon={<Hash aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
+            primary={
+              channel.name ??
+              (channel.participantIds.length === 1
+                ? 'Direct message (1 person)'
+                : `Direct message (${channel.participantIds.length.toString()} people)`)
+            }
+          />
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * find_card
  * -------------------------------------------------------------------------- */
 
@@ -636,8 +723,10 @@ function cardWriteRenderer(verb: string) {
 
 const renderCardUpdate = cardWriteRenderer('Card updated');
 const renderCardAssign = cardWriteRenderer('Assignees updated');
+const renderCardUnassign = cardWriteRenderer('Assignees updated');
 const renderCardSetStatus = cardWriteRenderer('Status updated');
 const renderCardAddLabels = cardWriteRenderer('Labels updated');
+const renderCardRemoveLabels = cardWriteRenderer('Labels updated');
 const renderCardMove = cardWriteRenderer('Card moved');
 const renderCardAddComment = cardWriteRenderer('Comment added');
 
@@ -714,12 +803,15 @@ function renderSprintAddCards(result: ToolResultMessage): ReactNode | null {
  * chat_post_message / docs_create_page
  * -------------------------------------------------------------------------- */
 
-function renderChatPostMessage(result: ToolResultMessage, call: ToolCallWire): ReactNode | null {
+function renderChatPostMessage(result: ToolResultMessage): ReactNode | null {
   if (result.isError === true) return <ErrorNote message={result.content} />;
   const parsed = parseJson(result.content);
   if (!isRecord(parsed) || stringField(parsed, 'messageId') === null) return null;
 
-  const channelId = typeof call.input['channelId'] === 'string' ? call.input['channelId'] : null;
+  // Read from the RESULT, not `call.input` — a DM opened via `dmUserIds`
+  // has no `channelId` in the call's own input at all, only in what
+  // `chat_post_message` resolved it to.
+  const channelId = stringField(parsed, 'channelId');
 
   return (
     <ResultPanel>
@@ -790,17 +882,21 @@ const RENDERERS: Readonly<
   list_labels: (result) => renderListLabels(result),
   list_members: (result) => renderListMembers(result),
   list_sprints: (result, call) => renderListSprints(result, call),
+  list_statuses: (result) => renderListStatuses(result),
+  list_channels: (result) => renderListChannels(result),
   find_card: (result, _call, ctx) => renderFindCard(result, ctx),
   card_create: (result, _call, ctx) => renderCardCreate(result, ctx),
   card_update: (result, call, ctx) => renderCardUpdate(result, call, ctx),
   card_assign: (result, call, ctx) => renderCardAssign(result, call, ctx),
+  card_unassign: (result, call, ctx) => renderCardUnassign(result, call, ctx),
   card_set_status: (result, call, ctx) => renderCardSetStatus(result, call, ctx),
   card_add_labels: (result, call, ctx) => renderCardAddLabels(result, call, ctx),
+  card_remove_labels: (result, call, ctx) => renderCardRemoveLabels(result, call, ctx),
   card_move: (result, call, ctx) => renderCardMove(result, call, ctx),
   card_add_comment: (result, call, ctx) => renderCardAddComment(result, call, ctx),
   sprint_create: (result, call) => renderSprintCreate(result, call),
   sprint_add_cards: (result) => renderSprintAddCards(result),
-  chat_post_message: (result, call) => renderChatPostMessage(result, call),
+  chat_post_message: (result) => renderChatPostMessage(result),
   docs_create_page: (result, call) => renderDocsCreatePage(result, call),
 };
 

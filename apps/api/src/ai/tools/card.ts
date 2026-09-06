@@ -56,6 +56,13 @@ import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segme
  * is not duplicated, only reached from a second caller. A member who
  * cannot update a card cannot get the assistant to update it either; the
  * failure surfaces as a normal `ToolResult.isError`, not a crash.
+ *
+ * `card_unassign` and `card_remove_labels` — the subtractive counterparts
+ * to `card_assign` and `card_add_labels` — were added later, from a real
+ * conversation ("remove the first assignee we had") where the model could
+ * only explain that removal was unsupported rather than do it. Both mirror
+ * their additive sibling exactly: read the current set, drop the named
+ * ids, write the remainder back through the same full-replace service call.
  */
 
 function actorOf(ctx: ToolContext): WorkActor {
@@ -365,6 +372,65 @@ export function createCardAssignTool(): ToolDefinition {
 }
 
 /* ---------------------------------------------------------------------- *
+ * card_unassign — the subtractive counterpart to card_assign
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `card_assign`'s own comment called an unassign tool "future work, not a
+ * gap in this one's contract" — found to be exactly the gap it named the
+ * first time a real conversation needed it: "remove the first assignee we
+ * had" had no tool to call, and the model could only explain the
+ * limitation rather than act on it. This is the mirror image of
+ * `card_assign`: reads the current set, REMOVES the named ids, and writes
+ * the remainder back through the same full-replace `assignCard` — never a
+ * blind subtraction that could race a concurrent assignment the same way a
+ * blind overwrite could, since both tools resolve against a freshly read
+ * `current.assigneeIds` rather than a stale one the model might be holding
+ * from an earlier turn.
+ */
+const CardUnassignInput = z
+  .object({
+    cardId: CardIdSchema,
+    assigneeIds: z.array(UserIdSchema).min(1).max(20),
+  })
+  .strict();
+
+export function createCardUnassignTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_unassign',
+    description:
+      "Removes one or more people from a card's assignees, without affecting anyone else " +
+      'still assigned. Use `list_members` first to resolve a name to a user id.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        assigneeIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'User ids to remove from the assignees.',
+        },
+      },
+      required: ['cardId', 'assigneeIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardUnassignInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const current = await getCard(actor, { cardId: input.cardId });
+      const toRemove = new Set<UserId>(input.assigneeIds);
+      const remaining = current.assigneeIds
+        .map((id) => unsafeAsId<'UserId'>(id))
+        .filter((id) => !toRemove.has(id));
+
+      const result = await assignCard(actor, { cardId: input.cardId, assigneeIds: remaining });
+      return { content: JSON.stringify({ assigneeIds: result.assigneeIds }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
  * card_set_status
  * ---------------------------------------------------------------------- */
 
@@ -451,6 +517,60 @@ export function createCardAddLabelsTool(): ToolDefinition {
         ]),
       ];
       const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: union });
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_remove_labels — the subtractive counterpart to card_add_labels
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The identical subtractive mirror `card_unassign` is to `card_assign`,
+ * applied to labels: reads the current set via `listCardLabels`, drops the
+ * named ids, and writes the remainder back through the real full-replace
+ * `setCardLabels`. Added in the same pass as `card_unassign` — a
+ * conversation that can add a label but never remove one has exactly the
+ * same "explain the limitation, cannot act on it" gap in miniature.
+ */
+const CardRemoveLabelsInput = z
+  .object({
+    cardId: CardIdSchema,
+    labelIds: z.array(LabelIdSchema).min(1),
+  })
+  .strict();
+
+export function createCardRemoveLabelsTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_remove_labels',
+    description:
+      'Removes one or more labels from a card, keeping any other labels already on it. Use ' +
+      "`list_labels` first to find a label's id from the name the user gave.",
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ids of the labels to remove, from `list_labels`.',
+        },
+      },
+      required: ['cardId', 'labelIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardRemoveLabelsInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const existing = await listCardLabels(actor, { cardId: input.cardId });
+      const toRemove = new Set(input.labelIds);
+      const remaining = existing
+        .map((label) => unsafeAsId<'LabelId'>(label.labelId))
+        .filter((id) => !toRemove.has(id));
+
+      const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: remaining });
       return { content: JSON.stringify(result) };
     },
   });

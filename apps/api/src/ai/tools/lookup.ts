@@ -6,6 +6,7 @@ import { listBoards } from '../../work/board.service.js';
 import { listLists } from '../../work/list.service.js';
 import { listLabels } from '../../work/label.service.js';
 import { listSprints } from '../../work/sprint.service.js';
+import { listStatuses } from '../../work/status.service.js';
 import { getCardByReference } from '../../work/card.service.js';
 import { listMembers } from '../../tenancy/member.service.js';
 import type { WorkActor } from '../../work/shared.js';
@@ -51,6 +52,17 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * indexes what a card SAYS, never the reference number every other surface
  * in this app displays it by. See `getCardByReference`'s own header in
  * `work/card.service.ts`.
+ *
+ * `list_statuses` closes the last of this file's gaps, found from a real
+ * transcript where `card_set_status` failed "Not found." three times in a
+ * row. A card's `statusId` (`work.statuses`) is a project-level id entirely
+ * separate from which LIST/BOARD it sits on (`status.service.ts`'s own
+ * header — "independent of `listId`"), and nothing in the registry had ever
+ * produced one; the model had no way to tell a status NAME ("In Progress",
+ * "Blocked") from a LIST name shown by `list_boards` — the two vocabularies
+ * happened to share words in this project's own setup — and guessed a list
+ * id where a status id belonged. Wraps the real `listStatuses`, which
+ * already enforces `project:read` itself.
  */
 
 function actorOf(ctx: ToolContext): WorkActor {
@@ -262,6 +274,40 @@ export function createFindCardTool(): ToolDefinition {
     async execute(ctx, input) {
       const card = await getCardByReference(actorOf(ctx), { reference: input.reference });
       return { content: JSON.stringify(card) };
+    },
+  });
+}
+
+const ListStatusesInput = z.object({ projectId: ProjectIdSchema }).strict();
+
+export function createListStatusesTool(): ToolDefinition {
+  return defineTool({
+    name: 'list_statuses',
+    description:
+      'Lists a project\'s statuses (e.g. "To Do", "In Progress", "Blocked", "Done") with ' +
+      'their ids. A status is a project-level field on a card and is NOT the same thing as which ' +
+      'list/board a card sits on — resolve a status name the user gives (e.g. "set it to In ' +
+      'Progress") to an id here before calling `card_set_status`; use `list_boards` instead for a ' +
+      "card's list or board.",
+    jsonSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'string' } },
+      required: ['projectId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: ListStatusesInput,
+    async execute(ctx, input) {
+      const statuses = await listStatuses(actorOf(ctx), { projectId: input.projectId });
+      if (statuses.length === 0) {
+        return { content: 'This project has no statuses defined yet.' };
+      }
+      const summarized = statuses.map((status) => ({
+        statusId: status.statusId,
+        name: status.name,
+        category: status.category,
+      }));
+      return { content: JSON.stringify(summarized) };
     },
   });
 }

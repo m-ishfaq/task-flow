@@ -11,6 +11,7 @@ import * as boards from '../../work/board.service.js';
 import * as lists from '../../work/list.service.js';
 import * as labelsSvc from '../../work/label.service.js';
 import * as sprintsSvc from '../../work/sprint.service.js';
+import * as statusesSvc from '../../work/status.service.js';
 import * as cardsSvc from '../../work/card.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import {
@@ -20,6 +21,7 @@ import {
   createListMembersTool,
   createListProjectsTool,
   createListSprintsTool,
+  createListStatusesTool,
 } from './lookup.js';
 import type { ToolContext } from './registry.js';
 
@@ -287,6 +289,50 @@ describe('list_sprints', () => {
     });
 
     expect(result.content).toBe('This project has no sprints yet.');
+  });
+});
+
+describe('list_statuses', () => {
+  it('reports a real status by name', async () => {
+    const orgId = await newOrg('lookup-statuses');
+    const actor = await ownerActor(orgId);
+    const project = await projects.createProject(actor, {
+      name: 'Website',
+      key: 'WEB',
+      description: null,
+    });
+    await statusesSvc.createStatus(actor, {
+      projectId: project.projectId,
+      name: 'In Progress',
+      category: 'active',
+      color: '#2563eb',
+      isDefault: false,
+    });
+
+    const tool = createListStatusesTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      projectId: project.projectId,
+    });
+
+    const parsed = JSON.parse(result.content) as readonly { name: string; category: string }[];
+    expect(parsed).toEqual([expect.objectContaining({ name: 'In Progress', category: 'active' })]);
+  });
+
+  it('reports no statuses for a project with none defined', async () => {
+    const orgId = await newOrg('lookup-statuses-empty');
+    const actor = await ownerActor(orgId);
+    const project = await projects.createProject(actor, {
+      name: 'Website',
+      key: 'WEB',
+      description: null,
+    });
+
+    const tool = createListStatusesTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      projectId: project.projectId,
+    });
+
+    expect(result.content).toBe('This project has no statuses defined yet.');
   });
 });
 

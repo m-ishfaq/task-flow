@@ -113,18 +113,19 @@ const CAPABILITIES: readonly { readonly heading: string; readonly items: readonl
     items: [
       'Search cards, messages, docs, and comments',
       'What’s assigned to you and still open',
-      'A project’s boards, sprints, labels, and members',
+      'A project’s boards, sprints, labels, statuses, and members',
+      'Channels and DMs you can see',
     ],
   },
   {
     heading: 'Make changes — always confirmed first',
     items: [
       'Create a card with assignees, labels, priority, due date, and sprint all at once',
-      'Update, assign, or tag a card, or set its status',
+      'Update, assign, unassign, or tag a card, or set its status',
       'Move a card to a different list — even on a different board',
       'Comment on a card, tagging people',
       'Create a sprint, or add cards to one',
-      'Post a message, or create a Docs page',
+      'Post a message in a channel or start a DM, or create a Docs page',
     ],
   },
 ];

@@ -9,7 +9,7 @@ import * as members from '../../tenancy/member.service.js';
 import { loadTuples } from '../../tenancy/resolve.js';
 import * as channels from '../../chat/channel.service.js';
 import type { ChatActor } from '../../chat/shared.js';
-import { createChatPostMessageTool } from './chat.js';
+import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import type { ToolContext } from './registry.js';
 
 /**
@@ -171,7 +171,116 @@ describe('chat_post_message', () => {
     expect(result.isError).toBe(true);
   });
 
+  it('opens a DM automatically via dmUserIds and posts into it', async () => {
+    const orgId = await newOrg('chat-post-dm-open');
+    const subject = await ownerSubject(orgId);
+
+    const tool = createChatPostMessageTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      dmUserIds: [BOB],
+      segments: [{ type: 'text', text: 'Hey there' }],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { channelId: string; messageId: string };
+
+    await admin.setOrg(orgId);
+    const channelRows = await admin.query(`SELECT type FROM chat.channels WHERE id = $1`, [
+      parsed.channelId,
+    ]);
+    await admin.setOrg(null);
+    expect(channelRows.rows[0]?.['type']).toBe('dm');
+  });
+
+  it('reuses the same DM on a second dmUserIds call rather than creating a duplicate', async () => {
+    const orgId = await newOrg('chat-post-dm-reuse');
+    const subject = await ownerSubject(orgId);
+    const tool = createChatPostMessageTool();
+
+    const first = await tool.execute(ownerCtx(subject), {
+      dmUserIds: [BOB],
+      segments: [{ type: 'text', text: 'First' }],
+    });
+    const second = await tool.execute(ownerCtx(subject), {
+      dmUserIds: [BOB],
+      segments: [{ type: 'text', text: 'Second' }],
+    });
+
+    const firstParsed = JSON.parse(first.content) as { channelId: string };
+    const secondParsed = JSON.parse(second.content) as { channelId: string };
+    expect(secondParsed.channelId).toBe(firstParsed.channelId);
+  });
+
+  it('rejects a call giving both channelId and dmUserIds', async () => {
+    const orgId = await newOrg('chat-post-both');
+    const actor = await ownerActor(orgId);
+    const channel = await channels.createChannel(actor, { type: 'public', name: 'general' });
+    const subject = await ownerSubject(orgId);
+
+    const tool = createChatPostMessageTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      channelId: channel.channelId,
+      dmUserIds: [BOB],
+      segments: [{ type: 'text', text: 'Should not post.' }],
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
+  it('rejects a call giving neither channelId nor dmUserIds', async () => {
+    const orgId = await newOrg('chat-post-neither');
+    const subject = await ownerSubject(orgId);
+
+    const tool = createChatPostMessageTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      segments: [{ type: 'text', text: 'Should not post.' }],
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
   it('declares requiresConfirmation: true', () => {
     expect(createChatPostMessageTool().requiresConfirmation).toBe(true);
+  });
+});
+
+describe('list_channels', () => {
+  it('lists a public channel by name', async () => {
+    const orgId = await newOrg('chat-list-channels-public');
+    const actor = await ownerActor(orgId);
+    await channels.createChannel(actor, { type: 'public', name: 'general' });
+    const subject = await ownerSubject(orgId);
+
+    const tool = createListChannelsTool();
+    const result = await tool.execute(ownerCtx(subject), {});
+
+    const parsed = JSON.parse(result.content) as readonly { name: string | null }[];
+    expect(parsed).toEqual([expect.objectContaining({ name: 'general' })]);
+  });
+
+  it('lists a DM with its participant ids and a null name', async () => {
+    const orgId = await newOrg('chat-list-channels-dm');
+    const actor = await ownerActor(orgId);
+    await channels.openDirectMessage(actor, { userIds: [BOB] });
+    const subject = await ownerSubject(orgId);
+
+    const tool = createListChannelsTool();
+    const result = await tool.execute(ownerCtx(subject), {});
+
+    const parsed = JSON.parse(result.content) as readonly {
+      name: string | null;
+      participantIds: readonly string[];
+    }[];
+    expect(parsed).toEqual([expect.objectContaining({ name: null, participantIds: [BOB] })]);
+  });
+
+  it('reports nothing for a fresh org with no channels', async () => {
+    const orgId = await newOrg('chat-list-channels-empty');
+    const subject = await ownerSubject(orgId);
+
+    const tool = createListChannelsTool();
+    const result = await tool.execute(ownerCtx(subject), {});
+
+    expect(result.content).toBe('No channels are visible to you yet.');
   });
 });

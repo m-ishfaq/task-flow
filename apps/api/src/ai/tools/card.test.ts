@@ -20,7 +20,9 @@ import {
   createCardAssignTool,
   createCardCreateTool,
   createCardMoveTool,
+  createCardRemoveLabelsTool,
   createCardSetStatusTool,
+  createCardUnassignTool,
   createCardUpdateTool,
 } from './card.js';
 import type { ToolContext } from './registry.js';
@@ -336,6 +338,71 @@ describe('card_assign', () => {
   });
 });
 
+describe('card_unassign', () => {
+  it('removes one assignee without affecting another', async () => {
+    const orgId = await newOrg('card-unassign-subtractive');
+    const { actor, listId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Needs one owner removed',
+      description: null,
+    });
+
+    const SECOND = unsafeAsId<'UserId'>('0195f400-0000-7000-8000-000000000003');
+    await admin.query(
+      `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
+       VALUES ($1, 'second-unassign@ai-card-tools.test', 'second-unassign@ai-card-tools.test', now())
+       ON CONFLICT (id) DO NOTHING`,
+      [SECOND],
+    );
+    await admin.setOrg(orgId);
+    await admin.query(
+      `INSERT INTO identity.memberships (id, org_id, user_id, role, status)
+       VALUES (gen_random_uuid(), $1, $2, 'member', 'active')`,
+      [orgId, SECOND],
+    );
+    await admin.setOrg(null);
+
+    await cardsSvc.assignCard(actor, { cardId: created.cardId, assigneeIds: [OWNER, SECOND] });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardUnassignTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      cardId: created.cardId,
+      assigneeIds: [OWNER],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { assigneeIds: readonly string[] };
+    expect(parsed.assigneeIds).toEqual([SECOND]);
+  });
+
+  it('refuses a guest', async () => {
+    const orgId = await newOrg('card-unassign-guest');
+    const { actor, listId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Should stay assigned',
+      description: null,
+    });
+    await cardsSvc.assignCard(actor, { cardId: created.cardId, assigneeIds: [OWNER] });
+
+    const tool = createCardUnassignTool();
+    const result = await tool.execute(guestCtx(orgId), {
+      cardId: created.cardId,
+      assigneeIds: [OWNER],
+    });
+
+    expect(result.isError).toBe(true);
+    const after = await cardsSvc.getCard(actor, { cardId: created.cardId });
+    expect(after.assigneeIds).toEqual([OWNER]);
+  });
+
+  it('declares requiresConfirmation: true', () => {
+    expect(createCardUnassignTool().requiresConfirmation).toBe(true);
+  });
+});
+
 describe('card_set_status', () => {
   it('moves a card to a real status', async () => {
     const orgId = await newOrg('card-set-status');
@@ -444,6 +511,73 @@ describe('card_add_labels', () => {
 
   it('declares requiresConfirmation: true', () => {
     expect(createCardAddLabelsTool().requiresConfirmation).toBe(true);
+  });
+});
+
+describe('card_remove_labels', () => {
+  it('removes one label without affecting another', async () => {
+    const orgId = await newOrg('card-remove-labels-subtractive');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Needs one label removed',
+      description: null,
+    });
+    const bug = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug',
+      color: '#dc2626',
+    });
+    const urgent = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Urgent',
+      color: '#f97316',
+    });
+    await labelsSvc.setCardLabels(actor, {
+      cardId: created.cardId,
+      labelIds: [bug.labelId, urgent.labelId],
+    });
+
+    const subject = await ownerSubject(orgId);
+    const tool = createCardRemoveLabelsTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      cardId: created.cardId,
+      labelIds: [bug.labelId],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { labelIds: readonly string[] };
+    expect(parsed.labelIds).toEqual([urgent.labelId]);
+  });
+
+  it('refuses a guest', async () => {
+    const orgId = await newOrg('card-remove-labels-guest');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const created = await cardsSvc.createCard(actor, {
+      listId: unsafeAsId<'ListId'>(listId),
+      title: 'Should stay labeled',
+      description: null,
+    });
+    const bug = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug',
+      color: '#dc2626',
+    });
+    await labelsSvc.setCardLabels(actor, { cardId: created.cardId, labelIds: [bug.labelId] });
+
+    const tool = createCardRemoveLabelsTool();
+    const result = await tool.execute(guestCtx(orgId), {
+      cardId: created.cardId,
+      labelIds: [bug.labelId],
+    });
+
+    expect(result.isError).toBe(true);
+    const labels = await labelsSvc.listCardLabels(actor, { cardId: created.cardId });
+    expect(labels.map((label) => label.labelId)).toEqual([bug.labelId]);
+  });
+
+  it('declares requiresConfirmation: true', () => {
+    expect(createCardRemoveLabelsTool().requiresConfirmation).toBe(true);
   });
 });
 

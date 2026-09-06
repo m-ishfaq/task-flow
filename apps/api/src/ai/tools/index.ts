@@ -8,6 +8,7 @@ import {
   createListMembersTool,
   createListProjectsTool,
   createListSprintsTool,
+  createListStatusesTool,
 } from './lookup.js';
 import {
   createCardAddCommentTool,
@@ -15,11 +16,13 @@ import {
   createCardAssignTool,
   createCardCreateTool,
   createCardMoveTool,
+  createCardRemoveLabelsTool,
   createCardSetStatusTool,
+  createCardUnassignTool,
   createCardUpdateTool,
 } from './card.js';
 import { createSprintAddCardsTool, createSprintCreateTool } from './sprint.js';
-import { createChatPostMessageTool } from './chat.js';
+import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import { createDocsCreatePageTool } from './docs.js';
 import type { ToolDefinition } from './registry.js';
 
@@ -103,6 +106,22 @@ export interface ToolRegistryDeps {
  * both failing), and commenting on a card had no tool either (the model
  * reached for `chat_post_message`, a different subsystem entirely — a chat
  * channel message, not a card comment).
+ *
+ * A later transcript found three more gaps in one pass, prompted by an
+ * explicit "add everything missing, not one bug at a time" request rather
+ * than a single failure: `list_statuses` (`lookup.ts`) closes the same
+ * name-to-id gap one more entity type over — `card_set_status` failed
+ * "Not found." repeatedly because nothing could resolve a status NAME
+ * ("In Progress", "Blocked") to a `statusId`, and the model guessed a list
+ * id instead, the two vocabularies having overlapped by coincidence in the
+ * project it was asked about. `list_channels` and `chat_post_message`'s new
+ * `dmUserIds` (`chat.ts`) close the identical gap for Chat: nothing could
+ * ever resolve a channel NAME or open a fresh DM to the `channelId`
+ * `chat_post_message` requires — "send a msg to @Rosa Pereira" failed
+ * "Not found." for exactly this reason. `card_unassign` and
+ * `card_remove_labels` (`card.ts`) close the last one: the subtractive
+ * counterparts to `card_assign`/`card_add_labels`, which until now could
+ * only ever add.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -113,16 +132,20 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListLabelsTool(),
     createListMembersTool(),
     createListSprintsTool(),
+    createListStatusesTool(),
     createFindCardTool(),
     createCardCreateTool(),
     createCardUpdateTool(),
     createCardAssignTool(),
+    createCardUnassignTool(),
     createCardSetStatusTool(),
     createCardAddLabelsTool(),
+    createCardRemoveLabelsTool(),
     createCardMoveTool(),
     createCardAddCommentTool(),
     createSprintCreateTool(),
     createSprintAddCardsTool(),
+    createListChannelsTool(),
     createChatPostMessageTool(),
     createDocsCreatePageTool(),
   ];

@@ -210,7 +210,8 @@ export function createAiRouter(deps: AiRouterDeps) {
                 '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
                 'date, never a pre-computed relative answer. ' +
                 'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
-                "list_labels, list_members, list_sprints, and every write tool's own result — " +
+                'list_labels, list_members, list_sprints, list_statuses, list_channels, and ' +
+                "every write tool's own result — " +
                 'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
                 'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
                 'numbered list, or a table of your own — that only duplicates what they can ' +
@@ -228,7 +229,13 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +
-                'turn. You can only do what a tool in your list lets you do; if the user asks ' +
+                'turn. A card\'s STATUS (use `list_statuses` to resolve a name like "In ' +
+                'Progress" or "Blocked" before `card_set_status`) is a completely different ' +
+                'thing from which LIST or BOARD it sits on (`list_boards`) — never guess one ' +
+                'for the other. To message someone directly with no existing conversation, ' +
+                "pass user ids straight to `chat_post_message`'s `dmUserIds` — do not look for " +
+                'a separate "open DM" tool, there isn\'t one, `chat_post_message` handles it. ' +
+                'You can only do what a tool in your list lets you do; if the user asks ' +
                 'for something with no tool for it (creating a new label, for example — labels ' +
                 'can only be looked up and applied, never created), say so plainly and do not ' +
                 'offer to do it anyway or retry the same failed approach a second time. If a ' +

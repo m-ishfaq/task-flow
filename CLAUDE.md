@@ -1372,6 +1372,76 @@ simpler to reason about and audit than deciding tool-by-tool which risk is low e
 consistency is worth more here than the marginal convenience of auto-executing the one tool with
 the best argument for it.
 
+### Phase 15 — five more tool-registry gaps, closed in one pass (SHIPPED)
+
+`apps/api/src/ai/tools/{lookup,chat,card}.ts`. Prompted directly by the project owner ("add all
+the tools missing, why do I need to ask for every one") after a transcript surfaced three failures
+in one conversation rather than the usual single bug report — this pass is a deliberate departure
+from the wave-by-wave, one-report-at-a-time cadence every earlier tool addition in this file
+followed. The instruction changed the METHOD (audit the registry proactively instead of waiting for
+the next failure), not the bar for what counts as a real gap — every addition below still traces to
+a concrete transcript or a documented "future work" comment already sitting in the code, not a
+speculative capability nobody asked for.
+
+**`list_statuses` (`lookup.ts`) — the same name-to-id gap `list_boards`/`list_labels`/`list_sprints`
+already closed, one entity type they missed.** `card_set_status` failed "Not found." three times in
+a row against a project with boards "Roadmap" and "Incidents": a card's `statusId` is a
+project-level field (`work.statuses`) entirely independent of which list/board it sits on
+(`status.service.ts`'s own header), and nothing in the registry had ever produced one — the model
+guessed a list id where a status id belonged, because in that project's own vocabulary a status name
+("In Progress") and a list name happened to overlap. Wraps the real `listStatuses`, which already
+enforces `project:read` itself; no in-tool check needed, the same shape every other project-scoped
+lookup tool here already has.
+
+**`list_channels` and `chat_post_message`'s new `dmUserIds` (`chat.ts`) — the identical id-resolution
+gap, for Chat.** "Send a msg to @Rosa Pereira" failed "Not found." for the structural reason
+`list_statuses` above fixes for cards: nothing in the registry could ever produce a `channelId` —
+not for an existing named channel, and not for a DM, since `list_members` gives a `userId`, never a
+channel. Two tools close it, not one, because the two cases have different shapes: `list_channels`
+is an ordinary read (wraps `listChannels`, which already filters to what the caller may see via its
+own per-row `can()`, so this tool adds no authorization of its own) for a channel or DM that ALREADY
+exists; a DM that does not yet exist needs a WRITE (`openDirectMessage` finds-or-creates it), and
+giving that its own confirmation step would mean two approvals for one "message Rosa" request — one
+to open the DM, a second to actually send anything. Instead `dmUserIds` is a second, mutually
+exclusive input on `chat_post_message` itself, and `execute()` calls `openDirectMessage` then
+`sendMessage` behind the SAME single confirmation, the identical "bundle several real service calls
+behind one tool call" shape `card_create` already established for create+assign+label+priority+
+sprint — every call still runs through its own real check, so bundling changes nothing about what
+the caller may do, only how many times a human clicks Approve. `openDirectMessage`'s own ROUTE
+floors on `channel:read` ("starting a conversation with a colleague is not the same capability as
+creating a channel the whole organization sees"); a tool call bypasses every route, so the tool
+checks that permission itself before calling it, the same in-executor pattern `list_members` already
+uses for `member:read`.
+
+**`card_unassign` and `card_remove_labels` (`card.ts`) — the subtractive counterparts `card_assign`
+and `card_add_labels` never got.** "Remove the first assignee we had" was not a bug — the model
+correctly reported that unassigning was unsupported, exactly as `card_assign`'s own comment
+predicted ("a separate 'unassign' tool is future work, not a gap in this one's contract"). The
+explicit "add everything missing" instruction turned that documented deferral into work for this
+pass. Both mirror their additive sibling exactly in reverse: read the current set fresh (never a
+stale one the model might be holding from an earlier turn), drop the named ids, write the remainder
+back through the same full-replace service call (`assignCard`/`setCardLabels`) the additive tools
+already use — resolving against a freshly read set is what keeps this safe against a concurrent
+change the same way the additive tools already are.
+
+**Label CREATION was deliberately left out of this pass, not overlooked.** Unlike the five additions
+above, "labels can only be looked up and applied, never created" is an existing, reasoned design
+decision (this file's own §4.3 entry: "inventing a label nobody asked for by name is a worse failure
+mode than asking the person to create it first"), not a gap this transcript's failures pointed at —
+nothing in the pasted conversation showed the MODEL trying and failing to create one; it correctly
+declined. Reversing a deliberate scope boundary is a different kind of change than closing an
+oversight, and belongs in its own pass if wanted, not folded silently into a sweep prompted by
+unrelated bugs.
+
+`router.ts`'s system prompt gained explicit guidance on the two sharpest confusions the transcript
+showed: a card's STATUS (`list_statuses`) is a different thing from its LIST/BOARD (`list_boards`),
+never one guessed for the other; and there is no separate "open a DM" tool to look for —
+`chat_post_message`'s own `dmUserIds` handles it. `apps/web/src/features/ai/tool-results.tsx` grew a
+renderer for each new read tool (`list_statuses`, `list_channels`) and reused the existing
+`cardWriteRenderer` shape for the two new card tools; `chat_post_message`'s renderer now reads
+`channelId` back from the tool's own RESULT rather than the call's `input`, since a DM opened via
+`dmUserIds` has no `channelId` in its input at all — only in what the tool resolved it to.
+
 ### Phase 15 §8 — onboarding/offboarding automation (SHIPPED, a real subset)
 
 `apps/worker/src/automation/{types,executor,loop-protection}.ts` (the six new action types) ·

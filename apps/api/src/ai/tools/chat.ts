@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import { ChannelIdSchema, MessageIdSchema } from '@taskflow/contracts';
+import { errors, ChannelIdSchema, MessageIdSchema, UserIdSchema } from '@taskflow/contracts';
+import { can } from '@taskflow/policy';
 import { sendMessage } from '../../chat/message.service.js';
+import { listChannels, openDirectMessage } from '../../chat/channel.service.js';
 import type { ChatActor } from '../../chat/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segments.js';
@@ -49,44 +51,140 @@ import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segme
  * "map onto the one paragraph a human's composer would produce" logic, and
  * a second copy would be exactly the kind of drift a third caller would
  * have no reason to notice.
+ *
+ * `dmUserIds`, added later from a real transcript ("send a msg to @Rosa
+ * Pereira" failing "Not found." three times), closes a gap this tool always
+ * had: it took only a `channelId`, and nothing in the registry could ever
+ * produce one for a DM that did not already exist — `list_members` gives a
+ * `userId`, never a `channelId`. Rather than a separate `chat_open_dm` tool
+ * needing its OWN confirmation before `chat_post_message` could even be
+ * attempted (two approvals for one "message Rosa" request), this bundles
+ * `openDirectMessage` (find-or-create) and `sendMessage` behind the SAME
+ * single confirmation — the identical "several real service calls behind
+ * one tool call" shape `card_create` already established for
+ * create+assign+label+priority+sprint. `channelId` and `dmUserIds` are
+ * mutually exclusive: a caller who already has a channel id (from
+ * `list_channels`, or a channel named earlier in the conversation) should
+ * use it directly rather than paying an extra `openDirectMessage` lookup
+ * that would only return the same id.
+ *
+ * `openDirectMessage`'s own ROUTE floors on `channel:read` — "starting a
+ * conversation with a colleague is not the same capability as creating a
+ * channel the whole organization sees" — and a tool call bypasses every
+ * route, so this checks the identical permission itself before calling it,
+ * the same in-executor pattern `list_members` already uses for
+ * `member:read`.
  */
 
 const ChatPostMessageInput = z
   .object({
-    channelId: ChannelIdSchema,
+    channelId: ChannelIdSchema.optional(),
+    dmUserIds: z.array(UserIdSchema).min(1).max(20).optional(),
     segments: z.array(MessageSegment).min(1).max(50),
     parentMessageId: MessageIdSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => (value.channelId === undefined) !== (value.dmUserIds === undefined), {
+    message: 'Provide exactly one of channelId or dmUserIds.',
+  });
 
 export function createChatPostMessageTool(): ToolDefinition {
   return defineTool({
     name: 'chat_post_message',
     description:
-      'Posts a message to a channel or DM, optionally @mentioning people by user id. Provide the message as an ordered list of text and mention segments.',
+      'Posts a message to a channel, optionally @mentioning people by user id. Provide the ' +
+      'message as an ordered list of text and mention segments. To post in an existing channel ' +
+      'or DM, pass `channelId` (from `list_channels`). To message someone directly with no ' +
+      'existing conversation in hand, pass `dmUserIds` instead (from `list_members`) and this ' +
+      'opens or reuses the DM automatically — never call another tool first to get a channel id ' +
+      'for a DM.',
     jsonSchema: {
       type: 'object',
       properties: {
-        channelId: { type: 'string', description: 'The id of the channel or DM to post in.' },
+        channelId: {
+          type: 'string',
+          description: 'The id of an existing channel or DM to post in, from `list_channels`.',
+        },
+        dmUserIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'User ids (from `list_members`) to direct-message. Opens the DM if none exists yet. ' +
+            'Provide this OR channelId, never both.',
+        },
         segments: SEGMENT_JSON_SCHEMA,
         parentMessageId: {
           type: ['string', 'null'],
           description: 'Reply to this message, or omit for a top-level post.',
         },
       },
-      required: ['channelId', 'segments'],
+      required: ['segments'],
       additionalProperties: false,
     },
     requiresConfirmation: true,
     inputSchema: ChatPostMessageInput,
     async execute(ctx: ToolContext, input) {
       const actor: ChatActor = { subject: ctx.subject, requestId: ctx.requestId };
+
+      let channelId = input.channelId;
+      if (channelId === undefined) {
+        if (!can(ctx.subject, 'channel:read').allowed) {
+          throw errors.forbidden('You do not have permission to start a direct message.');
+        }
+        const opened = await openDirectMessage(actor, { userIds: input.dmUserIds ?? [] });
+        channelId = opened.channelId;
+      }
+
       const result = await sendMessage(actor, {
-        channelId: input.channelId,
+        channelId,
         body: segmentsToRichText(input.segments),
         parentMessageId: input.parentMessageId ?? null,
       });
-      return { content: JSON.stringify({ messageId: result.messageId }) };
+      return { content: JSON.stringify({ channelId, messageId: result.messageId }) };
+    },
+  });
+}
+
+const NoChannelsInput = z.object({}).strict();
+
+/**
+ * Closes the sibling gap `dmUserIds` above does not: resolving an EXISTING
+ * named channel (or a DM already open) to its id. Before this, nothing in
+ * the registry could ever produce a channel id at all except by opening a
+ * fresh DM — posting to "the #general channel" or replying in an existing
+ * conversation had no path to an id either.
+ *
+ * Wraps the real `listChannels`, which already filters to exactly what the
+ * caller may see via a per-row `can()` check (`channel.service.ts`'s own
+ * header) — this tool adds no authorization of its own, the same "the real
+ * service already asks" shape every other lookup tool in this file follows.
+ */
+export function createListChannelsTool(): ToolDefinition {
+  return defineTool({
+    name: 'list_channels',
+    description:
+      'Lists the channels and DMs the current user can see — public channels plus any the ' +
+      "user has joined — with each one's id, type, name (null for a DM), and, for a DM, the " +
+      "other participants' user ids. Use this to resolve a named channel the user mentions " +
+      '(e.g. "post it in #general") to an id for `chat_post_message`. For a NEW direct message ' +
+      "with someone, use `chat_post_message`'s own `dmUserIds` instead — no need to look up a " +
+      'DM channel id first.',
+    jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiresConfirmation: false,
+    inputSchema: NoChannelsInput,
+    async execute(ctx) {
+      const actor: ChatActor = { subject: ctx.subject, requestId: ctx.requestId };
+      const { channels } = await listChannels(actor);
+      if (channels.length === 0) {
+        return { content: 'No channels are visible to you yet.' };
+      }
+      const summarized = channels.map((channel) => ({
+        channelId: channel.channelId,
+        type: channel.type,
+        name: channel.name,
+        participantIds: channel.participantIds,
+      }));
+      return { content: JSON.stringify(summarized) };
     },
   });
 }
