@@ -1612,12 +1612,32 @@ part through `ai.chat.send` is what makes this genuinely §6 rather than an ordi
 it exercises the real §4.2 confirm-before-execute path `docs.create_page` requires, on the real
 assistant page.
 
-**The trigger is a `sessionStorage` flag, not a server column, because §6 is an OFFER, not a
-state machine.** `bootstrap-flag.ts`'s own header states the reasoning: an org has no "has this
-been offered" field worth a migration, and a tab closed mid-flow should not leave a fact behind
-that outlives it. `markOrgForBootstrap` is called the moment `orgs.create` succeeds
-(`org-picker-page.tsx`), and `consumeBootstrapFlag` reads-and-clears in one call — a flag scoped
-to the browser tab that created the org, which is exactly the lifetime the offer needs.
+**REDESIGNED after shipping: the trigger is no longer a `sessionStorage` flag at all — it is
+`docs.spaces.list` being empty.** The original trigger was `markOrgForBootstrap`/
+`consumeBootstrapFlag` (`bootstrap-flag.ts`, now deleted), a flag set the moment `orgs.create`
+succeeded and consumed — read-and-cleared — on the very next render: an offer seen exactly once,
+in the tab that created the org, whether or not anyone acted on it. Closing the dialog, missing it
+behind another modal, or simply not being ready to decide meant it was gone for good, with no
+route back except finding Docs' own manual "+ Space" control — a real loss for exactly the org
+that most needs a starter space, raised directly rather than found from a transcript. The fix
+needs no flag at all, stored or otherwise: `docs.spaces.list` is already the authoritative answer
+to "does this org have Docs content yet," so `NewOrgSetupDialog` now renders whenever that list is
+empty and stops the moment it isn't — checked fresh via `spacesQuery(orgId)` on every mount rather
+than remembered from a past visit. This is a STRICTLY simpler mechanism than the one it replaces:
+no `sessionStorage`, no per-org key, no "a read is a consume" contract to get right, one query the
+page already needs to decide whether to render at all. `org-picker-page.tsx`'s `orgs.create`
+success handler lost its `markOrgForBootstrap` call entirely — a freshly created org trivially
+satisfies "zero Docs spaces" on its own, so there is nothing left to set.
+
+**`dismissed` stays local, un-persisted `useState`, on purpose — the offer's "off" switch and its
+"on" switch are deliberately asymmetric.** Closing the dialog quiets it for the rest of THIS
+browsing session (so it does not reopen on every route change within the app, which the
+gating query alone would do since nothing about a route change makes a Docs space appear), but a
+fresh page load re-evaluates from scratch: if the org still has no space, the offer is back. That
+is the literal shape asked for — shown until a space exists, not shown forever once dismissed
+once — and it is why `dismissed` must NOT be persisted to `sessionStorage` the way the old trigger
+was: persisting the dismissal would recreate the exact one-shot behavior this redesign exists to
+remove, just moved to a different flag.
 
 **Handing the composed opening message from the dialog to `/assistant` needed exactly one piece
 of cross-navigation state, not a rewrite of where the transcript lives.** `assistant-seed.ts`'s
@@ -1631,15 +1651,19 @@ opening message twice and a later, unrelated visit to `/assistant` starts genuin
 **`NewOrgSetupDialog` derives whether to open ENTIRELY from render-time state, with no effect at
 all** — `use-board-room.ts`'s own "reset derived state when a prop changes" pattern, applied to an
 org switch: Shell mounts this component once and keeps it mounted across `orgId` changing, so
-re-deriving `everConsumed` during render when `orgId !== lastOrgId` is what lets the offer
-re-arm correctly for a SECOND org created in the same tab, without ever calling a `useState`
-setter synchronously inside a `useEffect` body.
+re-deriving `dismissed` during render when `orgId !== lastOrgId` is what lets the offer re-arm
+correctly the moment someone switches to a SECOND org with no Docs space yet, without ever calling
+a `useState` setter synchronously inside a `useEffect` body. The mutation's own `onSuccess` calls
+`invalidateSpaces(queryClient, orgId)` before navigating away — without it, the gating query could
+still read the pre-creation empty list on a later visit (stale, not wrong) and show the offer one
+more time despite the space already existing.
 
-**Deliberately not built: §6's own two questions as a model-parsed free-text exchange** (see
-above — a form was the correct, testable choice instead) **and any org-level "was this ever
-offered" record** — the offer can, on purpose, be shown again for the same org in a different tab
-or after clearing site data, which is the accepted cost of §6 being genuinely stateless rather
-than a wizard with a completion flag.
+**Deliberately not built: §6's own two questions as a model-parsed free-text exchange** — a form
+was, and remains, the correct, testable choice instead (see above). The "no org-level 'was this
+ever offered' record" deferral this section used to note here no longer applies to the CURRENT
+design at all: there was never a need for one, on EITHER version — the first used a session-scoped
+flag instead, and this one uses live Docs state, and neither is a durable "offered" record of the
+kind a wizard's completion flag would be.
 
 ### Phase 15 §5 — the standup view (SHIPPED)
 

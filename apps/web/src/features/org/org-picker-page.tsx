@@ -9,7 +9,6 @@ import { keys, resetCache } from '../../lib/query.js';
 import { Badge, Button, Field, Input, SkeletonRows } from '../../components/primitives.js';
 import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
-import { markOrgForBootstrap } from '../../lib/bootstrap-flag.js';
 import { orgsQuery } from './api.js';
 
 /**
@@ -223,10 +222,10 @@ function CreateOrgForm({
   const create = useMutation({
     mutationFn: (values: CreateValues) => api.tenancy.orgs.create.mutate(values),
     onSuccess: async (result) => {
-      // The §6 bootstrap offer's own trigger (ai/phase-15-ai-copilot-and-
-      // permissions.md §6) — set before `onCreated` navigates away, so the
-      // very next page load in this tab knows this org is fresh.
-      markOrgForBootstrap(result.orgId);
+      /* The §6 bootstrap offer (ai/phase-15-ai-copilot-and-permissions.md §6)
+         needs no trigger set here any more — `setup-dialog.tsx`'s own header
+         explains why: it now gates on whether `docs.spaces.list` is empty,
+         which a freshly created org obviously satisfies with no flag at all. */
       await queryClient.invalidateQueries({ queryKey: keys.orgs() });
       onCreated(result.orgId as OrgId);
     },

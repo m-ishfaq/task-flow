@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { Sparkles } from 'lucide-react';
 import { Button, Field, Input } from '../../components/primitives.js';
@@ -9,7 +9,7 @@ import { api } from '../../lib/trpc.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useFeatureGranted } from '../../lib/entitlements.js';
 import { orgDetailQuery } from '../org/api.js';
-import { consumeBootstrapFlag } from '../../lib/bootstrap-flag.js';
+import { spacesQuery, invalidateSpaces } from '../docs/api.js';
 
 /**
  * The new-org Docs bootstrap offer (ai/phase-15-ai-copilot-and-permissions.md
@@ -19,63 +19,71 @@ import { consumeBootstrapFlag } from '../../lib/bootstrap-flag.js';
  * the org's owner already has full rights over their own new org's Docs
  * space, and a created page is trivially reversible.
  *
- * ## The two questions are a FORM, not a model-led conversation
+ * ## REDESIGNED: gated on real Docs state, not a one-shot flag
  *
- * §6's text says the assistant "asks a few questions". Letting the MODEL
- * phrase and interpret free-form answers to "how big is your team" would make
- * this feature's behaviour depend on how well the model listens, which is not
- * a property this dialog can test or guarantee. So the two questions are
- * ordinary form fields, and what reaches the assistant is one fully-formed
- * instruction naming exact page titles — the model's job is reduced to
- * calling `docs.create_page` the requested number of times, which is exactly
- * what §6 asks for ("using the `docs.create_page` tool") without depending on
- * it having asked the right follow-up questions.
+ * The original trigger was a `sessionStorage` flag set the moment `orgs.create`
+ * succeeded and consumed (read-and-cleared) the very next render — an offer
+ * seen exactly once, in the tab that created the org, whether or not anyone
+ * acted on it. Closing the dialog, missing it behind another modal, or simply
+ * not being ready to decide meant it was gone for good, with no route back
+ * except finding Docs' own manual space-creation flow — a real loss for
+ * exactly the org that most needs a starter space. Asked for directly: keep
+ * offering until the org actually HAS one.
  *
- * ## Space creation is a plain mutation; page creation goes through the assistant
+ * The fix needs no flag at all, stored or otherwise — `docs.spaces.list` is
+ * already the authoritative answer to "does this org have Docs content yet",
+ * so the dialog now renders whenever that list is empty and stops the moment
+ * it isn't, checked fresh on every mount rather than remembered from a past
+ * visit. This is a STRICTLY simpler mechanism than the flag it replaces: no
+ * `sessionStorage`, no per-org key, no "read is a consume" contract to get
+ * right — one query this page needs to make anyway to know whether to render.
  *
- * Creating the SPACE decides nothing — every new org gets one "Wiki" space
- * the same way regardless of the answers, so there is no reason to spend a
- * model call deciding to do it. WHICH PAGES to seed depends on the answers,
- * and routing that through `ai.chat.send` is what makes this §6 rather than
- * an ordinary settings form: it exercises the real confirm-before-execute
- * path (§4.2) `docs.create_page` requires, on the assistant page itself.
+ * `dismissed` stays local, un-persisted component state, on purpose: closing
+ * the dialog quiets it for the rest of THIS browsing session (so it does not
+ * re-open on every route change within the app), but a fresh page load re-
+ * evaluates from scratch — if the org still has no space, the offer is back.
+ * That is the literal shape asked for: shown until a space exists, not shown
+ * forever once dismissed once.
  */
 export function NewOrgSetupDialog({ orgId }: { readonly orgId: string }) {
-  /* `everConsumed` is read (and the flag cleared) exactly once per DISTINCT
-     org, via the render-time "reset derived state when a prop changes"
-     pattern (react.dev/learn/you-might-not-need-an-effect#adjusting-some-
-     state-when-a-prop-changes — the same one `use-board-room.ts` already
-     uses for its own per-key reset) rather than an effect: Shell mounts this
-     component once and keeps it mounted across an org switch, so `orgId`
-     changing while everything else stays put is exactly the case that
-     pattern exists for. `consumeBootstrapFlag` reads AND clears
-     `sessionStorage` in one call, which is why this must run at most once
-     per org — reading it again on every unrelated re-render would find it
-     already cleared and never be the problem, but calling it were it NOT
-     idempotent would be, so being deliberate here costs nothing and is the
-     safer habit. */
+  /* `dismissed` resets per DISTINCT org via the render-time "reset derived
+     state when a prop changes" pattern (react.dev/learn/you-might-not-need-
+     an-effect#adjusting-some-state-when-a-prop-changes — the same one
+     `use-board-room.ts` already uses for its own per-key reset) rather than
+     an effect: Shell mounts this component once and keeps it mounted across
+     an org switch, so `orgId` changing while everything else stays put is
+     exactly the case that pattern exists for. Closing the offer for org A
+     must not also suppress it for org B the moment someone switches. */
   const [lastOrgId, setLastOrgId] = useState(orgId);
-  const [everConsumed, setEverConsumed] = useState(() => consumeBootstrapFlag(orgId));
   const [dismissed, setDismissed] = useState(false);
 
   if (orgId !== lastOrgId) {
     setLastOrgId(orgId);
-    setEverConsumed(consumeBootstrapFlag(orgId));
     setDismissed(false);
   }
 
-  const detail = useQuery({ ...orgDetailQuery(orgId), enabled: orgId !== '' && everConsumed });
+  const enabled = orgId !== '';
+  const detail = useQuery({ ...orgDetailQuery(orgId), enabled });
+  const spaces = useQuery({ ...spacesQuery(orgId), enabled });
   const aiAssistantGranted = useFeatureGranted('aiAssistant');
 
-  if (!everConsumed || dismissed) return null;
-  // Both settle almost immediately for a freshly created org (its owner
-  // holds every capability by role, per §2.4) — this just keeps the dialog
-  // from flashing open before `capabilities.useAi` is known.
-  if (detail.data === undefined || aiAssistantGranted === undefined) return null;
-  if (!detail.data.capabilities.useAi || !aiAssistantGranted) return null;
+  if (dismissed) return null;
+  if (detail.data === undefined || spaces.data === undefined || aiAssistantGranted === undefined) {
+    return null;
+  }
+  // The whole point: once the org has ANY Docs space, the offer is done —
+  // whether that space came from this dialog, from Docs' own "+ Space"
+  // control, or existed before this redesign shipped.
+  if (spaces.data.length > 0) return null;
+  // Hide, don't disable (Phase 15 §1's own rule): offering this to someone
+  // who cannot create a space or does not hold the assistant would only
+  // produce a confirmed dialog that fails on submit.
+  if (!detail.data.capabilities.useAi || !detail.data.capabilities.createSpace) return null;
+  if (!aiAssistantGranted) return null;
 
   return (
     <SetupForm
+      orgId={orgId}
       orgName={detail.data.name}
       onClose={() => {
         setDismissed(true);
@@ -85,13 +93,16 @@ export function NewOrgSetupDialog({ orgId }: { readonly orgId: string }) {
 }
 
 function SetupForm({
+  orgId,
   orgName,
   onClose,
 }: {
+  readonly orgId: string;
   readonly orgName: string;
   readonly onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setSeed = useAssistantSeedStore((state) => state.setSeed);
 
   const [teamSize, setTeamSize] = useState('');
@@ -108,6 +119,7 @@ function SetupForm({
       const sizeNote = teamSize.trim() === '' ? '' : ` We have about ${teamSize.trim()} people.`;
 
       return {
+        spaceId: space.spaceId,
         content:
           `I just created this organization.${sizeNote} Please set up our Docs space (id ` +
           `${space.spaceId}) by creating one page for each of these titles, in that space, ` +
@@ -115,6 +127,13 @@ function SetupForm({
       };
     },
     onSuccess: (result) => {
+      // The gating query above (`spaces.data.length > 0`) needs to see this
+      // space on the very next mount, not whenever its own staleTime next
+      // elapses — without this, closing the dialog and reopening the app
+      // could show the offer one more time despite the space already
+      // existing, the exact "stale, not wrong" gap `invalidateSpaces` exists
+      // to close everywhere else Docs writes a space.
+      invalidateSpaces(queryClient, orgId);
       setSeed([{ role: 'user', content: result.content }]);
       onClose();
       void navigate({ to: '/assistant' });
