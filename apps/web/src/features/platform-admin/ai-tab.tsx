@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -618,9 +619,28 @@ function OrgOverridePanel({
   );
 }
 
-/** Cross-org spend by model — §3.3's cost-attribution view. */
+type SpendRow = Awaited<ReturnType<typeof api.platformAdmin.ai.spendReport.query>>[number];
+
+/**
+ * Cross-org spend by model — §3.3's cost-attribution view.
+ *
+ * Each row shows the org by NAME, not a bare uuid — the query joins
+ * `identity.orgs` specifically so an operator never has to cross-reference
+ * the Organizations tab by hand to know whose spend they are looking at.
+ *
+ * The actual prompt/response text is deliberately never shown here, and
+ * never stored anywhere in `ai.usage_ledger` in the first place — that
+ * would mean persisting org-authored content (card/chat/comment text an
+ * org member typed) in a table every operator can read, a real scope and
+ * retention decision this pass did not make. What IS shown, expandable per
+ * row and hidden by default so the table stays scannable: the real token
+ * counts and the published per-model rate `costCentsFor` multiplied to
+ * reach the total — "on what basis" a number was reached, without needing
+ * the content itself.
+ */
 function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
   const sinceDays = 30;
+  const [expanded, setExpanded] = useState<string | null>(null);
   const spend = useQuery({
     queryKey: keys.platformAiSpend(sinceDays),
     queryFn: async () => wire(await api.platformAdmin.ai.spendReport.query({ sinceDays })),
@@ -631,39 +651,90 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-ink">Spend, last {sinceDays} days</h3>
+      <p className="mt-1 max-w-2xl text-xs text-ink-muted">
+        Grouped by org and model. Expand a row for the token counts and rate the cost was computed
+        from — never the prompt or response text itself, which this deployment does not store.
+      </p>
 
-      {spend.isPending && <SkeletonRows rows={3} className="mt-2 *:h-10" />}
+      {spend.isPending && <SkeletonRows rows={3} className="mt-3 *:h-10" />}
       {spend.isError && <ErrorView error={spend.error} title="Could not load the spend report" />}
 
       {spend.data !== undefined &&
         (spend.data.length === 0 ? (
-          <p className="mt-2 text-xs text-ink-faint">No completions recorded in this window.</p>
+          <p className="mt-3 text-xs text-ink-faint">No completions recorded in this window.</p>
         ) : (
-          <div className="mt-2 overflow-x-auto rounded-xl border border-line">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-surface-hover/50 text-ink-faint">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Org</th>
-                  <th className="px-3 py-2 font-medium">Model</th>
-                  <th className="px-3 py-2 font-medium">Calls</th>
-                  <th className="px-3 py-2 font-medium">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {spend.data.map((row) => (
-                  <tr key={`${row.orgId}-${row.model}`}>
-                    <td className="px-3 py-2 font-mono text-ink-muted">{row.orgId}</td>
-                    <td className="px-3 py-2 text-ink">{row.model}</td>
-                    <td className="px-3 py-2 tabular-nums text-ink">{row.calls}</td>
-                    <td className="px-3 py-2 tabular-nums text-ink">
+          <div className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
+            {spend.data.map((row) => {
+              const rowKey = `${row.orgId}-${row.model}`;
+              const open = expanded === rowKey;
+              return (
+                <div key={rowKey}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpanded(open ? null : rowKey);
+                    }}
+                    aria-expanded={open}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-surface-hover/40"
+                  >
+                    {open ? (
+                      <ChevronDown
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-ink-faint"
+                      />
+                    ) : (
+                      <ChevronRight
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-ink-faint"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium text-ink">{row.orgName}</span>
+                      <span className="ml-1 text-ink-faint">({row.orgSlug})</span>
+                    </span>
+                    <span className="shrink-0 text-ink-muted">{row.model}</span>
+                    <span className="shrink-0 tabular-nums text-ink-faint">
+                      {row.calls} {row.calls === 1 ? 'call' : 'calls'}
+                    </span>
+                    <span className="w-16 shrink-0 text-right tabular-nums text-ink">
                       {money(row.totalCents, 'usd')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                  </button>
+
+                  {open && <SpendRowDetail row={row} />}
+                </div>
+              );
+            })}
           </div>
         ))}
     </div>
   );
+}
+
+function SpendRowDetail({ row }: { readonly row: SpendRow }) {
+  return (
+    <div className="border-t border-line/60 bg-surface-sunken/30 px-3 py-2.5 pl-9 text-[11px] text-ink-muted">
+      <p>
+        <span className="tabular-nums text-ink">{row.totalInputTokens.toLocaleString()}</span> input
+        tokens
+        {row.rate !== null && ` at ${formatRate(row.rate.inputCentsPerMillion)}`}
+        {' + '}
+        <span className="tabular-nums text-ink">{row.totalOutputTokens.toLocaleString()}</span>{' '}
+        output tokens
+        {row.rate !== null && ` at ${formatRate(row.rate.outputCentsPerMillion)}`}
+        {row.rate === null && (
+          <span className="text-warning">
+            {' '}
+            — this model has since been removed from the rate table; the total shown is what was
+            actually billed, not re-derived.
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** `250` (cents per million) -> `"$2.50 / 1M tokens"`. */
+function formatRate(centsPerMillion: number): string {
+  return `$${(centsPerMillion / 100).toFixed(2)} / 1M tokens`;
 }

@@ -21,6 +21,7 @@ import {
   aiProviderConfigDefaultChanged,
   aiProviderConfigKeyRotated,
 } from './events.js';
+import { rateFor } from './rates.js';
 
 export interface AiProviderConfigDeps {
   readonly events: EventBus;
@@ -343,9 +344,23 @@ export async function getOrgProviderOverride(
 
 export interface AiSpendReportRow {
   readonly orgId: string;
+  readonly orgName: string;
+  readonly orgSlug: string;
   readonly model: string;
   readonly totalCents: number;
   readonly calls: number;
+  /** Real token totals — the input to `costCentsFor`'s own arithmetic, so a
+      reader can see the actual basis rather than trust the total alone. */
+  readonly totalInputTokens: number;
+  readonly totalOutputTokens: number;
+  /** The rate this model billed at, at read time. `null` for a model no
+      longer in `rates.ts` — a historical row can still name a retired
+      model; the row's own `totalCents` stays correct either way, since it
+      was computed and stored at the time, never re-derived here. */
+  readonly rate: {
+    readonly inputCentsPerMillion: number;
+    readonly outputCentsPerMillion: number;
+  } | null;
 }
 
 /**
@@ -355,6 +370,12 @@ export interface AiSpendReportRow {
  * "per-org spend" across the WHOLE deployment, on the operator tier, the
  * same reasoning `platformAdmin.audit.list` and the org directory already
  * use `withPlatformAdminScope` for.
+ *
+ * Joins `identity.orgs` for `name`/`slug` — `taskflow_platform_admin`
+ * already holds a grant there (migration 0035, the same one every other
+ * cross-org report in this file relies on) — so the console can show an
+ * organization, not a bare uuid the operator would have to cross-reference
+ * by hand on the Organizations tab.
  */
 export async function aiSpendReport(
   operator: PlatformOperator,
@@ -366,21 +387,36 @@ export async function aiSpendReport(
     tx
       .select({
         orgId: schema.aiUsageLedger.orgId,
+        orgName: schema.orgs.name,
+        orgSlug: schema.orgs.slug,
         model: schema.aiUsageLedger.model,
         totalCents: sumColumn(schema.aiUsageLedger.costCents),
         calls: countRows(schema.aiUsageLedger.id),
+        totalInputTokens: sumColumn(schema.aiUsageLedger.inputTokens),
+        totalOutputTokens: sumColumn(schema.aiUsageLedger.outputTokens),
       })
       .from(schema.aiUsageLedger)
+      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.aiUsageLedger.orgId))
       .where(gte(schema.aiUsageLedger.occurredAt, since))
-      .groupBy(schema.aiUsageLedger.orgId, schema.aiUsageLedger.model),
+      .groupBy(
+        schema.aiUsageLedger.orgId,
+        schema.orgs.name,
+        schema.orgs.slug,
+        schema.aiUsageLedger.model,
+      ),
   );
 
   await recordOperatorAction(operator.userId, 'ai.spend_report', { sinceDays: input.sinceDays });
 
   return rows.map((row) => ({
     orgId: row.orgId,
+    orgName: row.orgName,
+    orgSlug: row.orgSlug,
     model: row.model,
     totalCents: Math.max(0, Number.parseInt(row.totalCents, 10) || 0),
     calls: Math.max(0, Number.parseInt(row.calls, 10) || 0),
+    totalInputTokens: Math.max(0, Number.parseInt(row.totalInputTokens, 10) || 0),
+    totalOutputTokens: Math.max(0, Number.parseInt(row.totalOutputTokens, 10) || 0),
+    rate: rateFor(row.model) ?? null,
   }));
 }

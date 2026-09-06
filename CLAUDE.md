@@ -628,6 +628,28 @@ it "for the console's per-org detail view") but had no route at all — `orgOver
 and `recordOperatorAction` call every other read in this file already has — it had neither,
 because nothing had ever called it end to end before.
 
+**The spend report showed a bare org uuid, and the project owner's own question — "how are we
+calculating the cost, on what basis" — surfaced that the answer was nowhere in the UI either.**
+`aiSpendReport` now joins `identity.orgs` (the exact same grant every other cross-org report in
+`provider-config.service.ts`/`billing-directory.service.ts` already relies on) for `orgName`/
+`orgSlug`, and sums `input_tokens`/`output_tokens` alongside `cost_cents` — real numbers already
+sitting in `ai.usage_ledger`, not a re-derivation. `rates.ts` gained `rateFor(model)`, a read-only
+lookup alongside the existing `costCentsFor`, so a row can report the published per-model rate it
+was actually billed at. `SpendReportPanel` renders these collapsed behind a per-row expand
+("40,000 input tokens at $0.80 / 1M tokens + 8,000 output tokens at $4.00 / 1M tokens"), hidden by
+default so the table stays scannable.
+
+**Explicitly did NOT start storing the actual prompt or response text, after asking rather than
+assuming.** The obvious literal reading of "let me see the details" would be logging the real
+messages sent to and from the provider — and `packages/ai`'s own `AiProvider` header already
+states the reason not to: this is the one provider interface that moves org-authored CONTENT
+(card text, chat messages, comments) to a third party, and persisting a second copy of that in an
+operator-readable table is a real retention/redaction decision, not a UI affordance. Put to the
+project owner directly rather than built silently; the answer was to show the computation's real
+inputs (tokens, rate) instead, which is what shipped. `ai.usage_ledger` still carries no content
+column of any kind — CLAUDE.md's own account of the schema (§2+§3's section above) remains
+accurate unchanged.
+
 ### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
 
 `apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·

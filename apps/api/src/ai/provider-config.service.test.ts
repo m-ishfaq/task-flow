@@ -3,10 +3,11 @@ import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
 import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
-import { SoftwareKeyProvider } from '@taskflow/security';
+import { newId, SoftwareKeyProvider } from '@taskflow/security';
 import * as orgs from '../tenancy/org.service.js';
 import { TEST_ENV } from '../testing/fixtures.js';
 import {
+  aiSpendReport,
   clearOrgProviderOverride,
   createProviderConfig,
   getOrgProviderOverride,
@@ -15,6 +16,7 @@ import {
   setDefaultProviderConfig,
   setOrgProviderOverride,
 } from './provider-config.service.js';
+import { costCentsFor } from './rates.js';
 import { resolveAiProvider } from './provider-resolver.js';
 import type { PlatformOperator } from '../platform-admin/org-directory.service.js';
 
@@ -248,5 +250,38 @@ describe('org overrides', () => {
 
     await clearOrgProviderOverride({ events }, operatorOf(OPERATOR), orgId);
     expect(await getOrgProviderOverride(operatorOf(OPERATOR), orgId)).toBeUndefined();
+  });
+});
+
+describe('aiSpendReport', () => {
+  it('joins the org name and slug, and reports the token totals and rate the cost was computed from', async () => {
+    const orgId = await newOrg('ai-spend-report');
+    const inputTokens = 40_000;
+    const outputTokens = 8_000;
+    const costCents = costCentsFor('claude-haiku-4', { inputTokens, outputTokens });
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `INSERT INTO ai.usage_ledger
+         (id, org_id, feature, provider, model, input_tokens, output_tokens, cost_cents)
+       VALUES ($1, $2, 'standup', 'anthropic', 'claude-haiku-4', $3, $4, $5)`,
+      [newId<'AiUsageLedgerId'>(), orgId, inputTokens, outputTokens, costCents],
+    );
+    await admin.setOrg(null);
+
+    const report = await aiSpendReport(operatorOf(OPERATOR), { sinceDays: 30 });
+    const row = report.find((entry) => entry.orgId === orgId);
+
+    expect(row).toEqual({
+      orgId,
+      orgName: `Org ai-spend-report`,
+      orgSlug: 'ai-spend-report',
+      model: 'claude-haiku-4',
+      totalCents: costCents,
+      calls: 1,
+      totalInputTokens: inputTokens,
+      totalOutputTokens: outputTokens,
+      rate: { inputCentsPerMillion: 80, outputCentsPerMillion: 400 },
+    });
   });
 });

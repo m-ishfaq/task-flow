@@ -141,9 +141,20 @@ const CreateAiProviderConfigInput = z
 const AiSpendReportRow = z
   .object({
     orgId: z.string(),
+    orgName: z.string(),
+    orgSlug: z.string(),
     model: z.string(),
     totalCents: z.number().int().nonnegative(),
     calls: z.number().int().nonnegative(),
+    totalInputTokens: z.number().int().nonnegative(),
+    totalOutputTokens: z.number().int().nonnegative(),
+    rate: z
+      .object({
+        inputCentsPerMillion: z.number().nonnegative(),
+        outputCentsPerMillion: z.number().nonnegative(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 

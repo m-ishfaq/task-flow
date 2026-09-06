@@ -13,7 +13,7 @@
  * a silent zero-cost model is a silent hole in the budget gate it feeds.
  */
 
-interface ModelRate {
+export interface ModelRate {
   readonly inputCentsPerMillion: number;
   readonly outputCentsPerMillion: number;
 }
@@ -35,6 +35,17 @@ const RATES: Readonly<Record<string, ModelRate>> = {
   'gemini-1.5-pro': { inputCentsPerMillion: 125, outputCentsPerMillion: 500 },
   'gemini-1.5-flash': { inputCentsPerMillion: 7.5, outputCentsPerMillion: 30 },
 };
+
+/**
+ * The published rate a model's cost was computed from — read-only lookup for
+ * a caller that wants to SHOW the basis, not just the result. `undefined`
+ * for a model not in the table (never thrown here; `costCentsFor` is the
+ * one place an unknown model is a hard failure, since only it feeds the
+ * budget gate).
+ */
+export function rateFor(model: string): ModelRate | undefined {
+  return RATES[model];
+}
 
 export class UnknownModelRateError extends Error {
   constructor(readonly model: string) {
