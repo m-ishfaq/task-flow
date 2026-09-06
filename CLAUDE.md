@@ -650,6 +650,63 @@ inputs (tokens, rate) instead, which is what shipped. `ai.usage_ledger` still ca
 column of any kind — CLAUDE.md's own account of the schema (§2+§3's section above) remains
 accurate unchanged.
 
+**`aiAssistant` had never been granted to a single billing plan, which meant the entire assistant
+surface — `/assistant`, the standup Narrate button, the §6 new-org setup dialog — was unreachable
+for every org on every plan, found from a real report: a freshly created org's setup dialog never
+appeared.** `entitlement-resolver.ts` only turns a flag on for an org when it appears in that org's
+PLAN's `features` array, and `aiAssistant`'s own registry entry had said, since it was written,
+"registered ahead of its first caller so the plan catalog has a name to grant the day §4 ships
+one" — and then nobody ever came back to actually grant it once §4 shipped. `stage: 'in-progress'`
+was the one honest marker left; every other launched, `perOrg` flag in the registry had a real
+grant somewhere. This is `analytics`'s own bug (flag existed, no route ever checked it) in
+reverse: here every route checks it, but no plan ever turns it on.
+
+**Granted to all four tiers — free through business — each with its own AI spend ceiling in the
+SAME nullable-ceiling convention `telephonyCapCents` already uses, added to `billing.catalog.ts`
+rather than a migration.** A migration would be a one-time INSERT that a later catalog edit could
+never reach — `packages/seed/src/modules/billing.catalog.ts`'s own header already explains why
+this whole module calls the real `createPlan`/`updatePlan` platform-admin service functions
+instead of writing rows directly, the identical mechanism this fix reuses rather than inventing a
+second one. `aiTokenBudgetMonthlyCents` is bounded on every tier, including Business, rather than
+following `automationRunsPerHour`/`turnIssuancePerDay`'s null-on-Business pattern — deliberately:
+an LLM completion is real third-party spend (Anthropic/OpenAI/Gemini), the same unvetted
+self-serve-checkout risk `telephonyCapCents`'s own comment already argues against leaving
+unbounded on Business, not an internal cost like an automation run. Business's number ($100/month)
+is the identical figure `telephonyCapCents` already uses for that tier.
+
+**The read side of `aiTokenBudgetMonthlyCents` worked from the moment migration 0100 added the
+column — `entitlement-resolver.ts`'s `pick(override, plan)` already resolved it correctly, because
+`select()` with no column list reads every column. The WRITE side did not exist at all.**
+`plan-catalog.service.ts`'s `PlanLimitsInput`/`CreatePlanInput`/`UpdatePlanInput` had no
+`aiTokenBudgetMonthlyCents` field, and `createPlan`/`updatePlan` never touched the column — so
+there was no way, even from the platform console, to ever set it to anything but the migration's
+default of NULL. Wired the same way every other limit field already is: a new required field on
+`PlanLimitsInput` (required, not optional — the same "a write tool that forgot to set it should
+fail to compile" reasoning guardrail 6 gives for a domain event), read into `readPlans()`'s mapping,
+written in `createPlan`'s insert, and diffed in `updatePlan`'s own `assign()` helper. The
+platform-admin router's `PlanLimitFields` (shared between create and update) and `PlanRow` output
+schema both widened to match, and `plans-tab.tsx`'s `EditLimitsDialog` gained a matching form field
+— without it, an operator could see the catalog's seeded number but never change it for one plan
+without editing code and re-running the reconcile script.
+
+**Editing `billing.catalog.ts` alone does not retroactively touch `free`/`pro` on an existing
+database — migration 0063 already seeded both of those two ids directly, and this seed module
+treats an existing plan id as `reused` (a no-op) unless `ctx.reseedPlans` is explicitly true.**
+0063's own header states why it seeded `free`/`pro` at all rather than leaving the catalog module
+to create everything: `identity.orgs.plan_id`'s foreign key needed something to reference before it
+could be added, so those two ids exist in every database ahead of this module ever running, with
+whatever feature list 0063 hardcoded at the time (no `aiAssistant` — it did not exist yet). Getting
+the new grant onto an already-seeded database is `pnpm --filter @taskflow/seed plan-catalog-reconcile`
+(or a fixture reseed with `--reseed-plans`) — not a migration, per the project owner's own
+instruction, and not automatic from editing the catalog literal alone.
+
+**No test in this codebase exercises `createPlan`/`updatePlan` directly — a pre-existing gap, not
+one this pass introduced, and not closed here either.** `plan-catalog.service.test.ts` only tests
+`setOrgEntitlements` (the per-org override, a different interface entirely, with no
+`aiTokenBudgetMonthlyCents` field of its own — out of scope for this pass, which was about the
+PLAN ceiling the project owner asked for, not a second per-org override). Building real DB-backed
+coverage for the plan-catalog write path is real, separate work.
+
 ### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
 
 `apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·

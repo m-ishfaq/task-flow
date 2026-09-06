@@ -110,9 +110,9 @@ export const CATALOG = [
   {
     id: 'free',
     name: 'Free',
-    description: 'For trying things out. Boards, chat and docs for a small team.',
+    description: 'For trying things out. Boards, chat, docs and the AI assistant for a small team.',
     sortOrder: 0,
-    features: ['chat', 'docs'],
+    features: ['chat', 'docs', 'aiAssistant'],
     withProduct: false,
     monthlyCents: null,
     annualCents: null,
@@ -122,6 +122,12 @@ export const CATALOG = [
       turnIssuancePerDay: 0,
       telephonyIncludedCents: 0,
       telephonyMarkupPct: 0,
+      // A flat fraud backstop, the identical convention as telephonyCapCents
+      // just above it — not a multiple of price, since Free has none. $2 is
+      // enough to try the assistant (a handful of real completions, per
+      // packages/ai/rates.ts's own per-model prices) without leaving a free
+      // tier's AI spend genuinely unbounded.
+      aiTokenBudgetMonthlyCents: 200,
     },
   },
   {
@@ -129,7 +135,7 @@ export const CATALOG = [
     name: 'Starter',
     description: 'For a team that has outgrown spreadsheets. Adds search and voice.',
     sortOrder: 1,
-    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony'],
+    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'aiAssistant'],
     withProduct: true,
     monthlyCents: 1900,
     annualCents: 19_000,
@@ -142,6 +148,7 @@ export const CATALOG = [
       turnIssuancePerDay: 200,
       telephonyIncludedCents: 500,
       telephonyMarkupPct: 20,
+      aiTokenBudgetMonthlyCents: 1000,
     },
   },
   {
@@ -149,7 +156,15 @@ export const CATALOG = [
     name: 'Pro',
     description: 'For teams that run on it. Automation, the public API and higher limits.',
     sortOrder: 2,
-    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'automation', 'publicApi'],
+    features: [
+      'chat',
+      'docs',
+      'tqlTextSyntax',
+      'telephony',
+      'automation',
+      'publicApi',
+      'aiAssistant',
+    ],
     withProduct: true,
     monthlyCents: 4900,
     annualCents: 49_000,
@@ -160,6 +175,7 @@ export const CATALOG = [
       turnIssuancePerDay: 2000,
       telephonyIncludedCents: 2500,
       telephonyMarkupPct: 15,
+      aiTokenBudgetMonthlyCents: 3000,
     },
   },
   {
@@ -180,6 +196,7 @@ export const CATALOG = [
       'automation',
       'publicApi',
       'analytics',
+      'aiAssistant',
     ],
     withProduct: true,
     monthlyCents: 14_900,
@@ -199,6 +216,14 @@ export const CATALOG = [
       turnIssuancePerDay: null,
       telephonyIncludedCents: 10_000,
       telephonyMarkupPct: 10,
+      // Bounded for the IDENTICAL reason telephonyCapCents is bounded on this
+      // tier rather than null/unlimited like automationRunsPerHour/
+      // turnIssuancePerDay above — an LLM completion is real third-party
+      // spend (Anthropic/OpenAI/Gemini), the same unvetted self-serve
+      // checkout risk a phone call is, not an internal cost like an
+      // automation run or a TURN credential issuance. $100 matches
+      // telephonyCapCents's own business-tier number exactly.
+      aiTokenBudgetMonthlyCents: 10_000,
     },
   },
 ] as const;

@@ -272,7 +272,8 @@ async function main(): Promise<void> {
             current.automationRunsPerHour !== tier.limits.automationRunsPerHour ||
             current.turnIssuancePerDay !== tier.limits.turnIssuancePerDay ||
             current.telephonyIncludedCents !== tier.limits.telephonyIncludedCents ||
-            current.telephonyMarkupPct !== tier.limits.telephonyMarkupPct;
+            current.telephonyMarkupPct !== tier.limits.telephonyMarkupPct ||
+            current.aiTokenBudgetMonthlyCents !== tier.limits.aiTokenBudgetMonthlyCents;
           if (featuresDiffer || limitsDiffer) {
             console.warn(
               `[dry run] would update: ${tier.id}` +

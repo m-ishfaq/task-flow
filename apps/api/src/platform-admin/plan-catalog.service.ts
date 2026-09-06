@@ -59,6 +59,16 @@ export interface PlanLimitsInput {
   readonly turnIssuancePerDay: number | null;
   readonly telephonyIncludedCents: number;
   readonly telephonyMarkupPct: number;
+  /**
+   * The AI budget ceiling (Phase 15 §2+§3's `ai.usage_ledger` gate) — NULL
+   * unlimited, 0 none-at-all, the identical convention `telephonyCapCents`
+   * already uses. Migration 0100 added the column to `billing.plans` and
+   * `entitlement-resolver.ts` has read it since — this is the one place that
+   * was missing: nothing before this wired it into `createPlan`/`updatePlan`,
+   * so there was no way, even from the console, to ever set it to anything
+   * but its migration default of NULL.
+   */
+  readonly aiTokenBudgetMonthlyCents: number | null;
 }
 
 export interface PlanPriceView {
@@ -231,6 +241,7 @@ async function readPlans(deps: PlanCatalogDeps): Promise<readonly PlanView[]> {
     turnIssuancePerDay: plan.turnIssuancePerDay,
     telephonyIncludedCents: plan.telephonyIncludedCents,
     telephonyMarkupPct: plan.telephonyMarkupPct,
+    aiTokenBudgetMonthlyCents: plan.aiTokenBudgetMonthlyCents,
     currentPrices: rows.prices
       .filter((price) => price.planId === plan.id)
       .map((price) => toPriceView(deps, price)),
@@ -354,6 +365,7 @@ export async function createPlan(
       turnIssuancePerDay: input.turnIssuancePerDay,
       telephonyIncludedCents: input.telephonyIncludedCents,
       telephonyMarkupPct: input.telephonyMarkupPct,
+      aiTokenBudgetMonthlyCents: input.aiTokenBudgetMonthlyCents,
       updatedAt: now,
       updatedBy: operator.userId,
     });
@@ -401,6 +413,7 @@ export interface UpdatePlanInput {
   readonly turnIssuancePerDay?: number | null | undefined;
   readonly telephonyIncludedCents?: number | undefined;
   readonly telephonyMarkupPct?: number | undefined;
+  readonly aiTokenBudgetMonthlyCents?: number | null | undefined;
 }
 
 /**
@@ -449,6 +462,11 @@ export async function updatePlan(
   assign('turnIssuancePerDay', input.turnIssuancePerDay, plan.turnIssuancePerDay);
   assign('telephonyIncludedCents', input.telephonyIncludedCents, plan.telephonyIncludedCents);
   assign('telephonyMarkupPct', input.telephonyMarkupPct, plan.telephonyMarkupPct);
+  assign(
+    'aiTokenBudgetMonthlyCents',
+    input.aiTokenBudgetMonthlyCents,
+    plan.aiTokenBudgetMonthlyCents,
+  );
 
   /* A no-op update still records the read as an operator action (every
      platformAdmin call does) but must not emit a change event — a subscriber

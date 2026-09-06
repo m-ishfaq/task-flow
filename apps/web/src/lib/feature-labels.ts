@@ -87,4 +87,6 @@ export const LIMIT_COPY: Readonly<Record<string, string>> = {
     'How much call and SMS usage the subscription already covers each period. Past this, overage accrues to the next invoice at the markup below. Requires a paid plan — there is no subscription to bill a free tier against.',
   telephonyMarkupPct:
     'What is added to the carrier’s own cost when billing usage past the included allowance. 0 bills exactly what the carrier charged; 50 bills one and a half times it. This is the platform’s margin on metered usage.',
+  aiTokenBudgetMonthlyCents:
+    'The most an organization on this plan may spend on AI assistant completions in a rolling month, at each provider’s own published rates. Same CEILING convention as the telephony cap above — an owner can set their own budget anywhere up to it, never above. Empty means unlimited; 0 refuses every completion.',
 };

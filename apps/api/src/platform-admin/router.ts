@@ -268,6 +268,8 @@ const PlanLimitFields = {
   turnIssuancePerDay: z.number().int().nonnegative().nullable().default(null),
   telephonyIncludedCents: z.number().int().nonnegative().default(0),
   telephonyMarkupPct: z.number().int().min(0).max(1000).default(0),
+  /** Same nullable convention as `telephonyCapCents` — null unlimited, 0 none-at-all. */
+  aiTokenBudgetMonthlyCents: z.number().int().nonnegative().nullable().default(null),
 } as const;
 
 const PlanPriceRow = z
@@ -390,6 +392,7 @@ const PlanRow = z
     turnIssuancePerDay: z.number().int().nullable(),
     telephonyIncludedCents: z.number().int(),
     telephonyMarkupPct: z.number().int(),
+    aiTokenBudgetMonthlyCents: z.number().int().nullable(),
     updatedAt: z.date(),
   })
   .strict();
@@ -952,6 +955,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
               turnIssuancePerDay: z.number().int().nonnegative().nullable().optional(),
               telephonyIncludedCents: z.number().int().nonnegative().optional(),
               telephonyMarkupPct: z.number().int().min(0).max(1000).optional(),
+              aiTokenBudgetMonthlyCents: z.number().int().nonnegative().nullable().optional(),
             })
             .strict(),
         )
