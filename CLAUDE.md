@@ -707,6 +707,36 @@ one this pass introduced, and not closed here either.** `plan-catalog.service.te
 PLAN ceiling the project owner asked for, not a second per-org override). Building real DB-backed
 coverage for the plan-catalog write path is real, separate work.
 
+**The grant above still did nothing for a brand-new org, found the same day from a real run —
+`createOrg` never places a new org on `free`.** It writes `plan_id = 'trial'` directly (migration
+0094's own non-purchasable, `is_active = false` tier, "every new organization starts here"), and
+`trial` is not one of `CATALOG`'s four owner-facing tiers — so neither `billing.catalog.ts`'s own
+seed loop nor `plan-catalog-reconcile.cli.ts` had ever looked at it. The identical class of bug
+`aiAssistant`'s own flag entry already caused once (a grant that reaches nowhere), recurring one
+tier lower and caught only by actually running the reconcile script and checking a fresh org
+against it.
+
+**`TRIAL_PLAN` is a second constant, exported alongside `CATALOG` but never folded into it —
+`trial` fails every property that array is FOR.** `CATALOG` is the owner-facing catalog: what a
+person can buy, most with a real price and a Stripe product. `trial` has neither, and must never
+be reached through `createPlan`, which hardcodes `isActive: true` on every row it creates — `trial`
+has to stay `is_active = false` forever (0094's own comment: never in the upgrade picker, never
+operator-assignable). So `TRIAL_PLAN` is only ever passed to `updatePlan`, on the standing
+assumption that migration 0094 already created the row — which every migrated database has,
+before any seed script runs. Both the seed module and the reconcile CLI now validate its feature
+names and reconcile it (the seed module gated on the identical `ctx.reseedPlans` flag every
+`CATALOG` tier already uses; the CLI unconditionally, gated only by its own `--dry-run`), right
+after their existing per-tier loop — a missing `trial` row at that point throws loudly rather than
+silently creating one, since that would mean 0094 was rolled back without being re-applied, a real
+anomaly worth surfacing rather than papering over.
+
+**Every number on `TRIAL_PLAN.limits` mirrors 0094's own INSERT literally, except the new AI
+field.** Reconciling `trial`'s telephony/automation ceilings to anything other than what that
+migration deliberately chose would be this file silently overriding a decision it was never asked
+to revisit. `aiTokenBudgetMonthlyCents: 100` follows 0094's own stated reasoning for its telephony
+cap exactly — "enough to prove the feature works, never enough to be worth abusing" — applied to
+the one ceiling that migration predates and could not have set.
+
 ### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
 
 `apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·

@@ -20,7 +20,7 @@ import {
 } from '@taskflow/api/platform-admin/plan-catalog';
 import { InMemoryEventBus } from '@taskflow/events';
 import { FLAG_NAMES } from '@taskflow/feature-flags';
-import { CATALOG } from './modules/billing.catalog.js';
+import { CATALOG, TRIAL_PLAN } from './modules/billing.catalog.js';
 
 /**
  * The shape `createPlan`/`updatePlan`/`setPrice`/`listPlans` all expect as
@@ -229,7 +229,7 @@ async function main(): Promise<void> {
     const operator = await resolveOperator(args.operatorEmail);
     const deps: PlanCatalogDeps = { events: new InMemoryEventBus(), payments: buildPayments() };
 
-    const unknown = CATALOG.flatMap((tier) =>
+    const unknown = [...CATALOG, TRIAL_PLAN].flatMap((tier) =>
       tier.features.filter((flag) => !FLAG_NAMES.includes(flag)),
     );
     if (unknown.length > 0) {
@@ -322,6 +322,56 @@ async function main(): Promise<void> {
         }
         repriced += 1;
       }
+    }
+
+    /* `trial` is not part of `CATALOG` — see `TRIAL_PLAN`'s own header
+       (`billing.catalog.ts`) for why: it is not sellable (no price, no
+       Stripe product, `is_active = false`), so it must never be reached
+       through `createPlan`, which hardcodes `isActive: true`. Migration
+       0094 seeds the row unconditionally, so a missing row here is a real
+       anomaly worth failing loudly on rather than silently creating —
+       `existing.get` returning `undefined` falls through to the same
+       `errors.notFound()` `updatePlan` would throw anyway, just with a
+       clearer message first. No pricing step: `trial` has and needs none. */
+    const currentTrial = existing.get(TRIAL_PLAN.id);
+    if (currentTrial === undefined) {
+      throw new Error(
+        `"${TRIAL_PLAN.id}" does not exist — expected migration 0094 to have seeded it already.`,
+      );
+    }
+
+    const trialFeaturesDiffer =
+      JSON.stringify([...TRIAL_PLAN.features].sort()) !==
+      JSON.stringify([...currentTrial.features].sort());
+    const trialLimitsDiffer =
+      currentTrial.telephonyCapCents !== TRIAL_PLAN.limits.telephonyCapCents ||
+      currentTrial.automationRunsPerHour !== TRIAL_PLAN.limits.automationRunsPerHour ||
+      currentTrial.turnIssuancePerDay !== TRIAL_PLAN.limits.turnIssuancePerDay ||
+      currentTrial.telephonyIncludedCents !== TRIAL_PLAN.limits.telephonyIncludedCents ||
+      currentTrial.telephonyMarkupPct !== TRIAL_PLAN.limits.telephonyMarkupPct ||
+      currentTrial.aiTokenBudgetMonthlyCents !== TRIAL_PLAN.limits.aiTokenBudgetMonthlyCents;
+
+    if (trialFeaturesDiffer || trialLimitsDiffer) {
+      if (args.dryRun) {
+        console.warn(
+          `[dry run] would update: ${TRIAL_PLAN.id}` +
+            (trialFeaturesDiffer ? ` — features -> [${TRIAL_PLAN.features.join(', ')}]` : '') +
+            (trialLimitsDiffer ? ' — limits changed' : ''),
+        );
+      } else {
+        await updatePlan(deps, operator, {
+          planId: TRIAL_PLAN.id,
+          name: TRIAL_PLAN.name,
+          description: TRIAL_PLAN.description,
+          sortOrder: TRIAL_PLAN.sortOrder,
+          features: [...TRIAL_PLAN.features],
+          ...TRIAL_PLAN.limits,
+        });
+        console.warn(`reconciled: ${TRIAL_PLAN.id}`);
+      }
+      updated += 1;
+    } else {
+      unchanged += 1;
     }
 
     console.warn(

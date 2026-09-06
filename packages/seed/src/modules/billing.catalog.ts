@@ -228,6 +228,65 @@ export const CATALOG = [
   },
 ] as const;
 
+/**
+ * The non-purchasable trial every new org actually starts on (migration
+ * 0094's own INSERT, `org.service.ts`'s hardcoded `TRIAL_PLAN_ID`) —
+ * reconciled here, separately from `CATALOG` above, for the same reason a
+ * grant added after 0094 shipped needs a real way to reach that
+ * already-seeded row without a second migration.
+ *
+ * Found the hard way: granting `aiAssistant` to `free`/`starter`/`pro`/
+ * `business` above did nothing for a brand-new org, because a brand-new org
+ * is never placed on any of those four — `createOrg` writes `plan_id =
+ * 'trial'` directly, and `trial` is not one of `CATALOG`'s four tiers, so
+ * neither this module's own loop nor `plan-catalog-reconcile.cli.ts` ever
+ * looked at it. The identical class of bug `aiAssistant`'s own flag entry
+ * already caused once (granted nowhere reachable) recurring one tier lower.
+ *
+ * Deliberately NOT folded into `CATALOG`: that array is the OWNER-FACING
+ * catalog — what a person can buy, with a real price and (for three of the
+ * four) a Stripe product — and `trial` is neither. It is also never safe to
+ * run through `createPlan`, which hardcodes `isActive: true` — `trial` must
+ * stay `is_active = false` per 0094's own comment (never shown in the
+ * upgrade picker, never assignable by an operator). So this constant is
+ * only ever passed to `updatePlan`, on the assumption 0094 already created
+ * the row — which every migrated database has, by the time any seed script
+ * runs.
+ */
+export const TRIAL_PLAN = {
+  id: 'trial',
+  name: 'Trial',
+  description:
+    '14-day full-access preview, not sold directly — every new organization starts here.',
+  sortOrder: -1,
+  // Mirrors 0094's own literal feature list, plus aiAssistant — the same
+  // gap CATALOG's four tiers had.
+  features: [
+    'chat',
+    'docs',
+    'telephony',
+    'tqlTextSyntax',
+    'automation',
+    'publicApi',
+    'aiAssistant',
+  ],
+  limits: {
+    // Every number below matches 0094's own INSERT exactly, except the new
+    // AI field — reconciling to anything else here would be this file
+    // silently overriding a deliberate migration decision it was never
+    // asked to revisit.
+    telephonyCapCents: 150,
+    automationRunsPerHour: 15,
+    turnIssuancePerDay: 30,
+    telephonyIncludedCents: 0,
+    telephonyMarkupPct: 0,
+    // Small but real, the identical reasoning 0094's own telephony cap
+    // gives: enough to prove the assistant works during a 14-day preview,
+    // never enough to be worth abusing.
+    aiTokenBudgetMonthlyCents: 100,
+  },
+} as const;
+
 export interface CatalogOutput {
   /** Plan ids that exist and are sellable, in display order. */
   readonly planIds: readonly string[];
@@ -293,7 +352,7 @@ export const catalogModule = defineSeedModule({
        'search' and 'public_api', neither of which the registry has (they are
        'tqlTextSyntax' and 'publicApi'), and the run died three plans in —
        after creating two real Stripe Products. */
-    const unknown = CATALOG.flatMap((tier) =>
+    const unknown = [...CATALOG, TRIAL_PLAN].flatMap((tier) =>
       tier.features.filter((flag) => !FLAG_NAMES.includes(flag)),
     );
     if (unknown.length > 0) {
@@ -307,7 +366,11 @@ export const catalogModule = defineSeedModule({
        pricing table must not be able to hand it out. `createPlan` refuses it
        too; this only says so before anything has been created. */
     const spendFlag = 'telephonyLiveCredentials';
-    if (CATALOG.some((tier) => (tier.features as readonly string[]).includes(spendFlag))) {
+    if (
+      [...CATALOG, TRIAL_PLAN].some((tier) =>
+        (tier.features as readonly string[]).includes(spendFlag),
+      )
+    ) {
       throw new Error(`billing.catalog: ${spendFlag} is not grantable through a plan.`);
     }
 
@@ -372,6 +435,29 @@ export const catalogModule = defineSeedModule({
           currency: 'usd',
         });
       }
+    }
+
+    /* `trial` is not part of the loop above — see `TRIAL_PLAN`'s own header
+       for why. Same `ctx.reseedPlans` gate as every sellable tier, and the
+       same `updatePlan`-only path: `existing` MUST already contain it
+       (migration 0094 seeds it unconditionally, in every migrated database,
+       before any seed script runs), so this deliberately does not fall back
+       to `createPlan` the way the loop above does for a genuinely new tier —
+       a missing row here is a real anomaly worth throwing on, not a case to
+       paper over. No pricing step: `trial` has no Stripe product and is
+       never meant to acquire one through this path. */
+    if (ctx.reseedPlans) {
+      await updatePlan(deps, actor, {
+        planId: TRIAL_PLAN.id,
+        name: TRIAL_PLAN.name,
+        description: TRIAL_PLAN.description,
+        sortOrder: TRIAL_PLAN.sortOrder,
+        features: [...TRIAL_PLAN.features],
+        ...TRIAL_PLAN.limits,
+      });
+      reconciled += 1;
+    } else {
+      reused += 1;
     }
 
     const planIds = CATALOG.map((tier) => tier.id);
