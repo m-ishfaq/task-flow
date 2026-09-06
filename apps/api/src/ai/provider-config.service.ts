@@ -311,9 +311,19 @@ export async function clearOrgProviderOverride(
  * `withPlatformAdminScope` — this is a single, already-known org, not a
  * cross-tenant scan, so the ordinary tenant-isolation policy is the right
  * tool rather than the operator bypass.
+ *
+ * Takes an `operator` and records the read for the same reason every other
+ * read in this file does — the operator audit chain covers reads, not only
+ * writes (`platformRoute`'s own step-up-on-every-call posture, CLAUDE.md's
+ * "Phase 12 Wave 1" section). This function had no caller until the "AI
+ * Models" tab's org-override panel needed one, so nothing here was ever
+ * exercised end to end before that.
  */
-export async function getOrgProviderOverride(orgId: OrgId): Promise<string | undefined> {
-  return withOrgScope(orgId, async (tx) => {
+export async function getOrgProviderOverride(
+  operator: PlatformOperator,
+  orgId: OrgId,
+): Promise<string | undefined> {
+  const providerConfigId = await withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({ providerConfigId: schema.aiOrgOverrides.providerConfigId })
       .from(schema.aiOrgOverrides)
@@ -321,6 +331,10 @@ export async function getOrgProviderOverride(orgId: OrgId): Promise<string | und
       .limit(1);
     return rows[0]?.providerConfigId;
   });
+
+  await recordOperatorAction(operator.userId, 'ai.org_override.get', { orgId });
+
+  return providerConfigId;
 }
 
 /* -------------------------------------------------------------------------- *

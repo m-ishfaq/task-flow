@@ -447,6 +447,12 @@ export const keys = {
   platformUserDetail: (userId: string) => ['platform', 'users', userId, 'detail'] as const,
   /** The operator chain, filtered to one org. */
   platformOrgHistory: (orgId: string) => ['platform', 'orgs', orgId, 'history'] as const,
+  /** The AI provider catalog (Phase 15 §2.3) — the "AI Models" tab's own list. */
+  platformAiProviders: () => ['platform', 'ai', 'providers'] as const,
+  /** One org's current AI provider override, or null (falls back to the default). */
+  platformAiOrgOverride: (orgId: string) => ['platform', 'ai', 'org-override', orgId] as const,
+  /** Cross-org AI spend, grouped by org and model. */
+  platformAiSpend: (sinceDays: number) => ['platform', 'ai', 'spend', sinceDays] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

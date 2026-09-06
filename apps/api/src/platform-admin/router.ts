@@ -1143,6 +1143,25 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
       }),
 
       orgOverride: router({
+        /**
+         * An org's current override, or null when it resolves to the global
+         * default. `setOrgProviderOverride`/`clearOrgProviderOverride` below
+         * shipped in §3.3 with no way to READ this back — the identical
+         * "shipped backend, no consumer" gap this phase's own CLAUDE.md
+         * section already documents once for `ai.chat.send`'s frontend,
+         * found here because the console had a set/clear pair with nothing
+         * to show the operator what was actually set.
+         */
+        get: platformRoute({
+          platformReason: "Reading one org's model override is the read half of setting it.",
+        })
+          .input(z.object({ orgId: OrgIdSchema }).strict())
+          .output(z.object({ providerConfigId: z.string().nullable() }).strict())
+          .query(async ({ input, ctx }) => ({
+            providerConfigId:
+              (await aiProviders.getOrgProviderOverride(operatorOf(ctx), input.orgId)) ?? null,
+          })),
+
         set: platformRoute({
           platformReason: "Overriding one org's model changes what that org's completions cost.",
         })

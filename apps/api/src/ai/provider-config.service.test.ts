@@ -9,6 +9,7 @@ import { TEST_ENV } from '../testing/fixtures.js';
 import {
   clearOrgProviderOverride,
   createProviderConfig,
+  getOrgProviderOverride,
   listProviderConfigs,
   rotateProviderConfigKey,
   setDefaultProviderConfig,
@@ -223,5 +224,29 @@ describe('org overrides', () => {
     await clearOrgProviderOverride({ events }, operatorOf(OPERATOR), orgId);
     const afterClear = await resolveAiProvider(orgId, keys);
     expect(afterClear.model).toBe('claude-haiku-4');
+  });
+
+  it('getOrgProviderOverride reads back exactly what set/clear wrote — the console has no other way to see it', async () => {
+    const keys = newKeys();
+    const events = new RecordingEventBus();
+
+    const config = await createProviderConfig({ events }, keys, operatorOf(OPERATOR), {
+      provider: 'anthropic',
+      model: 'claude-opus-4',
+      apiKey: 'sk-ant-get-override',
+      label: 'Get override',
+      isDefault: false,
+    });
+    createdConfigIds.push(config.id);
+
+    const orgId = await newOrg('ai-config-get-override');
+
+    expect(await getOrgProviderOverride(operatorOf(OPERATOR), orgId)).toBeUndefined();
+
+    await setOrgProviderOverride({ events }, operatorOf(OPERATOR), orgId, config.id);
+    expect(await getOrgProviderOverride(operatorOf(OPERATOR), orgId)).toBe(config.id);
+
+    await clearOrgProviderOverride({ events }, operatorOf(OPERATOR), orgId);
+    expect(await getOrgProviderOverride(operatorOf(OPERATOR), orgId)).toBeUndefined();
   });
 });

@@ -597,6 +597,37 @@ both `platform.ai_org_overrides` (RLS-scoped to the caller's own org) and
 with none is visible to any scope. `apps/api/src/ai` is not on `withGlobalScope`'s short
 exempt-module list (identity, people, platform-admin) and does not need to be.
 
+**`@taskflow/ai`'s own `index.ts` re-exported `describeAiProviderContract` straight from
+`contract-test.ts`, and crashed `apps/api`'s dev server the first time someone actually ran
+it.** `contract-test.ts` imports `vitest` at module scope; re-exporting it from the package's
+main entry drags `vitest` into the runtime graph of every consumer, and `vitest`'s `expect`
+throws immediately ("Vitest failed to access its internal state") when there is no active
+worker — which every real process outside `vitest run` is. `packages/telephony/src/index.ts`
+already hit and fixed this EXACT bug for `describeTelephonyProviderContract`, with a comment
+explaining it in detail; `@taskflow/ai` repeated the mistake rather than following that
+precedent, and nothing in CI catches it because no test suite actually boots `apps/api` as a
+live process — every test calls services or the tRPC router directly. Fixed the identical way:
+the re-export is gone, `packages/ai/package.json` gained a `./contract-test` subpath export
+(the four provider test files already imported the suite via a relative path, so nothing in
+`packages/ai` itself needed to change), and `index.ts` carries the same explanatory comment
+telephony's does. Found by the project owner running `pnpm --filter @taskflow/api dev` locally
+— the one way to reach this that no test in this repo exercises.
+
+**The "AI Models" tab the platform-admin router's own comment already named did not exist —
+`apps/api/src/ai/provider-config.service.ts`'s CRUD had shipped with no caller in `apps/web` at
+all, the identical "shipped backend, no consumer" gap this file's own "Phase 15 §4 — the
+assistant's missing frontend" section already documents once for `ai.chat.send`.** Found the
+same way: the project owner went looking for where to add a real provider and found nowhere.
+Closed by `apps/web/src/features/platform-admin/ai-tab.tsx` — catalog list/create/rotate-
+key/set-default, an org-override panel, and the cross-org spend report, wired into
+`platform-admin-page.tsx`'s tab bar. One more real gap surfaced while building it:
+`getOrgProviderOverride` existed (`provider-config.service.ts`'s own doc comment already called
+it "for the console's per-org detail view") but had no route at all — `orgOverride.set`/
+`.clear` could change an org's override with no way to read it back. Added
+`platformAdmin.ai.orgOverride.get`, and gave `getOrgProviderOverride` the `operator` parameter
+and `recordOperatorAction` call every other read in this file already has — it had neither,
+because nothing had ever called it end to end before.
+
 ### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
 
 `apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·
