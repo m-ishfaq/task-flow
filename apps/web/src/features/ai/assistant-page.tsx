@@ -7,7 +7,7 @@ import { ErrorView } from '../../components/error-view.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
 import { CardQuickView } from '../work/card-quick-view.js';
-import { sendChatTurn, type ChatMessageWire, type ToolCallWire } from './api.js';
+import { sendChatTurn, windowForRequest, type ChatMessageWire, type ToolCallWire } from './api.js';
 import { renderToolResult, toolResultsById } from './tool-results.js';
 
 /**
@@ -29,6 +29,19 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
  * that DOES cross a navigation — see that file's own header) — a page nobody
  * else needs to read this conversation from has no business putting it in
  * global state.
+ *
+ * ## The full transcript stays local forever; only a window gets SENT
+ *
+ * `messages` grows without bound as a conversation continues, but
+ * `ai.chat.send`'s `ChatSendInput.messages` caps at 40 — real input-size
+ * hygiene, not a promise about how long a conversation may run. A real
+ * conversation crossed that cap and got a hard `BAD_REQUEST` with no way to
+ * continue. The fix is not raising the cap or dropping what a person can
+ * see: `send`/`respondToPending`/the seed effect all pass `messages` through
+ * `windowForRequest` (`api.ts`) before sending, and `onSuccess` appends only
+ * the NEW suffix of what comes back (`result.messages.slice(sentCount)`)
+ * onto the untouched full history, rather than replacing `messages` with the
+ * server's own (windowed) view of the conversation.
  *
  * ## Declining is not silence
  *
@@ -136,10 +149,19 @@ export function AssistantPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
+  /* `variables.messages` is the WINDOWED array actually sent (see
+     `windowForRequest`'s own header) — never the full local transcript once
+     a conversation has grown past the server's cap. `result.messages` is
+     always exactly that window plus whatever new turns this call produced
+     (`runAssistantTurn`'s own contract: `[...transcript, ...newTurns]`), so
+     slicing off the sent length and appending the remainder onto the FULL
+     local history is what lets the transcript displayed on screen keep
+     growing forever even though what gets sent to the server does not. */
   const turn = useMutation({
     mutationFn: sendChatTurn,
-    onSuccess: (result) => {
-      setMessages(result.messages);
+    onSuccess: (result, variables) => {
+      const sentCount = variables.messages.length;
+      setMessages((current) => [...current, ...result.messages.slice(sentCount)]);
       setPendingToolCalls(result.pendingToolCalls ?? []);
     },
   });
@@ -154,7 +176,7 @@ export function AssistantPage() {
     seeded.current = true;
     const seed = useAssistantSeedStore.getState().take();
     if (seed === null) return;
-    turn.mutate({ messages: seed });
+    turn.mutate({ messages: windowForRequest(seed) });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs exactly once, by the ref guard above
   }, []);
 
@@ -168,11 +190,11 @@ export function AssistantPage() {
     const next = [...messages, { role: 'user' as const, content }];
     setMessages(next);
     setDraft('');
-    turn.mutate({ messages: next });
+    turn.mutate({ messages: windowForRequest(next) });
   };
 
   const respondToPending = (approvedIds: readonly string[]) => {
-    turn.mutate({ messages, confirmedToolCallIds: approvedIds });
+    turn.mutate({ messages: windowForRequest(messages), confirmedToolCallIds: approvedIds });
     setPendingToolCalls([]);
   };
 

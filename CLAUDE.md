@@ -890,6 +890,48 @@ matches what the UI actually shows: at most one sentence of genuine commentary a
 never a restated list; a brief confirmation sentence after a WRITE tool that never repeats the
 fields the confirmation chip already shows.
 
+**A long conversation eventually hit `ChatSendInput.messages`' own 40-element cap and got stuck —
+found from a real server log, `BAD_REQUEST: Array must contain at most 40 element(s)`, with the
+assistant simply refusing to reply from then on.** `assistant-page.tsx` resends the WHOLE growing
+transcript every turn (its own header, unchanged since §4 Wave 1) with nothing on the client ever
+bounding it — a real conversation crosses 40 messages faster than it looks, since a single
+tool-calling round contributes an assistant turn PLUS one `tool_result` per tool call, not one
+message per exchange. The 40 cap itself is correct and deliberately not raised: `router.ts`'s own
+comment already calls it "real input-size hygiene, not a product decision about conversation
+length," the identical role `search.query`'s own `.max()` plays.
+
+**The fix windows what gets SENT, not what stays on screen.** `windowForRequest` (`api.ts`) trims
+at the TRANSPORT boundary; `assistant-page.tsx`'s own `messages` state keeps the full history
+forever, and `onSuccess` appends only the new suffix of what comes back
+(`result.messages.slice(variables.messages.length)`) rather than replacing the displayed
+transcript with the server's own (windowed) view of it — `runAssistantTurn`'s own contract,
+`[...transcript, ...newTurns]`, is what guarantees that slice is exactly "what this turn added"
+regardless of how much of the front got trimmed before sending.
+
+**Trimming per MESSAGE would corrupt the transcript, not merely shorten it — Anthropic and OpenAI
+alike reject a `tool_use`/`toolCalls` block with no matching `tool_result` in the very next turn,
+so an assistant tool-call message and the results answering it are one atomic UNIT.**
+`messageUnits` groups the array into these units first; `windowForRequest` then keeps the longest
+RECENT run of whole units that both fits under the cap and starts on a `user` turn — never a
+window that opens on an `assistant` message, since that would mean its own preceding `user`
+message got dropped out from under it, a shape neither provider's API accepts as a first message.
+Walking backward from the newest unit and remembering the earliest `user`-headed unit still within
+budget (rather than stopping at the first one found) is what lets the window include as much
+recent history as actually fits, not just the last two units. The one accepted fallback — a window
+that opens on `assistant` after all — fires only when no `user`-starting suffix fits under the cap
+at all, a pathological shape unreachable at the real 40-message cap in practice; `api.test.ts`
+covers it anyway, alongside the atomic-unit and user-start-preferring properties, as the pure
+function this codebase's own "test the pure half directly" precedent (`neighbours.test.ts`,
+`peer-mesh.test.ts`) already establishes for exactly this kind of client-only logic.
+
+**Two `.role ===` comparisons inside `windowForRequest`/`messageUnits` tripped guardrail 7's
+`roleMember` rule on first pass** — the identical name-not-semantics collision this file's own
+`router.ts`/`anthropic.ts`/`assistant-page.tsx` entries already document for `ChatMessageWire`'s
+chat-turn `role`. Fixed the same way `assistant.ts`'s own `ASSISTANT_ROLE_MESSAGES` already does:
+`Set.has()` membership tests (`USER_ROLE_MESSAGES`, `ASSISTANT_ROLE_MESSAGES`,
+`TOOL_RESULT_ROLE_MESSAGES`) rather than a `switch`, since these are boolean predicates embedded in
+larger expressions, not exhaustive dispatches over the whole union.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·
