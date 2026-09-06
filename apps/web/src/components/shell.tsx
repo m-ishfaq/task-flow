@@ -34,6 +34,7 @@ import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
 import { CallSurface } from '../features/rtc/call-surface.js';
+import { NewOrgSetupDialog } from '../features/ai/setup-dialog.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -265,6 +266,15 @@ export function Shell() {
           conversation it started in. A microphone that stops when a route
           unmounts is not a phone. */}
       {hasOrg && <CallSurface />}
+
+      {/* The §6 new-org Docs bootstrap offer (ai/phase-15-ai-copilot-and-
+          permissions.md §6). Mounted in the frame rather than on `/projects`
+          specifically: the component's own effect is a no-op unless THIS
+          tab just created the current org, so it costs nothing to keep
+          mounted everywhere `hasOrg` is true, and it means the offer still
+          appears even if `choose()` ever routes somewhere other than
+          `/projects` after creation. */}
+      {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header showMenuButton={hasOrg} />

@@ -220,6 +220,7 @@ describe('settings capabilities', () => {
       manageSavedSearches: true,
       readRecordings: true,
       createSpace: true,
+      useAi: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
@@ -253,6 +254,7 @@ describe('settings capabilities', () => {
       manageSavedSearches: false,
       readRecordings: false,
       createSpace: false,
+      useAi: false,
     });
   });
 
@@ -299,6 +301,7 @@ describe('settings capabilities', () => {
       manageSavedSearches: true,
       readRecordings: true,
       createSpace: true,
+      useAi: true,
     });
   });
 

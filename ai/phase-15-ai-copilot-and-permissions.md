@@ -10,8 +10,10 @@ tagging/discussion) has SHIPPED, closing §4.3's entire wave order; `docs.create
 table's own last unbuilt tool, no wave ever scheduled it) has also SHIPPED; §8 (onboarding/
 offboarding automation) has SHIPPED A REAL SUBSET — six of its ten checklist items, each backed by
 a real service call, with the other four named and deferred rather than half-built (see below);
-§5 (the standup view), §6's actual bootstrap FLOW, and §7 (GitHub/PR review) remain DRAFT — not
-yet approved for build, and nothing in those sections has been implemented.** Written up per this
+§6 (the new-org Docs bootstrap) has SHIPPED, and building it surfaced that §4's own frontend —
+the assistant chat page every prior wave shipped without — did not exist at all, so that shipped
+alongside it; §5 (the standup view) and §7 (GitHub/PR review) remain DRAFT — not yet approved for
+build, and nothing in those sections has been implemented.** Written up per this
 repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
@@ -115,10 +117,18 @@ starter-checklist cards, manager notification, and default permission bundle; of
 connector-access half) that were deliberately left out because each needed a real design decision
 this pass did not make, not just more typing.
 
-**§5 (the standup view), §6's actual bootstrap FLOW (the new-org prompt and the "team size, wiki
-vs. handbook" question sequence — the tool it would call already exists), and §7 (GitHub/PR
+**§6 (the new-org Docs bootstrap) has shipped, and it found a real gap: nothing in `apps/web` had
+ever called `ai.chat.send` at all.** Every wave of §4 (search, single-card writes, sprint
+planning, `chat.post_message`, `docs.create_page`) shipped as a tRPC route with no frontend —
+building §6, which needs an assistant surface to hand the user off to, is what surfaced that. Both
+shipped together: `apps/web/src/features/ai/` (the chat page, the setup dialog) and the
+`useAi` capability that gates them. §6's own "few questions" are an ordinary form, not a
+model-parsed conversation — see CLAUDE.md's own section for why a deterministic form beats
+depending on the model to ask and interpret follow-up questions well.
+
+**§5 (the standup view) and §7 (GitHub/PR
 review) remain exactly as drafted below: designed, not built.**
-None of §5's standup screen or §7's PR review/merge tools have any code behind them yet. This spec
+Neither §5's standup screen nor §7's PR review/merge tools have any code behind them yet. This spec
 intentionally covers several waves under one phase number because they share one foundation (§1)
 and were scoped together in one planning conversation — later waves may be split into their own
 `ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got their own
@@ -384,6 +394,18 @@ A new screen, not a new subsystem — assembles data that already exists:
 ---
 
 ## 6. New-org doc-space bootstrap
+
+**SHIPPED — and it found the real gap in this phase: §4's own assistant chat page did not exist
+in `apps/web` at all, through every prior wave.** See CLAUDE.md's own "Phase 15 §4 — the
+assistant's missing frontend" and "Phase 15 §6" sections for the full account. Two corrections to
+this section's own text, found while building it: the "few questions" are an ordinary two-field
+FORM (team size, handbook-only vs. handbook-plus-wiki), not a model-parsed conversation — letting
+the model interpret free-form answers would make the feature depend on how well it listens, which
+is not testable — and creating the Docs SPACE is a plain mutation the dialog makes directly, not a
+model decision, since every new org gets one "{OrgName} Wiki" space the same way regardless of the
+answers. What DOES go through `ai.chat.send`, exactly as this section originally specified, is
+page creation: one instruction naming the exact titles to create via `docs.create_page`, which
+still exercises the real §4.2 confirm-before-execute path on the real assistant page.
 
 A small, low-risk AI feature: when a new org is created, offer to have the assistant ask a few
 questions (team size, whether they want an engineering wiki vs. just a handbook) and then create

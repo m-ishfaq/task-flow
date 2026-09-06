@@ -48,6 +48,7 @@ import { PlatformAdminPage } from './features/platform-admin/platform-admin-page
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
 import { AnalyticsPage } from './features/analytics/analytics-page.js';
+import { AssistantPage } from './features/ai/assistant-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -662,6 +663,27 @@ const automationsRoute = createRoute({
   ),
 });
 
+/**
+ * The AI assistant chat (ai/phase-15-ai-copilot-and-permissions.md §4) — the
+ * one frontend surface every wave of the assistant shipped without, until
+ * now. `CapabilityGate capability="useAi"` mirrors `/analytics`'s own
+ * pairing exactly: `ai:use` is Admin/Owner-by-role but individually
+ * grantable (§2.4), so the ALL-OR-NOTHING `capability` prop is still right
+ * here — unlike `/calls`'s `anyOf`, there is only one permission to hold.
+ */
+const assistantRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/assistant',
+  beforeLoad: () => requireOrg('/assistant'),
+  component: () => (
+    <CapabilityGate capability="useAi">
+      <FeatureGate flag="aiAssistant">
+        <AssistantPage />
+      </FeatureGate>
+    </CapabilityGate>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -691,6 +713,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   automationsRoute,
   analyticsRoute,
+  assistantRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

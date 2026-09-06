@@ -340,6 +340,18 @@ export interface SettingsCapabilities {
    * help because there is nothing yet to hold one.
    */
   readonly createSpace: boolean;
+  /**
+   * The AI assistant nav item and chat page — `ai:use`
+   * (ai/phase-15-ai-copilot-and-permissions.md §2.4), individually granted
+   * exactly like the telephony five and Wave 2's automation four above (in
+   * `GRANTABLE_PERMISSIONS`). This is the FLOOR check the sidebar and the
+   * assistant page both read before rendering anything; the route itself
+   * re-checks the identical permission plus the `aiAssistant` PLAN
+   * entitlement (`useEntitlements`, read separately — a permission and a
+   * plan flag answer different questions and neither substitutes for the
+   * other, same as `/automations`'s nav item and its own plan flag).
+   */
+  readonly useAi: boolean;
 }
 
 export interface OrgDetail {
@@ -417,6 +429,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       manageSavedSearches: can(subject, 'search:manage').allowed,
       readRecordings: can(subject, 'recording:read').allowed,
       createSpace: can(subject, 'space:create').allowed,
+      useAi: can(subject, 'ai:use').allowed,
     },
   };
 }

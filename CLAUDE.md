@@ -932,6 +932,95 @@ either, for a different reason: `automation_runs` already records every rule's f
 "did the checklist complete and what happened" more precisely than a single confirmation entry
 would.
 
+### Phase 15 §4 — the assistant's missing frontend, found while building §6 (SHIPPED)
+
+`apps/web/src/features/ai/{api,assistant-page,setup-dialog}.tsx` ·
+`apps/web/src/lib/{assistant-seed,bootstrap-flag}.ts` · the `useAi` capability
+(`apps/api/src/tenancy/org.service.ts`). Spec: same file, §4 and §6.
+
+**Every wave of the assistant — read-only search, single-card writes, sprint planning,
+`chat.post_message`, `docs.create_page` — had shipped as a tRPC route with no way for a person to
+actually reach it.** Building §6 (the new-org bootstrap offer) surfaced this: §6 assumes an
+assistant chat surface exists to hand the user off to, and none did. Closing that gap turned out
+to be §6's real prerequisite, not `docs.create_page` (which §6's own spec correctly named as
+already built) — the missing piece was the ENTIRE frontend, found only because building the
+feature that depends on it forced someone to look for the page it links to.
+
+**`ai.chat.send`'s statelessness (§4 Wave 1's own design) is what let the client own the whole
+transcript with no new persistence.** `assistant-page.tsx` keeps `messages` in local component
+state, resending the growing array every turn exactly as the route's header always specified;
+nothing server-side needed to change to grow a UI on top of it.
+
+**Confirm-before-execute (§4.2) is rendered as one Approve/Decline row per pending call, never a
+single "approve all."** `assistant.ts`'s own contract is per-id — an id absent from
+`confirmedToolCallIds` is declined, never "undecided" — and a blanket approve button would make it
+impossible to say yes to two proposed actions and no to a third, the exact shape a batch of
+pending tool calls can take.
+
+**`message.role === 'user'` in `MessageBubble` tripped the identical guardrail-7 name collision
+`packages/ai/src/anthropic.ts` already documents for `AiMessage.role`** — a chat-turn speaker,
+not an org role, matched by the lint rule's syntactic selector anyway. Fixed the same way: a
+`switch` on `message.role` is not a `BinaryExpression`, so it does not trip
+`packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier` rules.
+
+**`ai:use` needed its own `SettingsCapabilities` field, `useAi`, because nothing had ever read it
+from `apps/web` before.** Every other individually-grantable permission (§1's Wave 2 sweep, the
+telephony five) already had one; `ai:use` existed in `packages/policy` since §2.4 but had no
+nav-visibility boolean to gate the new `/assistant` route and sidebar item on, the identical
+`capability` + `flag` pairing `/analytics` already uses (all-or-nothing by role, unlike `/calls`'s
+`anyOfCapabilities`).
+
+### Phase 15 §6 — new-org Docs bootstrap (SHIPPED)
+
+`apps/web/src/features/ai/setup-dialog.tsx`. Spec: same file, §6 ("when a new org is created,
+offer to have the assistant ask a few questions... and then create a starter Docs space...
+using the `docs.create_page` tool").
+
+**The "few questions" are an ordinary form, not a model-led conversation.** Letting the MODEL
+phrase and interpret free-form answers to "how big is your team" would make the feature's
+behaviour depend on how well the model listens to small talk, which is not a property a dialog
+can test or guarantee. Two form fields (team size, handbook-only vs. handbook-plus-wiki) produce
+one fully-formed instruction naming EXACT page titles, so the model's job is reduced to calling
+`docs.create_page` the requested number of times — exactly what §6 asks for ("using the
+`docs.create_page` tool") without depending on it having asked the right follow-up questions
+itself.
+
+**Creating the Docs SPACE is a plain mutation, not a model decision — every new org gets one
+"{OrgName} Wiki" space the same way regardless of the answers, so there is no reason to spend a
+model call deciding to do it.** WHICH PAGES to seed depends on the answers, and routing only that
+part through `ai.chat.send` is what makes this genuinely §6 rather than an ordinary settings form:
+it exercises the real §4.2 confirm-before-execute path `docs.create_page` requires, on the real
+assistant page.
+
+**The trigger is a `sessionStorage` flag, not a server column, because §6 is an OFFER, not a
+state machine.** `bootstrap-flag.ts`'s own header states the reasoning: an org has no "has this
+been offered" field worth a migration, and a tab closed mid-flow should not leave a fact behind
+that outlives it. `markOrgForBootstrap` is called the moment `orgs.create` succeeds
+(`org-picker-page.tsx`), and `consumeBootstrapFlag` reads-and-clears in one call — a flag scoped
+to the browser tab that created the org, which is exactly the lifetime the offer needs.
+
+**Handing the composed opening message from the dialog to `/assistant` needed exactly one piece
+of cross-navigation state, not a rewrite of where the transcript lives.** `assistant-seed.ts`'s
+`useAssistantSeedStore` holds a single pending seed — `ui-store.ts`'s own rule that Zustand holds
+only things with no server representation, applied to a draft transcript that has none either.
+`assistant-page.tsx` reads it once via a lazy `useState` initializer (never an effect calling
+`setState`, which `react-hooks/set-state-in-effect` refuses) and consumes it — clearing the
+store, not React state — in a ref-guarded effect, so Strict Mode's double-invoke can't replay the
+opening message twice and a later, unrelated visit to `/assistant` starts genuinely empty.
+
+**`NewOrgSetupDialog` derives whether to open ENTIRELY from render-time state, with no effect at
+all** — `use-board-room.ts`'s own "reset derived state when a prop changes" pattern, applied to an
+org switch: Shell mounts this component once and keeps it mounted across `orgId` changing, so
+re-deriving `everConsumed` during render when `orgId !== lastOrgId` is what lets the offer
+re-arm correctly for a SECOND org created in the same tab, without ever calling a `useState`
+setter synchronously inside a `useEffect` body.
+
+**Deliberately not built: §6's own two questions as a model-parsed free-text exchange** (see
+above — a form was the correct, testable choice instead) **and any org-level "was this ever
+offered" record** — the offer can, on purpose, be shown again for the same org in a different tab
+or after clearing site data, which is the accepted cost of §6 being genuinely stateless rather
+than a wizard with a completion flag.
+
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·

@@ -16,6 +16,7 @@ import {
   PanelLeftOpen,
   Plus,
   Search,
+  Sparkles,
   Star,
   Users,
   Workflow,
@@ -141,6 +142,16 @@ const PRIMARY_SECTIONS: readonly {
     items: [
       { to: '/home', label: 'My tasks', icon: ListChecks },
       { to: '/search', label: 'Search', icon: Search },
+      /* Individually grantable (ai/phase-15-ai-copilot-and-permissions.md
+         §2.4), the identical `capability` shape `/analytics` uses below —
+         all-or-nothing by role, unlike `/calls`'s `anyOfCapabilities`. */
+      {
+        to: '/assistant',
+        label: 'Assistant',
+        icon: Sparkles,
+        flag: 'aiAssistant',
+        capability: 'useAi',
+      },
     ],
   },
   {

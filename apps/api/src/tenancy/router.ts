@@ -115,6 +115,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 manageSavedSearches: z.boolean(),
                 readRecordings: z.boolean(),
                 createSpace: z.boolean(),
+                useAi: z.boolean(),
               })
               .strict(),
           }),
