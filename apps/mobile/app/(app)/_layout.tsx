@@ -87,12 +87,24 @@ export default function AppLayout() {
     if (orgId !== null || orgs.data === undefined || remembered.data === undefined) return;
     const resolved = resolveRememberedOrg(
       remembered.data,
+      // Filtered to `membershipStatus === 'active'` — `orgs.list` now
+      // returns EVERY membership, active or suspended (apps/api/src/tenancy/
+      // org.service.ts's own header), so a remembered id naming a suspended
+      // membership must NOT resolve here the way it used to be excluded by
+      // the server's own now-removed filter. Auto-selecting a suspended org
+      // would land the caller on the guarded screens and every query there
+      // would answer MEMBERSHIP_SUSPENDED — org-picker.tsx is where a
+      // suspended row gets shown and explained instead, never silently
+      // walked past.
+      //
       // The wire type is a bare `z.string()` (apps/api/src/tenancy/router.ts's
       // `orgs.list` output) — branded the same way apps/web's own org picker
       // does at this exact boundary (`org.orgId as OrgId` in
       // org-picker-page.tsx): the value already came from our own,
       // RLS-scoped API response, so re-validating it would be pure cost.
-      orgs.data.map((org) => ({ id: org.orgId as OrgId })),
+      orgs.data
+        .filter((org) => org.membershipStatus === 'active')
+        .map((org) => ({ id: org.orgId as OrgId })),
     );
     // Nothing to persist when the remembered id was already stale or absent —
     // `selectOrg(null)` would just rewrite the same "nothing selected" state

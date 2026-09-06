@@ -1,4 +1,4 @@
-import { and, eq, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
+import { eq, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -180,6 +180,16 @@ export interface OrgSummary {
   readonly name: string;
   readonly slug: string;
   readonly role: string;
+  /**
+   * The CALLER'S OWN membership status in this org — `'active'` or
+   * `'suspended'` (`memberships_status_valid`). Included, not filtered out,
+   * so the picker and `OrgGate` can tell "you have no access here" apart
+   * from "you never had access here" and say so, instead of a suspended
+   * membership silently vanishing from the list the same way a never-joined
+   * org does. `resolveOrgMembership`'s own header has the full story — this
+   * is the read half of the identical fix.
+   */
+  readonly membershipStatus: string;
 }
 
 /**
@@ -189,6 +199,14 @@ export interface OrgSummary {
  * `withUserScope` exists. It is safe because the two policies keyed on
  * `app.user_id` are SELECT-only and match the caller's own membership rows;
  * everything else still filters on `app.org_id`, which this scope clears.
+ *
+ * Returns EVERY membership, active or suspended — narrowing to `'active'`
+ * used to happen here, which meant a suspended membership was
+ * indistinguishable from no membership at all: it simply disappeared from
+ * this list, `OrgGate` read that as "the stored selection is stale," and
+ * silently dropped it with nothing on screen explaining why. The caller
+ * (`OrgPickerPage`, `OrgGate`) decides what a non-active row means to show;
+ * this function's job is only to report the truth.
  */
 export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]> {
   return withUserScope(userId, async (tx) =>
@@ -198,10 +216,11 @@ export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]>
         name: schema.orgs.name,
         slug: schema.orgs.slug,
         role: schema.memberships.role,
+        membershipStatus: schema.memberships.status,
       })
       .from(schema.memberships)
       .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
-      .where(and(eq(schema.memberships.userId, userId), eq(schema.memberships.status, 'active')))
+      .where(eq(schema.memberships.userId, userId))
       .orderBy(schema.orgs.name),
   );
 }

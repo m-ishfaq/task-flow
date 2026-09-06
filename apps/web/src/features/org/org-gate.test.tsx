@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
@@ -24,7 +25,8 @@ import { useSession } from '../../lib/session.js';
  * already on screen by the time it answers.
  */
 
-const listOrgs = vi.fn<() => Promise<{ orgId: string; name: string; role: string }[]>>();
+const listOrgs =
+  vi.fn<() => Promise<{ orgId: string; name: string; role: string; membershipStatus: string }[]>>();
 
 vi.mock('../../lib/trpc.js', () => ({
   api: { tenancy: { orgs: { list: { query: () => listOrgs() } } } },
@@ -80,7 +82,9 @@ describe('validating the remembered organization', () => {
        person at this browser. */
     window.localStorage.setItem('taskflow.org', THEIRS);
     signedInWithStoredOrg(THEIRS);
-    listOrgs.mockResolvedValue([{ orgId: MINE, name: 'Mine', role: 'owner' }]);
+    listOrgs.mockResolvedValue([
+      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active' },
+    ]);
 
     renderGate();
 
@@ -96,12 +100,43 @@ describe('validating the remembered organization', () => {
   it('keeps an org the caller is still a member of', async () => {
     window.localStorage.setItem('taskflow.org', MINE);
     signedInWithStoredOrg(MINE);
-    listOrgs.mockResolvedValue([{ orgId: MINE, name: 'Mine', role: 'owner' }]);
+    listOrgs.mockResolvedValue([
+      { orgId: MINE, name: 'Mine', role: 'owner', membershipStatus: 'active' },
+    ]);
 
     renderGate();
 
     expect(await screen.findByText('the app')).toBeInTheDocument();
     expect(useSession.getState().orgId).toBe(MINE);
+  });
+
+  it('explains directly, and does not silently drop the selection, when the membership is suspended', async () => {
+    /* The report this pass fixes: `orgs.list` now reports every membership,
+       active or suspended, rather than omitting a suspended one the same way
+       it omits a row that never existed — this asserts the gate tells the
+       two apart rather than treating "found but suspended" as "not found". */
+    window.localStorage.setItem('taskflow.org', MINE);
+    signedInWithStoredOrg(MINE);
+    listOrgs.mockResolvedValue([
+      { orgId: MINE, name: 'Mine', role: 'member', membershipStatus: 'suspended' },
+    ]);
+
+    renderGate();
+
+    expect(
+      await screen.findByText('Your access to this organization was suspended'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/"Mine"/)).toBeInTheDocument();
+    expect(screen.queryByText('the app')).not.toBeInTheDocument();
+    // Not silently dropped WHILE explaining — the selection is still there
+    // for `matched` to keep resolving to the suspended row on a re-render.
+    expect(useSession.getState().orgId).toBe(MINE);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Choose a different organization' }));
+
+    // Only NOW, on the explicit click, does the selection actually clear —
+    // `requireOrg`'s own guard is what routes to the picker from there.
+    expect(useSession.getState().orgId).toBeNull();
   });
 
   it('renders nothing until the answer arrives', () => {

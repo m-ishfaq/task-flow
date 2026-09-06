@@ -61,10 +61,23 @@ export const ORG_HEADER = 'x-taskflow-org';
 /**
  * Loads the caller's membership in `requestedOrgId`, or null.
  *
- * Null covers every failure identically — no such org, not a member, membership
- * suspended, role unrecognized — because the caller learns the same thing from
- * all four, and distinguishing them would let an outsider probe which orgs
- * exist.
+ * Null covers "no such org" and "never a member" identically — a missing
+ * row, for any reason — because distinguishing those two would let an
+ * outsider probe which orgs exist. A row that DOES exist but is not
+ * `'active'` is answered differently: it throws `errors.membershipSuspended()`
+ * rather than returning null, the identical "tell a still-legitimate member
+ * what happened" reasoning `org.status === 'suspended'` below already gets.
+ * Splitting this out is safe for the same reason: the row is always the
+ * CALLER'S OWN, so its status leaks nothing about anyone else's membership,
+ * only a fact about the caller they already know (they were once let into
+ * this org, or they would have no stored selection naming it at all).
+ *
+ * Found from a real report: a member whose row this codebase's own platform
+ * console showed as `status: suspended` got a bare "you are not a member",
+ * which silently dropped their org selection (`recoverFromLostOrg`,
+ * `apps/web/src/lib/query.ts`) and landed them on the picker with nothing
+ * explaining why — confusing in exactly the way `orgSuspended`'s own header
+ * already argued against for the org-level case.
  */
 export async function resolveOrgMembership(
   userId: UserId,
@@ -76,15 +89,13 @@ export async function resolveOrgMembership(
 
   const rows = await withUserScope(userId, async (tx) =>
     tx
-      .select({ id: schema.memberships.id, role: schema.memberships.role })
+      .select({
+        id: schema.memberships.id,
+        role: schema.memberships.role,
+        status: schema.memberships.status,
+      })
       .from(schema.memberships)
-      .where(
-        and(
-          eq(schema.memberships.orgId, orgId),
-          eq(schema.memberships.userId, userId),
-          eq(schema.memberships.status, 'active'),
-        ),
-      )
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, userId)))
       .limit(1),
   );
 
@@ -93,6 +104,10 @@ export async function resolveOrgMembership(
      to distinguish a presence check from an authorization decision. */
   const membership = rows[0];
   if (membership === undefined) return null;
+
+  if (membership.status !== 'active') {
+    throw errors.membershipSuspended();
+  }
 
   const { id: membershipId, role } = membership;
 

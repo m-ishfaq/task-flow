@@ -349,11 +349,36 @@ describe('the org switcher', () => {
 
     const mine = await orgs.listMyOrgs(OWNER);
     expect(mine.map((org) => org.orgId).sort()).toEqual([first, second].sort());
+    expect(mine.every((org) => org.membershipStatus === 'active')).toBe(true);
   });
 
   it('shows nothing to someone who belongs to no org', async () => {
     await newOrg('switch-three');
     expect(await orgs.listMyOrgs(OUTSIDER)).toEqual([]);
+  });
+
+  /* The read half of the fix `resolveOrgMembership`'s own suspension test
+     proves for the write side: a suspended row must still be REPORTED here,
+     not filtered out, or the caller (OrgGate, the picker) has no way to tell
+     "you have no access here any more" apart from "you were never here" —
+     see org.service.ts's own header on `listMyOrgs`. */
+  it('reports a suspended membership rather than omitting it', async () => {
+    const orgId = await newOrg('switch-suspended');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE identity.memberships SET status = 'suspended' WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+
+    const mine = await orgs.listMyOrgs(COLLEAGUE);
+    expect(mine).toEqual([expect.objectContaining({ orgId, membershipStatus: 'suspended' })]);
   });
 });
 
@@ -910,6 +935,39 @@ describe('suspension enforcement', () => {
     await admin.setOrg(null);
 
     expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
+  });
+
+  /* The report this pass fixes: a member whose OWN row was suspended got a
+     bare NOT_A_MEMBER, indistinguishable from having never joined at all —
+     `resolveOrgMembership`'s own header has the full story. Mirrors the
+     org-suspension suite above exactly, one level down: the row, not the
+     org, is what changed. */
+  it('refuses a suspended MEMBERSHIP with a distinct code, never NOT_A_MEMBER', async () => {
+    const orgId = await newOrg('membership-suspend-enforce');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE identity.memberships SET status = 'suspended' WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+
+    await expect(resolveOrgMembership(COLLEAGUE, orgId)).rejects.toMatchObject({
+      code: 'MEMBERSHIP_SUSPENDED',
+    });
+    // The OWNER's own, still-active row is untouched by the colleague's
+    // suspension — this is a per-row fact, never an org-wide one.
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+  });
+
+  it('still returns null for a row that never existed at all, not the suspended code', async () => {
+    const orgId = await newOrg('membership-never-existed');
+    expect(await resolveOrgMembership(OUTSIDER, orgId)).toBeNull();
   });
 });
 

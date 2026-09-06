@@ -73,6 +73,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 name: z.string(),
                 slug: z.string(),
                 role: z.string(),
+                membershipStatus: z.string(),
               }),
             )
             .readonly(),

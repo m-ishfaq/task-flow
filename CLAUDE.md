@@ -2404,6 +2404,60 @@ changes nothing, which is exactly why it used to be a dead end. The recovery is 
 with an empty list now: it used to return null, which hid the only route to `/orgs` from the one
 caller who needed it.
 
+**A SUSPENDED membership hit the identical silent-drop path a STALE selection does, and the two
+needed to be told apart — found from a real report, not a hypothesis.** `resolveOrgMembership`
+(`apps/api/src/tenancy/resolve.ts`) used to collapse "no such org", "never a member", "membership
+suspended", and "role unrecognized" into one NOT_A_MEMBER, on the reasoning that distinguishing
+them would let an outsider probe which orgs exist. That reasoning holds for the first two — a
+missing row, for any reason — and does NOT hold for a row that DOES exist: the query is always
+`WHERE user_id = <the caller's own id>`, so telling someone their OWN membership is suspended
+leaks nothing about anyone else's, only a fact they already know (they were once let into this
+org, or they would hold no stored selection naming it at all). `identity.memberships.status` is
+`'active' | 'suspended'` (migration 0004's own CHECK) and had been reachable in the schema since
+then with no code path ever reading the difference — a member whose row this codebase's own
+platform console (`org-detail.service.ts`'s `getUserDetail`) showed as `status: suspended` still
+got a bare "you are not a member," which `apps/web/src/lib/query.ts`'s `recoverFromLostOrg` then
+read as a stale selection and silently cleared, landing them on the picker with nothing on screen
+explaining why — exactly the confusing shape `orgSuspended`'s own header had already argued
+against for the ORG-level case, just never extended one level down to the membership row.
+
+**`MEMBERSHIP_SUSPENDED` is a new, distinct error code (`packages/contracts/src/errors.ts`),
+thrown by `resolveOrgMembership` only when a membership ROW EXISTS and its status is not
+`'active'` — a missing row still returns null, so "no such org" and "never a member" stay
+collapsed exactly as before.** `tenancy.orgs.list` (`org.service.ts`'s `listMyOrgs`) changed to
+match on the READ side: it used to filter to `status = 'active'`, which made a suspended
+membership indistinguishable from a stale selection naming an org the caller was never in — both
+simply vanished from the list. It now returns EVERY membership with a `membershipStatus` field per
+row, and the two UI surfaces that consume it decide what a non-active row means to show, rather
+than the query deciding by omission.
+
+**`OrgGate` (`apps/web/src/features/org/org-gate.tsx`) renders a direct explanation with a
+"Choose a different organization" button INSTEAD OF the router for a matched-but-suspended row,
+never the silent `selectOrg(null)` + redirect a genuinely missing row still gets.** The two cases
+look identical from `requireOrg`'s own perspective (both end with `orgId === null` and a bounce to
+`/orgs`) but are reached differently on purpose: a missing row has nothing true and useful to say
+beyond "that selection no longer means anything," which the redirect itself communicates by simply
+not finding the org on the picker; a suspended row has a real fact to state, so the gate states it
+BEFORE clearing anything, and only drops the selection on the person's own click. `OrgPickerPage`
+gained the identical fix independently for the same reason a stale-vs-suspended distinction needs
+to hold on BOTH surfaces: a suspended org used to simply not appear in the list at all (identical
+to never having existed); it now renders as a dashed, unclickable row labelled "Your membership is
+suspended," so someone who navigates to `/orgs` directly — not just someone bounced there by the
+gate — sees the same explanation. `apps/mobile` got the equivalent fix in `app/(app)/_layout.tsx`
+(filtering to `membershipStatus === 'active'` before resolving a remembered selection — a widened
+server contract that would otherwise have let a suspended org be silently auto-selected, a
+regression this pass caught and closed rather than shipped) and `app/org-picker.tsx` (the identical
+dashed, unpressable row `OrgPickerPage` renders on web).
+
+**As of this pass, nothing in the product actually WRITES `identity.memberships.status =
+'suspended'`** — a full search of `apps/api/src` found no service function setting it; `removeMember`
+deletes the row outright rather than suspending it, and Phase 15 §8's onboarding/offboarding
+actions revoke sessions and grants, never touch this column. The column and its CHECK constraint
+have existed since migration 0004 with no writer ever built for them. This pass fixes how the
+system BEHAVES when the value is `'suspended'` — found reachable by direct inspection, not by any
+in-product flow — without adding a way to reach it; a "suspend one member" admin action is real,
+separate, unrequested work.
+
 **The access token is in memory and the refresh is single-flight.** `localStorage` survives the
 tab and is readable by any script, so one XSS is a token an attacker keeps; a module variable
 limits the same XSS to that tab. The cost is a refresh on every page load, accepted. Single-flight
