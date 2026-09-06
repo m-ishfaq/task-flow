@@ -798,6 +798,41 @@ stays deterministic, the model only adds real color" instinct this section's `my
 the standup redesign both already apply, extended to PRESENTATION: once the UI renders the real
 data, a model's prose restatement of the same fields is redundant, not merely verbose.
 
+**A follow-up report — "still no way to mention a sprint or member, and creating a fully-specified
+card takes multiple iterations" — closed the last of the name-resolution gap and, separately, made
+a fully-specified card ONE confirmation instead of up to five.** Two distinct fixes, found from the
+same complaint:
+
+`list_members` and `list_sprints` (`lookup.ts`) round out `list_projects`/`list_boards`/
+`list_labels` — every noun a person can name when describing a card ("assign to Priya," "add it to
+Sprint 14") now resolves to an id in the same conversational turn. `list_members` is the one closing
+a gap this file's own §4.3 section named explicitly and left open: "there is still no tool that
+resolves a person's NAME to a `userId`." It has to check `member:read` itself
+(`can(ctx.subject, 'member:read').allowed`, the identical in-executor check
+`apps/worker`'s automation executor already uses for services with no built-in permission check of
+their own) — `listMembers`'s route floors on `member:read`, and a tool call bypasses every route.
+
+The multi-iteration complaint turned out not to be about the READ side at all — the read-only lookup
+calls above already chain automatically within one turn, invisible to the person typing (that is
+what the tool-calling loop is for). It was the WRITE side: `card_create` only ever took
+`listId`/`title`/`description`, so a fully-specified card ("project X, assign Y, tag Z, due Friday")
+needed `card_create` and then a SEPARATE confirmation for `card_assign`, another for
+`card_add_labels`, another for `card_update`'s priority/due date — up to four more approvals for one
+mental action. Confirmation happens at the TOOL boundary, not the service boundary, so nothing
+stopped one tool from calling the same real services in sequence behind ONE confirmation instead:
+`card_create` now takes optional `assigneeIds`/`labelIds`/`priority`/`dueDate`/`sprintId`, and
+`execute()` chains `createCard` → `assignCard`/`setCardLabels` (full-replace is correct here,
+unlike `card_assign`/`card_add_labels`'s own additive fix — a card that was JUST created has nothing
+to accidentally drop) → `updateCard` (priority/due date, read-then-patch as `card_update` already
+does) → `assignSprint`, all under `card_create`'s own `can()` checks. A failure partway through
+(most commonly a wrongly-resolved id) is reported in a `warnings` array rather than thrown — the
+card already exists by that point, and throwing would leave a real card behind while telling the
+model nothing happened, the same "report per-item outcome, do not pretend nothing happened"
+reasoning `sprint_add_cards` already established for a batch. `card_create`'s own comment states the
+property this whole fix rests on: bundling several real service calls behind one tool call changes
+nothing about what a caller is allowed to do — every call still runs through its own real `can()`
+check — only how many times a human has to click "Approve."
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

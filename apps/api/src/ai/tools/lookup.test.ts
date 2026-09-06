@@ -10,8 +10,15 @@ import * as projects from '../../work/project.service.js';
 import * as boards from '../../work/board.service.js';
 import * as lists from '../../work/list.service.js';
 import * as labelsSvc from '../../work/label.service.js';
+import * as sprintsSvc from '../../work/sprint.service.js';
 import type { WorkActor } from '../../work/shared.js';
-import { createListBoardsTool, createListLabelsTool, createListProjectsTool } from './lookup.js';
+import {
+  createListBoardsTool,
+  createListLabelsTool,
+  createListMembersTool,
+  createListProjectsTool,
+  createListSprintsTool,
+} from './lookup.js';
 import type { ToolContext } from './registry.js';
 
 /**
@@ -36,6 +43,11 @@ async function newOrg(slug: string): Promise<OrgId> {
 async function removeOrg(orgId: string): Promise<void> {
   await admin.setOrg(orgId);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+  // Children before parents: work.sprints has no ON DELETE CASCADE to
+  // work.projects, the identical fixture-ordering fix
+  // work.service.test.ts's own removeOrg and sprint.service.test.ts already
+  // document.
+  await admin.query(`DELETE FROM work.sprints WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
@@ -53,6 +65,10 @@ async function ownerActor(orgId: OrgId): Promise<WorkActor> {
 
 function ownerCtx(subject: Subject): ToolContext {
   return { subject, requestId };
+}
+
+function guestCtx(orgId: OrgId): ToolContext {
+  return { subject: { orgId, userId: OWNER, role: 'guest', tuples: [] }, requestId };
 }
 
 beforeAll(async () => {
@@ -195,5 +211,76 @@ describe('list_labels', () => {
     });
 
     expect(result.content).toBe('This project has no labels defined yet.');
+  });
+});
+
+describe('list_members', () => {
+  it('reports the org owner by name and email', async () => {
+    const orgId = await newOrg('lookup-members');
+
+    const tool = createListMembersTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {});
+
+    const parsed = JSON.parse(result.content) as readonly {
+      userId: string;
+      name: string;
+      email: string;
+    }[];
+    expect(parsed).toEqual([
+      expect.objectContaining({ userId: OWNER, email: 'owner@ai-lookup-tools.test' }),
+    ]);
+  });
+
+  it('refuses a guest, who holds member:read from no role by design', async () => {
+    const orgId = await newOrg('lookup-members-guest');
+
+    const tool = createListMembersTool();
+    const result = await tool.execute(guestCtx(orgId), {});
+
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe('list_sprints', () => {
+  it('reports a real sprint by name', async () => {
+    const orgId = await newOrg('lookup-sprints-real');
+    const actor = await ownerActor(orgId);
+    const project = await projects.createProject(actor, {
+      name: 'Website',
+      key: 'WEB',
+      description: null,
+    });
+    await sprintsSvc.createSprint(actor, {
+      projectId: project.projectId,
+      name: 'Sprint 1',
+      goal: null,
+      startsOn: '2026-08-10',
+      endsOn: '2026-08-21',
+    });
+
+    const tool = createListSprintsTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      projectId: project.projectId,
+    });
+
+    const parsed = JSON.parse(result.content) as readonly { name: string; status: string }[];
+    expect(parsed).toEqual([expect.objectContaining({ name: 'Sprint 1', status: 'planned' })]);
+  });
+
+  it('reports no sprints for a project with none defined', async () => {
+    const orgId = await newOrg('lookup-sprints-none');
+    const actor = await ownerActor(orgId);
+    const project = await projects.createProject(actor, {
+      name: 'Website',
+      key: 'WEB',
+      description: null,
+    });
+
+    const tool = createListSprintsTool();
+    const result = await tool.execute(ownerCtx(await ownerSubject(orgId)), {
+      projectId: project.projectId,
+    });
+
+    expect(result.content).toBe('This project has no sprints yet.');
   });
 });

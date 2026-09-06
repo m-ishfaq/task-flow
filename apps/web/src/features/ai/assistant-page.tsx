@@ -77,13 +77,15 @@ const CAPABILITIES: readonly { readonly heading: string; readonly items: readonl
     items: [
       'Search cards, chat messages, docs pages, and comments',
       'List what is assigned to you and still pending',
-      'Look up a project’s boards, lists, and labels',
+      'Look up a project’s boards, lists, labels, sprints, and members — you can mention any ' +
+        'of these by name and it will find the right one',
     ],
   },
   {
     heading: 'Make changes — always asks you to confirm first',
     items: [
-      'Create a card, with a title and description',
+      'Create a card — title, description, assignees, labels, priority, due date, and sprint ' +
+        'all in the same request if you mention them, not one at a time',
       'Update a card’s title, description, dates, or priority',
       'Assign people to a card',
       'Move a card to a different status',
@@ -97,7 +99,8 @@ const CAPABILITIES: readonly { readonly heading: string; readonly items: readonl
 
 const EXAMPLE_PROMPTS: readonly string[] = [
   'What am I working on this week?',
-  'Create a card in the Website project titled "Fix login bug" and tag it Bug',
+  'Create a card in the Website project, Delivery board, Todo list, titled "Fix login bug", ' +
+    'assign it to Priya, tag it Bug, and set it due Friday',
   'Move MOB-42 to In Review',
 ];
 

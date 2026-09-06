@@ -34,13 +34,15 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * `attrs.userId`/`attrs.label`, exactly as `plainParagraph` builds a
  * text-only paragraph for every other non-human caller in this codebase.
  *
- * There is no tool yet that resolves a person's NAME to a `userId` — the
- * same discoverability gap `card_create`'s `listId` and `sprint_add_cards`'s
- * `sprintId` already have (see their own files) — so a mention today needs
- * a `userId` the conversation already supplied some other way (a prior
- * `search` hit's `author_id`, or the person named it themselves). Real, not
- * fatal: the tool still refuses cleanly (via `mention`'s own `isValidId`
- * check inside `RichTextDocument`) rather than posting garbage.
+ * `lookup.ts`'s `list_members` (added later, from a real "still no way to
+ * mention a member" report) closes what this comment used to document as
+ * open: a mention no longer needs a `userId` the conversation already
+ * supplied some other way — the model can resolve a name to one in the
+ * same turn, the identical fix `list_boards`/`list_labels`/`list_sprints`
+ * already gave `card_create`'s `listId`/`labelIds`/`sprintId`. `mention`'s
+ * own `isValidId` check inside `RichTextDocument` still refuses a malformed
+ * id cleanly rather than posting garbage, for whichever caller does not
+ * look one up first.
  */
 
 const MessageSegment = z.discriminatedUnion('type', [

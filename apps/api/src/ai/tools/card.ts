@@ -4,6 +4,7 @@ import {
   LabelIdSchema,
   ListIdSchema,
   Priority,
+  SprintIdSchema,
   StatusIdSchema,
   unsafeAsId,
   UserIdSchema,
@@ -17,6 +18,7 @@ import {
   setCardStatus,
 } from '../../work/card.service.js';
 import { listCardLabels, setCardLabels } from '../../work/label.service.js';
+import { assignSprint } from '../../work/sprint.service.js';
 import { plainParagraph, RichTextDocument, type RichTextNode } from '../../work/richtext.js';
 import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
@@ -64,20 +66,78 @@ const CardCreateInput = z
     listId: ListIdSchema,
     title: z.string().trim().min(1).max(500),
     description: z.string().trim().max(10_000).optional(),
+    assigneeIds: z.array(UserIdSchema).max(20).optional(),
+    labelIds: z.array(LabelIdSchema).max(20).optional(),
+    priority: Priority.optional(),
+    dueDate: z.string().datetime().optional(),
+    sprintId: SprintIdSchema.optional(),
   })
   .strict();
 
+/**
+ * One tool call, every field the model was given — not "create, then a
+ * separate confirmation to assign, then another to tag, then another for
+ * the due date." Found from a real request to create a fully-specified
+ * card ("project X, assign Y, tag Z, due Friday") in one prompt: the real
+ * `createCard` SERVICE only ever took `listId`/`title`/`description` (a
+ * limitation `apps/web`'s own card creation UI shares — a card is created
+ * bare and edited after), and this tool inherited that limitation even
+ * though nothing about `requiresConfirmation` requires it to. Confirmation
+ * happens at the TOOL boundary, not the service boundary, so nothing stops
+ * one tool from calling `createCard` and then `assignCard`/
+ * `setCardLabels`/`updateCard`/`assignSprint` in sequence behind that SAME
+ * single confirmation — each still runs through its own real `can()` check,
+ * so bundling them changes nothing about what the caller is allowed to do,
+ * only how many times a human has to click "Approve" to do it.
+ *
+ * `assigneeIds`/`labelIds` use `assignCard`/`setCardLabels` directly rather
+ * than reading-then-unioning (`card_assign`/`card_add_labels`'s own
+ * additive fix) — a card that was just created has nothing to accidentally
+ * drop, so the real services' full-replace semantics are exactly what is
+ * wanted here.
+ *
+ * A failure partway through is reported, not thrown — the card already
+ * exists by the time `assigneeIds` or `labelIds` could fail (an id the
+ * model resolved wrong, most commonly), and throwing at that point would
+ * leave a real card behind while telling the model — and the person
+ * reading its reply — that nothing happened. `warnings` names exactly what
+ * did not apply, the identical "report per-item outcome, do not pretend
+ * nothing happened" reasoning `sprint_add_cards` already uses for a batch.
+ */
 export function createCardCreateTool(): ToolDefinition {
   return defineTool({
     name: 'card_create',
     description:
-      'Creates a new card in a list. The list must be identified by its id, not its name.',
+      'Creates a new card in a list, optionally in the same call setting assignees, labels, ' +
+      'priority, due date, and sprint — everything a person could set on the card-create form. ' +
+      'The list, assignees, labels, and sprint must all be given by id, never by name; use ' +
+      '`list_boards`, `list_members`, `list_labels`, and `list_sprints` first to resolve them.',
     jsonSchema: {
       type: 'object',
       properties: {
         listId: { type: 'string', description: 'The id of the list to create the card in.' },
         title: { type: 'string', description: 'The card title.' },
         description: { type: 'string', description: 'Optional plain-text description.' },
+        assigneeIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional user ids to assign, from `list_members`.',
+        },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional label ids to tag with, from `list_labels`.',
+        },
+        priority: {
+          type: 'string',
+          enum: Priority.options,
+          description: 'Optional priority: urgent, high, normal, or low.',
+        },
+        dueDate: { type: 'string', description: 'Optional ISO 8601 date-time.' },
+        sprintId: {
+          type: 'string',
+          description: 'Optional sprint id to add the card to, from `list_sprints`.',
+        },
       },
       required: ['listId', 'title'],
       additionalProperties: false,
@@ -85,14 +145,69 @@ export function createCardCreateTool(): ToolDefinition {
     requiresConfirmation: true,
     inputSchema: CardCreateInput,
     async execute(ctx, input) {
-      const result = await createCard(actorOf(ctx), {
+      const actor = actorOf(ctx);
+      const created = await createCard(actor, {
         listId: input.listId,
         title: input.title,
         description: input.description === undefined ? null : plainParagraph(input.description),
       });
-      return { content: JSON.stringify({ cardId: result.cardId, reference: result.reference }) };
+
+      const warnings: string[] = [];
+
+      if (input.assigneeIds !== undefined) {
+        try {
+          await assignCard(actor, { cardId: created.cardId, assigneeIds: input.assigneeIds });
+        } catch (error) {
+          warnings.push(`Could not set assignees: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.labelIds !== undefined) {
+        try {
+          await setCardLabels(actor, { cardId: created.cardId, labelIds: input.labelIds });
+        } catch (error) {
+          warnings.push(`Could not set labels: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.priority !== undefined || input.dueDate !== undefined) {
+        try {
+          const current = await getCard(actor, { cardId: created.cardId });
+          await updateCard(actor, {
+            cardId: created.cardId,
+            version: current.version,
+            title: current.title,
+            description: descriptionOf(current.description),
+            dueDate: input.dueDate === undefined ? current.dueDate : new Date(input.dueDate),
+            startDate: current.startDate,
+            priority: input.priority ?? current.priority,
+          });
+        } catch (error) {
+          warnings.push(`Could not set priority/due date: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.sprintId !== undefined) {
+        try {
+          await assignSprint(actor, { cardId: created.cardId, sprintId: input.sprintId });
+        } catch (error) {
+          warnings.push(`Could not add to sprint: ${messageOf(error)}`);
+        }
+      }
+
+      return {
+        content: JSON.stringify({
+          cardId: created.cardId,
+          reference: created.reference,
+          ...(warnings.length > 0 ? { warnings } : {}),
+        }),
+      };
     },
   });
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : 'an unknown error';
 }
 
 /* ---------------------------------------------------------------------- *

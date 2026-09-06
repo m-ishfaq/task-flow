@@ -12,6 +12,7 @@ import * as lists from '../../work/list.service.js';
 import * as statuses from '../../work/status.service.js';
 import * as cardsSvc from '../../work/card.service.js';
 import * as labelsSvc from '../../work/label.service.js';
+import * as sprintsSvc from '../../work/sprint.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import {
   createCardAddLabelsTool,
@@ -51,6 +52,12 @@ async function newOrg(slug: string): Promise<OrgId> {
 async function removeOrg(orgId: string): Promise<void> {
   await admin.setOrg(orgId);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+  /* Cards first: `cards_sprint_fk` means a sprint cannot go while cards
+     still point at it. Sprints before projects: `sprints_project_fk` — the
+     same ordering sprint.service.test.ts's own removeOrg already
+     documents. */
+  await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM work.sprints WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
@@ -164,6 +171,81 @@ describe('card_create', () => {
 
   it('declares requiresConfirmation: true', () => {
     expect(createCardCreateTool().requiresConfirmation).toBe(true);
+  });
+
+  it('sets assignees, labels, priority, due date, and sprint in ONE call — no follow-up round trips', async () => {
+    const orgId = await newOrg('card-create-full');
+    const { actor, listId, projectId } = await seedList(orgId);
+    const subject = await ownerSubject(orgId);
+
+    const bug = await labelsSvc.createLabel(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Bug',
+      color: '#dc2626',
+    });
+    const sprint = await sprintsSvc.createSprint(actor, {
+      projectId: unsafeAsId<'ProjectId'>(projectId),
+      name: 'Sprint 1',
+      goal: null,
+      startsOn: '2026-08-10',
+      endsOn: '2026-08-21',
+    });
+
+    const tool = createCardCreateTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      listId,
+      title: 'Fully specified card',
+      assigneeIds: [OWNER],
+      labelIds: [bug.labelId],
+      priority: 'high',
+      dueDate: '2030-01-15T00:00:00.000Z',
+      sprintId: sprint.sprintId,
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as { cardId: string; warnings?: readonly string[] };
+    expect(parsed.warnings).toBeUndefined();
+
+    const after = await cardsSvc.getCard(actor, {
+      cardId: unsafeAsId<'CardId'>(parsed.cardId),
+    });
+    expect(after.assigneeIds).toEqual([OWNER]);
+    expect(after.priority).toBe('high');
+    expect(after.dueDate?.toISOString()).toBe('2030-01-15T00:00:00.000Z');
+    expect(after.sprintId).toBe(sprint.sprintId);
+
+    const labels = await labelsSvc.listCardLabels(actor, {
+      cardId: unsafeAsId<'CardId'>(parsed.cardId),
+    });
+    expect(labels.map((label) => label.labelId)).toEqual([bug.labelId]);
+  });
+
+  it('still creates the card and reports what failed when a follow-up field is invalid', async () => {
+    const orgId = await newOrg('card-create-partial-failure');
+    const { listId } = await seedList(orgId);
+    const subject = await ownerSubject(orgId);
+    const notAMember = unsafeAsId<'UserId'>('0195f400-0000-7000-8000-0000000000aa');
+
+    const tool = createCardCreateTool();
+    const result = await tool.execute(ownerCtx(subject), {
+      listId,
+      title: 'Card with a bad assignee',
+      assigneeIds: [notAMember],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as {
+      cardId: string;
+      reference: string;
+      warnings?: readonly string[];
+    };
+    expect(parsed.reference).toBe('WEB-1');
+    expect(parsed.warnings?.[0]).toMatch(/Could not set assignees/);
+
+    await admin.setOrg(orgId);
+    const rows = await admin.query(`SELECT id FROM work.cards WHERE id = $1`, [parsed.cardId]);
+    await admin.setOrg(null);
+    expect(rows.rowCount).toBe(1);
   });
 });
 

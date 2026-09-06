@@ -1,7 +1,13 @@
 import type { SearchProvider } from '@taskflow/contracts';
 import { createSearchTool } from './search.js';
 import { createMyCardsTool } from './my-cards.js';
-import { createListBoardsTool, createListLabelsTool, createListProjectsTool } from './lookup.js';
+import {
+  createListBoardsTool,
+  createListLabelsTool,
+  createListMembersTool,
+  createListProjectsTool,
+  createListSprintsTool,
+} from './lookup.js';
 import {
   createCardAddLabelsTool,
   createCardAssignTool,
@@ -69,6 +75,17 @@ export interface ToolRegistryDeps {
  * name to the id every write tool actually requires — there was nothing in
  * the whole registry that could ever produce a project, board, list, or
  * label id from its name. See `lookup.ts`'s own header.
+ *
+ * `list_members` and `list_sprints`, added after the same report continued
+ * "still no way to mention a member or sprint," close the rest of it — see
+ * `lookup.ts`'s own header. `card_create` was widened the same day to take
+ * `assigneeIds`/`labelIds`/`priority`/`dueDate`/`sprintId` directly, so a
+ * fully-specified card ("project X, assign Y, tag Z, due Friday") is ONE
+ * confirmation once every name above resolves, not a create followed by
+ * three more write-tool round trips each needing its own — see
+ * `card.ts`'s own comment on `card_create` for why bundling several real
+ * service calls behind one tool call changes nothing about what a caller
+ * may do, only how many times a human has to approve it.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -77,6 +94,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListProjectsTool(),
     createListBoardsTool(),
     createListLabelsTool(),
+    createListMembersTool(),
+    createListSprintsTool(),
     createCardCreateTool(),
     createCardUpdateTool(),
     createCardAssignTool(),
