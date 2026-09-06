@@ -12,7 +12,7 @@ import { createDocsCreatePageTool } from './docs.js';
 import type { ToolContext } from './registry.js';
 
 /**
- * `docs.create_page` (§4.1's table, §6's own bootstrap prerequisite),
+ * `docs_create_page` (§4.1's table, §6's own bootstrap prerequisite),
  * against real Postgres.
  */
 
@@ -88,7 +88,7 @@ afterAll(async () => {
   await closeDatabase();
 });
 
-describe('docs.create_page', () => {
+describe('docs_create_page', () => {
   it('creates a real, empty, titled page for an owner', async () => {
     const orgId = await newOrg('docs-create-owner');
     const actor = await ownerActor(orgId);

@@ -783,6 +783,24 @@ needs one — every write tool builds a real `WorkActor` to call the real `apps/
 so the domain event it emits carries a real request id into the audit trail, reading "AI, on behalf
 of `<user>`, did X," never "AI did X."
 
+**Every tool name in this registry was `card.create`-style dotted, and every one of them broke the
+first time a real OpenAI completion tried to use one.** OpenAI's Chat Completions API validates
+`tools[].function.name` against `^[a-zA-Z0-9_-]+$` — no dot — and `ai.chat.send` 500'd with
+`Invalid 'tools[N].function.name': string does not match pattern` the moment `resolveAiProvider`
+picked `OpenAiProvider` for an org (found from real server logs, not a fixture: `packages/ai`'s
+`AnthropicProvider` shares the identical real constraint, so this was latent for Anthropic too,
+just never exercised live). Nothing in this repository's own tests could have caught it —
+`assistant.test.ts` and every tool's own test call `execute` directly or drive the loop against a
+`FakeAiProvider`/stubbed `fetch`, so a real provider never validated a real tool list until an org
+actually configured to use one did. Renamed every write tool to `snake_case`
+(`card_create`/`card_update`/`card_assign`/`card_set_status`/`sprint_create`/`sprint_add_cards`/
+`chat_post_message`/`docs_create_page`) — scoped to `apps/api/src/ai/` where these strings are
+genuine tool identifiers, since the same substrings appear unrelated elsewhere (domain event names,
+automation action types) and are not part of this rename. `apps/web/src/features/ai/setup-dialog.tsx`
+composes an instruction telling the model to use "your `docs_create_page` tool" by literal name for
+§6's bootstrap flow — the one place outside the registry itself where the exact string mattered
+functionally, not just as prose, and needed the identical fix.
+
 ### Phase 15 §4 Wave 3 — sprint planning tools (SHIPPED)
 
 `apps/api/src/ai/tools/sprint.ts`. Spec: same file, §4.3 item 3 ("sprint planning (multi-card,

@@ -28,9 +28,9 @@ import type { ToolContext } from './registry.js';
  * `guest` (who holds none of these permissions by design) through the
  * tool and asserting it refuses, exactly like `card.service.test.ts`'s own
  * authorization assertions would for a route. Everything else proves the
- * tool wraps the real service faithfully: `card.update`'s read-then-patch
+ * tool wraps the real service faithfully: `card_update`'s read-then-patch
  * (a caller naming only `priority` must not erase the title), and
- * `card.assign`'s additive semantics (must never drop an existing
+ * `card_assign`'s additive semantics (must never drop an existing
  * assignee the caller did not mention).
  */
 
@@ -120,7 +120,7 @@ afterAll(async () => {
   await closeDatabase();
 });
 
-describe('card.create', () => {
+describe('card_create', () => {
   it('creates a real card for an owner', async () => {
     const orgId = await newOrg('card-create-owner');
     const { listId } = await seedList(orgId);
@@ -165,7 +165,7 @@ describe('card.create', () => {
   });
 });
 
-describe('card.update', () => {
+describe('card_update', () => {
   it('patches only the named fields, leaving everything else — including title — unchanged', async () => {
     const orgId = await newOrg('card-update-patch');
     const { actor, listId } = await seedList(orgId);
@@ -210,7 +210,7 @@ describe('card.update', () => {
   });
 });
 
-describe('card.assign', () => {
+describe('card_assign', () => {
   it('adds an assignee without removing an existing one', async () => {
     const orgId = await newOrg('card-assign-additive');
     const { actor, listId } = await seedList(orgId);
@@ -250,7 +250,7 @@ describe('card.assign', () => {
   });
 });
 
-describe('card.set_status', () => {
+describe('card_set_status', () => {
   it('moves a card to a real status', async () => {
     const orgId = await newOrg('card-set-status');
     const { actor, listId, projectId } = await seedList(orgId);

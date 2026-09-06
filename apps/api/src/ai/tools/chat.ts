@@ -6,7 +6,7 @@ import type { ChatActor } from '../../chat/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 
 /**
- * `chat.post_message` (§4.1's table, §4.3 item 4 — "cross-member
+ * `chat_post_message` (§4.1's table, §4.3 item 4 — "cross-member
  * tagging/discussion... already mostly exists via `mention` + Chat, mainly
  * assistant wiring, not new primitives"). Reuses the already-whitelisted
  * `mention` TipTap node exactly as a human's own composer does — no new
@@ -15,7 +15,7 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * a parallel notification path invented for the assistant.
  *
  * **This tool requires confirmation, even though §4.2's own illustrative
- * text names `chat.post_message` alongside `card.create`/`card.update` as
+ * text names `chat_post_message` alongside `card_create`/`card_update` as
  * "cheap to undo... can execute directly once permitted."** Unlike those
  * two, §4.3 does not separately contradict that for this tool — there is no
  * genuine ambiguity to resolve here the way Wave 2 had one. The choice to
@@ -35,7 +35,7 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * text-only paragraph for every other non-human caller in this codebase.
  *
  * There is no tool yet that resolves a person's NAME to a `userId` — the
- * same discoverability gap `card.create`'s `listId` and `sprint.add_cards`'s
+ * same discoverability gap `card_create`'s `listId` and `sprint_add_cards`'s
  * `sprintId` already have (see their own files) — so a mention today needs
  * a `userId` the conversation already supplied some other way (a prior
  * `search` hit's `author_id`, or the person named it themselves). Real, not
@@ -78,7 +78,7 @@ function bodyOf(segments: readonly z.infer<typeof MessageSegment>[]): RichTextNo
 
 export function createChatPostMessageTool(): ToolDefinition {
   return defineTool({
-    name: 'chat.post_message',
+    name: 'chat_post_message',
     description:
       'Posts a message to a channel or DM, optionally @mentioning people by user id. Provide the message as an ordered list of text and mention segments.',
     jsonSchema: {

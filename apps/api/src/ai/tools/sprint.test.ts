@@ -18,7 +18,7 @@ import type { ToolContext } from './registry.js';
 /**
  * Sprint planning tools (§4.1, §4.3 Wave 3), against real Postgres.
  *
- * `sprint.add_cards` is the interesting property to prove: it loops the
+ * `sprint_add_cards` is the interesting property to prove: it loops the
  * real per-card `assignSprint` rather than a bulk mutation, and this file
  * proves it reports each card's OWN outcome instead of aborting the whole
  * batch on the first failure — one nonexistent card id must not also
@@ -124,7 +124,7 @@ afterAll(async () => {
   await closeDatabase();
 });
 
-describe('sprint.create', () => {
+describe('sprint_create', () => {
   it('plans a real sprint for an owner', async () => {
     const orgId = await newOrg('sprint-create-owner');
     const { projectId } = await seedList(orgId);
@@ -190,7 +190,7 @@ describe('sprint.create', () => {
   });
 });
 
-describe('sprint.add_cards', () => {
+describe('sprint_add_cards', () => {
   it('adds every card and reports success for each', async () => {
     const orgId = await newOrg('sprint-add-cards-success');
     const { actor, listId, projectId } = await seedList(orgId);

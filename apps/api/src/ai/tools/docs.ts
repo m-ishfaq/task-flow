@@ -5,7 +5,7 @@ import type { DocsActor } from '../../docs/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 
 /**
- * `docs.create_page` (§4.1's table — "used by the org-onboarding bootstrap,
+ * `docs_create_page` (§4.1's table — "used by the org-onboarding bootstrap,
  * §6"). The last tool §4.1's own table named that no wave had built yet.
  *
  * **Title only, no body content — because that is genuinely all the real
@@ -17,7 +17,7 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * caller to make, AI tool included — a page the assistant creates is a
  * titled, empty node in the tree, exactly the shape §6's own bootstrap
  * describes ("a starter Docs space — a handful of pages... using the
- * `docs.create_page` tool"), never pre-filled prose. Anyone opening the new
+ * `docs_create_page` tool"), never pre-filled prose. Anyone opening the new
  * page still writes its content the normal way.
  *
  * **Requires confirmation, even though §6 calls a created page "safe by
@@ -26,7 +26,7 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  * confirmation-gated anyway for the same reason every write tool here is:
  * one uniform rule (nothing writes without a human's explicit yes) is
  * simpler to reason about and audit than a per-tool risk judgment call,
- * and §4.2 itself never actually lists `docs.create_page` among the
+ * and §4.2 itself never actually lists `docs_create_page` among the
  * examples it calls "cheap to undo" — that argument is this file's own
  * reading of §6, not the spec's.
  *
@@ -47,7 +47,7 @@ const DocsCreatePageInput = z
 
 export function createDocsCreatePageTool(): ToolDefinition {
   return defineTool({
-    name: 'docs.create_page',
+    name: 'docs_create_page',
     description:
       'Creates a new, empty Docs page with the given title, at the top level of a space or under a parent page. The page has no content yet — whoever opens it writes that themselves.',
     jsonSchema: {

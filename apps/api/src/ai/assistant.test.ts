@@ -88,7 +88,7 @@ async function workActorOf(orgId: OrgId): Promise<WorkActor> {
   return { subject: await subjectOf(orgId), requestId };
 }
 
-/** A project/board/list — the minimum `card.create` needs a real `listId`. */
+/** A project/board/list — the minimum `card_create` needs a real `listId`. */
 async function seedList(orgId: OrgId): Promise<{ listId: string }> {
   const actor = await workActorOf(orgId);
   const project = await projects.createProject(actor, {
@@ -304,7 +304,7 @@ describe('runAssistantTurn', () => {
     provider.enqueue({
       content: 'Sure, I can create that.',
       toolCalls: [
-        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+        { id: 'toolu_1', name: 'card_create', input: { listId, title: 'Fix login bug' } },
       ],
       usage: { inputTokens: 20, outputTokens: 10 },
       stopReason: 'tool_use',
@@ -329,7 +329,7 @@ describe('runAssistantTurn', () => {
     // again, because it stopped to defer instead of continuing.
     expect(provider.calls).toHaveLength(1);
     expect(result.pendingToolCalls).toEqual([
-      { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+      { id: 'toolu_1', name: 'card_create', input: { listId, title: 'Fix login bug' } },
     ]);
     // Nothing was actually created.
     expect(await cardCount(orgId)).toBe(0);
@@ -338,7 +338,7 @@ describe('runAssistantTurn', () => {
     const lastMessage = result.messages.at(-1);
     expect(lastMessage?.role).toBe('assistant');
     expect(lastMessage).toMatchObject({
-      toolCalls: [{ id: 'toolu_1', name: 'card.create' }],
+      toolCalls: [{ id: 'toolu_1', name: 'card_create' }],
     });
   });
 
@@ -350,7 +350,7 @@ describe('runAssistantTurn', () => {
     provider.enqueue({
       content: 'Sure, I can create that.',
       toolCalls: [
-        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+        { id: 'toolu_1', name: 'card_create', input: { listId, title: 'Fix login bug' } },
       ],
       usage: { inputTokens: 20, outputTokens: 10 },
       stopReason: 'tool_use',
@@ -405,7 +405,7 @@ describe('runAssistantTurn', () => {
     provider.enqueue({
       content: 'Sure, I can create that.',
       toolCalls: [
-        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+        { id: 'toolu_1', name: 'card_create', input: { listId, title: 'Fix login bug' } },
       ],
       usage: { inputTokens: 20, outputTokens: 10 },
       stopReason: 'tool_use',

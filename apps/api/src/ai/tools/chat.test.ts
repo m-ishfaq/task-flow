@@ -13,7 +13,7 @@ import { createChatPostMessageTool } from './chat.js';
 import type { ToolContext } from './registry.js';
 
 /**
- * `chat.post_message` (§4.1, §4.3's last item), against real Postgres.
+ * `chat_post_message` (§4.1, §4.3's last item), against real Postgres.
  *
  * The property that matters most: the mention SEGMENT this tool accepts
  * becomes a real `mention` TipTap node on the real send path, which is
@@ -101,7 +101,7 @@ afterAll(async () => {
   await closeDatabase();
 });
 
-describe('chat.post_message', () => {
+describe('chat_post_message', () => {
   it('posts a real message with a real mention node', async () => {
     const orgId = await newOrg('chat-post-owner');
     const actor = await ownerActor(orgId);

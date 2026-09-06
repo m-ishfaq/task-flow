@@ -20,9 +20,9 @@ import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 
 /**
- * The single-card write tools (§4.1's table: `card.create`, `card.update`,
- * `card.assign`, `card.set_status` — `card.set_priority` folds into
- * `card.update` below, since there is no separate `setCardPriority` SERVICE
+ * The single-card write tools (§4.1's table: `card_create`, `card_update`,
+ * `card_assign`, `card_set_status` — `card.set_priority` folds into
+ * `card_update` below, since there is no separate `setCardPriority` SERVICE
  * to wrap; priority "rides" `updateCard` for the identical reason
  * `card.service.ts`'s own doc comment gives a human editor no separate
  * route for it either).
@@ -51,7 +51,7 @@ function actorOf(ctx: ToolContext): WorkActor {
 }
 
 /* ---------------------------------------------------------------------- *
- * card.create
+ * card_create
  * ---------------------------------------------------------------------- */
 
 const CardCreateInput = z
@@ -64,7 +64,7 @@ const CardCreateInput = z
 
 export function createCardCreateTool(): ToolDefinition {
   return defineTool({
-    name: 'card.create',
+    name: 'card_create',
     description:
       'Creates a new card in a list. The list must be identified by its id, not its name.',
     jsonSchema: {
@@ -91,7 +91,7 @@ export function createCardCreateTool(): ToolDefinition {
 }
 
 /* ---------------------------------------------------------------------- *
- * card.update — title/description/dates/priority, read-then-patch
+ * card_update — title/description/dates/priority, read-then-patch
  * ---------------------------------------------------------------------- */
 
 /**
@@ -125,7 +125,7 @@ function descriptionOf(stored: unknown): RichTextNode | null {
 
 export function createCardUpdateTool(): ToolDefinition {
   return defineTool({
-    name: 'card.update',
+    name: 'card_update',
     description:
       'Updates a card. Only the fields provided are changed; everything else is left as-is. Also used to set or clear a card’s priority.',
     jsonSchema: {
@@ -183,13 +183,13 @@ export function createCardUpdateTool(): ToolDefinition {
 }
 
 /* ---------------------------------------------------------------------- *
- * card.assign — ADDITIVE, never a replace
+ * card_assign — ADDITIVE, never a replace
  * ---------------------------------------------------------------------- */
 
 /**
  * `assignCard`'s real signature REPLACES the whole assignee list.
  * Additive here for the identical reason `apps/worker`'s automation
- * executor's own `card.assign` action is additive: "assign this to Bob"
+ * executor's own `card_assign` action is additive: "assign this to Bob"
  * spoken in a chat means ADD Bob, and a tool that silently unassigned
  * everyone else because the model did not enumerate them would do quiet
  * damage no confirmation step would even show clearly (the confirmation
@@ -206,7 +206,7 @@ const CardAssignInput = z
 
 export function createCardAssignTool(): ToolDefinition {
   return defineTool({
-    name: 'card.assign',
+    name: 'card_assign',
     description:
       'Adds one or more people as assignees on a card, without removing anyone already assigned.',
     jsonSchema: {
@@ -240,7 +240,7 @@ export function createCardAssignTool(): ToolDefinition {
 }
 
 /* ---------------------------------------------------------------------- *
- * card.set_status
+ * card_set_status
  * ---------------------------------------------------------------------- */
 
 const CardSetStatusInput = z
@@ -252,7 +252,7 @@ const CardSetStatusInput = z
 
 export function createCardSetStatusTool(): ToolDefinition {
   return defineTool({
-    name: 'card.set_status',
+    name: 'card_set_status',
     description: 'Moves a card to a different status column, or clears it with a null statusId.',
     jsonSchema: {
       type: 'object',

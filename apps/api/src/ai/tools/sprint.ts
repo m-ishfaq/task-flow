@@ -5,11 +5,11 @@ import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 
 /**
- * Sprint planning tools (§4.1's table: `sprint.create`, `sprint.add_cards`) —
+ * Sprint planning tools (§4.1's table: `sprint_create`, `sprint_add_cards`) —
  * §4.3 Wave 3, "multi-card, higher blast radius" than Wave 2's single-card
  * writes. Both require confirmation (§4.2), and here the spec draft has no
- * internal contradiction to resolve the way Wave 2's `card.create`/
- * `card.update` did: §4.2 names "sprint creation" itself as an example of an
+ * internal contradiction to resolve the way Wave 2's `card_create`/
+ * `card_update` did: §4.2 names "sprint creation" itself as an example of an
  * action needing confirmation, and moving many cards is its own named
  * example of a bulk operation that does too.
  *
@@ -41,7 +41,7 @@ const Day = z
   }, 'Use a real calendar date.');
 
 /* ---------------------------------------------------------------------- *
- * sprint.create
+ * sprint_create
  * ---------------------------------------------------------------------- */
 
 const SprintCreateInput = z
@@ -56,7 +56,7 @@ const SprintCreateInput = z
 
 export function createSprintCreateTool(): ToolDefinition {
   return defineTool({
-    name: 'sprint.create',
+    name: 'sprint_create',
     description: 'Plans a new sprint for a project, in the "planned" state.',
     jsonSchema: {
       type: 'object',
@@ -86,7 +86,7 @@ export function createSprintCreateTool(): ToolDefinition {
 }
 
 /* ---------------------------------------------------------------------- *
- * sprint.add_cards
+ * sprint_add_cards
  * ---------------------------------------------------------------------- */
 
 const SprintAddCardsInput = z
@@ -111,7 +111,7 @@ const SprintAddCardsInput = z
  */
 export function createSprintAddCardsTool(): ToolDefinition {
   return defineTool({
-    name: 'sprint.add_cards',
+    name: 'sprint_add_cards',
     description: 'Adds one or more cards to a sprint (moves them out of any other sprint).',
     jsonSchema: {
       type: 'object',

@@ -111,7 +111,7 @@ function SetupForm({
         content:
           `I just created this organization.${sizeNote} Please set up our Docs space (id ` +
           `${space.spaceId}) by creating one page for each of these titles, in that space, ` +
-          `using your docs.create_page tool: ${pageTitles.map((title) => `"${title}"`).join(', ')}.`,
+          `using your docs_create_page tool: ${pageTitles.map((title) => `"${title}"`).join(', ')}.`,
       };
     },
     onSuccess: (result) => {
