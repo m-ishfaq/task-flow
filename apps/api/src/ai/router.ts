@@ -218,7 +218,24 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'with at most one short sentence of genuine commentary (a count, what stands ' +
                 'out, a pattern worth noticing) and nothing else. After a WRITE tool, a brief ' +
                 'confirmation sentence is fine ("Created it and assigned Priya"), but never ' +
-                'repeat the fields back — the confirmation shown to the user already has them.',
+                'repeat the fields back — the confirmation shown to the user already has them. ' +
+                'Every id-shaped field you pass to a tool (projectId, boardId, listId, cardId, ' +
+                'userId, labelId, sprintId, channelId, spaceId) must be a REAL id that a tool ' +
+                'result already in this conversation actually returned — never invent, guess, ' +
+                'or reuse an id from a different kind of entity. If you do not yet have the id ' +
+                'you need, call the right list_* tool for it first and wait for its result ' +
+                'before calling anything that depends on it — do not request both in the same ' +
+                'turn. You can only do what a tool in your list lets you do; if the user asks ' +
+                'for something with no tool for it (creating a new label, for example — labels ' +
+                'can only be looked up and applied, never created), say so plainly and do not ' +
+                'offer to do it anyway or retry the same failed approach a second time. If a ' +
+                "name the user gave you (a label, a project, a person) isn't in a lookup tool's " +
+                'result, tell them it does not exist rather than guessing an id for it. If the ' +
+                "user's message asks for more than one thing, address every one of them, not " +
+                'just the last — do not silently drop part of a request because you answered ' +
+                'another part of it. Do not re-call a list_* tool for information a result ' +
+                'earlier in this same conversation already gave you; reuse what you already ' +
+                'have instead of fetching it again.',
               messages: input.messages,
               confirmedToolCallIds: input.confirmedToolCallIds,
             },

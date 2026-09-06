@@ -932,6 +932,82 @@ chat-turn `role`. Fixed the same way `assistant.ts`'s own `ASSISTANT_ROLE_MESSAG
 `TOOL_RESULT_ROLE_MESSAGES`) rather than a `switch`, since these are boolean predicates embedded in
 larger expressions, not exhaustive dispatches over the whole union.
 
+**A real transcript surfaced four more defects in one pass: a bare, context-free tool error that
+made a whole conversation unrecoverable; two structured renderers that collapsed into unreadable
+run-on text on copy; the model calling a lookup tool with an id it could not possibly have yet; and
+the model's own free-text replies never rendering as anything but a flat paragraph.** Diagnosed by
+reading the transcript literally — tracing "Not found." to the exact line that produces it, not
+guessing — rather than patched by intuition.
+
+**`defineTool`'s thrown-error branch discarded all context, while its OWN validation-failure branch
+two lines above already prefixed with the tool name — an inconsistency inside one function.**
+`apps/api/src/work/shared.ts`'s `translatingConstraints` turns a foreign-key violation into a bare
+`errors.notFound()` (`packages/contracts/src/errors.ts`'s own default: `'Not found.'`), and dozens
+of call sites across `work/card.service.ts` alone throw that same bare default. Traced from a real
+transcript: with no label-creation tool in the registry (`ai/tools/index.ts` has none, by design —
+"no fuzzy matching or on-the-fly label creation," this file's own Phase 15 §4 Wave 1 section), the
+model fabricated a plausible-looking uuid for `card_add_labels`'s `labelIds`, which passed Zod's
+FORMAT-only check, then failed the real foreign key — surfacing as a bare "Not found." with zero
+indication of which of several tool calls in the turn had even failed. `registry.ts`'s catch now
+prefixes every thrown-error result the identical way its own validation branch already does:
+`` `Tool "${name}" failed: ${message}` ``. `registry.test.ts` gained a case naming this exact
+scenario (a thrown `Error('Not found.')` on a tool named `card_add_labels`) rather than only a
+generic one, so the fix is proven against the failure it was found from, not just a stand-in.
+
+**Two structured list renderers collapsed into unreadable run-on text the moment a person copied
+them as plain text — `Badge` is a `<span>`, and a browser only inserts a line break between
+BLOCK-level elements, not ones separated purely by CSS `gap`.** `list_labels`' flat row of `Badge`
+chips pasted as `choredesigndocsfeaturegoodfirstissue...`; `list_boards`' nested per-board `Badge`
+row of list names pasted as `BacklogTo DoIn ProgressIn ReviewBlockedDone` — both confirmed from a
+real pasted transcript, not merely suspected (an earlier pass had noticed the SAME shape once for
+`my_cards` and left it as an unconfirmed hypothesis; this is that hypothesis confirmed, for a
+different pair of renderers). `renderListLabels` (`tool-results.tsx`) now renders a real vertical
+`EntityList`/`EntityRow` — one label per `<li>`, a genuine block boundary — both more readable at a
+glance for more than a handful of labels and immune to the collapse, since block-level siblings
+survive a plain-text copy. `renderListBoards`' per-board list-of-lists stays a compact single line
+(a board's own columns read naturally that way) but is now a literal joined string
+(`board.lists.map(l => l.name).join(' · ')`) rather than a row of chips — a real character between
+each name, not CSS spacing a copy can silently drop.
+
+**The system prompt gained explicit rules against three behaviors a real transcript caught in one
+sitting: guessing an id, offering a capability with no tool behind it, and silently answering only
+part of a compound request.** `list_boards`/`list_sprints` failed Zod's UUID check on the very
+first turn of a conversation — before the model had ever seen a real project id back from
+`list_projects` — because nothing stopped it from requesting a dependent tool in the SAME round as
+the lookup it depends on; `assistant.ts`'s own loop only guarantees SEQUENTIAL tool EXECUTION
+within a round, never that a later call in the same round can see an earlier one's result, since
+all of a round's tool calls come from one completion the model produced before any of them ran.
+Separately, the model offered to "create the label first" for a capability the registry has never
+had, then retried the identical broken approach a second time after the first attempt's bare
+"Not found." gave it nothing to learn from (now fixed by the paragraph above) — and a compound
+instruction ("set it to urgent and what about labels") got only its second half answered, with no
+`card_update` confirmation for the first half anywhere in the transcript. None of these has a code
+fix on its own — they are the model's own behavior, not a service the assistant calls — so the
+system prompt (`router.ts`) now states each rule directly: every id-shaped field must come from a
+tool result already in the conversation, never invented, with dependent calls sequenced across
+rounds rather than guessed at in the same one; the model can only do what a tool in its list lets
+it do, and must say so plainly rather than offer or retry something it cannot; and a multi-part
+message needs every part answered, not just the last. The same paragraph adds a rule against
+re-calling a `list_*` tool for something an earlier result in the SAME conversation already gave it
+— `list_projects` was called twice and `list_members` a third time in the one transcript that found
+all of this, wasted spend and turns that also made the conversation cross `ai.chat.send`'s 40-message
+cap far sooner than a conversation of its actual complexity should have.
+
+**The model's own free-text replies rendered as a bare `<p>{content}</p>`, so a fixed-enum answer
+with no tool behind it — "1. Urgent 2. High 3. Normal 4. Low" — showed the literal markdown syntax,
+never an actual list.** Most of the model's commentary is one short sentence by design (this
+section's own system-prompt entries above), which a plain paragraph handles fine; the gap is
+exactly the reply that has no tool result to render instead, where the model has to fall back to
+describing something in its own words. `apps/web/src/features/ai/markdown-lite.tsx` is a small,
+deliberately narrow renderer — bold spans and bullet/numbered lists, nothing else — built from real
+React elements (`<p>`, `<ul>`, `<ol>`, `<li>`, `<strong>`) parsed from plain text, never
+`dangerouslySetInnerHTML` over a markdown-to-HTML string, which rule 4 bans outright with no
+exception for content the app itself generated. `parseMarkdownBlocks`/`parseInlineSegments` are
+exported pure functions, tested directly (`markdown-lite.test.ts`) the same "test the pure half"
+way `windowForRequest` and `neighbours.ts` already are, rather than only through a rendered
+component. `MessageBubble`'s assistant bubble now wraps `<MarkdownLite text={message.content} />`
+in the same bg/padding/rounding the bare `<p>` used to carry directly.
+
 ### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
 
 `apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·

@@ -7,6 +7,7 @@ import { ErrorView } from '../../components/error-view.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
 import { CardQuickView } from '../work/card-quick-view.js';
+import { MarkdownLite } from './markdown-lite.js';
 import { sendChatTurn, windowForRequest, type ChatMessageWire, type ToolCallWire } from './api.js';
 import { renderToolResult, toolResultsById } from './tool-results.js';
 
@@ -89,6 +90,19 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
  * prompt (`router.ts`) was widened the same way, generally telling the
  * model every tool's structured result is already shown, not just
  * `my_cards`'.
+ *
+ * ## The model's own prose renders through `MarkdownLite`, not a bare `<p>`
+ *
+ * `message.content` used to go straight into `<p>{message.content}</p>` —
+ * fine for the one-sentence commentary the system prompt mostly asks for,
+ * and wrong the moment the model has to answer something with no tool
+ * behind it at all (a fixed-enum question like "what priorities can I set"
+ * has no `list_*` tool to render, so the model answers in its own words).
+ * The reply came back as literal `1. Urgent 2. High...` markdown syntax,
+ * never an actual list. `markdown-lite.tsx`'s own header explains the
+ * scope (bold + lists only, real React elements, never
+ * `dangerouslySetInnerHTML`) and why a full markdown library would be more
+ * surface than a one-sentence reply ever needs.
  */
 
 const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
@@ -403,9 +417,9 @@ function MessageBubble({
         <div className="flex justify-start">
           <div className="max-w-[85%] space-y-2">
             {message.content !== '' && (
-              <p className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2 text-sm text-ink">
-                {message.content}
-              </p>
+              <div className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2 text-sm text-ink">
+                <MarkdownLite text={message.content} />
+              </div>
             )}
             {(message.toolCalls ?? []).map((call) => {
               const rendered = renderToolResult(call, resultsById, { onOpenCard });

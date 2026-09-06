@@ -107,8 +107,35 @@ describe('defineTool', () => {
     });
 
     const result = await tool.execute(TOOL_CTX, {});
-    expect(result).toEqual({ content: 'The tool failed for an unknown reason.', isError: true });
+    expect(result).toEqual({
+      content: 'Tool "weird" failed: The tool failed for an unknown reason.',
+      isError: true,
+    });
   });
+
+  it(
+    'prefixes a thrown error with the tool name, so a bare message like errors.notFound()' +
+      '\'s default ("Not found.") still tells the model — and the transcript — which call failed',
+    async () => {
+      const tool = defineTool({
+        name: 'card_add_labels',
+        description: 'test',
+        jsonSchema: { type: 'object' },
+        requiresConfirmation: true,
+        inputSchema: z.object({}).strict(),
+        execute: () => {
+          throw new Error('Not found.');
+        },
+      });
+
+      const result = await tool.execute(TOOL_CTX, {});
+
+      expect(result).toEqual({
+        content: 'Tool "card_add_labels" failed: Not found.',
+        isError: true,
+      });
+    },
+  );
 });
 
 describe('toAiToolDefinition', () => {

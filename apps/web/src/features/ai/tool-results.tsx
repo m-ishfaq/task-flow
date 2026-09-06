@@ -402,11 +402,17 @@ function renderListBoards(result: ToolResultMessage): ReactNode | null {
               {board.name}
             </Link>
             {board.lists.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1 pl-5">
-                {board.lists.map((list) => (
-                  <Badge key={list.listId}>{list.name}</Badge>
-                ))}
-              </div>
+              // A joined text string, not a `Badge` cloud — the identical
+              // collapse-on-copy bug `renderListLabels`' own header now
+              // documents ("BacklogTo DoIn ProgressIn Review..." in a real
+              // pasted transcript, one board's worth of `Badge` spans with
+              // only CSS `gap` between them). A board's own lists read
+              // naturally as one compact line, so the fix here is a real
+              // separator character in the text itself rather than
+              // switching to a vertical list the way labels did.
+              <p className="mt-1 truncate pl-5 text-[11px] text-ink-faint">
+                {board.lists.map((list) => list.name).join(' · ')}
+              </p>
             )}
           </li>
         ))}
@@ -433,14 +439,25 @@ function renderListLabels(result: ToolResultMessage): ReactNode | null {
     labels.push({ labelId, name });
   }
 
+  // A real vertical list, not a wrapped row of `Badge` spans — two reasons,
+  // not one. Visually, a flat wrapped chip cloud is genuinely harder to scan
+  // than one label per line once there are more than a handful. And a
+  // `Badge` is a `<span>` with only CSS `gap` between siblings, so a plain-
+  // text copy of a chip row (a browser only inserts a line break between
+  // BLOCK-level elements) collapsed every label into one unreadable run —
+  // "choredesigndocsfeature..." — found from a real pasted transcript. Each
+  // `<li>` here is block-level, so both problems are the same fix.
   return (
     <ResultPanel>
-      <div className="flex flex-wrap items-center gap-1">
-        <Tag aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+      <EntityList>
         {labels.map((label) => (
-          <Badge key={label.labelId}>{label.name}</Badge>
+          <EntityRow
+            key={label.labelId}
+            icon={<Tag aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
+            primary={label.name}
+          />
         ))}
-      </div>
+      </EntityList>
     </ResultPanel>
   );
 }

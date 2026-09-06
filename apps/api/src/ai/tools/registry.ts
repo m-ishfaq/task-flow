@@ -100,7 +100,19 @@ export function defineTool<Schema extends z.ZodTypeAny>(config: {
       try {
         return await config.execute(ctx, parsed.data as z.infer<Schema>);
       } catch (error) {
-        return { content: messageOf(error), isError: true };
+        // Prefixed with the tool name for the identical reason the
+        // validation branch above already is: a bare `errors.notFound()` —
+        // and there are many call sites across `work/*.service.ts` that
+        // throw exactly that, message "Not found.", with zero detail — gave
+        // the model (and the transcript) no way to tell which of several
+        // tool calls in a turn failed or why. Found from a real transcript:
+        // the model, with no label-creation tool available, fabricated a
+        // plausible-looking uuid for `card_add_labels`, which failed a
+        // foreign-key check translated to `errors.notFound()`, and the
+        // resulting bare "Not found." left the model no better informed
+        // than before it tried — it retried the identical broken approach a
+        // second time rather than recognizing what had actually failed.
+        return { content: `Tool "${config.name}" failed: ${messageOf(error)}`, isError: true };
       }
     },
   };
