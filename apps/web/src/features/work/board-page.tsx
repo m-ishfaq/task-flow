@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { CardId, ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
@@ -237,6 +237,21 @@ export function BoardPage() {
               }}
               canManageProject={canManageProject}
             />
+          )}
+
+          {/* The standup view (Phase 15 §5) — placed in the toolbar rather than
+              the sidebar, because this is exactly where a team is looking when
+              a daily standup starts. `project:read`, same floor as the board
+              itself, so no extra gate is needed here beyond `projectId` being
+              known. */}
+          {projectId !== null && (
+            <Link
+              to="/projects/$projectId/standup"
+              params={{ projectId }}
+              className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+            >
+              Standup
+            </Link>
           )}
 
           {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for

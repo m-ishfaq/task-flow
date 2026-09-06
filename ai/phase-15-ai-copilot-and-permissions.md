@@ -12,8 +12,12 @@ offboarding automation) has SHIPPED A REAL SUBSET — six of its ten checklist i
 a real service call, with the other four named and deferred rather than half-built (see below);
 §6 (the new-org Docs bootstrap) has SHIPPED, and building it surfaced that §4's own frontend —
 the assistant chat page every prior wave shipped without — did not exist at all, so that shipped
-alongside it; §5 (the standup view) and §7 (GitHub/PR review) remain DRAFT — not yet approved for
-build, and nothing in those sections has been implemented.** Written up per this
+alongside it; §5 (the standup view) has since SHIPPED too — `apps/api/src/standup` and
+`apps/web/src/features/standup`, see CLAUDE.md's own "Phase 15 §5" section for what actually
+shipped, including the one place this section's text needed a real design decision it did not
+make (whether `narrate` may trust a client-supplied standup blob — it does not); only §7
+(GitHub/PR review) remains DRAFT — not yet approved for build, and nothing in that section has
+been implemented.** Written up per this
 repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
@@ -126,13 +130,21 @@ shipped together: `apps/web/src/features/ai/` (the chat page, the setup dialog) 
 model-parsed conversation — see CLAUDE.md's own section for why a deterministic form beats
 depending on the model to ask and interpret follow-up questions well.
 
-**§5 (the standup view) and §7 (GitHub/PR
-review) remain exactly as drafted below: designed, not built.**
-Neither §5's standup screen nor §7's PR review/merge tools have any code behind them yet. This spec
-intentionally covers several waves under one phase number because they share one foundation (§1)
-and were scoped together in one planning conversation — later waves may be split into their own
-`ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got their own
-sections.
+**§5 (the standup view) has since shipped** — `apps/api/src/standup/{standup.service,narrate,
+router}.ts`, `apps/web/src/features/standup/{api,card-quick-view,standup-page}.tsx`, reachable at
+`/projects/$projectId/standup` and from a "Standup" link in the board toolbar. See CLAUDE.md's own
+"Phase 15 §5" section for what shipped, including the two design decisions this section's text
+left open: `narrate` re-runs `queryStandup` itself rather than trusting a client-supplied blob of
+"standup data" (the obvious alternative would let anyone narrate a project they cannot read), and
+the "cards can be moved/reassigned/reprioritized" line is realized by reaching the real board card-
+detail panel from a card id alone, not by rebuilding its controls a second time.
+
+**§7 (GitHub/PR review) remains exactly as drafted below: designed, not built.** Its own text
+already flags this as needing a separate review pass before any of it is built — see that section.
+This spec intentionally covers several waves under one phase number because they share one
+foundation (§1) and were scoped together in one planning conversation — later waves may be split
+into their own `ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got
+their own sections.
 
 ⚠ **This phase touches four surfaces CLAUDE.md already requires human review for** —
 `packages/policy` (§1), any webhook signature verification (§4.3), and it adds a fifth:
@@ -374,6 +386,12 @@ check").
 ---
 
 ## 5. Standup view
+
+**SHIPPED.** See CLAUDE.md's "Phase 15 §5" section for the full account, including the two
+places this section's text needed a real decision it did not spell out (whether `narrate` may
+trust client-supplied standup data — it may not; and how "moved/reassigned/reprioritized directly
+from this view" is realized — by reaching the real board card-detail panel from a card id alone,
+not by rebuilding its controls).
 
 A new screen, not a new subsystem — assembles data that already exists:
 

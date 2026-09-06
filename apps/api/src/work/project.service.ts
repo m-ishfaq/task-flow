@@ -252,9 +252,9 @@ export async function requireProject(
   actor: WorkActor,
   projectId: ProjectId,
   permission: 'project:read' | 'project:update',
-): Promise<{ readonly orgId: string; readonly name: string }> {
+): Promise<{ readonly orgId: string; readonly name: string; readonly key: string }> {
   const rows = await tx
-    .select({ orgId: schema.projects.orgId, name: schema.projects.name })
+    .select({ orgId: schema.projects.orgId, name: schema.projects.name, key: schema.projects.key })
     .from(schema.projects)
     .where(and(eq(schema.projects.id, projectId), isNull(schema.projects.deletedAt)))
     .limit(1);

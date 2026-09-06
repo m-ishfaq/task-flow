@@ -49,6 +49,7 @@ import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/autom
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
 import { AnalyticsPage } from './features/analytics/analytics-page.js';
 import { AssistantPage } from './features/ai/assistant-page.js';
+import { StandupPage } from './features/standup/standup-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -516,6 +517,27 @@ const projectSprintsRoute = createRoute({
   component: SprintsPage,
 });
 
+/**
+ * A project's standup view (ai/phase-15-ai-copilot-and-permissions.md §5).
+ *
+ * No `CapabilityGate`, unlike `/analytics` and `/assistant` — `standup.query`
+ * floors on `project:read`, the same permission a Member already holds to
+ * open the project's boards at all, not an Admin/Owner-only or individually
+ * granted one. The one part of this screen that IS gated (`narrate`, on
+ * `ai:use` + `aiAssistant`) is gated inline, on the button itself, the same
+ * "hide, don't disable" shape Phase 15 §1's sweep already applies everywhere
+ * else — a page-level gate would hide the whole standup from a Member who
+ * simply cannot use the AI summarizer.
+ */
+const standupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/projects/$projectId/standup',
+  parseParams: (params) => ({ projectId: ProjectIdSchema.parse(params.projectId) }),
+  stringifyParams: (params) => ({ projectId: params.projectId }),
+  beforeLoad: ({ params }) => requireOrg(`/projects/${params.projectId}/standup`),
+  component: StandupPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -698,6 +720,7 @@ const routeTree = rootRoute.addChildren([
   projectsRoute,
   projectSettingsRoute,
   projectSprintsRoute,
+  standupRoute,
   boardRoute,
   peopleRoute,
   personRoute,

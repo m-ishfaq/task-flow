@@ -19,6 +19,7 @@ import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
 import { createAiRouter } from './ai/router.js';
+import { createStandupRouter } from './standup/router.js';
 import { createAutomationRouter } from './automation/router.js';
 import { createAnalyticsRouter } from './analytics/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
@@ -278,6 +279,15 @@ export function createAppRouter(deps: AppRouterDeps) {
      * unambiguous by AAD, not by a fourth `SoftwareKeyProvider` instance).
      */
     ai: createAiRouter({ keys: deps.automation.keys, searchProvider }),
+
+    /**
+     * The standup view (Phase 15 §5) — assembled from existing card/sprint
+     * data (`standup.query`, `project:read`), plus an AI narration
+     * (`standup.narrate`) built on `completeGated` directly rather than the
+     * tool-calling loop above, since there is nothing for the model to DO
+     * here, only text to produce from data this route already queried.
+     */
+    standup: createStandupRouter({ keys: deps.automation.keys }),
 
     /**
      * Automation rules (Phase 10 Wave 1) — the surface that MANAGES rules.

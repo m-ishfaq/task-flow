@@ -224,6 +224,9 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'statuses'] as const,
   sprints: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'sprints'] as const,
+  /** The standup view's assembled data (Phase 15 §5) — one project, one window. */
+  standup: (orgId: string, projectId: string, sinceHours: number) =>
+    ['org', orgId, 'projects', projectId, 'standup', sinceHours] as const,
   /**
    * Every project's active sprint (10.6 D3) — the sidebar's ambient line.
    * Org-scoped, NOT nested under `sprints`, so invalidating one project's

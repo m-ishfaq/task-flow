@@ -145,8 +145,12 @@ export interface AiRouterDeps {
  * `route()`'s own `requireOrg` already refused the request otherwise — so a
  * missing row here means something in that chain broke, not that the
  * caller did anything wrong.
+ *
+ * Exported for other `completeGated` callers outside this router — the
+ * standup narration (§5) is the first, and every future one-shot completion
+ * caller needs the identical membership id for the same ledger column.
  */
-async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<MembershipId> {
+export async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<MembershipId> {
   return withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({ id: schema.memberships.id })

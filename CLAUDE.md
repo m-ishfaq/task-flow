@@ -294,10 +294,14 @@ assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-be
 Wave 3 (sprint planning tools) and §4.3's last item (`chat.post_message`) have since shipped too —
 see their own sections below. That closes §4.3's entire wave order. `docs.create_page` — §4.1's
 table named it, no wave scheduled it — has also shipped (title-only page creation; see its own
-section). §5 (the standup view), §6's actual bootstrap FLOW (the tool it will call already
-exists), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and §8
-(onboarding/offboarding automation) remain exactly as drafted in
-`ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
+section), and so has the assistant's own missing frontend (`apps/web/src/features/ai`), found
+while building §6. **This paragraph itself went stale the same way PLAN.md's roadmap table and
+`ai/phase-7-voice.md`'s status header already did, for the identical reason: §5 (the standup
+view), §6 (new-org Docs bootstrap) and §8 (onboarding/offboarding automation, a real six-of-ten
+subset) shipped in later passes and this paragraph was never revisited to say so** — see each
+one's own section below for what actually shipped and, for §8, what was deliberately left out and
+why. Only §7 (GitHub PR review — its own spec flags this as needing a separate review pass) still
+remains exactly as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -1020,6 +1024,68 @@ above — a form was the correct, testable choice instead) **and any org-level "
 offered" record** — the offer can, on purpose, be shown again for the same org in a different tab
 or after clearing site data, which is the accepted cost of §6 being genuinely stateless rather
 than a wizard with a completion flag.
+
+### Phase 15 §5 — the standup view (SHIPPED)
+
+`apps/api/src/standup` · `apps/web/src/features/standup`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §5 ("a new
+screen, not a new subsystem — assembles data that already exists").
+
+**`query` floors on `project:read`, not `analytics:read` — a standup is a daily ritual every
+project member should reach, not an Admin/Owner-only report.** `standup.service.ts`'s own header
+states this explicitly: Analytics's floor is deliberately narrow because it answers a management
+question; a standup answers "what is my team doing right now", which every Member holding
+`project:read` by role already needs to see the board at all. `router.test.ts` proves the
+difference between the two enforcement LAYERS this produces for the identical `guest` refusal —
+the ROUTE floor (`route({ permission: 'project:read' })`, a plain role check that never reaches
+the handler) answers FORBIDDEN, while `queryStandup`'s own resource-aware `enforceOn` check,
+exercised directly in `standup.service.test.ts`, answers NOT_FOUND for the same guest calling the
+service layer beneath it — `enforceOn`'s `denialFor` returning the "reveals less" answer when the
+permission failing is the read permission itself. Neither test's expectation transfers to the
+other layer; each is right for what it actually measures.
+
+**Narration is one `completeGated` call, not the §4 tool-calling loop — there is nothing for the
+model to DO here, only text to produce from data the server already assembled.** `narrate.ts`
+calls `queryStandup` itself and serializes the result as the user turn; §2's own `complete.ts`
+doc comment had already anticipated `'standup'` as a feature name before this section existed,
+which is what confirmed the one-shot design was the intended shape rather than an improvised
+shortcut around the loop.
+
+**`narrate` never accepts a client-supplied "standup data" blob to summarize — it re-runs
+`queryStandup` itself, under the same two gates (`ai:use` + `aiAssistant`) `query` alone does
+not need.** A route that trusted the caller's own copy of the standup would let anyone type up a
+JSON payload for a project they cannot read and have the assistant narrate it back to them,
+defeating `query`'s own floor from one route over. `router.test.ts`'s end-to-end case (a stubbed
+`fetch`, mirroring `ai/router.test.ts`'s own pattern for the identical reason —
+`AnthropicProvider` speaks raw `fetch`, no SDK) asserts the resulting ledger row carries
+`feature: 'standup'`, not a generic `chat` label, so a spend report can tell the two apart.
+
+**The frontend reuses the real board card-detail panel wholesale, reached without a board in
+hand — not three rebuilt sections.** §5's own text names `card.move`/`card.assign` as "the
+existing mutation path, just reachable from a standup-shaped screen instead of the board view."
+Every other caller of `CardDetailPanel` already knows the card's `boardId` because it opened the
+panel FROM that board; a standup row has only a card id. `card-quick-view.tsx` closes that one
+gap — fetch the card once to learn its `boardId`/`projectId`, then mount the identical
+`CardDetailPanel` the board uses — rather than re-implementing assignee, priority and location
+controls a second time. Every mutation a person makes from the standup view is therefore the
+exact same `cards.assign`/`cards.update`/`cards.move` call, with the exact same `can()` check and
+the exact same domain event, that a click on the board would have made; the panel closing
+invalidates the standup view's own cache entry (scoped to that project, not the whole `projects`
+branch other unrelated queries share) so the buckets reflect whatever just changed.
+
+**The "Narrate" control is gated inline, on the button itself, never at the route.** Unlike
+`/analytics` and `/assistant`, which wrap their entire page in `CapabilityGate`/`FeatureGate`
+because their whole surface is Admin-and-Owner-or-plan-gated, `/projects/$projectId/standup` gates
+nothing at the route — every project member who can already open the board can already open this
+page. Only `narrate`'s two additional gates (`ai:use`, `aiAssistant`) are checked client-side, and
+only to decide whether the button renders at all, per Phase 15 §1's "hide, don't disable" rule; a
+Member without either simply does not see the button, and the server re-checks both regardless of
+what the client decided.
+
+**Deliberately not built: an emailed copy of the standup**, per §5's own text ("no email report
+as the primary surface... an optional emailed copy can reuse the existing notification-mail path
+later if wanted, but is not required for this wave") — a real, explicitly named deferral, not an
+oversight.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

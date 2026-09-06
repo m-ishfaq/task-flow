@@ -1,0 +1,115 @@
+import { z } from 'zod';
+import { ProjectIdSchema, type KeyProvider } from '@taskflow/contracts';
+import { route, router } from '../trpc/builder.js';
+import { subjectOf } from '../trpc/context.js';
+import type { WorkActor } from '../work/shared.js';
+import { queryStandup } from './standup.service.js';
+import { narrateStandup } from './narrate.js';
+
+/**
+ * The standup view (ai/phase-15-ai-copilot-and-permissions.md §5).
+ *
+ * `query` floors on `project:read`, not `analytics:read` — see
+ * `standup.service.ts`'s own header for why this is a daily team surface,
+ * not an admin report. `narrate` floors on `ai:use` + `aiAssistant`
+ * additionally, the identical two-gate shape `ai.chat.send` already uses
+ * (§2.4): whether this member may use the assistant AT ALL, and whether the
+ * org's plan includes it — both independent of, and in addition to,
+ * `queryStandup`'s own `project:read` check, which `narrate` re-runs itself
+ * by calling `queryStandup` rather than accepting a client-supplied blob of
+ * "standup data" to narrate. A route that trusted the client's own copy of
+ * this data would let a caller narrate cards belonging to a project they
+ * cannot read by simply typing the JSON themselves.
+ */
+
+const StandupInput = z
+  .object({
+    projectId: ProjectIdSchema,
+    /** Defaults to 24h — "since the last standup" for a daily meeting. */
+    sinceHours: z
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 14)
+      .optional(),
+  })
+  .strict();
+
+const StandupCard = z
+  .object({
+    cardId: z.string(),
+    reference: z.string(),
+    title: z.string(),
+    priority: z.string().nullable(),
+    dueDate: z.string().nullable(),
+  })
+  .strict();
+
+const StandupOutput = z
+  .object({
+    sprint: z
+      .object({ sprintId: z.string(), name: z.string(), endsOn: z.string() })
+      .strict()
+      .nullable(),
+    urgentSprintCards: z.array(StandupCard).readonly(),
+    members: z
+      .array(
+        z
+          .object({
+            userId: z.string(),
+            name: z.string().nullable(),
+            recentlyDone: z.array(StandupCard).readonly(),
+            stillOpen: z.array(StandupCard).readonly(),
+            overdue: z.array(StandupCard).readonly(),
+          })
+          .strict(),
+      )
+      .readonly(),
+  })
+  .strict();
+
+export interface StandupRouterDeps {
+  readonly keys: KeyProvider;
+}
+
+export function createStandupRouter(deps: StandupRouterDeps) {
+  const actorOf = (ctx: {
+    principal: Parameters<typeof subjectOf>[0];
+    requestId: WorkActor['requestId'];
+  }): WorkActor => ({ subject: subjectOf(ctx.principal), requestId: ctx.requestId });
+
+  return router({
+    query: route({ permission: 'project:read' })
+      .input(StandupInput)
+      .output(StandupOutput)
+      .query(({ input, ctx }) =>
+        queryStandup(actorOf(ctx), {
+          projectId: input.projectId,
+          ...(input.sinceHours === undefined ? {} : { sinceHours: input.sinceHours }),
+        }),
+      ),
+
+    narrate: route({
+      permission: 'ai:use',
+      feature: { flag: 'aiAssistant', display: 'AI Assistant' },
+    })
+      .input(StandupInput)
+      .output(z.object({ summary: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const actor = actorOf(ctx);
+        const standup = await queryStandup(actor, {
+          projectId: input.projectId,
+          ...(input.sinceHours === undefined ? {} : { sinceHours: input.sinceHours }),
+        });
+        return narrateStandup(
+          deps,
+          {
+            orgId: ctx.principal.org.orgId,
+            userId: ctx.principal.userId,
+            requestId: ctx.requestId,
+          },
+          standup,
+        );
+      }),
+  });
+}
