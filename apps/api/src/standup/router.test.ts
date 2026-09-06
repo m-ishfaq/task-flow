@@ -269,14 +269,27 @@ describe('standup.narrate', () => {
       isDefault: true,
     });
 
+    /* No cards exist for this fresh project, so `standup.members` is empty
+       and `narrate.ts` asks the model to call the tool with a matching
+       empty `lines` array — the stub mirrors Anthropic's real `tool_use`
+       content-block shape (`packages/ai/src/anthropic.ts`'s own
+       `AnthropicContentBlock`), not a plain-text response, since the route
+       now REQUIRES the model to answer through the tool. */
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
         Promise.resolve(
           new Response(
             JSON.stringify({
-              content: [{ type: 'text', text: 'Nobody has any cards yet.' }],
-              stop_reason: 'end_turn',
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_standup_router_test',
+                  name: 'emit_standup_lines',
+                  input: { lines: [] },
+                },
+              ],
+              stop_reason: 'tool_use',
               usage: { input_tokens: 40, output_tokens: 8 },
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
@@ -289,7 +302,7 @@ describe('standup.narrate', () => {
     const caller = callerFactory(context);
 
     const result = await caller.standup.narrate({ projectId: project.projectId });
-    expect(result.summary).toBe('Nobody has any cards yet.');
+    expect(result.lines).toEqual([]);
 
     await admin.setOrg(orgId);
     const ledgerRows = await admin.query(`SELECT feature FROM ai.usage_ledger WHERE org_id = $1`, [

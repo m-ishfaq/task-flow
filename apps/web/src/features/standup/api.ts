@@ -27,14 +27,23 @@ export function standupQuery(orgId: string, projectId: ProjectId, sinceHours = 2
   });
 }
 
+export interface StandupNarrationLine {
+  readonly userId: string;
+  readonly line: string;
+}
+
 /**
  * Narration is a mutation, not a query — it is a priced, budget-gated
  * completion (`completeGated`), not an idempotent read, so a component must
  * ask for it explicitly rather than have it fire on mount or refetch.
+ *
+ * One line per member (`lines`), not a single prose paragraph — the route
+ * forces the model's answer through a tool call rather than trusting free
+ * text to come back in any particular shape (`narrate.ts`'s own header).
  */
 export async function narrateStandup(
   projectId: ProjectId,
   sinceHours: number,
-): Promise<{ readonly summary: string }> {
+): Promise<{ readonly lines: readonly StandupNarrationLine[] }> {
   return api.standup.narrate.mutate({ projectId, sinceHours });
 }

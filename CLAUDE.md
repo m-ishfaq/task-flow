@@ -1091,6 +1091,45 @@ defeating `query`'s own floor from one route over. `router.test.ts`'s end-to-end
 `AnthropicProvider` speaks raw `fetch`, no SDK) asserts the resulting ledger row carries
 `feature: 'standup'`, not a generic `chat` label, so a spend report can tell the two apart.
 
+**Redesigned the same day it first rendered against real data — both halves of the original
+version looked correct in isolation and were genuinely unusable together.** The first cut asked
+the model for "one paragraph, plain sentences, one per person" and rendered whatever text came
+back verbatim; against ~15 real members that was one run-on paragraph with no visual seams
+between people, exactly as loosely as it sounds — nothing about a text completion GUARANTEES the
+shape a prose instruction asks for. And the page itself rendered every member's full three-bucket
+grid always expanded, one full-width section per person: since "Done recently" and "Overdue" are
+usually empty, that squeezed "Still open" (often 8-13 cards) into a third of the width and
+truncated every title into an unreadable fragment, for a page ~15 sections tall.
+
+**The fix for the narration is `AiCompletionRequest.tools` — already built for §4's tool-calling
+loop — reused here as a one-tool "response schema," not free text.** `narrate.ts`'s
+`emit_standup_lines` tool takes `{ lines: [{ userId, line }] }`; `stopReason !== 'tool_use'` is
+treated as the model declining to comply and throws, never a silent fallback to raw prose — the
+identical "have the model return real structured data" decision this file's own §2+§3 section
+already documents for the AI provider abstraction generally, applied here for the first time to
+an actual caller. Classification (who has overdue work, who has nothing) stays entirely
+DETERMINISTIC — computed server-side from the real buckets `queryStandup` already assembled,
+never something asked of the model — the model's only job is one short sentence per person it is
+already given the id for. A member the model omits gets a computed fallback line
+(`fallbackLineFor`, e.g. "2 overdue, 1 still open.") rather than silently vanishing from the
+summary; a duplicate id resolves to the LAST line named, the same "later wins" rule this codebase
+uses for every other last-write-in-a-batch shape. `linesFromCompletion` is the pure parse/merge
+half, exported specifically so `narrate.test.ts` can prove the merge-with-fallback and
+malformed-input cases directly against a hand-built `AiCompletionResult` — fast, no database —
+while `router.test.ts`'s existing end-to-end case still proves the real wiring (a stubbed `fetch`
+answering with Anthropic's actual `tool_use` content-block shape, not a plain-text one).
+
+**The fix for the page is collapsing every member to a name-plus-counts row by default, never
+merging or hiding anyone regardless of activity.** `MemberRow` opens to the identical
+three-bucket layout the first version always showed, now with the whole page width to itself
+instead of a third of it shared with fourteen other people's sections. The count badges
+(`CountBadge`) dim to near-invisible at zero rather than always drawing the eye, so a scan of the
+collapsed list answers "who has overdue work" without opening anything. Explicitly NOT done,
+by direct instruction after the redesign was scoped as options: sorting members by urgency or
+folding anyone with nothing noteworthy into a shared "no updates" group — every project member
+keeps their own row in the order `queryStandup` returns them, on the reasoning that a standup is
+a roll call, and an ordinary day is not a reason to skip someone.
+
 **The frontend reuses the real board card-detail panel wholesale, reached without a board in
 hand — not three rebuilt sections.** §5's own text names `card.move`/`card.assign` as "the
 existing mutation path, just reachable from a standup-shaped screen instead of the board view."

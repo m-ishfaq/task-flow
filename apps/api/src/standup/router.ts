@@ -19,7 +19,10 @@ import { narrateStandup } from './narrate.js';
  * by calling `queryStandup` rather than accepting a client-supplied blob of
  * "standup data" to narrate. A route that trusted the client's own copy of
  * this data would let a caller narrate cards belonging to a project they
- * cannot read by simply typing the JSON themselves.
+ * cannot read by simply typing the JSON themselves. `narrate`'s output is
+ * one line per member (`lines`), not a single prose paragraph — see
+ * `narrate.ts`'s own header on why that shape is forced through a tool
+ * call rather than trusted to a text completion's own formatting habits.
  */
 
 const StandupInput = z
@@ -94,7 +97,11 @@ export function createStandupRouter(deps: StandupRouterDeps) {
       feature: { flag: 'aiAssistant', display: 'AI Assistant' },
     })
       .input(StandupInput)
-      .output(z.object({ summary: z.string() }))
+      .output(
+        z.object({
+          lines: z.array(z.object({ userId: z.string(), line: z.string() }).strict()).readonly(),
+        }),
+      )
       .mutation(async ({ input, ctx }) => {
         const actor = actorOf(ctx);
         const standup = await queryStandup(actor, {
