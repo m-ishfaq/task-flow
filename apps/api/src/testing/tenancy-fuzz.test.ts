@@ -550,6 +550,12 @@ describe('the application router', () => {
       'tenancy.memberGrants.list',
       'tenancy.members.list',
       'tenancy.orgs.get',
+      /* Same shape as `tenancy.memberGrants.list` above — the org's
+         role-default-grant bundle (Phase 15 — "§8's four deferred items,
+         closed"), read via `ctx.principal.org.orgId` alone, no id this
+         technique could substitute. Route added without this entry; found
+         by CI, not by the wave that shipped the route. */
+      'tenancy.roleDefaultGrants.list',
       'tenancy.teams.list',
     ]);
   });
