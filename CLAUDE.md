@@ -2418,6 +2418,39 @@ refused under this codebase's strict tsconfig, the identical trap `apps/web`'s o
 is the same: build the object conditionally so the key is ABSENT when unset, never
 present-with-`undefined`.
 
+### Two bugs CI found on PR #134, neither caused by §7 (fixed in place)
+
+Both surfaced from the CI run §7 Wave 2's own push triggered, not from anything Wave 1 or Wave 2
+changed — pre-existing, unrelated to GitHub/PR work, fixed because this PR's author is responsible
+for its CI regardless of which change exposed the failure.
+
+**`chat_post_message`'s `dmUserIds` path failed "Not found." on every call, whether the DM was new
+or already existed.** `openDirectMessage` writes a fresh membership tuple when it opens a DM, but
+`chat.ts`'s `execute()` kept calling `sendMessage` with the same `ToolContext.subject` snapshot
+captured before the tool ran — so `actor.subject.tuples` never reflected the tuple `openDirectMessage`
+had just written. A DM is a CLOSED authorization target (`chat/shared.ts`'s `isClosedChannel`), and
+`decide.ts`'s own rule for a closed target is an unconditional deny when no applicable tuple is
+found — not even an Owner/Admin bypass reaches it — so the very next `sendMessage` in the same tool
+call was refused on the channel the caller had just been added to. Fixed by reloading tuples via
+`loadTuples(orgId, userId)` (`tenancy/resolve.ts`, the same function `chat/membership.ts` already
+uses) immediately after `openDirectMessage` returns, before building the `actor` passed to
+`sendMessage`.
+
+**`orgs_self_read` (identity.orgs' RLS policy, migration 0004) still hard-coded `m.status =
+'active'`, silently reintroducing a bug the app layer had already fixed once.** `org.service.ts`'s
+`listMyOrgs` was earlier corrected to report a suspended membership rather than omitting it (this
+file's own Phase 3 section: "narrowing to 'active' used to happen here... a suspended membership
+was indistinguishable from no membership at all") — but that function's `INNER JOIN` against
+`identity.orgs` runs inside `withUserScope`, where `orgs_self_read` is what actually admits the org
+row, and the policy itself was never updated to match. A suspended membership's org row stayed
+invisible under RLS regardless of what the app-level query intended, so the join silently dropped
+it and the fix never took effect end-to-end — caught only by CI running the real test against real
+Postgres, not by anything a mocked check could see. Migration 0104 widens the policy's `EXISTS` to
+`m.status IN ('active', 'suspended')`. `resolveOrgMembership` (`resolve.ts`) is unaffected by the
+widening: it throws `membershipSuspended()` on a non-active membership before it ever queries
+`identity.orgs`, so this only changes the one caller, `listMyOrgs`, that genuinely needs to see a
+suspended membership's own org row.
+
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 
