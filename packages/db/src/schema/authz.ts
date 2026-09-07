@@ -115,3 +115,43 @@ export const memberGrants = authz.table(
       .where(sql`revoked_at IS NULL`),
   ],
 );
+
+/**
+ * Role default grants (migration 0103, Phase 15 §8 checklist item 3).
+ *
+ * A THIRD mechanism, not `memberGrants` reused with a null membership: this
+ * table is a CONFIGURATION TEMPLATE ("what does a new Member get by
+ * default"), read only by `member_grant.apply_role_defaults` (the
+ * automation action) to decide which real `memberGrants` rows to stamp for
+ * one specific member — it is never itself consulted by `can()`. Real
+ * DELETE, unlike `memberGrants`' `revokedAt`: this has no history to
+ * preserve, it is standing config, the same shape `platform.flagOverrides`
+ * already has. See the migration's own header for the full reasoning.
+ */
+export const roleDefaultGrants = authz.table(
+  'role_default_grants',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    /** One of ROLES from @taskflow/policy — CHECK-constrained (migration 0103). */
+    role: text('role').notNull(),
+
+    /**
+     * One of PERMISSIONS from @taskflow/policy. Which permissions are
+     * ELIGIBLE for a role's default bundle is enforced in
+     * `apps/api/src/tenancy/role-default-grant.service.ts`, not by a CHECK
+     * here — the identical `memberGrants.permission` reasoning.
+     */
+    permission: text('permission').notNull(),
+
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('role_default_grants_unique').on(table.orgId, table.role, table.permission),
+    index('role_default_grants_role_idx').on(table.orgId, table.role),
+  ],
+);

@@ -255,6 +255,27 @@ describe('card.create (§8 checklist item 1 — onboarding starter cards)', () =
   });
 });
 
+describe('member_grant.apply_role_defaults (§8 checklist item 3 — the role default grant bundle)', () => {
+  it('labels it, with no arguments at all', () => {
+    expect(ACTION_LABELS['member_grant.apply_role_defaults']).toBe(
+      "Give them their role's default permissions",
+    );
+    expect(ARGUMENTS['member_grant.apply_role_defaults']).toEqual([]);
+  });
+
+  it('seeds a blank draft with no fields', () => {
+    expect(blankAction('member_grant.apply_role_defaults').value).toEqual({
+      type: 'member_grant.apply_role_defaults',
+    });
+  });
+
+  it('offers it unconditionally — no deployment flag, unlike telephony', () => {
+    expect(offeredActions(false).map(([type]) => type)).toContain(
+      'member_grant.apply_role_defaults',
+    );
+  });
+});
+
 describe('vocabulary invariants', () => {
   it('has an ARGUMENTS entry for every label, and a label for every argument entry', () => {
     /* Every entry in one table missing from the other is an action that is

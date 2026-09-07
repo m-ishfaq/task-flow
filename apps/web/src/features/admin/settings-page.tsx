@@ -39,6 +39,7 @@ import {
   membersQuery,
   memberGrantsQuery,
   orgDetailQuery,
+  roleDefaultGrantsQuery,
   type SettingsCapabilities,
 } from '../org/api.js';
 import { BillingSection } from './billing-section.js';
@@ -95,6 +96,7 @@ export function SettingsPage() {
       {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
       <MemberSection orgId={orgId} />
       {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
+      {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
       <TeamSection orgId={orgId} />
     </div>
   );
@@ -1121,6 +1123,134 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
 
       {revoke.isError && <ErrorText error={revoke.error} />}
       {bulkRevoke.isError && <ErrorText error={bulkRevoke.error} />}
+      {dialog}
+    </Section>
+  );
+}
+
+/**
+ * Only `member` and `guest` are configurable rows in the matrix below —
+ * `owner` and `admin` already hold every individually-grantable permission
+ * BY ROLE (`packages/policy`'s `ROLE_PERMISSIONS`), so a checkbox for
+ * either would be either always-checked-and-inert or a control that lies
+ * about what it does.
+ */
+const CONFIGURABLE_ROLES: readonly Role[] = ['member', 'guest'];
+
+/**
+ * A role's default permission bundle (Phase 15 §8 checklist item 3) — what
+ * `member_grant.apply_role_defaults` (a NEW AUTOMATION ACTION, not this
+ * section) applies to a member of that role, if and when an org builds a
+ * rule on "Someone joins the organization" that uses it. This section only
+ * edits the CONFIG; nothing here grants anything to anyone directly, which
+ * is why the description below says so explicitly — a checkbox in a
+ * "Permissions" area reads as an immediate grant unless told otherwise.
+ */
+function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
+  const queryClient = useQueryClient();
+  const roleGrants = useQuery(roleDefaultGrantsQuery(orgId));
+  const org = useQuery(orgDetailQuery(orgId));
+  const { guard, dialog } = useStepUp();
+
+  const capabilities: SettingsCapabilities = org.data?.capabilities ?? {
+    updateOrg: false,
+    inviteMember: false,
+    manageMembers: false,
+    removeMembers: false,
+    manageTeams: false,
+    createProject: false,
+    viewAnalytics: false,
+    viewAuditLog: false,
+    readPhoneNumbers: false,
+    placeCalls: false,
+    readCalls: false,
+    sendSms: false,
+    readSms: false,
+    manageAutomations: false,
+    manageWebhooks: false,
+    manageIntegrations: false,
+    createApiTokens: false,
+    revokeApiTokens: false,
+    viewBilling: false,
+    purchaseNumbers: false,
+    releaseNumbers: false,
+    manageSavedSearches: false,
+    readRecordings: false,
+    createSpace: false,
+    useAi: false,
+  };
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.roleDefaultGrants(orgId) });
+
+  const setGrant = useMutation({
+    mutationFn: (input: { readonly role: Role; readonly permission: string }) =>
+      api.tenancy.roleDefaultGrants.set.mutate(input),
+    onSuccess: refresh,
+    onError: (error, input) => {
+      guard(error, () => {
+        setGrant.mutate(input);
+      });
+    },
+  });
+
+  const removeGrant = useMutation({
+    mutationFn: (input: { readonly role: Role; readonly permission: string }) =>
+      api.tenancy.roleDefaultGrants.remove.mutate(input),
+    onSuccess: refresh,
+    onError: (error, input) => {
+      guard(error, () => {
+        removeGrant.mutate(input);
+      });
+    },
+  });
+
+  if (roleGrants.data === undefined) return null;
+
+  const granted = new Set(roleGrants.data.map((entry) => `${entry.role}:${entry.permission}`));
+  const permissions = [...GRANTABLE_PERMISSIONS];
+  const pending = setGrant.isPending || removeGrant.isPending;
+
+  return (
+    <Section
+      title="Role defaults"
+      count={roleGrants.data.length}
+      description="What a new Member or Guest gets automatically, if an automation rule on 'Someone joins the organization' uses it — this list configures the bundle, it does not grant anything by itself."
+    >
+      <div className="flex flex-col gap-5">
+        {CONFIGURABLE_ROLES.map((role) => (
+          <div key={role} className="flex flex-col gap-2">
+            <p className="text-xs font-medium capitalize text-ink">{role}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {permissions.map((permission) => {
+                const checked = granted.has(`${role}:${permission}`);
+                return (
+                  <button
+                    key={permission}
+                    type="button"
+                    disabled={!capabilities.manageMembers || pending}
+                    aria-pressed={checked}
+                    onClick={() => {
+                      if (checked) removeGrant.mutate({ role, permission });
+                      else setGrant.mutate({ role, permission });
+                    }}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60',
+                      checked
+                        ? 'border-accent/40 bg-accent/10 text-accent'
+                        : 'border-line/50 bg-surface text-ink-muted hover:bg-surface-hover',
+                    )}
+                  >
+                    {permission}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {setGrant.isError && <ErrorText error={setGrant.error} />}
+      {removeGrant.isError && <ErrorText error={removeGrant.error} />}
       {dialog}
     </Section>
   );

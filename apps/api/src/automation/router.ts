@@ -187,6 +187,10 @@ export function buildAutomationActionSchema(telephonyActionsEnabled: boolean) {
         title: z.string().trim().min(1).max(2_000),
       })
       .strict(),
+    /* §8 checklist item 3 — no arguments; see the worker's own
+       `AutomationAction` union for why (always the target's CURRENT role,
+       re-resolved at execution, never a role a rule author could type in). */
+    z.object({ type: z.literal('member_grant.apply_role_defaults') }).strict(),
     ...(telephonyActionsEnabled
       ? [
           z

@@ -16,6 +16,7 @@ import * as messages from '@taskflow/api/chat/messages';
 import * as channels from '@taskflow/api/chat/channels';
 import * as grants from '@taskflow/api/tenancy/grants';
 import * as memberGrants from '@taskflow/api/tenancy/member-grants';
+import * as roleDefaultGrants from '@taskflow/api/tenancy/role-default-grants';
 import * as sessions from '@taskflow/api/identity/sessions';
 import * as webhooks from '@taskflow/api/automation/webhooks';
 import * as integrationActions from '@taskflow/api/automation/integration-actions';
@@ -520,6 +521,41 @@ async function runAction(
         title: action.title,
         description: null,
       });
+      return;
+    }
+
+    case 'member_grant.apply_role_defaults': {
+      /* The target's role is RE-RESOLVED here, never trusted from the
+         trigger event's own `role` field — the identical "a demotion takes
+         effect immediately" reasoning `execute()`'s own re-resolution of
+         the RULE OWNER already gives one level up (§2 in this file's
+         header). A stale or rule-author-supplied role would let a rule
+         apply a bundle configured for a role the member does not actually
+         hold; the union has no field for one at all. */
+      const targetUserId = userIdOf(event);
+      const resolveMembership = deps.resolveMembership ?? resolveOrgMembership;
+      const target = await resolveMembership(targetUserId, actor.subject.orgId);
+      if (target === null) {
+        throw new Error('the target member is no longer an active member of this organization');
+      }
+
+      const permissions = await roleDefaultGrants.permissionsForRole(
+        actor.subject.orgId,
+        target.role,
+      );
+      /* Sequential, the same ordering discipline every action in this
+         registry keeps (§1's own build-order note) — a member with an
+         empty bundle configured (the common case, since most orgs never
+         set one) loops zero times and this is a no-op. `memberGrants.grant`
+         is itself idempotent, so re-running this action (a retried rule, or
+         two rules both applying defaults) never duplicates a grant. */
+      for (const permission of permissions) {
+        await memberGrants.grant(
+          actor.subject.orgId,
+          { userId: targetUserId, permission },
+          { userId: actor.subject.userId, requestId: actor.requestId },
+        );
+      }
       return;
     }
   }

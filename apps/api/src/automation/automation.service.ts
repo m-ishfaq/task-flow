@@ -127,7 +127,10 @@ export type AutomationActionInput =
   | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string }
   /* §8 checklist item 1 — see the worker's own `AutomationAction` for the
      full reasoning (a plain `createCard`, no template/cloning concept). */
-  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string }
+  /* §8 checklist item 3 — no arguments; see the worker's own
+     `AutomationAction` for why (always the target's own CURRENT role). */
+  | { readonly type: 'member_grant.apply_role_defaults' };
 
 /**
  * Events an action emits, for the save-time self-trigger check.
@@ -174,6 +177,7 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   'member_grant.revoke_all': ['member_grant.revoked'],
   'cards.bulk_reassign': ['card.bulk_reassigned'],
   'card.create': ['card.created'],
+  'member_grant.apply_role_defaults': ['member_grant.created'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;

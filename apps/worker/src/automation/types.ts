@@ -126,7 +126,15 @@ export type AutomationAction =
      no template/cloning concept here at all — a "starter checklist" of three
      cards is three `card.create` actions on one `member.added` rule, which
      the engine already supports (a rule may hold several actions). */
-  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string }
+  /* §8 checklist item 3 (the role default grant bundle, migration 0103) — no
+     arguments, the identical shape `identity.revoke_sessions` and
+     `member_grant.revoke_all` already have: it always applies the TARGET
+     member's own role's bundle (`userIdOf(event)` names the member,
+     `resolveMembership`'s own live row names their CURRENT role — never a
+     role a rule author could type in, which would let a rule grant a
+     bundle configured for a role the member does not actually hold). */
+  | { readonly type: 'member_grant.apply_role_defaults' };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -151,6 +159,7 @@ export const ACTION_TYPES = [
   'member_grant.revoke_all',
   'cards.bulk_reassign',
   'card.create',
+  'member_grant.apply_role_defaults',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

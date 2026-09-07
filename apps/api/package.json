@@ -30,6 +30,7 @@
     "./chat/channels": "./src/chat/channel.service.ts",
     "./tenancy/grants": "./src/tenancy/grant.service.ts",
     "./tenancy/member-grants": "./src/tenancy/member-grant.service.ts",
+    "./tenancy/role-default-grants": "./src/tenancy/role-default-grant.service.ts",
     "./identity/sessions": "./src/identity/identity.service.ts",
     "./automation/webhooks": "./src/automation/webhook.service.ts",
     "./automation/integration-actions": "./src/automation/integration-action.service.ts",

@@ -153,6 +153,8 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
      absent from `ARGUMENTS` below, so `EDITABLE_ACTION_TYPES` excludes it
      and "Edit" is refused on mobile for any rule holding one. */
   'card.create': 'Create a card',
+  /* §8 checklist item 3 — same DISPLAY-only treatment. */
+  'member_grant.apply_role_defaults': "Give them their role's default permissions",
 };
 
 /**

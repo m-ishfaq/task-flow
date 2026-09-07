@@ -135,6 +135,10 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
      of these on one `member.added` trigger to build a whole checklist, so
      there is no separate "template" concept anywhere in this vocabulary. */
   'card.create': 'Create a card',
+  /* §8 checklist item 3 — no arguments; always applies the target member's
+     own CURRENT role's bundle, configured in Settings, never a role picked
+     here. */
+  'member_grant.apply_role_defaults': "Give them their role's default permissions",
 };
 
 export type ActionValue =
@@ -183,7 +187,8 @@ export type ActionValue =
   | { readonly type: 'identity.revoke_sessions' }
   | { readonly type: 'member_grant.revoke_all' }
   | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string }
-  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string }
+  | { readonly type: 'member_grant.apply_role_defaults' };
 
 /**
  * How to EDIT each argument of each action.
@@ -313,6 +318,9 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
     { field: 'listId', label: 'List', kind: 'list' },
     { field: 'title', label: 'Title', kind: 'text' },
   ],
+  /* §8 checklist item 3 — no arguments, the same empty-list shape
+     `identity.revoke_sessions`/`member_grant.revoke_all` already have. */
+  'member_grant.apply_role_defaults': [],
 };
 
 /**
@@ -506,6 +514,8 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
       return { key: identity, value: { type: 'cards.bulk_reassign', toUserId: '' } };
     case 'card.create':
       return { key: identity, value: { type: 'card.create', listId: '', title: '' } };
+    case 'member_grant.apply_role_defaults':
+      return { key: identity, value: { type: 'member_grant.apply_role_defaults' } };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };
   }

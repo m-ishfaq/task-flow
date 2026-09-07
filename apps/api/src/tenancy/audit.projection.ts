@@ -91,6 +91,12 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      the same way `member.role_changed` does). */
   'member_grant.created': { type: 'member', key: 'userId' },
   'member_grant.revoked': { type: 'member', key: 'userId' },
+  /* Phase 15 §8 checklist item 3 — config, not a fact about one member (no
+     membershipId/userId in the payload at all), so this resolves to the ORG,
+     the same reasoning `member.ownership_transferred` above already gives
+     for a fact about the org's own standing rather than one person's. */
+  'role_default_grant.set': { type: 'org', key: 'orgId' },
+  'role_default_grant.removed': { type: 'org', key: 'orgId' },
 
   /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
      model: there is no `list` resource type, because a list is not

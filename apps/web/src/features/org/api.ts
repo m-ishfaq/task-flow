@@ -65,6 +65,14 @@ export function memberGrantsQuery(orgId: string) {
   });
 }
 
+/** One org's role default grant bundles (Phase 15 §8 checklist item 3). */
+export function roleDefaultGrantsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.roleDefaultGrants(orgId),
+    queryFn: async () => wire(await api.tenancy.roleDefaultGrants.list.query(undefined)),
+  });
+}
+
 export interface ExplainInput {
   readonly userId: string;
   readonly permission: string;

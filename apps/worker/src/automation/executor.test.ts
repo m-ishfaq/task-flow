@@ -360,3 +360,66 @@ describe('the executor — §8 onboarding/offboarding actions', () => {
     expect(results[0]?.error).toContain('no userId');
   });
 });
+
+/**
+ * §8 checklist item 3 (the role default grant bundle) — `member_grant.
+ * apply_role_defaults`. Unlike `docs.grant_space_access` etc. above, this
+ * action needs no in-executor `can()` check of its own: `memberGrants.grant`
+ * carries no per-resource authorization to bypass (it is org-level config,
+ * the identical reasoning `docs.grant_space_access`'s own comment gives for
+ * checking `member:manage` there — but here there is nothing FOR the rule
+ * owner to be refused doing, since applying a role's own configured bundle
+ * to a member of that role is not a capability distinct from configuring
+ * the bundle itself, which already sits behind `member:manage` at the
+ * `roleDefaultGrants.set` route). What this action DOES need, and what these
+ * tests cover without a database, is the target-resolution discipline every
+ * other §8 action already has.
+ */
+describe('the executor — §8 checklist item 3 (role default grants)', () => {
+  const admin = { orgId: ORG, role: 'admin' as const, tuples: [], memberGrants: [] };
+  const memberEvent: TriggerEvent = {
+    ...event,
+    name: 'member.added',
+    payload: { userId: '018f4d1e-7c3a-7b2e-8f1a-0000000000fd' },
+  };
+
+  it('fails when the target is no longer an active member — re-resolved independently of the rule owner', async () => {
+    const resolveMembership = vi
+      .fn()
+      .mockImplementation((userId: string) => Promise.resolve(userId === OWNER ? admin : null));
+    const executor = createActionExecutor({ resolveMembership });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.added',
+        actions: [{ type: 'member_grant.apply_role_defaults' }],
+      }),
+      event: memberEvent,
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('no longer an active member');
+    // Called for BOTH the owner and the target — two distinct people.
+    expect(resolveMembership).toHaveBeenCalledWith(OWNER, ORG);
+    expect(resolveMembership).toHaveBeenCalledWith(memberEvent.payload['userId'], ORG);
+  });
+
+  it('fails cleanly when the trigger carries no userId, the same discipline every other §8 action enforces', async () => {
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(admin),
+    });
+
+    const results = await executor.execute({
+      rule: rule({
+        triggerEvent: 'member.added',
+        actions: [{ type: 'member_grant.apply_role_defaults' }],
+      }),
+      event: { ...event, name: 'member.added', payload: {} },
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('no userId');
+  });
+});

@@ -8,6 +8,7 @@ import * as members from './member.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
 import * as memberGrants from './member-grant.service.js';
+import * as roleDefaultGrants from './role-default-grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 
@@ -341,6 +342,52 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .output(z.object({ revoked: z.literal(true) }))
         .mutation(({ input, ctx }) =>
           memberGrants.revoke(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+    }),
+
+    /**
+     * Role default grants (Phase 15 §8 checklist item 3) — one org's
+     * configuration of which individually-grantable permissions a role
+     * gets automatically, applied by the `member_grant.apply_role_defaults`
+     * automation action rather than by anything here. This is CONFIG, not
+     * itself a capability grant — see `role-default-grant.service.ts`'s own
+     * header for why it is a third mechanism rather than `memberGrants`
+     * reused with no membership.
+     */
+    roleDefaultGrants: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                grantId: z.string(),
+                role: z.string(),
+                permission: z.string(),
+                createdBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => roleDefaultGrants.list(ctx.principal.org.orgId)),
+
+      /**
+       * Step-up, same as `memberGrants.grant` above — a role's default
+       * bundle applies to every FUTURE member of that role, so the blast
+       * radius of a mistake here is broader than one individual grant.
+       */
+      set: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ role: z.string().max(30), permission: z.string().max(60) }).strict())
+        .output(z.object({ grantId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          roleDefaultGrants.set(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      remove: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ role: z.string().max(30), permission: z.string().max(60) }).strict())
+        .output(z.object({ removed: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          roleDefaultGrants.remove(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
     }),
 

@@ -100,6 +100,11 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
      layer exactly like every action above, so a rule triggered by
      `card.created` whose own action creates another card would feed itself. */
   'card.create': ['card.created'],
+  /* §8 checklist item 3 — loops the real `memberGrants.grant`, which emits
+     `member_grant.created` once per permission applied. Listed the same
+     conservative way `cards.bulk_reassign` lists its own single event: the
+     ACTION emits it, regardless of how many times the loop inside it runs. */
+  'member_grant.apply_role_defaults': ['member_grant.created'],
 };
 
 export interface DepthVerdict {

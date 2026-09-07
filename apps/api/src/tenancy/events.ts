@@ -205,6 +205,28 @@ export const memberGrantRevoked = defineEvent(
     .strict(),
 );
 
+/**
+ * Phase 15 §8 checklist item 3 — the role default grant bundle, migration
+ * 0103. Unlike `memberGrantCreated`/`memberGrantRevoked` above, these are not
+ * about one MEMBER — they are about org CONFIGURATION ("what does a new
+ * Member get by default"), so the payload names a `role`, never a
+ * `membershipId` or `userId`. `role-default-grant.service.ts`'s `set`/
+ * `remove` are the only writers.
+ */
+export const roleDefaultGrantSet = defineEvent(
+  'role_default_grant.set',
+  z
+    .object({ grantId: z.string(), orgId: z.string(), role: z.string(), permission: z.string() })
+    .strict(),
+);
+
+export const roleDefaultGrantRemoved = defineEvent(
+  'role_default_grant.removed',
+  z
+    .object({ grantId: z.string(), orgId: z.string(), role: z.string(), permission: z.string() })
+    .strict(),
+);
+
 /*
  * NOT HERE YET: `access.denied`.
  *

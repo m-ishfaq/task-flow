@@ -223,3 +223,34 @@ describe('the card.create action schema (§8 checklist item 1)', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * §8 checklist item 3 (the role default grant bundle) — `member_grant.
+ * apply_role_defaults`'s own schema. No arguments at all: it always applies
+ * the TARGET member's own current role's bundle, never a role or permission
+ * a rule author could name.
+ */
+describe('the member_grant.apply_role_defaults action schema (§8 checklist item 3)', () => {
+  it('admits the bare action regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const schema = buildAutomationActionSchema(enabled);
+      expect(schema.safeParse({ type: 'member_grant.apply_role_defaults' }).success).toBe(true);
+    }
+  });
+
+  it('refuses a role or permission field — a rule cannot name either', () => {
+    /* `.strict()` is the control, the identical reasoning the six §8 actions'
+       own "refuses a userId field" test already gives: a field a rule
+       author could set is a capability this action's own design exists to
+       deny. */
+    const schema = buildAutomationActionSchema(false);
+
+    expect(
+      schema.safeParse({ type: 'member_grant.apply_role_defaults', role: 'member' }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ type: 'member_grant.apply_role_defaults', permission: 'call:place' })
+        .success,
+    ).toBe(false);
+  });
+});
