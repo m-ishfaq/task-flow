@@ -4,8 +4,11 @@ import type { Logger } from '@taskflow/observability';
 import {
   dueDateChanged,
   planChannelDeliveries,
+  planManagerNotified,
+  planManagerNotifications,
   planNotifications,
   resolveActorLabels,
+  resolveManagerUserIds,
 } from './notification.projection.js';
 
 /**
@@ -330,6 +333,86 @@ describe('member.added — tenancy (migration 0071)', () => {
 
   it('survives a payload missing membershipId', () => {
     expect(planNotifications(row('member.added', { userId: BOB, role: 'member' }))).toEqual([]);
+  });
+});
+
+describe('member.report_joined — told to the manager (migration 0102, Phase 15 §8 item 2)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000063';
+  // row()'s own default orgId.
+  const ORG = '0195ee05-0000-7000-8000-00000000000a';
+  const base = { membershipId: MEMBERSHIP, userId: BOB, email: 'bob@example.com', role: 'member' };
+
+  it('tells the manager, naming the new member', () => {
+    const planned = planManagerNotified(row('member.added', base, ALICE), 'Bob Smith', CAROL);
+    expect(planned).toEqual([
+      {
+        userId: CAROL,
+        kind: 'member.report_joined',
+        subjectType: 'membership',
+        subjectId: MEMBERSHIP,
+        title: 'Bob Smith joined your team',
+        excerpt: null,
+        channelId: null,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('falls back to an anonymous title when the new member has no resolvable label', () => {
+    const planned = planManagerNotified(row('member.added', base, ALICE), null, CAROL);
+    expect(planned[0]?.title).toBe('A new member joined your team');
+  });
+
+  it('never tells a manager about their own action', () => {
+    // Carol both added Bob AND is Bob's manager — she should not get a
+    // second notification about the thing she just did.
+    expect(planManagerNotified(row('member.added', base, CAROL), 'Bob Smith', CAROL)).toEqual([]);
+  });
+
+  it('never tells a manager about themself — membership_profiles_no_self_report (migration 0031) says this cannot happen; kept as a guard anyway', () => {
+    expect(planManagerNotified(row('member.added', base, ALICE), 'Bob Smith', BOB)).toEqual([]);
+  });
+
+  it('survives a payload missing membershipId', () => {
+    expect(
+      planManagerNotified(row('member.added', { userId: BOB }, ALICE), 'Bob Smith', CAROL),
+    ).toEqual([]);
+  });
+
+  describe('planManagerNotifications — the batch-lookup wrapper', () => {
+    it('is a no-op for any event that is not member.added', () => {
+      expect(
+        planManagerNotifications(
+          row('card.assigned', { cardId: 'c', boardId: 'b', before: [], after: [BOB] }, ALICE),
+          new Map([[BOB, 'Bob Smith']]),
+          new Map([[`${ORG}:${BOB}`, CAROL]]),
+        ),
+      ).toEqual([]);
+    });
+
+    it('is a no-op when the target has no manager on record', () => {
+      expect(
+        planManagerNotifications(row('member.added', base, ALICE), new Map(), new Map()),
+      ).toEqual([]);
+    });
+
+    it('keys the manager lookup by org, not by user id alone', () => {
+      /* Same BOB id, a DIFFERENT org's key — proving a manager resolved for
+         one org cannot leak into another org's identical user id. */
+      const wrongOrgKey = new Map([[`0195ee05-0000-7000-8000-0000000000ff:${BOB}`, CAROL]]);
+      expect(
+        planManagerNotifications(row('member.added', base, ALICE), new Map(), wrongOrgKey),
+      ).toEqual([]);
+    });
+
+    it('resolves the new member label from the SAME actorLabels map drainNotifications already built', () => {
+      const planned = planManagerNotifications(
+        row('member.added', base, ALICE),
+        new Map([[BOB, 'Bob Smith']]),
+        new Map([[`${ORG}:${BOB}`, CAROL]]),
+      );
+      expect(planned[0]?.title).toBe('Bob Smith joined your team');
+    });
   });
 });
 
@@ -691,5 +774,68 @@ describe('resolveActorLabels — fails OPEN, never closed (migration 0087 resili
   it('never queries at all for an empty id list — the throwing tx would fail the test if it did', async () => {
     const labels = await resolveActorLabels(throwingTx(), []);
     expect(labels.size).toBe(0);
+  });
+});
+
+describe('resolveManagerUserIds — fails OPEN, never closed (migration 0102, same 0087/0088 resilience)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000064';
+  // row()'s own default orgId.
+  const ORG = '0195ee05-0000-7000-8000-00000000000a';
+  const memberAdded = (userId: string, actorId: string | null = ALICE) =>
+    row(
+      'member.added',
+      { membershipId: MEMBERSHIP, userId, email: 'x@example.com', role: 'member' },
+      actorId,
+    );
+
+  /* The identical fake-tx shape `resolveActorLabels`'s own tests above use —
+     see that describe block's header for why no real Postgres is involved. */
+  function throwingTx(): Parameters<typeof resolveManagerUserIds>[0] {
+    const chain = {
+      from: () => chain,
+      where: () => Promise.reject(new Error('permission denied for table membership_profiles')),
+    };
+    return { select: () => chain } as unknown as Parameters<typeof resolveManagerUserIds>[0];
+  }
+
+  it('returns an empty map instead of throwing when the underlying query rejects', async () => {
+    const managers = await resolveManagerUserIds(throwingTx(), [memberAdded(BOB)]);
+    expect(managers.size).toBe(0);
+  });
+
+  it('logs a warning through the optional logger, when one is given', async () => {
+    const warnings: unknown[] = [];
+    const logger = {
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+    } as unknown as Logger;
+
+    await resolveManagerUserIds(throwingTx(), [memberAdded(BOB)], logger);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('never queries at all when the batch has no member.added rows — the throwing tx would fail the test if it did', async () => {
+    const managers = await resolveManagerUserIds(throwingTx(), [
+      row('card.assigned', { cardId: 'c', boardId: 'b', before: [], after: [] }),
+    ]);
+    expect(managers.size).toBe(0);
+  });
+
+  it('keys resolved managers by org and user together, and drops a row with no manager on record', async () => {
+    const rows = [
+      { orgId: ORG, userId: BOB, managerUserId: CAROL },
+      { orgId: ORG, userId: CAROL, managerUserId: null },
+    ];
+    const chain = {
+      from: () => chain,
+      where: () => Promise.resolve(rows),
+    };
+    const tx = { select: () => chain } as unknown as Parameters<typeof resolveManagerUserIds>[0];
+
+    const managers = await resolveManagerUserIds(tx, [memberAdded(BOB), memberAdded(CAROL)]);
+
+    expect(managers.get(`${ORG}:${BOB}`)).toBe(CAROL);
+    expect(managers.has(`${ORG}:${CAROL}`)).toBe(false);
   });
 });
