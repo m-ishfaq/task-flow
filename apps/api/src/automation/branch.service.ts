@@ -4,6 +4,7 @@ import { eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { createEvent } from '@taskflow/events';
 import type { CardId } from '@taskflow/contracts';
 import { loadCard } from '../work/card.service.js';
+import { linkCardBranch } from '../work/card-branch.service.js';
 import { ancestorsOfCard, enforceOn, type WorkActor } from '../work/shared.js';
 import { connectedGithubRepo, type IntegrationDeps } from './integration.service.js';
 import { repoPath } from './integration-action.service.js';
@@ -41,6 +42,32 @@ import { integrationBranchCreated } from './integration-events.js';
  * branch to exist, and it already does; erroring on that would make a
  * retried confirmation (the same shape `linkCardPullRequest`'s own
  * idempotency exists for) fail for no reason.
+ *
+ * ## `branchName` is an override, not a second naming scheme
+ *
+ * The direct card-detail UI (`apps/web/src/features/work/detail/development-
+ * section.tsx`) needs "editable, prefilled with the deterministic default" —
+ * so a caller MAY pass `branchName`, which is run through the identical
+ * `slugify` the default already uses (never trusted as a literal git ref:
+ * arbitrary text becomes a real `POST .../git/refs` body) and used verbatim
+ * in place of the computed default. An override that slugifies to an empty
+ * string (someone clears the field entirely) falls back to the deterministic
+ * name rather than attempting to create a branch called `""`.
+ *
+ * ## The card→branch fact is recorded here, not by each caller separately
+ *
+ * `linkCardBranch` (`work/card-branch.service.ts`) is called from BOTH
+ * outcomes below — a freshly created ref and one that already existed —
+ * because either way the branch now IS this card's, and a caller (this
+ * service's own tRPC route, or the AI tool) should not have to remember to
+ * record that fact itself. Only the newly-created path also emits
+ * `integration.branch_created`; recording that GitHub event for a branch
+ * that already existed before this call would be a false "created" claim in
+ * a hash-chained log, the same discipline this file's own header already
+ * states for the create-vs-exists split itself. `card:update` is checked as
+ * part of loading the card, UP FRONT — before any GitHub call — so a caller
+ * who holds `repo:connect` but cannot edit THIS card is refused before a
+ * branch is created that nothing would ever record as belonging to it.
  */
 
 export type BranchWriteDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'>;
@@ -96,13 +123,28 @@ export interface CreatedBranch {
 export async function createBranchFromCard(
   actor: WorkActor,
   deps: BranchWriteDeps,
-  input: { readonly cardId: CardId; readonly repoScope?: string | undefined },
+  input: {
+    readonly cardId: CardId;
+    readonly repoScope?: string | undefined;
+    readonly branchName?: string | undefined;
+  },
 ): Promise<CreatedBranch> {
   assertMayConnect(actor);
 
   const { reference, title } = await withOrgScope(actor.subject.orgId, async (tx) => {
     const card = await loadCard(tx, input.cardId);
-    enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
+    /* `card:update`, not `card:read` — this call is always going to record a
+       card->branch link (see this file's own header), so failing here, before
+       any GitHub call, is what keeps a permission refusal from leaving an
+       orphan branch that nothing would ever record as belonging to this
+       card. */
+    enforceOn(
+      actor,
+      'card:update',
+      { type: 'card', id: input.cardId },
+      card,
+      ancestorsOfCard(card),
+    );
 
     const projects = await tx
       .select({ key: schema.projects.key })
@@ -120,13 +162,22 @@ export async function createBranchFromCard(
   const repo = repoPath(connector.providerScope);
   const headers = githubHeaders(connector.token);
 
-  const branchName = `${slugify(reference)}-${slugify(title)}`.replace(/-+$/, '');
+  const defaultBranchName = `${slugify(reference)}-${slugify(title)}`.replace(/-+$/, '');
+  const branchName =
+    input.branchName === undefined
+      ? defaultBranchName
+      : slugify(input.branchName).replace(/-+$/, '') || defaultBranchName;
 
   const existingRes = await fetchFn(
     `https://api.github.com/repos/${repo}/git/ref/heads/${encodeURIComponent(branchName)}`,
     { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
   );
   if (existingRes.ok) {
+    await linkCardBranch(actor, {
+      cardId: input.cardId,
+      providerScope: connector.providerScope,
+      branchName,
+    });
     return {
       branchName,
       alreadyExisted: true,
@@ -195,6 +246,12 @@ export async function createBranchFromCard(
         { orgId: actor.subject.orgId, actorId: actor.subject.userId, requestId: actor.requestId },
       ),
     ]);
+  });
+
+  await linkCardBranch(actor, {
+    cardId: input.cardId,
+    providerScope: connector.providerScope,
+    branchName,
   });
 
   return {

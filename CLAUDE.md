@@ -2617,6 +2617,95 @@ middle of a diff must still render as real context. `tool-results.tsx`'s `render
 `DiffView` in place of the old `<pre>`; a diff `parseUnifiedDiff` cannot recognize at all still
 falls back to the raw text, so nothing renders worse than before.
 
+### Phase 15 §7.2 — direct "create branch from card" UI, and a card identity bar (SHIPPED)
+
+`packages/db/migrations/0106_card_branches.*` · `apps/api/src/work/card-branch.service.ts` ·
+`apps/api/src/automation/branch.service.ts`'s `branchName` override · `apps/api/src/work/
+detail.router.ts`'s `branches:` block · `apps/web/src/features/work/detail/{card-identity-bar,
+development-section,branch-name}.tsx`. Prompted directly: a way to create a branch from a card
+without going through the assistant, with the name pre-filled and editable; then, separately, a
+request to show both the linked PR and the linked branch prominently next to the card's own id,
+each clickable in a new tab, with the id itself copyable "like ClickUp."
+
+**`create_branch_from_card` had shipped as an AI tool only — this is the same "shipped backend,
+no consumer for a person not talking to the assistant" gap this file's own account of this
+codebase's history already names for `card_link_pr`/`list_card_prs` before their own direct UI,
+and for `ai.chat.send` before `apps/web/src/features/ai` existed at all.** `createBranchFromCard`
+itself needed no new capability to be reachable directly — it already took a real `WorkActor` and
+`BranchWriteDeps` — so the fix is almost entirely wiring: a new `work.branches.create` tRPC
+mutation (`detail.router.ts`), floored on `repo:connect` since that is the org-level permission a
+route with no resource context can meaningfully check, with the resource-aware `card:update` check
+staying inside `createBranchFromCard` itself exactly as it already was for the AI tool's caller.
+
+**Until now, nothing recorded which branch belongs to which card at all — `createBranchFromCard`
+created a real GitHub ref and emitted `integration.branch_created`, and that was the entire
+record.** A person (or the assistant) asking "what's the branch for this card" a second time, in a
+different session, had no way to find out. Migration 0106's `work.card_branches` is modeled
+directly on 0105's `work.card_pull_requests` — a composite FK back to `work.cards(org_id, id)`
+so a link can never point at another tenant's card even if application code got it wrong, MANY on
+both sides for the same reason `card_pull_requests` is (a card can reasonably span more than one
+branch over its life; a branch name could in principle be reused after a card is deleted and
+recreated), and a second, PR-scope-first index for a reverse lookup a future feature might need.
+`card-branch.service.ts` (`listCardBranches`/`linkCardBranch`/`unlinkCardBranch`) is the identical
+shape `card-pull-request.service.ts` already established one entity type over — `card:read`/
+`card:update`, no second permission for the read/unlink half, idempotent inserts, its own
+`card.branch_linked`/`card.branch_unlinked` events mapped into the audit projection the same
+change that registers them (`{type: 'card', key: 'cardId'}`) — the exact gap CI had already caught
+once for Wave 2's `integration.pr_*` events, deliberately not repeated here.
+
+**`linkCardBranch` is called from INSIDE `createBranchFromCard`, in both outcomes, not left to
+each caller to remember.** A branch that already existed on GitHub still gets linked to the card —
+recording the association is the same intent whether GitHub had to create the ref or already had
+it — but only the newly-created path also emits `integration.branch_created`; recording that event
+for a branch GitHub did not actually create this call would be a false "created" claim in a
+hash-chained log, the identical discipline this file's own account of every other PR/branch write
+tool already states. The permission check inside `createBranchFromCard` was upgraded from
+`card:read` to `card:update` at the same time, checked while loading the card — BEFORE any GitHub
+call — so an actor who holds `repo:connect` but cannot update this specific card (a relationship
+tuple can restrict `card:update` on one board and not another) is refused before a branch is
+created that nothing would ever end up recording as belonging to it, rather than creating an
+orphan ref on GitHub and then failing to link it.
+
+**The pre-filled, editable name is a client-side computation, never a round trip.** The
+`<reference>-<slug>` default `branch.service.ts` already computes deterministically needed no new
+server capability to preview — `apps/web/src/features/work/detail/branch-name.ts` duplicates the
+identical `slugify`/join logic locally (the same trade `apps/mobile/src/lib/org-picker.ts`'s own
+`slugify` already accepts for not sharing code across the `apps/api`/`apps/web` boundary), used
+ONLY to show a live "will be created as…" preview beneath the input as a person types — the actual
+name is decided server-side regardless, by the SAME `slugify` `branch.service.ts` already runs on
+whatever text arrives, so drift between the two would be a cosmetic preview bug, never a
+correctness one. `createBranchFromCard` gained an optional `branchName` field: given, it is
+slugified and used verbatim in place of the deterministic default; an edit that slugifies to
+nothing (clearing the field, typing only punctuation) falls back to the default rather than
+attempting to create a branch literally named `""`.
+
+**The card identity bar (`card-identity-bar.tsx`) is a NEW header-level component, not an
+expansion of the existing "Pull requests" section — the two requests were different, and the fix
+for one is not the fix for the other.** "Create a branch, editable" is a WRITE workflow, real
+enough to need its own form, its own pending/error state, and enough room that it belongs in the
+panel body. "Show me what's already linked, prominently, next to the id" is a READ/navigation
+need, answered by a compact, always-visible row in the header — the same two queries
+(`cardPullRequestsQuery`/`cardBranchesQuery`) the body section already uses, React Query
+deduplicating by key so mounting both costs no extra request. `card-detail-panel.tsx`'s
+`ModalTitle` (the dialog's accessible name) is now `sr-only`: the identity bar already renders the
+reference as its own copy-button element, and painting the same text twice — once as the
+accessible-only heading, once as the visible copy button — would be pure duplication, not
+redundancy worth keeping.
+
+**The copyable reference button is `navigator.clipboard.writeText`, a local `copied` boolean, and
+a 1.5s timeout — no toast, no tooltip primitive, because this app has no `Tooltip` component to
+reach for.** A `Copy`/`Check` icon swap in place, styled as a small mono badge, is the entire
+feedback surface; it does not depend on `useToast` (reserved for mutation outcomes elsewhere in
+this file, not a plain client-side clipboard write that cannot itself fail in a way worth
+reporting).
+
+**Every chip — PR or branch — is a real `<a target="_blank" rel="noopener noreferrer">`, never a
+button that opens a new tab via `window.open`, and each carries its own icon (`GitPullRequest`/
+`GitBranch`) so the two are never confused at a glance the way an undifferentiated list could
+be.** This mirrors `tool-results.tsx`'s own precedent for the first renderer in that file linking
+outside TaskFlow entirely — nothing about a GitHub PR or branch has a real `apps/web` route to
+open with `<Link>`.
+
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 

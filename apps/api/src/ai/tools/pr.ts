@@ -440,19 +440,33 @@ export function createCardLinkPrTool(deps: PrReadDeps): ToolDefinition {
  * `apps/api/src/automation/branch.service.ts`).
  * -------------------------------------------------------------------------- */
 
-const CreateBranchInput = z.object({ cardId: CardIdSchema, ...RepoScopeField }).strict();
+const CreateBranchInput = z
+  .object({
+    cardId: CardIdSchema,
+    branchName: z.string().trim().min(1).max(200).optional(),
+    ...RepoScopeField,
+  })
+  .strict();
 
 export function createCreateBranchFromCardTool(deps: BranchWriteDeps): ToolDefinition {
   return defineTool({
     name: 'create_branch_from_card',
     description:
       'Creates a new git branch off the connected repository’s default branch, named after ' +
-      'the card (its reference and a slugified title, e.g. `web-142-fix-login-redirect`). If a ' +
-      'branch with that name already exists, reports that instead of creating a duplicate.',
+      'the card (its reference and a slugified title, e.g. `web-142-fix-login-redirect`) unless ' +
+      'the user names a different branch name — pass it as `branchName` and it will be ' +
+      'normalized into a valid git ref the same way the default is. If a branch with the final ' +
+      'name already exists, reports that instead of creating a duplicate.',
     jsonSchema: {
       type: 'object',
       properties: {
         cardId: { type: 'string', description: 'The card, from `find_card`.' },
+        branchName: {
+          type: 'string',
+          description:
+            'Optional. Only pass this if the user asked for a specific branch name — otherwise ' +
+            'omit it and the deterministic `<reference>-<slug>` default is used.',
+        },
         ...RepoScopeProperty,
       },
       required: ['cardId'],

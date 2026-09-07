@@ -219,6 +219,8 @@ export const keys = {
     ['org', orgId, 'card', cardId, 'attachments'] as const,
   cardPullRequests: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'pullRequests'] as const,
+  cardBranches: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'branches'] as const,
 
   labels: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'labels'] as const,

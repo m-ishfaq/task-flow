@@ -272,6 +272,15 @@ export function cardPullRequestsQuery(orgId: string, cardId: CardId) {
   });
 }
 
+/** The git branches linked to a card (ai/phase-15-ai-copilot-and-permissions.md
+    §7.2 — the direct, no-chat counterpart to `create_branch_from_card`). */
+export function cardBranchesQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardBranches(orgId, cardId),
+    queryFn: async () => wire(await api.work.branches.list.query({ cardId })),
+  });
+}
+
 /* -------------------------------------------------------------------------- *
  * Optimistic cache edits
  * -------------------------------------------------------------------------- */

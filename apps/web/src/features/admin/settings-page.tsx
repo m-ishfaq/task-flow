@@ -216,6 +216,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     readRecordings: false,
     createSpace: false,
     useAi: false,
+    createBranches: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -676,6 +677,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     readRecordings: false,
     createSpace: false,
     useAi: false,
+    createBranches: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });
@@ -1178,6 +1180,7 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
     readRecordings: false,
     createSpace: false,
     useAi: false,
+    createBranches: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.roleDefaultGrants(orgId) });

@@ -140,7 +140,16 @@ export function createAppRouter(deps: AppRouterDeps) {
      * the exception — object storage and the virus scanner are external
      * services with configuration and a lifecycle.
      */
-    work: createWorkRouter(deps.work),
+    work: createWorkRouter({
+      ...deps.work,
+      /* `createBranchFromCard`'s own dependency — the SAME KeyProvider
+         `deps.automation.keys` already wraps every other connector
+         credential under, not a second instance. Merged here rather than
+         folded into `WorkRouterDeps` itself, so `main.ts`'s own `deps.work`
+         construction (attachments only) does not need to know about a
+         connector this module reaches only through the composition root. */
+      branch: { keys: deps.automation.keys },
+    }),
 
     /**
      * Chat — channels, direct messages, messages (Phase 5).

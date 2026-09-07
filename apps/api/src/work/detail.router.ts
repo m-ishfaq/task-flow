@@ -19,8 +19,10 @@ import * as labels from './label.service.js';
 import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
 import * as pullRequests from './card-pull-request.service.js';
+import * as cardBranches from './card-branch.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
+import { createBranchFromCard, type BranchWriteDeps } from '../automation/branch.service.js';
 
 /**
  * Card detail routes — labels, statuses, checklists, custom fields, comments
@@ -53,7 +55,7 @@ const Color = z
   .transform((value) => value.toLowerCase())
   .pipe(z.string().regex(/^#[0-9a-f]{6}$/, 'Use a hex colour like #4f46e5.'));
 
-export function createCardDetailRouter() {
+export function createCardDetailRouter(deps: { readonly branch: BranchWriteDeps }) {
   /* The same construction as the Work router's. Built here rather than passed
      in, because threading it through would need a parameter type naming the
      tRPC context, and that is exactly the coupling `subjectOf` exists to
@@ -312,6 +314,71 @@ export function createCardDetailRouter() {
         )
         .output(z.object({ unlinked: z.boolean() }))
         .mutation(({ input, ctx }) => pullRequests.unlinkCardPullRequest(actor(ctx), input)),
+    }),
+
+    /**
+     * Git branches created from a card (ai/phase-15-ai-copilot-and-
+     * permissions.md §7.2 — previously assistant-only via `create_branch_
+     * from_card`; this is the direct, no-chat path). `list`/`unlink` are
+     * `card:read`/`card:update`, the identical shape `pullRequests` above
+     * uses — see `card-branch.service.ts`'s own header. `create`'s OUTER
+     * floor is `repo:connect` instead: unlike linking an already-known PR
+     * number, creating a branch is a real write against the connected repo
+     * itself (a fresh ref, visible to the whole GitHub org), so the coarser
+     * org-level permission that action needs is what a route with no
+     * resource context can meaningfully check — `createBranchFromCard`
+     * itself re-checks the resource-aware `card:update` internally before
+     * ever reaching GitHub (see that file's own header for why).
+     */
+    branches: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({ cardId: CardIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                providerScope: z.string(),
+                branchName: z.string(),
+                linkedBy: z.string().nullable(),
+                linkedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => cardBranches.listCardBranches(actor(ctx), input)),
+
+      create: route({ permission: 'repo:connect' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              repoScope: z.string().trim().min(1).max(200).optional(),
+              branchName: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            branchName: z.string(),
+            alreadyExisted: z.boolean(),
+            url: z.string(),
+            providerScope: z.string(),
+          }),
+        )
+        .mutation(({ input, ctx }) => createBranchFromCard(actor(ctx), deps.branch, input)),
+
+      unlink: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              branchName: z.string().trim().min(1).max(200),
+            })
+            .strict(),
+        )
+        .output(z.object({ unlinked: z.boolean() }))
+        .mutation(({ input, ctx }) => cardBranches.unlinkCardBranch(actor(ctx), input)),
     }),
 
     fields: router({

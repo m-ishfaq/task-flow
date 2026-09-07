@@ -26,6 +26,7 @@ import * as duplicate from './duplicate.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
+import type { BranchWriteDeps } from '../automation/branch.service.js';
 
 /**
  * Work routes (PLAN.md §13 phase 3).
@@ -240,7 +241,7 @@ export interface WorkRouterDeps {
   readonly attachments: AttachmentDeps;
 }
 
-export function createWorkRouter(deps: WorkRouterDeps) {
+export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: BranchWriteDeps }) {
   const actorOf = (ctx: {
     principal: Parameters<typeof subjectOf>[0];
     requestId: WorkActor['requestId'];
@@ -939,7 +940,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
      * keeps `work.labels.*` reachable at one dot-path while letting that
      * reasoning live next to the services it constrains.
      */
-    ...createCardDetailRouter()._def.record,
+    ...createCardDetailRouter({ branch: deps.branch })._def.record,
 
     /**
      * Attachments (§8.4).

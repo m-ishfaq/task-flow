@@ -263,6 +263,41 @@ async function prEvents(
   return result.rows as { name: string; payload: Record<string, unknown> }[];
 }
 
+/** The `card.branch_linked` events — this file's own header explains why
+    this is a SECOND event, separate from `integration.branch_created`: the
+    card-link fact is recorded in both the newly-created AND already-existed
+    paths, where the GitHub-creation event is recorded in neither of the
+    latter's cases. */
+async function branchLinkedEvents(
+  orgId: OrgId,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT name, payload FROM platform.outbox
+     WHERE org_id = $1 AND name = 'card.branch_linked' ORDER BY occurred_at`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  return result.rows as { name: string; payload: Record<string, unknown> }[];
+}
+
+async function cardBranchRows(
+  orgId: OrgId,
+  cardId: string,
+): Promise<{ providerScope: string; branchName: string }[]> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT provider_scope, branch_name FROM work.card_branches
+     WHERE org_id = $1 AND card_id = $2`,
+    [orgId, cardId],
+  );
+  await admin.setOrg(null);
+  return result.rows.map((row) => ({
+    providerScope: String(row['provider_scope']),
+    branchName: String(row['branch_name']),
+  }));
+}
+
 describe('createBranchFromCard', () => {
   it('creates a real branch, named deterministically from the card reference and title', async () => {
     const { owner } = await scaffold('create-ok');
@@ -281,9 +316,18 @@ describe('createBranchFromCard', () => {
     const events = await prEvents(owner.subject.orgId);
     expect(events).toHaveLength(1);
     expect(events[0]?.payload).toMatchObject({ cardId, branchName: result.branchName });
+
+    // The card->branch link is recorded too — this file's own header on why
+    // that's a second, distinct event from `integration.branch_created`.
+    expect(await cardBranchRows(owner.subject.orgId, cardId)).toEqual([
+      { providerScope: 'acme/todo', branchName: result.branchName },
+    ]);
+    const linked = await branchLinkedEvents(owner.subject.orgId);
+    expect(linked).toHaveLength(1);
+    expect(linked[0]?.payload).toMatchObject({ cardId, branchName: result.branchName });
   });
 
-  it('reports an existing branch back rather than treating it as a failure, and writes no event', async () => {
+  it('reports an existing branch back rather than treating it as a failure, writes no integration.branch_created event, but still records the card link', async () => {
     const { owner } = await scaffold('create-exists');
     const { cardId } = await seedCard(owner);
     const fake = fakeGithub({ refExists: true });
@@ -294,6 +338,43 @@ describe('createBranchFromCard', () => {
 
     expect(result.alreadyExisted).toBe(true);
     expect(await prEvents(owner.subject.orgId)).toEqual([]);
+
+    // Recording that this branch belongs to the card is the same intent
+    // whether GitHub had to create the ref or already had it.
+    expect(await cardBranchRows(owner.subject.orgId, cardId)).toEqual([
+      { providerScope: 'acme/todo', branchName: result.branchName },
+    ]);
+    expect(await branchLinkedEvents(owner.subject.orgId)).toHaveLength(1);
+  });
+
+  it('honours an explicit branchName override, normalized the same way the default is', async () => {
+    const { owner } = await scaffold('create-custom-name');
+    const { cardId } = await seedCard(owner);
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await createBranchFromCard(owner, deps, {
+      cardId,
+      branchName: 'Add Retry Logic!!',
+    });
+
+    expect(result.branchName).toBe('add-retry-logic');
+    expect(await cardBranchRows(owner.subject.orgId, cardId)).toEqual([
+      { providerScope: 'acme/todo', branchName: 'add-retry-logic' },
+    ]);
+  });
+
+  it('falls back to the deterministic default when the override slugifies to nothing', async () => {
+    const { owner } = await scaffold('create-blank-override');
+    const { cardId, reference } = await seedCard(owner);
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await createBranchFromCard(owner, deps, { cardId, branchName: '   !!!   ' });
+
+    expect(result.branchName).toBe(`${reference.toLowerCase()}-fix-login-redirect`);
   });
 
   it('refuses a member with no repo:connect grant, before any network call', async () => {

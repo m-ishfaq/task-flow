@@ -403,6 +403,17 @@ export interface SettingsCapabilities {
    * other, same as `/automations`'s nav item and its own plan flag).
    */
   readonly useAi: boolean;
+  /**
+   * The "Create branch" button on a card's Development section/header chips
+   * (ai/phase-15-ai-copilot-and-permissions.md §7.2) — `repo:connect`,
+   * individually granted exactly like `useAi` above (in
+   * `GRANTABLE_PERMISSIONS`, Owner/Admin by role). Gates the WRITE action
+   * only: the Development section's list of already-linked PRs/branches
+   * renders for anyone holding `card:read` regardless of this flag, the
+   * identical "reading is cheaper than writing" split `readPhoneNumbers`
+   * draws against `placeCalls`/`sms:send` above.
+   */
+  readonly createBranches: boolean;
 }
 
 export interface OrgDetail {
@@ -481,6 +492,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       readRecordings: can(subject, 'recording:read').allowed,
       createSpace: can(subject, 'space:create').allowed,
       useAi: can(subject, 'ai:use').allowed,
+      createBranches: can(subject, 'repo:connect').allowed,
     },
   };
 }

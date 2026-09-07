@@ -406,6 +406,30 @@ export const cardPullRequestUnlinked = defineEvent(
     .strict(),
 );
 
+export const cardBranchLinked = defineEvent(
+  'card.branch_linked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      branchName: z.string(),
+    })
+    .strict(),
+);
+
+export const cardBranchUnlinked = defineEvent(
+  'card.branch_unlinked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      branchName: z.string(),
+    })
+    .strict(),
+);
+
 export const checklistItemCreated = defineEvent(
   'checklist_item.created',
   z

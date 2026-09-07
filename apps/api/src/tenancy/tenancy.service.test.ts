@@ -221,6 +221,7 @@ describe('settings capabilities', () => {
       readRecordings: true,
       createSpace: true,
       useAi: true,
+      createBranches: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
@@ -255,6 +256,7 @@ describe('settings capabilities', () => {
       readRecordings: false,
       createSpace: false,
       useAi: false,
+      createBranches: false,
     });
   });
 
@@ -302,6 +304,7 @@ describe('settings capabilities', () => {
       readRecordings: true,
       createSpace: true,
       useAi: true,
+      createBranches: true,
     });
   });
 

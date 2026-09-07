@@ -166,6 +166,14 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      one this file's Phase 15 §7 Wave 2 section already documents once. */
   'card.pull_request_linked': { type: 'card', key: 'cardId' },
   'card.pull_request_unlinked': { type: 'card', key: 'cardId' },
+  /* The card<->branch link (migration 0106) — the identical `card.pull_
+     request_linked` shape directly above, one entity type over: the
+     resource is the CARD, not a `branch` type this schema has no concept
+     of. Added in the same change that registers the event, per the same
+     "every registered event is accounted for" test this file's own
+     `card.pull_request_linked` comment already names. */
+  'card.branch_linked': { type: 'card', key: 'cardId' },
+  'card.branch_unlinked': { type: 'card', key: 'cardId' },
   'checklist_item.created': { type: 'card', key: 'cardId' },
   'checklist_item.updated': { type: 'card', key: 'cardId' },
   'checklist_item.deleted': { type: 'card', key: 'cardId' },

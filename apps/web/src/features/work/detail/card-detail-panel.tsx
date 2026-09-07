@@ -22,7 +22,8 @@ import { CommentSection } from './comment-section.js';
 import { AttachmentSection } from './attachment-section.js';
 import { AssigneeSection } from './assignee-section.js';
 import { RecordingSection } from './recording-section.js';
-import { PullRequestSection } from './pull-request-section.js';
+import { DevelopmentSection } from './development-section.js';
+import { CardIdentityBar } from './card-identity-bar.js';
 
 /**
  * The card detail — a centred modal, not a side panel (`ai/phase-3.5-work-ux.md` §4.7).
@@ -76,8 +77,9 @@ export function CardDetailPanel({
   onClose,
 }: CardDetailPanelProps) {
   const card = useQuery(cardQuery(orgId, cardId));
-  const canReadRecordings =
-    useQuery(orgDetailQuery(orgId)).data?.capabilities.readRecordings === true;
+  const orgCapabilities = useQuery(orgDetailQuery(orgId)).data?.capabilities;
+  const canReadRecordings = orgCapabilities?.readRecordings === true;
+  const canCreateBranches = orgCapabilities?.createBranches === true;
 
   return (
     <ModalRoot
@@ -88,12 +90,16 @@ export function CardDetailPanel({
     >
       <ModalContent size="xl" className="flex max-h-[90vh] flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5">
-          {/* The card's identity line — the reference is what someone
-              pastes into a comment or a ticket, so it is medium-weight
-              rather than the faint it used to be. */}
-          <ModalTitle className="font-mono text-xs font-medium text-ink-muted">
-            {card.data?.reference ?? 'Card'}
-          </ModalTitle>
+          {/* `sr-only`: the VISIBLE identity line is `CardIdentityBar` below,
+              which already renders the reference (as a copy button) plus
+              every linked PR/branch — a second plain-text rendering of the
+              same reference right next to it would be pure duplication.
+              `ModalTitle` still needs real text content for the dialog's
+              accessible name, so it stays, just not painted. */}
+          <ModalTitle className="sr-only">{card.data?.reference ?? 'Card'}</ModalTitle>
+          {card.data && (
+            <CardIdentityBar orgId={orgId} cardId={cardId} reference={card.data.reference} />
+          )}
           {/* Not shown — the two-column body under it says everything a
               sighted user needs, and a visible sentence duplicating that
               would just be noise above the title field. */}
@@ -152,7 +158,13 @@ export function CardDetailPanel({
 
                 <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
                 <AttachmentSection orgId={orgId} cardId={cardId} />
-                <PullRequestSection orgId={orgId} cardId={cardId} />
+                <DevelopmentSection
+                  orgId={orgId}
+                  cardId={cardId}
+                  reference={card.data.reference}
+                  title={card.data.title}
+                  canCreateBranches={canCreateBranches}
+                />
                 {canReadRecordings && <RecordingSection orgId={orgId} cardId={cardId} />}
               </div>
 
