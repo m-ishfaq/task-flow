@@ -84,6 +84,8 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'analytics:read',
     'ai:use',
     'pr:view',
+    'pr:review',
+    'pr:merge',
   ],
 
   member: [

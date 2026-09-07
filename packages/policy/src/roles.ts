@@ -101,9 +101,11 @@ const ADMIN: readonly Permission[] = [
      promoting them to Admin grants `ai:use` individually instead. */
   'ai:use',
 
-  /* Phase 15 §7 Wave 1. Same tier as `ai:use` directly above — Owner/Admin
-     hold it by role, a Member only via an individual grant. */
+  /* Phase 15 §7. Same tier as `ai:use` directly above — Owner/Admin hold
+     these by role, a Member only via an individual grant. */
   'pr:view',
+  'pr:review',
+  'pr:merge',
 ];
 
 const MEMBER: readonly Permission[] = [

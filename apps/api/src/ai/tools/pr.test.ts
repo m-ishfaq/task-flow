@@ -14,7 +14,15 @@ import {
   type IntegrationDeps,
 } from '../../automation/integration.service.js';
 import type { AutomationActor } from '../../automation/automation.service.js';
-import { createGetPrCommentsTool, createGetPrDiffTool, createListPrsTool } from './pr.js';
+import {
+  createGetPrCommentsTool,
+  createGetPrDiffTool,
+  createListPrsTool,
+  createPrCloseTool,
+  createPrMergeTool,
+  createPrPostCommentTool,
+  createPrRequestChangesTool,
+} from './pr.js';
 import type { ToolContext } from './registry.js';
 
 /**
@@ -102,14 +110,17 @@ function integrationDeps(fetchImpl: typeof fetch): IntegrationDeps {
   };
 }
 
-/** A fake covering the GitHub connect flow plus one PR (#1) on `acme/todo`. */
+/** A fake covering the GitHub connect flow plus one PR (#1) on `acme/todo` —
+    reads AND writes. Matches on METHOD as well as URL, since a write's PATCH
+    to `/pulls/1` shares a URL shape with the read side's GET diff request. */
 function fakeGithub(): { fetch: typeof fetch } {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-  const fn = ((input: string | URL | Request) => {
+  const fn = ((input: string | URL | Request, init?: RequestInit) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const method = init?.method ?? 'GET';
 
     if (url === 'https://github.com/login/oauth/access_token') {
       return Promise.resolve(json({ access_token: 'gho_test' }));
@@ -118,7 +129,7 @@ function fakeGithub(): { fetch: typeof fetch } {
     if (url.startsWith('https://api.github.com/user/repos')) {
       return Promise.resolve(json([{ name: 'todo', full_name: 'acme/todo' }]));
     }
-    if (url.endsWith('/pulls/1')) {
+    if (method === 'GET' && url.endsWith('/pulls/1')) {
       return Promise.resolve(
         new Response('diff --git a/x b/x\n', {
           status: 200,
@@ -126,7 +137,7 @@ function fakeGithub(): { fetch: typeof fetch } {
         }),
       );
     }
-    if (url.includes('/pulls?')) {
+    if (method === 'GET' && url.includes('/pulls?')) {
       return Promise.resolve(
         json([
           {
@@ -144,7 +155,7 @@ function fakeGithub(): { fetch: typeof fetch } {
         ]),
       );
     }
-    if (url.includes('/issues/1/comments')) {
+    if (method === 'GET' && url.includes('/issues/1/comments')) {
       return Promise.resolve(
         json([
           {
@@ -157,8 +168,20 @@ function fakeGithub(): { fetch: typeof fetch } {
         ]),
       );
     }
-    if (url.includes('/pulls/1/comments')) return Promise.resolve(json([]));
-    throw new Error(`unexpected call: ${url}`);
+    if (method === 'GET' && url.includes('/pulls/1/comments')) return Promise.resolve(json([]));
+    if (method === 'POST' && url.includes('/issues/1/comments')) {
+      return Promise.resolve(json({ id: 501 }, 201));
+    }
+    if (method === 'POST' && url.endsWith('/pulls/1/reviews')) {
+      return Promise.resolve(json({ id: 502 }, 200));
+    }
+    if (method === 'PUT' && url.endsWith('/pulls/1/merge')) {
+      return Promise.resolve(json({ merged: true, sha: 'abc123' }, 200));
+    }
+    if (method === 'PATCH' && url.endsWith('/pulls/1')) {
+      return Promise.resolve(json({ state: 'closed' }, 200));
+    }
+    throw new Error(`unexpected call: ${method} ${url}`);
   }) as typeof fetch;
 
   return { fetch: fn };
@@ -185,6 +208,14 @@ describe('requiresConfirmation', () => {
     expect(createGetPrDiffTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrCommentsTool(deps).requiresConfirmation).toBe(false);
   });
+
+  it('is true for all four PR write tools, with no exceptions', () => {
+    const deps = integrationDeps(fakeGithub().fetch);
+    expect(createPrPostCommentTool(deps).requiresConfirmation).toBe(true);
+    expect(createPrRequestChangesTool(deps).requiresConfirmation).toBe(true);
+    expect(createPrMergeTool(deps).requiresConfirmation).toBe(true);
+    expect(createPrCloseTool(deps).requiresConfirmation).toBe(true);
+  });
 });
 
 describe('malformed input', () => {
@@ -200,15 +231,22 @@ describe('malformed input', () => {
   });
 });
 
-describe('a guest with no pr:view grant', () => {
-  it('gets an isError result, not a thrown error', async () => {
+describe('a guest with no pr:view/pr:review/pr:merge grant', () => {
+  it('gets an isError result, not a thrown error, for every PR tool', async () => {
     const orgId = await newOrg('pr-guest');
     const deps = integrationDeps(fakeGithub().fetch);
+    const ctx = guestCtx(orgId);
 
-    const result = await createListPrsTool(deps).execute(guestCtx(orgId), {});
-
-    expect(result.isError).toBe(true);
-    expect(result.content).toContain('permission');
+    for (const result of [
+      await createListPrsTool(deps).execute(ctx, {}),
+      await createPrPostCommentTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
+      await createPrRequestChangesTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
+      await createPrMergeTool(deps).execute(ctx, { prNumber: 1 }),
+      await createPrCloseTool(deps).execute(ctx, { prNumber: 1 }),
+    ]) {
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain('permission');
+    }
   });
 });
 
@@ -247,5 +285,60 @@ describe('success paths', () => {
     const parsed = JSON.parse(result.content) as { kind: string }[];
 
     expect(parsed).toEqual([expect.objectContaining({ kind: 'general', author: 'bob' })]);
+  });
+
+  it('pr_post_comment returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-post-comment-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrPostCommentTool(deps).execute(ctx, { prNumber: 1, body: 'lgtm' });
+    const parsed = JSON.parse(result.content) as { commentId: number; providerScope: string };
+
+    expect(parsed).toEqual({ commentId: 501, providerScope: 'acme/todo' });
+  });
+
+  it('pr_request_changes returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-request-changes-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrRequestChangesTool(deps).execute(ctx, {
+      prNumber: 1,
+      body: 'please fix x',
+    });
+    const parsed = JSON.parse(result.content) as { reviewId: number; providerScope: string };
+
+    expect(parsed).toEqual({ reviewId: 502, providerScope: 'acme/todo' });
+  });
+
+  it('pr_merge returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-merge-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrMergeTool(deps).execute(ctx, { prNumber: 1 });
+    const parsed = JSON.parse(result.content) as {
+      merged: boolean;
+      sha: string;
+      providerScope: string;
+    };
+
+    expect(parsed).toEqual({ merged: true, sha: 'abc123', providerScope: 'acme/todo' });
+  });
+
+  it('pr_close returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-close-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrCloseTool(deps).execute(ctx, { prNumber: 1 });
+    const parsed = JSON.parse(result.content) as { closed: boolean; providerScope: string };
+
+    expect(parsed).toEqual({ closed: true, providerScope: 'acme/todo' });
   });
 });

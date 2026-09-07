@@ -2349,7 +2349,74 @@ likewise the first renderer showing preformatted TEXT (a scrollable `<pre>`) rat
 structured list — a diff has no natural row-per-item shape the way every other tool result here
 does.
 
-### Phase 8 — Search & TQL (COMPLETE, all three waves)
+### Phase 15 §7 Wave 2 — PR write tools: comment, request changes, merge, close (SHIPPED)
+
+`apps/api/src/automation/pr-write.service.ts` · four new `integration.pr_*` events
+(`integration-events.ts`) · `apps/api/src/ai/tools/pr.ts`'s four write tools ·
+`apps/web/src/features/ai/tool-results.tsx`'s `prWriteRenderer` factory. Spec: same file, §7.2
+("post a review comment, request changes. Merge and close require the confirm step from §4.2").
+Closes the write half of §7's read/write split; still not built: the webhook trigger's
+payload-level filtering, the `work.card_pull_requests` link table, and "create a branch from this
+card" (`repo:connect`, still unregistered — no caller yet).
+
+**Two new permissions, not one, following the identical alone-with-its-own-caller precedent Wave 1
+used for `pr:view`.** `pr:review` (posting a comment, requesting changes) and `pr:merge` (merge,
+close) both land in this wave because both get real callers in it — unlike Wave 1, which shipped
+only `pr:view` because `pr:review`/`pr:merge` had no caller yet. Kept as TWO permissions rather than
+one, deliberately: an org can let one Member review PRs without letting them merge or close —
+reviewing is a normal part of contributing, merging is materially more consequential, and folding
+both into one permission would remove that distinction with no way to get it back short of a new
+migration. Both are `ORG_LEVEL_PERMISSIONS` and `GRANTABLE_PERMISSIONS`, Owner/Admin by role, same
+shape as `ai:use`/`pr:view`.
+
+**All four write tools require confirmation — including the two §7.2's own text never explicitly
+demanded it for.** §7.2 only names merge/close as needing "the confirm step from §4.2"; posting a
+comment or requesting changes could have been read as auto-executable. This registry has been here
+before: `chat_post_message` and `docs_create_page` both shipped confirmation-gated despite the
+spec's own text calling them "cheap to undo... can execute directly once permitted," on the
+reasoning that one uniform rule is simpler to reason about and audit than deciding tool-by-tool
+which risk is low enough to skip — and a PR comment is exactly the same shape as a chat message:
+visible to the whole GitHub org, and anyone subscribed, the instant it posts, read before a human
+could undo it. `pr.ts`'s own header states this explicitly rather than leaving it to be inferred
+from the diff.
+
+**Every write function checks its own permission, mirroring `integration-action.service.ts`'s
+`assertMayManage` exactly, for the identical reason `pr-read.service.ts`'s functions do: no tRPC
+route protects any of these, only the AI tool registry reaches them.** `postPrComment`/
+`requestPrChanges` check `pr:review`; `mergePr`/`closePr` check `pr:merge` — refused before any
+network call, the same "provider never reached" property this codebase proves for every gate.
+
+**Every event is written to the outbox AFTER GitHub's own effect succeeds, never before — identical
+discipline to `postSlackMessage`/`createGithubIssue`, and for the identical reason: the effect is on
+a platform this deployment does not control, so it cannot share the caller's own transaction the way
+a card mutation can, and an event claiming an effect that GitHub actually refused would be a false
+entry in a hash-chained log that can never be corrected.** Four new events —
+`integration.pr_comment_posted`, `integration.pr_review_submitted`, `integration.pr_merged`,
+`integration.pr_closed` — following `integration-events.ts`'s own "OUTBOUND effects" rule to the
+letter: no comment text, no review text, ever. A test in `pr-write.service.test.ts` asserts this
+directly (`expect(JSON.stringify(payload)).not.toContain('looks good')`) rather than trusting the
+schema alone, since a schema only proves the FIELD isn't declared, not that nobody ever widens it
+later without re-reading this rule.
+
+**Every function also returns `providerScope`, a real departure from how a card write tool
+behaves.** `card_update`/`card_assign`'s own renderers deliberately read `cardId` from the tool
+CALL's `input`, never the service's OUTPUT, specifically to avoid enriching four backend services
+just for a frontend convenience the model already gave them. A PR write tool cannot follow the same
+rule: `providerScope` (`owner/repo`) is resolved entirely server-side and never appears anywhere in
+the model's own input, so there is nothing for a renderer to read off the call — returning it is
+what makes a working `https://github.com/<scope>/pull/<n>` link possible at all, not optional
+enrichment. `prWriteRenderer(verb)` in `tool-results.tsx` is the shared factory reading `prNumber`
+from `call.input` (the model already has it, same as `cardWriteRenderer`) and `providerScope` from
+the result (the one field this tool family cannot get any other way).
+
+**`mergePr`'s Zod-optional `mergeMethod` field tripped `exactOptionalPropertyTypes` the first time
+it was wired into the tool's `execute()`.** Zod's own `.optional()` inference produces
+`mergeMethod?: T | undefined`, not merely "optional" — passing that object straight through to a
+service function whose own parameter declares `mergeMethod?: T` (no explicit `| undefined`) is
+refused under this codebase's strict tsconfig, the identical trap `apps/web`'s own
+`description={condition ? text : undefined}` pattern hits and the fix documented there for. The fix
+is the same: build the object conditionally so the key is ABSENT when unset, never
+present-with-`undefined`.
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).

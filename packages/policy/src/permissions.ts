@@ -179,20 +179,24 @@ export const PERMISSIONS = [
      uses for rule-building versus rule-execution. */
   'ai:use',
 
-  /* GitHub/PR integration (Phase 15 §7, Wave 1 — read-only tools only).
-     The full spec names four permissions (`pr:view`, `pr:review`, `pr:merge`,
-     `repo:connect`); this is the only one Wave 1 ships, because it is the
-     only one with a caller yet. `pr:review`/`pr:merge`/`repo:connect` gate
-     write tools and a branch-creation action that do not exist until a later
-     wave — registering them now, ahead of any code that checks them, is
-     exactly the "flag/permission registered ahead of its first caller, then
-     nobody comes back to wire it" gap this codebase has already hit twice
+  /* GitHub/PR integration (Phase 15 §7). The full spec names four
+     permissions (`pr:view`, `pr:review`, `pr:merge`, `repo:connect`).
+     Wave 1 shipped only `pr:view` — the other three had no caller yet, and
+     registering a permission ahead of any code that checks it is exactly
+     the "flag/permission registered ahead of its first caller, then nobody
+     comes back to wire it" gap this codebase has already hit twice
      (`aiAssistant` granted to no plan for a release cycle; `analytics`
-     checked by no route for a release cycle). Org-level for the identical
-     reason `ai:use` is: `pr-read.service.ts`'s functions take an `orgId` off
-     the `Subject` and no per-resource target — there is no tuple a PR or a
-     repo connection could be named by. */
+     checked by no route for a release cycle). Wave 2 adds `pr:review` (gates
+     `pr_post_comment`/`pr_request_changes`) and `pr:merge` (gates
+     `pr_merge`/`pr_close`) alongside their first real callers.
+     `repo:connect` (a "create a branch from this card" action) remains
+     unregistered — still no caller. Org-level for the identical reason
+     `ai:use` is: every function these gate takes an `orgId` off the
+     `Subject` and no per-resource target — there is no tuple a PR or a repo
+     connection could be named by. */
   'pr:view',
+  'pr:review',
+  'pr:merge',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -311,11 +315,13 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
      resource the tool names. A chat-channel tuple must never satisfy this
      floor any more than it may satisfy `automation:manage`. */
   'ai:use',
-  /* Phase 15 §7 Wave 1. Same reasoning as `ai:use` directly above: the
-     connector is org furniture (`platform.integrations` has no per-resource
-     tuple target), so a channel or board tuple must never satisfy this
-     floor either. */
+  /* Phase 15 §7. Same reasoning as `ai:use` directly above: the connector is
+     org furniture (`platform.integrations` has no per-resource tuple
+     target), so a channel or board tuple must never satisfy any of these
+     three floors. */
   'pr:view',
+  'pr:review',
+  'pr:merge',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
@@ -399,6 +405,11 @@ export function resourceOf(permission: Permission): ResourceType {
  * Wave 4 (Phase 15 §7 Wave 1) adds `pr:view` — same shape as `ai:use`:
  * Owner/Admin hold it by role, and this is what lets an org grant it to one
  * Member without promoting them.
+ *
+ * Wave 5 (Phase 15 §7 Wave 2) adds `pr:review` and `pr:merge`, same shape.
+ * An org that wants one Member reviewing PRs without also letting them
+ * merge/close can grant `pr:review` alone — the two were kept as separate
+ * permissions, not folded into one, for exactly this reason.
  */
 export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'phoneNumber:read',
@@ -413,6 +424,8 @@ export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission
   'apiToken:revoke',
   'ai:use',
   'pr:view',
+  'pr:review',
+  'pr:merge',
 ]);
 
 /** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */

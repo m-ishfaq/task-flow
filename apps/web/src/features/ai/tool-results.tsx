@@ -971,6 +971,53 @@ function renderGetPrComments(result: ToolResultMessage): ReactNode | null {
 }
 
 /* -------------------------------------------------------------------------- *
+ * pr_post_comment / pr_request_changes / pr_merge / pr_close
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The write-tool factory, mirroring `cardWriteRenderer` — but reading the
+ * PR's `prNumber` from `call.input` (the model already put it there, same
+ * as `cardWriteRenderer`'s `cardId`) and its `providerScope` from the
+ * RESULT rather than `call.input`, because — unlike a `cardId` — the model
+ * never sees `providerScope` anywhere; `pr-write.service.ts`'s own header
+ * explains why it has to be returned at all. Links externally, like
+ * `renderListPrs` above — a PR has no TaskFlow route to open.
+ */
+function prWriteRenderer(verb: string) {
+  return (result: ToolResultMessage, call: ToolCallWire): ReactNode | null => {
+    if (result.isError === true) return <ErrorNote message={result.content} />;
+    const prNumber = call.input['prNumber'];
+    if (typeof prNumber !== 'number') return null;
+    const parsed = parseJson(result.content);
+    const providerScope = isRecord(parsed) ? stringField(parsed, 'providerScope') : null;
+
+    return (
+      <ResultPanel>
+        <div className="flex items-center gap-1.5 text-ink">
+          <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
+          {verb} PR #{prNumber}
+          {providerScope !== null && (
+            <a
+              href={`https://github.com/${providerScope}/pull/${String(prNumber)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto shrink-0 text-[11px] text-accent underline"
+            >
+              Open
+            </a>
+          )}
+        </div>
+      </ResultPanel>
+    );
+  };
+}
+
+const renderPrPostComment = prWriteRenderer('Commented on');
+const renderPrRequestChanges = prWriteRenderer('Requested changes on');
+const renderPrMerge = prWriteRenderer('Merged');
+const renderPrClose = prWriteRenderer('Closed');
+
+/* -------------------------------------------------------------------------- *
  * Dispatch
  * -------------------------------------------------------------------------- */
 
@@ -1010,6 +1057,10 @@ const RENDERERS: Readonly<
   list_prs: (result) => renderListPrs(result),
   get_pr_diff: (result) => renderGetPrDiff(result),
   get_pr_comments: (result) => renderGetPrComments(result),
+  pr_post_comment: (result, call) => renderPrPostComment(result, call),
+  pr_request_changes: (result, call) => renderPrRequestChanges(result, call),
+  pr_merge: (result, call) => renderPrMerge(result, call),
+  pr_close: (result, call) => renderPrClose(result, call),
 };
 
 /**

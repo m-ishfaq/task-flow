@@ -232,7 +232,10 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'not index card references, only their content, so it will not find one. For ' +
                 'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
                 '`get_pr_comments` — there is no other tool that can see GitHub, and a PR number ' +
-                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. If you ' +
+                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. To act on a ' +
+                'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_merge`/`pr_close` — ' +
+                'never `card_add_comment` or any Work/Chat tool, which act on a TaskFlow card or ' +
+                'channel, not a GitHub pull request. If you ' +
                 'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +

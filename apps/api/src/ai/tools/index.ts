@@ -24,7 +24,15 @@ import {
 import { createSprintAddCardsTool, createSprintCreateTool } from './sprint.js';
 import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import { createDocsCreatePageTool } from './docs.js';
-import { createGetPrCommentsTool, createGetPrDiffTool, createListPrsTool } from './pr.js';
+import {
+  createGetPrCommentsTool,
+  createGetPrDiffTool,
+  createListPrsTool,
+  createPrCloseTool,
+  createPrMergeTool,
+  createPrPostCommentTool,
+  createPrRequestChangesTool,
+} from './pr.js';
 import type { PrReadDeps } from '../../automation/pr-read.service.js';
 import type { ToolDefinition } from './registry.js';
 
@@ -130,8 +138,17 @@ export interface ToolRegistryDeps {
  * this registry's first tools reaching outside TaskFlow entirely — to the
  * org's connected GitHub repository. Read-only, gated on the new `pr:view`
  * permission (checked inside `pr-read.service.ts`, since these tools have no
- * tRPC route of their own to gate them). Write tools (review comments,
- * merge/close) are a later wave, not built here.
+ * tRPC route of their own to gate them).
+ *
+ * Wave 2 added the write half: `pr_post_comment`/`pr_request_changes`
+ * (`pr:review`) and `pr_merge`/`pr_close` (`pr:merge`, a separate,
+ * more-consequential permission) — all four `requiresConfirmation: true`,
+ * see `pr.ts`'s own header for why that includes the two tools §7.2's own
+ * text never explicitly required it for. They take `deps.prReadDeps`
+ * directly — `PrWriteDeps` and `PrReadDeps` are the identical
+ * `Pick<IntegrationDeps, 'keys' | 'fetchImpl'>` shape (both just need to
+ * reach and decrypt the org's connector), so a second, separately-threaded
+ * field here would be redundant plumbing for no functional difference.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -161,5 +178,9 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListPrsTool(deps.prReadDeps),
     createGetPrDiffTool(deps.prReadDeps),
     createGetPrCommentsTool(deps.prReadDeps),
+    createPrPostCommentTool(deps.prReadDeps),
+    createPrRequestChangesTool(deps.prReadDeps),
+    createPrMergeTool(deps.prReadDeps),
+    createPrCloseTool(deps.prReadDeps),
   ];
 }
