@@ -180,3 +180,46 @@ describe('the §8 onboarding/offboarding action schemas', () => {
     );
   });
 });
+
+/**
+ * §8 checklist item 1 (starter checklist cards) — `card.create`'s own schema.
+ * Unconditional, like the connector pair and the six actions above: it costs
+ * nothing and reaches only the org's own board.
+ */
+describe('the card.create action schema (§8 checklist item 1)', () => {
+  const UUID = '018f4d1e-7c3a-7b2e-8f1a-0000000000f4';
+
+  it('admits a plain title regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const schema = buildAutomationActionSchema(enabled);
+      expect(
+        schema.safeParse({ type: 'card.create', listId: UUID, title: 'Set up your laptop' })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses an empty title and a list named by anything but a row id', () => {
+    const schema = buildAutomationActionSchema(false);
+
+    expect(schema.safeParse({ type: 'card.create', listId: UUID, title: '' }).success).toBe(false);
+    expect(schema.safeParse({ type: 'card.create', listId: 'Backlog', title: 'x' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a description field — the executor always creates a title-only card', () => {
+    /* `.strict()` is the control: a rule cannot store a rich-text document to
+       be handed to `createCard`'s validator from a stored column. */
+    const schema = buildAutomationActionSchema(false);
+
+    expect(
+      schema.safeParse({
+        type: 'card.create',
+        listId: UUID,
+        title: 'x',
+        description: 'not allowed',
+      }).success,
+    ).toBe(false);
+  });
+});

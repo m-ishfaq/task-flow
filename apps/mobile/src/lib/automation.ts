@@ -148,6 +148,11 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'identity.revoke_sessions': 'Sign them out everywhere',
   'member_grant.revoke_all': 'Revoke every individual permission they hold',
   'cards.bulk_reassign': 'Reassign their cards to someone else',
+  /* §8 checklist item 1 (onboarding starter cards) — labelled for DISPLAY
+     only, the identical treatment the six actions above already get:
+     absent from `ARGUMENTS` below, so `EDITABLE_ACTION_TYPES` excludes it
+     and "Edit" is refused on mobile for any rule holding one. */
+  'card.create': 'Create a card',
 };
 
 /**
@@ -407,6 +412,10 @@ export function describeAction(action: unknown): string {
   }
 
   if (type === 'github.create_issue' && typeof record['title'] === 'string') {
+    return `${label}: "${truncate(record['title'], 40)}"`;
+  }
+
+  if (type === 'card.create' && typeof record['title'] === 'string') {
     return `${label}: "${truncate(record['title'], 40)}"`;
   }
 

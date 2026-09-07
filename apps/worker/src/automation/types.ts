@@ -117,7 +117,16 @@ export type AutomationAction =
   | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
   | { readonly type: 'identity.revoke_sessions' }
   | { readonly type: 'member_grant.revoke_all' }
-  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string }
+  /* §8 checklist item 1 (onboarding starter cards) — a plain `createCard`,
+     the same "this is already an ordinary, fully-authorized service call"
+     shape every other action here wraps. No `description` field: a title is
+     enough for a checklist item, matching `sms.send`'s own plain-string
+     `body` rather than `card.add_comment`'s richer segment shape. There is
+     no template/cloning concept here at all — a "starter checklist" of three
+     cards is three `card.create` actions on one `member.added` rule, which
+     the engine already supports (a rule may hold several actions). */
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -141,6 +150,7 @@ export const ACTION_TYPES = [
   'identity.revoke_sessions',
   'member_grant.revoke_all',
   'cards.bulk_reassign',
+  'card.create',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

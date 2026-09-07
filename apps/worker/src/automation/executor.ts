@@ -509,6 +509,19 @@ async function runAction(
       });
       return;
     }
+
+    case 'card.create': {
+      /* The plain, already-authorized `createCard` — `card:create` on the
+         BOARD the named list belongs to, exactly as a human's "+ Add card"
+         click enforces it. No description: a title is enough for a starter
+         checklist item. */
+      await cards.createCard(actor, {
+        listId: unsafeAsId<'ListId'>(action.listId),
+        title: action.title,
+        description: null,
+      });
+      return;
+    }
   }
 }
 

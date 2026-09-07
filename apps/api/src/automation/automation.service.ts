@@ -124,7 +124,10 @@ export type AutomationActionInput =
   | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
   | { readonly type: 'identity.revoke_sessions' }
   | { readonly type: 'member_grant.revoke_all' }
-  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string }
+  /* §8 checklist item 1 — see the worker's own `AutomationAction` for the
+     full reasoning (a plain `createCard`, no template/cloning concept). */
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
 
 /**
  * Events an action emits, for the save-time self-trigger check.
@@ -170,6 +173,7 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   'identity.revoke_sessions': ['session.revoked'],
   'member_grant.revoke_all': ['member_grant.revoked'],
   'cards.bulk_reassign': ['card.bulk_reassigned'],
+  'card.create': ['card.created'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;

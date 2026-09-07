@@ -177,6 +177,16 @@ export function buildAutomationActionSchema(telephonyActionsEnabled: boolean) {
        replacement assignee — because "reassign to someone" has no other
        way to say who. */
     z.object({ type: z.literal('cards.bulk_reassign'), toUserId: z.string().uuid() }).strict(),
+    /* §8 checklist item 1 (onboarding starter cards). No description field —
+       see the worker's own `AutomationAction` union for why a plain title is
+       enough. `title` bounded the same way `card.add_comment`'s body is. */
+    z
+      .object({
+        type: z.literal('card.create'),
+        listId: z.string().uuid(),
+        title: z.string().trim().min(1).max(2_000),
+      })
+      .strict(),
     ...(telephonyActionsEnabled
       ? [
           z

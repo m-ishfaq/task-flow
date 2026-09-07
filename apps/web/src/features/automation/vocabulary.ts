@@ -131,6 +131,10 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
   'identity.revoke_sessions': 'Sign them out everywhere',
   'member_grant.revoke_all': 'Revoke every individual permission they hold',
   'cards.bulk_reassign': 'Reassign their cards to someone else',
+  /* §8 checklist item 1 (onboarding starter cards) — a rule may hold several
+     of these on one `member.added` trigger to build a whole checklist, so
+     there is no separate "template" concept anywhere in this vocabulary. */
+  'card.create': 'Create a card',
 };
 
 export type ActionValue =
@@ -178,7 +182,8 @@ export type ActionValue =
   | { readonly type: 'docs.grant_space_access'; readonly spaceId: string }
   | { readonly type: 'identity.revoke_sessions' }
   | { readonly type: 'member_grant.revoke_all' }
-  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string };
+  | { readonly type: 'cards.bulk_reassign'; readonly toUserId: string }
+  | { readonly type: 'card.create'; readonly listId: string; readonly title: string };
 
 /**
  * How to EDIT each argument of each action.
@@ -304,6 +309,10 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   'identity.revoke_sessions': [],
   'member_grant.revoke_all': [],
   'cards.bulk_reassign': [{ field: 'toUserId', label: 'Reassign to', kind: 'member' }],
+  'card.create': [
+    { field: 'listId', label: 'List', kind: 'list' },
+    { field: 'title', label: 'Title', kind: 'text' },
+  ],
 };
 
 /**
@@ -408,6 +417,13 @@ export function describeAction(action: unknown): string {
     return `${label}: “${truncate(record['title'], 40)}”`;
   }
 
+  /* Same reasoning as `github.create_issue` above: the first ARGUMENT is
+     `listId`, a uuid nobody can read by eye, and the title is what the
+     reader actually wants to know. */
+  if (type === 'card.create' && typeof record['title'] === 'string') {
+    return `${label}: “${truncate(record['title'], 40)}”`;
+  }
+
   const first = (ARGUMENTS[type] ?? [])[0];
   const value = first === undefined ? undefined : record[first.field];
   if (typeof value !== 'string' || value === '') return label;
@@ -488,6 +504,8 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
       return { key: identity, value: { type: 'member_grant.revoke_all' } };
     case 'cards.bulk_reassign':
       return { key: identity, value: { type: 'cards.bulk_reassign', toUserId: '' } };
+    case 'card.create':
+      return { key: identity, value: { type: 'card.create', listId: '', title: '' } };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };
   }

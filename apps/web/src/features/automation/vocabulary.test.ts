@@ -220,6 +220,41 @@ describe('§8 — onboarding/offboarding automation vocabulary', () => {
   });
 });
 
+describe('card.create (§8 checklist item 1 — onboarding starter cards)', () => {
+  it('labels it, and declares both arguments in order', () => {
+    expect(ACTION_LABELS['card.create']).toBe('Create a card');
+    expect((ARGUMENTS['card.create'] ?? []).map((spec) => spec.field)).toEqual(['listId', 'title']);
+  });
+
+  it('picks the list kind for its target, needing a project chosen first', () => {
+    /* Lists are project vocabulary, the same reason `card.move`'s own
+       picker needs a project — a "starter checklist" rule names one
+       specific list, not the org at large. */
+    expect(ARGUMENTS['card.create']?.[0]?.kind).toBe('list');
+    expect(needsProject('card.create')).toBe(true);
+  });
+
+  it('seeds a blank draft with no field pre-filled', () => {
+    expect(blankAction('card.create').value).toEqual({
+      type: 'card.create',
+      listId: '',
+      title: '',
+    });
+  });
+
+  it('offers it unconditionally — no deployment flag, unlike telephony', () => {
+    expect(offeredActions(false).map(([type]) => type)).toContain('card.create');
+  });
+
+  it('describes a stored action by its title, not the list id', () => {
+    /* The same "say what it actually says" rule `github.create_issue` gets —
+       the first ARGUMENT is `listId`, a uuid nobody can read by eye. */
+    expect(describeAction({ type: 'card.create', listId: 'x', title: 'Set up your laptop' })).toBe(
+      'Create a card: “Set up your laptop”',
+    );
+  });
+});
+
 describe('vocabulary invariants', () => {
   it('has an ARGUMENTS entry for every label, and a label for every argument entry', () => {
     /* Every entry in one table missing from the other is an action that is

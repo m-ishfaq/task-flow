@@ -96,6 +96,10 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
   'identity.revoke_sessions': ['session.revoked'],
   'member_grant.revoke_all': ['member_grant.revoked'],
   'cards.bulk_reassign': ['card.bulk_reassigned'],
+  /* §8 checklist item 1 — emits through the ordinary card-creation service
+     layer exactly like every action above, so a rule triggered by
+     `card.created` whose own action creates another card would feed itself. */
+  'card.create': ['card.created'],
 };
 
 export interface DepthVerdict {

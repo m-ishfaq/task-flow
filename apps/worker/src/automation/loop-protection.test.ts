@@ -127,8 +127,17 @@ describe('selfTriggers — layer 2, the usability layer', () => {
     /* Being conservative is the correct bias: a listed event that is not
        actually emitted costs a visible false refusal, a MISSING one costs a
        loop that only the depth cap catches. Every card action touches the row,
-       so every one of them emits card.updated. */
-    const cardActions = ACTION_TYPES.filter((type) => type.startsWith('card.'));
+       so every one of them emits card.updated —
+
+       except `card.create`, which is the one `card.*` action that does not
+       MUTATE an existing row at all: it inserts a brand new card and emits
+       only `card.created`, the same event `card.move`/`card.assign`/etc.
+       emit `card.updated` ALONGSIDE. Listing `card.updated` for it would be
+       the false-refusal cost the comment above warns about, for an event
+       `createCard` never actually raises. */
+    const cardActions = ACTION_TYPES.filter(
+      (type) => type.startsWith('card.') && type !== 'card.create',
+    );
     for (const type of cardActions) {
       expect(eventsEmittedBy(type), `${type} should list card.updated`).toContain('card.updated');
     }
