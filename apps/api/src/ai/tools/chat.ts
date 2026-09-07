@@ -4,6 +4,7 @@ import { can } from '@taskflow/policy';
 import { sendMessage } from '../../chat/message.service.js';
 import { listChannels, openDirectMessage } from '../../chat/channel.service.js';
 import type { ChatActor } from '../../chat/shared.js';
+import { loadTuples } from '../../tenancy/resolve.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segments.js';
 
@@ -124,7 +125,7 @@ export function createChatPostMessageTool(): ToolDefinition {
     requiresConfirmation: true,
     inputSchema: ChatPostMessageInput,
     async execute(ctx: ToolContext, input) {
-      const actor: ChatActor = { subject: ctx.subject, requestId: ctx.requestId };
+      let actor: ChatActor = { subject: ctx.subject, requestId: ctx.requestId };
 
       let channelId = input.channelId;
       if (channelId === undefined) {
@@ -133,6 +134,28 @@ export function createChatPostMessageTool(): ToolDefinition {
         }
         const opened = await openDirectMessage(actor, { userIds: input.dmUserIds ?? [] });
         channelId = opened.channelId;
+
+        /* `openDirectMessage` just wrote a real membership tuple for the
+           caller on this (possibly brand-new) channel — but `ctx.subject`
+           is a snapshot taken before this tool ran, so `actor.subject.tuples`
+           still does not know it. A DM's `type` makes it a CLOSED target
+           (`chat/shared.ts`'s `isClosedChannel`), and for a closed target
+           `can()` denies unconditionally when it finds no applicable tuple —
+           not even Owner/Admin bypasses it (`decide.ts`'s own rule) — so the
+           very next `sendMessage` call below would be refused on the channel
+           this call just opened the caller INTO. Reloading tuples here is
+           the fix — a real, deterministic bug (not a flake): this tool's
+           own `dmUserIds` tests (`chat.test.ts`) failed "Not found." on
+           every call, whether the DM was newly created or already existed,
+           since `sendMessage` always used the same stale `actor` either
+           way. Found by CI, not by a live transcript. */
+        actor = {
+          subject: {
+            ...actor.subject,
+            tuples: await loadTuples(actor.subject.orgId, actor.subject.userId),
+          },
+          requestId: ctx.requestId,
+        };
       }
 
       const result = await sendMessage(actor, {
