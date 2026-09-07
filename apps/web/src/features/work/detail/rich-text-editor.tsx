@@ -3,6 +3,17 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { SuggestionPluginKey } from '@tiptap/suggestion';
+import {
+  Bold,
+  Code,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
+  Quote,
+  Strikethrough,
+  type LucideIcon,
+} from 'lucide-react';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
 import { useMembers } from '../../org/use-members.js';
@@ -193,62 +204,71 @@ export function RichTextEditor({
   );
 }
 
+/**
+ * Icon buttons, not the literal glyphs (`B`, `</>`, `❝`…) this toolbar used to
+ * render — a text-label toolbar was the one place this app's rich text
+ * surfaces (card descriptions, comments, chat) still read as a dev tool
+ * rather than a designed editor. `title` still carries the full word, so the
+ * icon-only button stays labelled for a screen reader and a mouse hover
+ * alike; only the visible glyph changed.
+ */
 function Toolbar({ editor }: { readonly editor: Editor }) {
-  const item = (label: string, active: boolean, run: () => void, title: string) => (
+  const item = (Icon: LucideIcon, active: boolean, run: () => void, title: string) => (
     <Button
-      key={label}
+      key={title}
       size="sm"
       variant="ghost"
       title={title}
+      aria-label={title}
       aria-pressed={active}
-      className={cn('h-6 px-1.5', active && 'bg-surface-hover text-ink')}
+      className={cn('h-6 w-6 px-0', active && 'bg-surface-hover text-ink')}
       onClick={run}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
     </Button>
   );
 
   return (
     <div className="flex flex-wrap gap-0.5 border-b border-line/50 px-1.5 py-1">
-      {item('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
+      {item(Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
       {item(
-        'I',
+        Italic,
         editor.isActive('italic'),
         () => editor.chain().focus().toggleItalic().run(),
         'Italic',
       )}
       {item(
-        'S',
+        Strikethrough,
         editor.isActive('strike'),
         () => editor.chain().focus().toggleStrike().run(),
         'Strikethrough',
       )}
       {item(
-        '</>',
+        Code,
         editor.isActive('code'),
         () => editor.chain().focus().toggleCode().run(),
         'Inline code',
       )}
       {item(
-        'H2',
+        Heading2,
         editor.isActive('heading', { level: 2 }),
         () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         'Heading',
       )}
       {item(
-        '•',
+        List,
         editor.isActive('bulletList'),
         () => editor.chain().focus().toggleBulletList().run(),
         'Bullet list',
       )}
       {item(
-        '1.',
+        ListOrdered,
         editor.isActive('orderedList'),
         () => editor.chain().focus().toggleOrderedList().run(),
         'Numbered list',
       )}
       {item(
-        '❝',
+        Quote,
         editor.isActive('blockquote'),
         () => editor.chain().focus().toggleBlockquote().run(),
         'Quote',
