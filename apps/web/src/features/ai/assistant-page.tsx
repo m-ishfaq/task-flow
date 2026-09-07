@@ -364,7 +364,7 @@ export function AssistantPage() {
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-[1400px] gap-6 p-6">
+    <div className="mx-auto flex h-full max-w-350 gap-6 p-6 overflow-y-hidden">
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <PageHeader
           title="Assistant"
@@ -490,7 +490,7 @@ export function AssistantPage() {
       {/* Persistent on wide screens — the same content the mobile toggle
           above opens inline, just never collapsed here since the width to
           show it alongside the conversation is exactly what's available. */}
-      <aside className="hidden w-80 shrink-0 lg:block">
+      <aside className="hidden w-80 shrink-0 lg:block overflow-y-auto">
         <div className="sticky top-6">
           <CapabilitiesPanel onUseExample={useExample} variant="sidebar" />
         </div>
