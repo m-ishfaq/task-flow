@@ -1714,6 +1714,34 @@ nav-visibility boolean to gate the new `/assistant` route and sidebar item on, t
 `capability` + `flag` pairing `/analytics` already uses (all-or-nothing by role, unlike `/calls`'s
 `anyOfCapabilities`).
 
+**A real transcript from the §6 setup dialog produced an opaque OpenAI 400 — "An assistant message
+with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'" — on a
+request this codebase's own code should never have been able to construct.** Root cause:
+`assistant-page.tsx`'s `respondToPending` cleared `pendingToolCalls` SYNCHRONOUSLY, before its own
+resume request resolved. With `pendingToolCalls` back to `[]`, the composer's disabled condition
+depended on `busy` alone to still block it — and a render landing between the `mutate()` call and
+React Query's `isPending` flip (or simply a fast click) could re-enable it. Sending a new message in
+that window appends a user turn, in LOCAL state, immediately after the still-unresolved §4.2
+confirmation turn — a shape `pendingCallsIn` (`assistant.ts`) cannot see, since it only ever
+inspects the transcript's LAST message. The malformed transcript sailed straight through to the
+provider.
+
+**Fixed on both sides, not just the client.** `respondToPending` no longer clears
+`pendingToolCalls` itself — `onSuccess` already sets it to whatever the resumed turn's own result
+says, and leaving it populated for the whole round trip keeps the composer AND the pending-actions
+panel correctly disabled via `busy`, closing the race outright. `PendingActions` gained a `key`
+derived from its own batch's call ids: since it no longer unmounts between batches
+(`pendingToolCalls` never briefly empties), its internal `decided`/`approved` state needed a real
+reason to reset between two different batches — otherwise a Gemini-synthesized id
+(`"<name>::<index>"`, `packages/ai/src/gemini.ts`) reused by coincidence across two unrelated
+rounds would read as already decided. `assistant.ts` gained `assertWellFormedTranscript`, a
+defense-in-depth guard independent of the client fix: it refuses, with a clear `VALIDATION_FAILED`,
+any assistant tool-calls turn that is NOT the transcript's own trailing message and has no matching
+`tool_result` later in the array — turning an opaque provider-level 400 into an ordinary,
+actionable validation error, and protecting against any client (this one after a regression, or a
+different one) ever producing the same malformed shape again. `assistant.test.ts` proves the exact
+shape from the real transcript is refused before a second provider call is ever made.
+
 ### Phase 15 §6 — new-org Docs bootstrap (SHIPPED)
 
 `apps/web/src/features/ai/setup-dialog.tsx`. Spec: same file, §6 ("when a new org is created,
