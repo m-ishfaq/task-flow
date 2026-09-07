@@ -1,9 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Bot, ChevronDown, ChevronUp, Send, Sparkles } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  GitPullRequest,
+  MessageCircle,
+  PencilLine,
+  Search as SearchIcon,
+  Send,
+  Sparkles,
+  SquarePen,
+} from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
 import { Button, Empty, PageHeader } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { cn } from '../../lib/cn.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
 import { CardQuickView } from '../work/card-quick-view.js';
@@ -107,28 +119,62 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
  * surface than a one-sentence reply ever needs.
  */
 
-// const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
-//   {
-//     heading: 'Look things up',
-//     items: [
-//       'Search cards, messages, docs, and comments',
-//       'What’s assigned to you and still open',
-//       'A project’s boards, sprints, labels, statuses, and members',
-//       'Channels and DMs you can see',
-//     ],
-//   },
-//   {
-//     heading: 'Make changes — always confirmed first',
-//     items: [
-//       'Create a card with assignees, labels, priority, due date, and sprint all at once',
-//       'Update, assign, unassign, or tag a card, or set its status',
-//       'Move a card to a different list — even on a different board',
-//       'Comment on a card, tagging people',
-//       'Create a sprint, or add cards to one',
-//       'Post a message in a channel or start a DM, or create a Docs page',
-//     ],
-//   },
-// ];
+/**
+ * A hand-curated, human-language restatement of the tool registry
+ * (`apps/api/src/ai/tools/index.ts`) — not generated from it, per this
+ * file's own header: a tool's `description`/`jsonSchema` is written for the
+ * MODEL and reads like an API reference, the wrong thing to show a person.
+ *
+ * Kept in sync BY HAND with the real registry, the same trade
+ * `packages/tokens` accepts for `apps/web/src/styles.css`'s `@theme` block —
+ * the GitHub/PR group below is what closes the exact gap a real report
+ * found: every wave of Phase 15 §7 (read PRs, write reviews, link a card to
+ * one) had shipped as real tools with nothing on this page ever telling a
+ * person they existed.
+ */
+const CAPABILITIES: readonly {
+  readonly heading: string;
+  readonly icon: ReactNode;
+  readonly items: readonly string[];
+}[] = [
+  {
+    heading: 'Find things',
+    icon: <SearchIcon aria-hidden="true" className="size-3.5" />,
+    items: [
+      'Search cards, messages, docs, and comments',
+      'What’s assigned to you and still open',
+      'A project’s boards, sprints, labels, statuses, and members',
+      'Channels and DMs you can see',
+    ],
+  },
+  {
+    heading: 'Make changes — always confirmed first',
+    icon: <PencilLine aria-hidden="true" className="size-3.5" />,
+    items: [
+      'Create a card with assignees, labels, priority, due date, and sprint all at once',
+      'Update, assign, unassign, or tag a card, or set its status',
+      'Move a card to a different list — even on a different board',
+      'Comment on a card, tagging people',
+      'Create a sprint, or add cards to one',
+    ],
+  },
+  {
+    heading: 'Chat & Docs',
+    icon: <MessageCircle aria-hidden="true" className="size-3.5" />,
+    items: ['Post a message in a channel or start a DM, tagging people', 'Create a new Docs page'],
+  },
+  {
+    heading: 'GitHub & pull requests',
+    icon: <GitPullRequest aria-hidden="true" className="size-3.5" />,
+    items: [
+      'List pull requests — open, closed, or all — on the connected repo',
+      'Read a PR’s diff or its comments (conversation and inline review)',
+      'Post a comment, or request changes, on a PR',
+      'Merge or close a PR',
+      'Link a card to the PR that implements it, and see what’s already linked',
+    ],
+  },
+];
 
 /** How to point at a specific thing. The first four are real triggers —
     typing the character opens a picker that inserts an already-resolved
@@ -156,6 +202,9 @@ const EXAMPLE_PROMPTS: readonly string[] = [
   'Create a card in',
   'Move the card',
   'What are the overdue tasks for',
+  'List the open PRs',
+  'What did reviewers say on PR #',
+  'Link',
 ];
 
 export function AssistantPage() {
@@ -284,125 +333,167 @@ export function AssistantPage() {
     turn.mutate({ messages: windowForRequest(messages), confirmedToolCallIds: approvedIds });
   };
 
+  /* No route/state gates this — the composer's own `disabled` already
+     covers "a turn is in flight" and "a batch is awaiting Approve/Decline",
+     so allowing a reset in either state would either discard messages an
+     in-flight mutation is about to append to (stale `onSuccess` writing
+     into a transcript that has moved on) or abandon a pending confirmation
+     with no record of what was declined. Disabled for the identical reason
+     the composer itself is. */
+  const resetConversation = () => {
+    setMessages([]);
+    setPendingToolCalls([]);
+    setShowCapabilities(true);
+    // `turn`'s own error/data from the PREVIOUS conversation otherwise
+    // survives the reset — `useMutation` keeps its last result until a new
+    // mutation runs or `reset()` is called, so without this a fresh, empty
+    // transcript rendered "Nothing here yet" with the old "assistant could
+    // not reply" banner still sitting underneath it, found the moment this
+    // button was first clicked after a failed turn.
+    turn.reset();
+    composerRef.current?.clear();
+    composerRef.current?.focus();
+  };
+
   const busy = turn.isPending;
   const resultsById = toolResultsById(messages);
+  const useExample = (prompt: string) => {
+    composerRef.current?.insertPlainText(prompt);
+    composerRef.current?.focus();
+  };
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 p-6">
-      <PageHeader
-        title="Assistant"
-        description="Ask about your work, or let it make a change — every write waits for your OK first."
-        actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setShowCapabilities((current) => !current);
-            }}
-          >
-            {showCapabilities ? (
-              <ChevronUp aria-hidden="true" className="size-3.5" />
-            ) : (
-              <ChevronDown aria-hidden="true" className="size-3.5" />
-            )}
-            What can I do?
-          </Button>
-        }
-      />
-
-      {showCapabilities && (
-        <CapabilitiesPanel
-          onUseExample={(prompt) => {
-            composerRef.current?.insertPlainText(prompt);
-            composerRef.current?.focus();
-          }}
+    <div className="mx-auto flex h-full max-w-[1400px] gap-6 p-6">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <PageHeader
+          title="Assistant"
+          description="Ask about your work, or let it make a change — every write waits for your OK first."
+          actions={
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || pendingToolCalls.length > 0}
+                onClick={resetConversation}
+              >
+                <SquarePen aria-hidden="true" className="size-3.5" />
+                New conversation
+              </Button>
+              {/* The sidebar below covers this on large screens — the toggle
+                  (and the panel it opens) exist only for the width the
+                  sidebar is hidden at. */}
+              <Button
+                size="sm"
+                className="lg:hidden"
+                onClick={() => {
+                  setShowCapabilities((current) => !current);
+                }}
+              >
+                {showCapabilities ? (
+                  <ChevronUp aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <ChevronDown aria-hidden="true" className="size-3.5" />
+                )}
+                What can I do?
+              </Button>
+            </div>
+          }
         />
-      )}
 
-      <div
-        ref={listRef}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-xl border border-line bg-surface-raised p-4"
-      >
-        {messages.length === 0 && !busy ? (
-          <Empty
-            icon={<Sparkles aria-hidden="true" className="size-5" />}
-            title="Nothing here yet"
-            // The panel above already explains what to ask and how to
-            // reference things when it's open — repeating that here is
-            // exactly the duplication a real report called out. Only when
-            // it's collapsed does this need to say anything more than
-            // "type below."
-            {...(showCapabilities
-              ? {}
-              : { description: 'Open "What can I do?" above, or just ask.' })}
-          />
-        ) : (
-          messages
-            .filter(isDisplayable)
-            .map((message, index) => (
-              <MessageBubble
-                key={index}
-                message={message}
-                resultsById={resultsById}
-                onOpenCard={setOpenCardId}
-              />
-            ))
-        )}
-
-        {busy && (
-          <div className="flex items-center gap-2 text-xs text-ink-faint">
-            <Bot aria-hidden="true" className="size-4 animate-pulse" />
-            Thinking…
+        {showCapabilities && (
+          <div className="lg:hidden">
+            <CapabilitiesPanel onUseExample={useExample} />
           </div>
         )}
+
+        <div
+          ref={listRef}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-xl border border-line bg-surface-raised p-4 lg:p-6"
+        >
+          {messages.length === 0 && !busy ? (
+            <Empty
+              icon={<Sparkles aria-hidden="true" className="size-5" />}
+              title="Nothing here yet"
+              description="Try one of the prompts on the side, or just type your question below."
+            />
+          ) : (
+            messages
+              .filter(isDisplayable)
+              .map((message, index) => (
+                <MessageBubble
+                  key={index}
+                  message={message}
+                  resultsById={resultsById}
+                  onOpenCard={setOpenCardId}
+                />
+              ))
+          )}
+
+          {busy && (
+            <div className="flex items-center gap-2 text-xs text-ink-faint">
+              <Bot aria-hidden="true" className="size-4 animate-pulse" />
+              Thinking…
+            </div>
+          )}
+        </div>
+
+        {pendingToolCalls.length > 0 && (
+          <PendingActions
+            // Keyed by the batch's own call ids, not the array index or
+            // nothing at all — `pendingToolCalls` no longer becomes briefly
+            // empty between two batches (see `respondToPending`'s own
+            // comment), so this component no longer unmounts/remounts for
+            // free between them. Without a key tied to the batch's actual
+            // identity, its internal `decided`/`approved` state (keyed by
+            // call.id) would carry over into a NEW batch — usually harmless
+            // since a fresh completion mints fresh ids, but Gemini's own
+            // `AiToolCall.id`s are synthesized as `"<name>::<index>"`
+            // (`packages/ai/src/gemini.ts`), which two unrelated rounds can
+            // collide on, silently treating a brand-new pending call as
+            // already decided.
+            key={pendingToolCalls.map((call) => call.id).join('|')}
+            calls={pendingToolCalls}
+            disabled={busy}
+            onRespond={respondToPending}
+          />
+        )}
+
+        {turn.isError && <ErrorView error={turn.error} title="The assistant could not reply" />}
+
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            send();
+          }}
+        >
+          <div className="flex-1">
+            <AssistantComposer
+              ref={composerRef}
+              disabled={busy || pendingToolCalls.length > 0}
+              onSubmit={send}
+              onEmptyChange={setDraftEmpty}
+              placeholder="Ask the assistant… (@ for a person, # project, & board, % sprint, ~ list)"
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || draftEmpty || pendingToolCalls.length > 0}
+          >
+            <Send aria-hidden="true" className="size-4" />
+          </Button>
+        </form>
       </div>
 
-      {pendingToolCalls.length > 0 && (
-        <PendingActions
-          // Keyed by the batch's own call ids, not the array index or
-          // nothing at all — `pendingToolCalls` no longer becomes briefly
-          // empty between two batches (see `respondToPending`'s own
-          // comment), so this component no longer unmounts/remounts for
-          // free between them. Without a key tied to the batch's actual
-          // identity, its internal `decided`/`approved` state (keyed by
-          // call.id) would carry over into a NEW batch — usually harmless
-          // since a fresh completion mints fresh ids, but Gemini's own
-          // `AiToolCall.id`s are synthesized as `"<name>::<index>"`
-          // (`packages/ai/src/gemini.ts`), which two unrelated rounds can
-          // collide on, silently treating a brand-new pending call as
-          // already decided.
-          key={pendingToolCalls.map((call) => call.id).join('|')}
-          calls={pendingToolCalls}
-          disabled={busy}
-          onRespond={respondToPending}
-        />
-      )}
-
-      {turn.isError && <ErrorView error={turn.error} title="The assistant could not reply" />}
-
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          send();
-        }}
-      >
-        <div className="flex-1">
-          <AssistantComposer
-            ref={composerRef}
-            disabled={busy || pendingToolCalls.length > 0}
-            onSubmit={send}
-            onEmptyChange={setDraftEmpty}
-            placeholder="Ask the assistant… (@ for a person, # project, & board, % sprint, ~ list)"
-          />
+      {/* Persistent on wide screens — the same content the mobile toggle
+          above opens inline, just never collapsed here since the width to
+          show it alongside the conversation is exactly what's available. */}
+      <aside className="hidden w-80 shrink-0 lg:block">
+        <div className="sticky top-6">
+          <CapabilitiesPanel onUseExample={useExample} variant="sidebar" />
         </div>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={busy || draftEmpty || pendingToolCalls.length > 0}
-        >
-          <Send aria-hidden="true" className="size-4" />
-        </Button>
-      </form>
+      </aside>
 
       {openCardId !== null && (
         <CardQuickView
@@ -423,21 +514,52 @@ export function AssistantPage() {
  * so a person can see the exact wording that reaches a tool and edit it
  * before anything happens.
  */
-function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: string) => void }) {
+/**
+ * `variant="inline"` (default) is the mobile/narrow-screen collapsible
+ * panel — dashed off from the conversation like every other "extra info"
+ * block in this app. `variant="sidebar"` is the same content, permanently
+ * visible in the wide-screen aside, so it drops the border a floating panel
+ * needs (the aside itself provides the visual separation) and gives the
+ * capability groups room to stack full-width instead of competing for a
+ * two-column grid at 320px.
+ */
+function CapabilitiesPanel({
+  onUseExample,
+  variant = 'inline',
+}: {
+  readonly onUseExample: (prompt: string) => void;
+  readonly variant?: 'inline' | 'sidebar';
+}) {
+  const isSidebar = variant === 'sidebar';
+
   return (
-    <div className="space-y-3 rounded-xl border border-line bg-surface-sunken/50 p-4 text-sm">
-      {/* <div className="grid gap-4 sm:grid-cols-2">
-        {CAPABILITIES.map((group) => (
-          <div key={group.heading} className="space-y-1.5">
-            <p className="text-xs font-semibold text-ink-muted">{group.heading}</p>
-            <ul className="space-y-1 text-xs text-ink-faint">
-              {group.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div> */}
+    <div
+      className={cn(
+        'space-y-4 rounded-xl p-4 text-sm',
+        isSidebar
+          ? 'bg-surface-raised ring-1 ring-line/60'
+          : 'border border-line bg-surface-sunken/50',
+      )}
+    >
+      <div>
+        <p className="mb-2.5 text-xs font-semibold text-ink-muted">What I can do</p>
+        <div className={cn('gap-x-4 gap-y-3', isSidebar ? 'space-y-3' : 'grid sm:grid-cols-2')}>
+          {CAPABILITIES.map((group) => (
+            <div key={group.heading} className="space-y-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                <span className="text-ink-faint">{group.icon}</span>
+                {group.heading}
+              </p>
+              <ul className="space-y-1 text-xs leading-relaxed text-ink-faint">
+                {group.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* A literal " · " between entries, not CSS gap alone — the identical
           collapse-on-copy bug `tool-results.tsx`'s own header now documents
           for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
