@@ -342,6 +342,66 @@ describe('runAssistantTurn', () => {
     });
   });
 
+  it('refuses a transcript with an unresolved tool-call turn that is NOT the trailing message, without reaching the provider', async () => {
+    /* The exact shape a real client race produced: `respondToPending`
+       (apps/web/src/features/ai/assistant-page.tsx) used to clear
+       `pendingToolCalls` before its own resume request resolved, which
+       could let a new user message get sent — and appended, in local
+       state — right after the still-unresolved §4.2 confirmation turn.
+       `pendingCallsIn` only ever looks at the LAST message, so it never
+       saw this, and the malformed transcript sailed straight through to
+       the real provider, which rejected it with an opaque, provider-level
+       error. This proves the server now refuses it itself, before ever
+       making a second completion call. */
+    const { orgId, membershipId } = await newOrg('assistant-malformed-transcript');
+    const { listId } = await seedList(orgId);
+
+    const provider = new FakeAiProvider();
+    provider.enqueue({
+      content: 'Sure, I can create that.',
+      toolCalls: [
+        { id: 'toolu_1', name: 'card_create', input: { listId, title: 'Fix login bug' } },
+      ],
+      usage: { inputTokens: 20, outputTokens: 10 },
+      stopReason: 'tool_use',
+    });
+
+    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const toolCtx = { subject: await subjectOf(orgId), requestId };
+    const deferred = await runAssistantTurn(
+      provider,
+      actorOf(orgId, membershipId),
+      toolCtx,
+      tools,
+      {
+        feature: 'assistant.chat',
+        providerName: 'fake',
+        model: 'claude-sonnet-4',
+        systemPrompt: 'You are TaskFlow Assistant.',
+        messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
+      },
+    );
+
+    // The one real client bug: a NEW user message appended after the
+    // still-unresolved confirmation turn, instead of a resume.
+    const malformed = [...deferred.messages, { role: 'user' as const, content: 'Also do X.' }];
+
+    await expect(
+      runAssistantTurn(provider, actorOf(orgId, membershipId), toolCtx, tools, {
+        feature: 'assistant.chat',
+        providerName: 'fake',
+        model: 'claude-sonnet-4',
+        systemPrompt: 'You are TaskFlow Assistant.',
+        messages: malformed,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // Never reached the provider a second time.
+    expect(provider.calls).toHaveLength(1);
+    // Never ran the pending call either.
+    expect(await cardCount(orgId)).toBe(0);
+  });
+
   it('resumes after confirmation and executes exactly the approved call', async () => {
     const { orgId, membershipId } = await newOrg('assistant-confirm-approve');
     const { listId } = await seedList(orgId);

@@ -233,8 +233,23 @@ export function AssistantPage() {
   };
 
   const respondToPending = (approvedIds: readonly string[]) => {
+    /* Deliberately does NOT clear `pendingToolCalls` here — `onSuccess`
+       above already sets it to whatever the resumed turn's own result says
+       (empty, or a fresh batch if the model asks for more §4.2
+       confirmation). Clearing it eagerly, before this mutation resolves,
+       opened a real race: with `pendingToolCalls.length` at 0, the
+       composer's `disabled={busy || pendingToolCalls.length > 0}` depends
+       on `busy` alone to still block it, and a person fast enough (or a
+       render landing between the two) could send a NEW message while this
+       request was still in flight. That message got appended, in local
+       state, straight after the still-unresolved confirmation turn — a
+       transcript shape `pendingCallsIn` (which only ever looks at the LAST
+       message) cannot see coming, and forwarding it produced a real
+       provider-level failure ("tool_call_ids did not have response
+       messages"), found from a live transcript. Leaving `pendingToolCalls`
+       populated keeps the composer AND this panel's own Approve/Decline
+       correctly disabled (via `busy`) for the whole round trip instead. */
     turn.mutate({ messages: windowForRequest(messages), confirmedToolCallIds: approvedIds });
-    setPendingToolCalls([]);
   };
 
   const busy = turn.isPending;
@@ -310,7 +325,24 @@ export function AssistantPage() {
       </div>
 
       {pendingToolCalls.length > 0 && (
-        <PendingActions calls={pendingToolCalls} disabled={busy} onRespond={respondToPending} />
+        <PendingActions
+          // Keyed by the batch's own call ids, not the array index or
+          // nothing at all — `pendingToolCalls` no longer becomes briefly
+          // empty between two batches (see `respondToPending`'s own
+          // comment), so this component no longer unmounts/remounts for
+          // free between them. Without a key tied to the batch's actual
+          // identity, its internal `decided`/`approved` state (keyed by
+          // call.id) would carry over into a NEW batch — usually harmless
+          // since a fresh completion mints fresh ids, but Gemini's own
+          // `AiToolCall.id`s are synthesized as `"<name>::<index>"`
+          // (`packages/ai/src/gemini.ts`), which two unrelated rounds can
+          // collide on, silently treating a brand-new pending call as
+          // already decided.
+          key={pendingToolCalls.map((call) => call.id).join('|')}
+          calls={pendingToolCalls}
+          disabled={busy}
+          onRespond={respondToPending}
+        />
       )}
 
       {turn.isError && <ErrorView error={turn.error} title="The assistant could not reply" />}
