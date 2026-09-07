@@ -24,6 +24,8 @@ import {
 import { createSprintAddCardsTool, createSprintCreateTool } from './sprint.js';
 import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import { createDocsCreatePageTool } from './docs.js';
+import { createGetPrCommentsTool, createGetPrDiffTool, createListPrsTool } from './pr.js';
+import type { PrReadDeps } from '../../automation/pr-read.service.js';
 import type { ToolDefinition } from './registry.js';
 
 export type { ToolContext, ToolDefinition, ToolResult } from './registry.js';
@@ -31,6 +33,7 @@ export { defineTool, toAiToolDefinition } from './registry.js';
 
 export interface ToolRegistryDeps {
   readonly searchProvider: SearchProvider;
+  readonly prReadDeps: PrReadDeps;
 }
 
 /**
@@ -122,6 +125,13 @@ export interface ToolRegistryDeps {
  * `card_remove_labels` (`card.ts`) close the last one: the subtractive
  * counterparts to `card_assign`/`card_add_labels`, which until now could
  * only ever add.
+ *
+ * `list_prs`/`get_pr_diff`/`get_pr_comments` (`pr.ts`, Phase 15 §7 Wave 1) are
+ * this registry's first tools reaching outside TaskFlow entirely — to the
+ * org's connected GitHub repository. Read-only, gated on the new `pr:view`
+ * permission (checked inside `pr-read.service.ts`, since these tools have no
+ * tRPC route of their own to gate them). Write tools (review comments,
+ * merge/close) are a later wave, not built here.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -148,5 +158,8 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListChannelsTool(),
     createChatPostMessageTool(),
     createDocsCreatePageTool(),
+    createListPrsTool(deps.prReadDeps),
+    createGetPrDiffTool(deps.prReadDeps),
+    createGetPrCommentsTool(deps.prReadDeps),
   ];
 }

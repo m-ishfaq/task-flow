@@ -3,7 +3,9 @@ import { unsafeAsId, type MembershipId, type OrgId } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase, initializeSearchDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { FakeAiProvider } from '@taskflow/ai';
+import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
 import type { Subject } from '@taskflow/policy';
+import type { PrReadDeps } from '../automation/pr-read.service.js';
 import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
@@ -25,6 +27,24 @@ import type { AiCompletionActor } from './complete.js';
    identical fix for the reasoning written out in full. */
 const SYSTEM_ROLE_MESSAGES = new Set(['system']);
 const TOOL_RESULT_ROLE_MESSAGES = new Set(['tool_result']);
+
+/**
+ * Nothing in this file exercises the GitHub PR tools (`pr.ts`'s own
+ * `pr-read.service.test.ts` covers those against a real connector) — this is
+ * only here to satisfy `ToolRegistryDeps`'s required `prReadDeps` field. The
+ * `fetchImpl` throws if a test ever DOES reach it, so a future test that
+ * accidentally exercises a PR tool fails loudly rather than hanging on a
+ * real network call.
+ */
+const NO_PR_DEPS: PrReadDeps = {
+  keys: new SoftwareKeyProvider({
+    currentMasterKeyId: 'test-master',
+    masterKeys: masterKeysFromBase64({ 'test-master': Buffer.alloc(32, 7).toString('base64') }),
+  }),
+  fetchImpl: () => {
+    throw new Error('no PR tool should be called in this test file');
+  },
+};
 
 /**
  * The tool-calling assistant loop, against real Postgres and a
@@ -155,7 +175,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'end_turn',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
@@ -193,7 +216,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'end_turn',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
@@ -244,7 +270,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'end_turn',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
@@ -277,7 +306,10 @@ describe('runAssistantTurn', () => {
       });
     }
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
 
     await expect(
       runAssistantTurn(
@@ -310,7 +342,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'tool_use',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
@@ -366,7 +401,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'tool_use',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const toolCtx = { subject: await subjectOf(orgId), requestId };
     const deferred = await runAssistantTurn(
       provider,
@@ -416,7 +454,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'tool_use',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const toolCtx = { subject: await subjectOf(orgId), requestId };
     const deferred = await runAssistantTurn(
       provider,
@@ -471,7 +512,10 @@ describe('runAssistantTurn', () => {
       stopReason: 'tool_use',
     });
 
-    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const tools = buildToolRegistry({
+      searchProvider: new PostgresSearchProvider(),
+      prReadDeps: NO_PR_DEPS,
+    });
     const toolCtx = { subject: await subjectOf(orgId), requestId };
     const deferred = await runAssistantTurn(
       provider,

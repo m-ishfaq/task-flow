@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDot,
   FileText,
+  GitPullRequest,
   Hash,
   Kanban,
   LayoutGrid,
@@ -63,6 +64,12 @@ import type { ChatMessageWire, ToolCallWire } from './api.js';
  * still carries the tool's own real error text in `content` — every
  * renderer below checks it FIRST and renders that message plainly (styled
  * as a failure) rather than attempting to parse a success shape out of it.
+ *
+ * `list_prs`/`get_pr_diff`/`get_pr_comments` (Phase 15 §7 Wave 1) are this
+ * file's first renderers reaching outside the app: a GitHub PR has no
+ * TaskFlow route, so `renderListPrs` is the first plain external `<a>` here
+ * rather than a `<Link>`, and `renderGetPrDiff` is the first renderer
+ * showing preformatted text instead of a structured list.
  */
 
 export interface ToolResultRenderContext {
@@ -862,6 +869,108 @@ function renderDocsCreatePage(result: ToolResultMessage, call: ToolCallWire): Re
 }
 
 /* -------------------------------------------------------------------------- *
+ * list_prs / get_pr_diff / get_pr_comments
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The first renderers in this file that link OUTSIDE TaskFlow. A GitHub pull
+ * request has no TaskFlow route — every other renderer here uses a TanStack
+ * `<Link>` into a real `apps/web` page, but there is no page for a PR to open
+ * into, so this is a plain `<a target="_blank" rel="noopener noreferrer">` to
+ * the PR's own `html_url` instead.
+ *
+ * `renderGetPrDiff` is also this file's first renderer showing preformatted
+ * TEXT rather than a structured list — a diff has no natural row-per-item
+ * shape the way every other tool result here does.
+ */
+
+function renderListPrs(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const prs: { number: number; title: string; url: string; isDraft: boolean }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const number = entry['number'];
+    const title = stringField(entry, 'title');
+    const url = stringField(entry, 'url');
+    if (typeof number !== 'number' || title === null || url === null) return null;
+    prs.push({ number, title, url, isDraft: entry['isDraft'] === true });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {prs.map((pr) => (
+          <li key={pr.number}>
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-surface-hover"
+            >
+              <GitPullRequest aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+              <span className="shrink-0 font-mono text-[10px] text-ink-faint">#{pr.number}</span>
+              <span className="min-w-0 flex-1 truncate text-ink">{pr.title}</span>
+              {pr.isDraft && <Badge>Draft</Badge>}
+            </a>
+          </li>
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+function renderGetPrDiff(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!isRecord(parsed)) return null;
+  const diff = stringField(parsed, 'diff');
+  if (diff === null) return null;
+  const truncated = parsed['truncated'] === true;
+
+  return (
+    <ResultPanel>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-ink">
+        {diff}
+      </pre>
+      {truncated && <p className="pt-1 text-[11px] text-warning">Diff truncated.</p>}
+    </ResultPanel>
+  );
+}
+
+function renderGetPrComments(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const comments: { id: number; author: string | null; body: string }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const id = entry['id'];
+    const body = stringField(entry, 'body');
+    if (typeof id !== 'number' || body === null) return null;
+    comments.push({ id, author: stringField(entry, 'author'), body });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {comments.map((comment) => (
+          <EntityRow
+            key={comment.id}
+            icon={<MessageSquare aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
+            primary={comment.body}
+            secondary={comment.author ?? 'unknown'}
+          />
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * Dispatch
  * -------------------------------------------------------------------------- */
 
@@ -898,6 +1007,9 @@ const RENDERERS: Readonly<
   sprint_add_cards: (result) => renderSprintAddCards(result),
   chat_post_message: (result) => renderChatPostMessage(result),
   docs_create_page: (result, call) => renderDocsCreatePage(result, call),
+  list_prs: (result) => renderListPrs(result),
+  get_pr_diff: (result) => renderGetPrDiff(result),
+  get_pr_comments: (result) => renderGetPrComments(result),
 };
 
 /**

@@ -178,6 +178,21 @@ export const PERMISSIONS = [
      tool touches — the same "ask twice" shape `automation:manage` already
      uses for rule-building versus rule-execution. */
   'ai:use',
+
+  /* GitHub/PR integration (Phase 15 §7, Wave 1 — read-only tools only).
+     The full spec names four permissions (`pr:view`, `pr:review`, `pr:merge`,
+     `repo:connect`); this is the only one Wave 1 ships, because it is the
+     only one with a caller yet. `pr:review`/`pr:merge`/`repo:connect` gate
+     write tools and a branch-creation action that do not exist until a later
+     wave — registering them now, ahead of any code that checks them, is
+     exactly the "flag/permission registered ahead of its first caller, then
+     nobody comes back to wire it" gap this codebase has already hit twice
+     (`aiAssistant` granted to no plan for a release cycle; `analytics`
+     checked by no route for a release cycle). Org-level for the identical
+     reason `ai:use` is: `pr-read.service.ts`'s functions take an `orgId` off
+     the `Subject` and no per-resource target — there is no tuple a PR or a
+     repo connection could be named by. */
+  'pr:view',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -296,6 +311,11 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
      resource the tool names. A chat-channel tuple must never satisfy this
      floor any more than it may satisfy `automation:manage`. */
   'ai:use',
+  /* Phase 15 §7 Wave 1. Same reasoning as `ai:use` directly above: the
+     connector is org furniture (`platform.integrations` has no per-resource
+     tuple target), so a channel or board tuple must never satisfy this
+     floor either. */
+  'pr:view',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
@@ -375,6 +395,10 @@ export function resourceOf(permission: Permission): ResourceType {
  * Wave 3 (Phase 15 §2.4) adds `ai:use`. Owner and Admin hold it by role, same
  * as `automation:manage` — this is what makes it grantable to a Member or
  * Guest individually rather than only ever reachable by promotion.
+ *
+ * Wave 4 (Phase 15 §7 Wave 1) adds `pr:view` — same shape as `ai:use`:
+ * Owner/Admin hold it by role, and this is what lets an org grant it to one
+ * Member without promoting them.
  */
 export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'phoneNumber:read',
@@ -388,6 +412,7 @@ export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission
   'apiToken:create',
   'apiToken:revoke',
   'ai:use',
+  'pr:view',
 ]);
 
 /** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */

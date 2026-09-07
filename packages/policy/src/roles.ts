@@ -100,6 +100,10 @@ const ADMIN: readonly Permission[] = [
      exists at all: an org that wants ONE trusted Member using it without
      promoting them to Admin grants `ai:use` individually instead. */
   'ai:use',
+
+  /* Phase 15 §7 Wave 1. Same tier as `ai:use` directly above — Owner/Admin
+     hold it by role, a Member only via an individual grant. */
+  'pr:view',
 ];
 
 const MEMBER: readonly Permission[] = [
