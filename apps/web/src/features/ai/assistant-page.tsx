@@ -200,18 +200,40 @@ export function AssistantPage() {
     },
   });
 
-  /* The CONSUME half of the seed handoff — clearing the store (a Zustand
-     write, not a React state update) and firing the assistant's own reply to
-     it. Guarded by `seeded` rather than an empty dependency array's usual
-     once-per-mount guarantee alone, because Strict Mode double-invokes
-     effects in development and this must send the turn exactly once. */
+  /* The CONSUME half of the seed handoff — firing the assistant's own reply
+     to whatever this instance already peeked into `messages` above, and
+     best-effort clearing the store so an unrelated LATER visit to
+     `/assistant` never replays it. Guarded by `seeded` rather than an empty
+     dependency array's usual once-per-mount guarantee alone, because Strict
+     Mode double-invokes effects in development and this must send the turn
+     exactly once.
+
+     Deliberately reads `messages` here rather than trusting
+     `.take()`'s own return value for the content sent — this effect's
+     dependency array is `[]`, so the `messages` this closure sees is
+     always exactly the FIRST render's value, i.e. exactly what the page
+     already committed to displaying. `.take()` is still called, purely to
+     clear the store; trusting its RETURN VALUE for content was the bug:
+     found from a real report where the setup dialog's opening message
+     showed up on `/assistant` but the assistant never replied and the page
+     never recovered — `busy` never turned `true`, nothing was ever pending
+     to approve or decline. A second, independently-constructed
+     `AssistantPage` racing this exact seed hand-off is the only way that
+     shape is reachable — some earlier construction's own effect had
+     already called `.take()` and fired the real request (a valid response
+     for it is what a network capture showed), while THIS instance's own
+     `.take()` call, later, found nothing left to consume — even though its
+     own `messages` peek had already committed to showing the seeded
+     message. Sending from the already-displayed `messages` instead means
+     this instance never depends on winning a race against another instance
+     for content it already promised to show. */
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
-    const seed = useAssistantSeedStore.getState().take();
-    if (seed === null) return;
-    turn.mutate({ messages: windowForRequest(seed) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs exactly once, by the ref guard above
+    useAssistantSeedStore.getState().take();
+    if (messages.length === 0) return;
+    turn.mutate({ messages: windowForRequest(messages) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs exactly once, by the ref guard above; `messages` here is always the first render's value, by design
   }, []);
 
   useEffect(() => {
@@ -219,6 +241,15 @@ export function AssistantPage() {
   }, [messages, pendingToolCalls]);
 
   const send = () => {
+    // Belt-and-suspenders: the Send button and the composer itself are both
+    // already `disabled` while a turn is in flight or a batch of tool calls
+    // is awaiting Approve/Decline, so this should be unreachable in normal
+    // use — but `AssistantComposer`'s Enter-key handler is a second path
+    // into this function, and a UI-only gate that this function itself
+    // trusts blindly is exactly the shape of bug that gate just had (see
+    // `assistant-composer.tsx`'s own fix). Refusing here too means a future
+    // caller cannot reintroduce the same class of bug by adding a third path.
+    if (busy || pendingToolCalls.length > 0) return;
     // `getText()` is the composer's ENRICHED serialization — any mentioned
     // person/project/board/sprint/list carries its real id inline
     // (`entity-reference.ts`'s own header), not just what a person sees
