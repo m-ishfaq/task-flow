@@ -137,7 +137,7 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
     a card is typed directly (find_card resolves it), and a label has no
     picker since tagging a card is itself a confirmed step. */
 const REFERENCE_HINTS: readonly { readonly label: string; readonly example: string }[] = [
-  { label: 'A person', example: '@Priya' },
+  { label: 'A person', example: '@Moosa' },
   { label: 'A project', example: '#Website' },
   { label: 'A board', example: '&Delivery' },
   { label: 'A sprint', example: '%Sprint 14' },
@@ -152,10 +152,13 @@ const REFERENCE_HINTS: readonly { readonly label: string; readonly example: stri
    the picker and gets the "zero error" benefit `entity-reference.ts`'s own
    header describes. */
 const EXAMPLE_PROMPTS: readonly string[] = [
+  'List all the tools you have',
   'What am I working on this week?',
   'Create a card in',
   'Move the card',
   'What are the overdue tasks for',
+  'List the open PRs',
+  'Link card to the PR#',
 ];
 
 export function AssistantPage() {
