@@ -264,6 +264,14 @@ export function attachmentsQuery(orgId: string, cardId: CardId) {
   });
 }
 
+/** The PRs linked to a card (ai/phase-15-ai-copilot-and-permissions.md §7.2). */
+export function cardPullRequestsQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardPullRequests(orgId, cardId),
+    queryFn: async () => wire(await api.work.pullRequests.list.query({ cardId })),
+  });
+}
+
 /* -------------------------------------------------------------------------- *
  * Optimistic cache edits
  * -------------------------------------------------------------------------- */

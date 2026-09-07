@@ -22,6 +22,7 @@ import { CommentSection } from './comment-section.js';
 import { AttachmentSection } from './attachment-section.js';
 import { AssigneeSection } from './assignee-section.js';
 import { RecordingSection } from './recording-section.js';
+import { PullRequestSection } from './pull-request-section.js';
 
 /**
  * The card detail — a centred modal, not a side panel (`ai/phase-3.5-work-ux.md` §4.7).
@@ -151,6 +152,7 @@ export function CardDetailPanel({
 
                 <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
                 <AttachmentSection orgId={orgId} cardId={cardId} />
+                <PullRequestSection orgId={orgId} cardId={cardId} />
                 {canReadRecordings && <RecordingSection orgId={orgId} cardId={cardId} />}
               </div>
 
