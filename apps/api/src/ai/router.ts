@@ -232,7 +232,12 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'not index card references, only their content, so it will not find one. For ' +
                 'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
                 '`get_pr_comments` — there is no other tool that can see GitHub, and a PR number ' +
-                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. To act on a ' +
+                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. ' +
+                '`list_prs` defaults to OPEN pull requests only — if the user asks for closed, ' +
+                'merged, or "all" pull requests, you MUST pass `state: "closed"` or ' +
+                '`state: "all"` explicitly; do not assume the default list already covers what ' +
+                'they asked for, and do not silently narrow a request for closed PRs back to ' +
+                'open ones. To act on a ' +
                 'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_merge`/`pr_close` — ' +
                 'never `card_add_comment` or any Work/Chat tool, which act on a TaskFlow card or ' +
                 'channel, not a GitHub pull request. To connect a card to the pull request that ' +

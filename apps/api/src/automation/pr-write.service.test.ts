@@ -289,6 +289,31 @@ describe('requestPrChanges', () => {
       payload: { prNumber: 3, event: 'REQUEST_CHANGES', providerReviewId: 502 },
     });
   });
+
+  it(
+    "a 422 (GitHub refusing a review on the connector's own pull request) is refused with an " +
+      'actionable message naming `pr_post_comment` as the working alternative, not the generic ' +
+      '422 hint — found from a real transcript where the generic hint left the model with an ' +
+      'accurate but dead-end answer',
+    async () => {
+      const { owner } = await scaffold('review-own-pr');
+      const fake = fakeGithub({ reviewStatus: 422 });
+      const deps = depsFor(fake.fetch);
+      await connectedGithub(owner, deps);
+
+      let caught: unknown;
+      try {
+        await requestPrChanges(owner, deps, { prNumber: 3, body: 'please fix x' });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain('pr_post_comment');
+      expect(await prEvents(owner.subject.orgId)).toEqual([]);
+    },
+  );
 });
 
 describe('mergePr', () => {

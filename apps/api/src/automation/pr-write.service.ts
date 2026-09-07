@@ -84,7 +84,20 @@ function githubHeaders(token: string): Record<string, string> {
   };
 }
 
-function githubWriteError(status: number): Error {
+/**
+ * `reviewOwnPrHint` is specific to `requestPrChanges`: GitHub refuses to let
+ * an account submit a FORMAL review (approve or request changes) on a pull
+ * request that same account opened — a real, permanent platform rule, not a
+ * transient failure, so no retry of this exact call will ever succeed while
+ * the connector's account is also the PR's author. `postPrComment` hits no
+ * such restriction (a plain issue comment has no "reviewing yourself" rule),
+ * so it gets the generic 422 hint instead of this one — found from a real
+ * transcript where the generic hint left the model with an accurate but
+ * useless answer: it correctly reported the 422, then had no actionable next
+ * step to suggest, and the org's actual need (a documented objection on the
+ * PR) had a working path the whole time.
+ */
+function githubWriteError(status: number, reviewOwnPrHint = false): Error {
   if (status === 404) {
     return errors.notFound('That pull request does not exist, or the connector cannot see it.');
   }
@@ -94,6 +107,14 @@ function githubWriteError(status: number): Error {
   if (status === 409) {
     return errors.serviceUnavailable(
       'GitHub could not complete that — the head branch changed since it was last checked.',
+    );
+  }
+  if (status === 422 && reviewOwnPrHint) {
+    return errors.serviceUnavailable(
+      'GitHub refuses a formal review (request changes or approve) from the same account that ' +
+        'opened the pull request — this is a permanent GitHub rule for the connected account, ' +
+        'not something that will succeed on retry. Use `pr_post_comment` to leave the feedback ' +
+        'as a regular comment instead.',
     );
   }
   const hint =
@@ -180,7 +201,7 @@ export async function requestPrChanges(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     },
   );
-  if (!response.ok) throw githubWriteError(response.status);
+  if (!response.ok) throw githubWriteError(response.status, true);
 
   const created = await response.json();
   const reviewId = isRecord(created) && typeof created['id'] === 'number' ? created['id'] : null;

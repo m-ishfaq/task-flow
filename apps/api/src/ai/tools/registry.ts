@@ -118,9 +118,65 @@ export function defineTool<Schema extends z.ZodTypeAny>(config: {
   };
 }
 
+/**
+ * Walks an error's `.cause` chain for a Postgres SQLSTATE code, the same
+ * shape `apps/api/src/work/shared.ts`'s `hasSqlState` already uses (and the
+ * five other local copies of it across this codebase) — duplicated locally
+ * rather than imported cross-module, since this file has no business
+ * depending on `work`'s internals for a generic tool-registry concern.
+ */
+function sqlState(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < 5 && current !== null && current !== undefined; depth += 1) {
+    if (typeof current === 'object' && 'code' in current && typeof current.code === 'string') {
+      return current.code;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+/**
+ * Found from a real transcript: `card_link_pr`/`list_card_prs` failed with
+ * the tool result `Tool "card_link_pr" failed: Failed query: insert into
+ * "work"."card_pull_requests" (...) params: <uuid>,<uuid>,...` — a
+ * `DrizzleQueryError` whose OWN `.message` is exactly that query-plus-params
+ * text (`drizzle-orm/errors.js`'s `DrizzleQueryError` constructor), with the
+ * real reason (a Postgres error carrying a SQLSTATE code, a human message,
+ * sometimes a detail) sitting on `.cause` — which the previous version of
+ * this function never looked at. The person reading the transcript got a
+ * useless SQL dump instead of the one sentence that would have told them
+ * what was actually wrong, and — since query text and raw parameter values
+ * (ids the model has no business restating) have no place in a surface an
+ * LLM reads and repeats to a person — this also closes a small internals
+ * leak, not just a UX gap.
+ */
 function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return 'The tool failed for an unknown reason.';
+  if (!(error instanceof Error)) return 'The tool failed for an unknown reason.';
+
+  const code = sqlState(error);
+  if (code === '42P01') {
+    // undefined_table -- a migration this deployment expects has not been
+    // applied. Never something retrying will fix, so say that plainly
+    // rather than let the model suggest "try again."
+    return (
+      'A required database table is missing on this deployment — a pending migration has not ' +
+      'been applied. This is something an administrator needs to fix, not something to retry.'
+    );
+  }
+  if (code === '23503') return 'That reference no longer exists.';
+  if (code === '23505') return 'That already exists.';
+
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message.trim().length > 0) return cause.message;
+
+  // A DrizzleQueryError with no informative `.cause` at all (rare, but the
+  // driver does not guarantee one) — still better than dumping the raw SQL
+  // and parameter values into a tool result the model treats as data.
+  if (error.message.startsWith('Failed query:')) {
+    return 'The database rejected that operation, with no further detail available.';
+  }
+  return error.message;
 }
 
 /** `ToolDefinition` -> the wire shape `AiProvider.complete` sends the model. */

@@ -114,6 +114,62 @@ describe('defineTool', () => {
   });
 
   it(
+    "surfaces a DrizzleQueryError's real cause, never the raw SQL and parameter dump its own " +
+      '.message carries — found from a real transcript where card_link_pr/list_card_prs both ' +
+      'failed with an unhelpful "Failed query: insert into ... params: <uuid>,<uuid>,..." result',
+    async () => {
+      const causeErr = new Error('relation "work.card_pull_requests" does not exist');
+      (causeErr as unknown as { code: string }).code = '42P01';
+      const queryError = new Error(
+        'Failed query: insert into "work"."card_pull_requests" (...)\nparams: a,b,c',
+      );
+      (queryError as unknown as { cause: Error }).cause = causeErr;
+
+      const tool = defineTool({
+        name: 'card_link_pr',
+        description: 'test',
+        jsonSchema: { type: 'object' },
+        requiresConfirmation: true,
+        inputSchema: z.object({}).strict(),
+        execute: () => {
+          throw queryError;
+        },
+      });
+
+      const result = await tool.execute(TOOL_CTX, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content).not.toContain('Failed query');
+      expect(result.content).not.toContain('params:');
+      expect(result.content).toContain('migration has not been applied');
+    },
+  );
+
+  it("falls back to a cause error's own message when its SQLSTATE is not one of the named ones", async () => {
+    const causeErr = new Error('duplicate key value violates unique constraint "some_other_idx"');
+    (causeErr as unknown as { code: string }).code = '99999';
+    const queryError = new Error('Failed query: select 1\nparams:');
+    (queryError as unknown as { cause: Error }).cause = causeErr;
+
+    const tool = defineTool({
+      name: 'some_tool',
+      description: 'test',
+      jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
+      inputSchema: z.object({}).strict(),
+      execute: () => {
+        throw queryError;
+      },
+    });
+
+    const result = await tool.execute(TOOL_CTX, {});
+
+    expect(result.content).toBe(
+      'Tool "some_tool" failed: duplicate key value violates unique constraint "some_other_idx"',
+    );
+  });
+
+  it(
     'prefixes a thrown error with the tool name, so a bare message like errors.notFound()' +
       '\'s default ("Not found.") still tells the model — and the transcript — which call failed',
     async () => {
