@@ -1664,6 +1664,12 @@ decision this pass did not make, not just more typing:**
   (`apps/worker`'s own `integration-action.service.ts`), not per-member, so there is nothing
   per-departing-member to revoke there.
 
+_(Corrected in place, per this file's own habit, rather than silently rewritten: three of these
+four — starter cards, notify the manager, the role default grant bundle — shipped in a later pass,
+each after the real design decision this paragraph said it needed. The connector item above needed
+no further work; it was already closed. See "Phase 15 — §8's four deferred items, closed" further
+down for what actually shipped and why.)_
+
 Offboarding item 5 ("final audit entry confirming the checklist completed") needed no new code
 either, for a different reason: `automation_runs` already records every rule's full outcome
 (`RunOutcome` — status, per-action results, duration) on every execution, which already answers
@@ -2089,6 +2095,133 @@ items** (starter cards, notify-the-manager, default permission bundles, connecto
 revocation) — see this file's own §8 section for why each needed a real design decision rather
 than more wiring. This pass closes the gap for the SIX ACTIONS AND TRIGGER that already existed
 in the engine with nothing pointing at them; it does not expand §8's own scope.
+
+### Phase 15 — §8's four deferred items, closed (SHIPPED)
+
+`apps/worker/src/automation/{types,executor,loop-protection}.ts` · `apps/api/src/automation/
+{automation.service,router}.ts` · `apps/api/src/tenancy/{events,audit.projection,role-default-grant.service,router}.ts`
+· `apps/web/src/features/{automation/vocabulary,admin/settings-page,org/api}.ts` ·
+`apps/mobile/src/lib/automation.ts` · migrations 0102–0103. Spec: same file, §8's own checklist —
+the four items this file's own account of §8 (above) named as deliberately deferred, each needing
+a real design decision rather than more wiring.
+
+**Prompted by the project owner directly, in the identical spirit that motivated the earlier
+five-tool-registry-gaps pass: "find a better way... but first proper search checking... we can't
+afford to do tweaks later as it will touch some sensitive areas."** That instruction changed the
+METHOD — research and a written plan before any code, with one `AskUserQuestion` for the single
+genuine design fork, rather than the usual one-report-at-a-time cadence — not the bar for what
+counts as real work. All three items below trace to the exact deferral reasoning this file's own
+§8 section already gave; none is speculative scope beyond what that section named.
+
+**Item 4 (offboarding: revoke connector access) needed no code and stays closed — confirmed, not
+assumed.** Telephony access (`call:place`/`sms:send`/`phoneNumber:read`) is an ordinary
+`member_grants` permission, already revoked by `member_grant.revoke_all`. Slack/GitHub connector
+rows are ORG-scoped credentials (`apps/worker/src/automation/integration-action.service.ts`), not
+per-member, so there is nothing per-departing-member to revoke there. The research pass re-verified
+this rather than trusting the original deferral note's own account of it.
+
+**Item 1 (onboarding: starter checklist cards) turned out smaller than its own deferral text
+implied, once actually researched — the blocker was believed to be "no card-creation action, no
+template concept," and neither half of that was really true.** `createCard(actor, {listId, title,
+description})` was already a plain, fully-authorized (`card:create` on the board) service call with
+its own test coverage, and the automation engine already lets one rule hold several actions on one
+trigger — so a three-card starter checklist is three `card.create` actions on one `member.added`
+rule, with no template/cloning subsystem needed at all. Ships as a new `card.create` action, no
+description field (a title is enough for a checklist item, the same plain-string shape `sms.send`'s
+`body` already has), following the established three-place-plus pattern (the `AutomationAction`
+union and executor switch in `apps/worker`, the mirrored union and `EVENTS_EMITTED_BY` self-trigger
+table in `apps/api/src/automation/automation.service.ts`, the write boundary's Zod schema, and the
+builder vocabulary in `apps/web` plus a display-only label in `apps/mobile`).
+`loop-protection.test.ts`'s own "every card action emits `card.updated`" assertion needed a genuine
+carve-out rather than a workaround: `card.create` is the one `card.*` action that does not mutate
+an EXISTING row — it inserts a new one and emits only `card.created`.
+
+**Item 2 (onboarding: notify the manager) was the real blocker its deferral text described —
+`notification.projection.ts`'s `plan*` functions are deliberately pure, and "who is this new hire's
+manager" needs a database read (`people.membership_profiles.manager_user_id`, Phase 11.5).**
+Resolved by the CALLER (`drainNotifications`), exactly like `actorLabel` already is (migration
+0087's own precedent), never inside the pure planning layer. `planManagerNotified` is a THIRD role
+none of this file's other notification kinds have needed: the recipient is neither the actor (who
+added the new member) nor the event's own subject (who was added) — they are looked up from a
+separate table entirely. `resolveManagerUserIds` mirrors `resolveActorLabels`' batched-lookup and
+fail-open shape on purpose, including the 0087/0088 lesson it was built from: an unhandled error
+here would abort `drainNotifications`' whole transaction and silently stop every consumer scheduled
+after it in the same tick, so a missing manager notification degrades quietly rather than causing
+an outage. Keyed by `${orgId}:${userId}`, not a bare `userId` — the same user id can be a member of
+more than one org with a different manager in each, a possibility this file's own account of
+multi-org membership elsewhere already establishes as real, not hypothetical.
+
+**Migration 0102's own first draft would have shipped a silent bug — caught by re-reading 0071's
+precedent rather than by a failing test.** `resourceOf` (the audit projection's own resource-mapper)
+reads its `key` field out of the event's PAYLOAD, never off the outbox row's own `orgId` column —
+confirmed by checking `member.ownershipTransferred`'s payload, which carries `orgId` explicitly
+for exactly this reason. The new `role_default_grant.set`/`.removed` events (see item 3, next) were
+first drafted without an `orgId` field at all, on the assumption that `RESOURCE_OF`'s `key: 'orgId'`
+mapping would fall back to the envelope — it does not, and would have produced audit entries with a
+null `resource_id` forever. Fixed by adding `orgId` to both event payloads before anything shipped.
+
+**Item 3 (onboarding: apply the role's default permission-grant bundle) was the one place the
+project owner's own choice mattered — a genuine fork the deferral text had already flagged
+("there is no 'role -> default `member_grants`' config table anywhere in this codebase yet...
+deserves its own review"), put to `AskUserQuestion` rather than guessed.** Two shapes existed: (a)
+a new automation action a rule author adds to their own `member.added` rule, consistent with every
+other §8 item's architecture, opt-in by construction, and (b) a standalone "default permissions per
+role" admin screen applied directly and unconditionally by `member.service.ts`'s own join path —
+closer to the literal spec wording, but a bigger, more magic-feeling change reaching into identity/
+tenancy code that has never needed to know about this concept. **The project owner chose (a).**
+
+**`authz.role_default_grants` (migration 0103) is a THIRD authorization mechanism, not
+`authz.member_grants` reused with a null `membershipId`.** It is pure CONFIGURATION ("what does a
+new Member get by default"), never itself consulted by `can()` — only the new automation action
+reads it, to decide which REAL `member_grants` rows to stamp for the member its trigger named.
+Folding this into `member_grants` would make every reader of that table's own
+`member_grants_membership_idx` handle a resource-less-AND-membership-less case that isn't really
+about one membership at all — a config template and a granted capability are different things with
+different lifecycles, the identical reasoning that kept `member_grants` a second mechanism rather
+than folding into `relationship_tuples` in the first place (0097's own header). Real DELETE, unlike
+`member_grants`' `revoked_at`: this table has no history to preserve, it is standing config, the
+same shape `platform.flag_overrides` already has — changing an org's bundle for the `member` role
+is an edit, not an event worth remembering forever. `role`, unlike `permission`, DOES get a CHECK
+constraint (the identical closed list `identity.memberships.role` already has) — the role catalog
+is stable in a way the grantable-permission list is not, so constraining it in the schema costs
+nothing. No separate `taskflow_app` grant was needed at all: migration 0001's `ALTER DEFAULT
+PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA authz` already covers full CRUD on every table this
+schema gets, this one included — only the RLS policy needed writing, mirroring `member_grants`'
+own migration 0097 exactly.
+
+**The executor's new `member_grant.apply_role_defaults` case re-resolves the TARGET member's own
+CURRENT role, never trusting the trigger event's own `role` field and never letting a rule author
+name one — the union has no field for it at all.** The identical "a demotion takes effect
+immediately" reasoning this file's `execute()` already applies one level up for the RULE OWNER,
+applied here one level down for the person the rule acts on: a stale or rule-author-supplied role
+would let a rule apply a bundle configured for a role the member does not actually hold. It then
+loops the real, already-idempotent `memberGrants.grant` once per configured permission — a member
+with an empty bundle (the common case, since most orgs will never configure one) loops zero times
+and the action is a no-op, and re-running it (a retried rule, or two rules both applying defaults)
+never duplicates a grant.
+
+**Settings gained a "Role defaults" section — a small `member`/`guest` × `GRANTABLE_PERMISSIONS`
+toggle matrix, deliberately excluding `owner` and `admin` as configurable rows.** Both already hold
+every individually-grantable permission BY ROLE (`packages/policy`'s `ROLE_PERMISSIONS`), so a
+checkbox for either would be either always-checked-and-inert or, worse, a control that reads as
+doing something it cannot. Gated on the same `manageMembers` capability the Individual permissions
+section beside it already uses — no new capability field needed, since the underlying routes are
+gated on the identical `member:manage` permission. `apps/mobile` gets the DISPLAY-only label for
+the new action, the same treatment every other §8 action already has there: no native picker
+needed, since the action takes no arguments at all.
+
+**No dedicated DB-backed integration test was written for either migration's grant/RLS wiring —
+a real, acknowledged gap, not an oversight.** Both follow an already-proven, previously-tested
+pattern (0037's column-limited-grant-plus-permissive-policy shape for migration 0102; 0097's
+ordinary-tenant-policy shape for migration 0103) rather than inventing a new one, and this sandbox
+has no Postgres to verify against locally — consistent with this session's own established
+practice of relying on CI's real-Postgres run for DB-backed correctness while local coverage
+proves everything provable without one: the pure planning/lookup logic (`planManagerNotified`,
+`planManagerNotifications`, `resolveManagerUserIds`'s fail-open behavior against a fake `tx`, the
+identical shape `resolveActorLabels`' own tests already use), the write-boundary Zod schemas, the
+executor's target-resolution discipline, and `audit.projection.test.ts`'s own "every registered
+event is mapped" invariant, which the new `role_default_grant.*` events had to satisfy to pass at
+all.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 
