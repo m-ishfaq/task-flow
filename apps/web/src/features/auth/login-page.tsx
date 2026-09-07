@@ -113,13 +113,15 @@ export function LoginPage() {
   if (challenge !== null) {
     return (
       <div className="auth-backdrop min-h-full">
-        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
-          <TotpChallengeForm
-            challengeToken={challenge.token}
-            onSuccess={(session) => {
-              void afterSignIn(session, challenge.email);
-            }}
-          />
+        <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center p-4">
+          <div className="auth-card border border-line bg-surface-raised p-8">
+            <TotpChallengeForm
+              challengeToken={challenge.token}
+              onSuccess={(session) => {
+                void afterSignIn(session, challenge.email);
+              }}
+            />
+          </div>
         </div>
       </div>
     );
@@ -127,75 +129,78 @@ export function LoginPage() {
 
   return (
     <div className="auth-backdrop min-h-full">
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          {/* The product's mark — the uploaded logo when branding sets one,
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center p-4">
+        <div className="auth-card flex flex-col gap-6 border border-line bg-surface-raised p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            {/* The product's mark — the uploaded logo when branding sets one,
               else the geometric accent-flow mark (`brand-mark.tsx`), on the
-              one page every visitor sees before anything else. */}
-          <BrandMark size={44} />
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
-              Sign in to {productName}
-            </h1>
-            {/* Body copy is Geist too — the redesign moved the whole app onto
+              one page every visitor sees before anything else. Sized as the
+              hero here (the sidebar keeps it at 40px) — auth is the one
+              screen the audit's own "bigger would be right" note applies to. */}
+            <BrandMark size={64} />
+            <div>
+              <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+                Sign in to {productName}
+              </h1>
+              {/* Body copy is Geist too — the redesign moved the whole app onto
                 the self-hosted face (`styles.css` `--font-sans`), so there is
                 no system-stack line to keep. */}
-            <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
+              <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
+            </div>
           </div>
-        </div>
 
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            void handleSubmit((values) => {
-              signIn.mutate(values);
-            })(event);
-          }}
-        >
-          <Field label="Email" htmlFor="email">
-            <Input
-              id="email"
-              type="email"
-              autoComplete="username"
-              {...register('email', { required: true })}
-            />
-          </Field>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              void handleSubmit((values) => {
+                signIn.mutate(values);
+              })(event);
+            }}
+          >
+            <Field label="Email" htmlFor="email">
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                {...register('email', { required: true })}
+              />
+            </Field>
 
-          <Field label="Password" htmlFor="password">
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              {...register('password', { required: true })}
-            />
-          </Field>
+            <Field label="Password" htmlFor="password">
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                {...register('password', { required: true })}
+              />
+            </Field>
 
-          {/* EMAIL_NOT_VERIFIED gets its own block — the plain ErrorView leaves
+            {/* EMAIL_NOT_VERIFIED gets its own block — the plain ErrorView leaves
             someone whose original mail never arrived with no way forward but
             to keep resubmitting the same form. Everything else (wrong
             password, unknown address, locked, suspended — all
             INVALID_CREDENTIALS, indistinguishable on purpose) still falls
             through to ErrorView. */}
-          {signIn.isError &&
-            (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
-              <div className="rounded-md border border-line bg-surface-sunken p-3 text-sm">
-                <p className="text-ink">
-                  {apiErrorOf(signIn.error)?.error.message ??
-                    'Please verify your email address before signing in.'}
-                </p>
-                {resendVerification.isSuccess ? (
-                  <p className="mt-1.5 text-xs text-ink-muted">
-                    If that address has an account, a new link is on its way.
+            {signIn.isError &&
+              (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
+                <div className="rounded-md border border-line bg-surface-sunken p-3 text-sm">
+                  <p className="text-ink">
+                    {apiErrorOf(signIn.error)?.error.message ??
+                      'Please verify your email address before signing in.'}
                   </p>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="mt-1.5"
-                    disabled={resendVerification.isPending}
-                    onClick={() => {
-                      /* Both the `?.` and the `!== undefined` are load-bearing,
+                  {resendVerification.isSuccess ? (
+                    <p className="mt-1.5 text-xs text-ink-muted">
+                      If that address has an account, a new link is on its way.
+                    </p>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="mt-1.5"
+                      disabled={resendVerification.isPending}
+                      onClick={() => {
+                        /* Both the `?.` and the `!== undefined` are load-bearing,
                          and ESLint reports both as unnecessary — because the
                          TYPE is wrong, not the code. TanStack Query declares a
                          mutation's `variables` as always present, and at
@@ -207,102 +212,103 @@ export function LoginPage() {
                          compiler agreeing with something that is not true at
                          the boundary. Disabled narrowly rather than fixed,
                          since the fix belongs upstream. */
-                      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: TanStack Query types `variables` as non-optional, but it is undefined before the first mutate()
-                      const email = signIn.variables?.email;
-                      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above
-                      if (email !== undefined) resendVerification.mutate(email);
-                    }}
-                  >
-                    {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
-                  </Button>
-                )}
-                {resendVerification.isError && <ErrorView error={resendVerification.error} />}
-              </div>
-            ) : (
-              <ErrorView error={signIn.error} />
-            ))}
+                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: TanStack Query types `variables` as non-optional, but it is undefined before the first mutate()
+                        const email = signIn.variables?.email;
+                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above
+                        if (email !== undefined) resendVerification.mutate(email);
+                      }}
+                    >
+                      {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
+                    </Button>
+                  )}
+                  {resendVerification.isError && <ErrorView error={resendVerification.error} />}
+                </div>
+              ) : (
+                <ErrorView error={signIn.error} />
+              ))}
 
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full"
-            disabled={signIn.isPending || formState.isSubmitting}
-          >
-            {signIn.isPending ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
-
-        <div className="space-y-2 border-t border-line pt-4">
-          {passkeySupported ? (
             <Button
-              variant="secondary"
+              type="submit"
+              variant="primary"
               className="w-full"
-              disabled={signInWithPasskeyMutation.isPending}
-              onClick={() => {
-                signInWithPasskeyMutation.mutate();
-              }}
+              disabled={signIn.isPending || formState.isSubmitting}
             >
-              {signInWithPasskeyMutation.isPending
-                ? 'Waiting for your passkey…'
-                : 'Sign in with a passkey'}
+              {signIn.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
-          ) : (
-            <p className="text-xs text-ink-faint">
-              This browser does not support passkeys. Use your email and password instead.
-            </p>
-          )}
+          </form>
 
-          {/* A cancelled or timed-out ceremony (§8.1: both report as the same
+          <div className="space-y-2 border-t border-line pt-4">
+            {passkeySupported ? (
+              <Button
+                variant="secondary"
+                className="w-full"
+                disabled={signInWithPasskeyMutation.isPending}
+                onClick={() => {
+                  signInWithPasskeyMutation.mutate();
+                }}
+              >
+                {signInWithPasskeyMutation.isPending
+                  ? 'Waiting for your passkey…'
+                  : 'Sign in with a passkey'}
+              </Button>
+            ) : (
+              <p className="text-xs text-ink-faint">
+                This browser does not support passkeys. Use your email and password instead.
+              </p>
+            )}
+
+            {/* A cancelled or timed-out ceremony (§8.1: both report as the same
             `NotAllowedError`) shows nothing — it is not a failure, it is the
             user closing a prompt. Everything else gets a message: a genuine
             ceremony problem from `passkeyCeremonyMessage`, or the server's own
             answer via `ErrorView` for a completed-but-rejected assertion. */}
-          {signInWithPasskeyMutation.isError &&
-            (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
-              passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName) !==
-                null && (
-                <p role="alert" className="text-xs text-danger">
-                  {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName)}
-                </p>
-              )
-            ) : (
-              <ErrorView error={signInWithPasskeyMutation.error} />
-            ))}
+            {signInWithPasskeyMutation.isError &&
+              (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
+                passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName) !==
+                  null && (
+                  <p role="alert" className="text-xs text-danger">
+                    {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName)}
+                  </p>
+                )
+              ) : (
+                <ErrorView error={signInWithPasskeyMutation.error} />
+              ))}
 
-          {/* An unconfigured provider renders no button at all (§3.3) rather
+            {/* An unconfigured provider renders no button at all (§3.3) rather
             than one that always fails — `oauthProviders.data` is undefined
             while loading, so nothing here flashes on then off. */}
-          {(['google', 'github'] as const).map(
-            (provider) =>
-              oauthProviders.data?.[provider] === true && (
-                <Button
-                  key={provider}
-                  variant="secondary"
-                  className="w-full"
-                  disabled={startOAuth.isPending}
-                  onClick={() => {
-                    startOAuth.mutate(provider);
-                  }}
-                >
-                  {startOAuth.isPending && startOAuth.variables === provider
-                    ? 'Redirecting…'
-                    : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
-                </Button>
-              ),
-          )}
-          {startOAuth.isError && <ErrorView error={startOAuth.error} />}
-        </div>
+            {(['google', 'github'] as const).map(
+              (provider) =>
+                oauthProviders.data?.[provider] === true && (
+                  <Button
+                    key={provider}
+                    variant="secondary"
+                    className="w-full"
+                    disabled={startOAuth.isPending}
+                    onClick={() => {
+                      startOAuth.mutate(provider);
+                    }}
+                  >
+                    {startOAuth.isPending && startOAuth.variables === provider
+                      ? 'Redirecting…'
+                      : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
+                  </Button>
+                ),
+            )}
+            {startOAuth.isError && <ErrorView error={startOAuth.error} />}
+          </div>
 
-        <div className="flex justify-between text-sm text-ink-muted">
-          <span>
-            No account?{' '}
-            <Link to="/register" className="text-accent underline">
-              Create one
+          <div className="flex justify-between text-sm text-ink-muted">
+            <span>
+              No account?{' '}
+              <Link to="/register" className="text-accent underline">
+                Create one
+              </Link>
+            </span>
+            <Link to="/forgot-password" className="text-accent underline">
+              Forgot password?
             </Link>
-          </span>
-          <Link to="/forgot-password" className="text-accent underline">
-            Forgot password?
-          </Link>
+          </div>
         </div>
       </div>
     </div>

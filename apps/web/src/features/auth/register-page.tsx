@@ -43,17 +43,19 @@ export function RegisterPage() {
   if (create.isSuccess) {
     return (
       <div className="auth-backdrop min-h-full">
-        <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-            Check your email
-          </h1>
-          <p className="text-sm text-ink-muted">
-            If that address can be registered, a verification link is on its way. The link is
-            single-use and expires.
-          </p>
-          <Link to="/login" className="text-sm text-accent underline">
-            Back to sign in
-          </Link>
+        <div className="mx-auto flex min-h-full max-w-md flex-col justify-center p-4">
+          <div className="auth-card flex flex-col gap-4 border border-line bg-surface-raised p-8">
+            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+              Check your email
+            </h1>
+            <p className="text-sm text-ink-muted">
+              If that address can be registered, a verification link is on its way. The link is
+              single-use and expires.
+            </p>
+            <Link to="/login" className="text-sm text-accent underline">
+              Back to sign in
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -61,90 +63,92 @@ export function RegisterPage() {
 
   return (
     <div className="auth-backdrop min-h-full">
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <BrandMark size={44} />
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
-            Create an account
-          </h1>
-        </div>
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center p-4">
+        <div className="auth-card flex flex-col gap-6 border border-line bg-surface-raised p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <BrandMark size={64} />
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+              Create an account
+            </h1>
+          </div>
 
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            void handleSubmit((values) => {
-              create.mutate(values);
-            })(event);
-          }}
-        >
-          {/* The reason comes from the SERVER's `details`, never from a rule
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              void handleSubmit((values) => {
+                create.mutate(values);
+              })(event);
+            }}
+          >
+            {/* The reason comes from the SERVER's `details`, never from a rule
             restated here. `Password` is `z.string().min(12)` in the API's
             router and nowhere else; a `minLength: 12` in this form would be a
             second copy of that number, free to drift the moment the policy
             changes — and the copy users see would be the one nobody tests. */}
-          {/* Required, matching the API. Without it every surface that shows a
+            {/* Required, matching the API. Without it every surface that shows a
             person falls back to their email address — which quietly discloses
             it to everyone who can see a member list, a mention or an audit
             entry. One field at signup is the cheaper side of that trade. */}
-          <Field label="Name" htmlFor="name" error={fieldError(create.error, 'name')}>
-            <Input
-              id="name"
-              type="text"
-              autoComplete="name"
-              aria-describedby={
-                fieldError(create.error, 'name') === undefined ? undefined : 'name-error'
-              }
-              {...register('name', { required: true })}
-            />
-          </Field>
+            <Field label="Name" htmlFor="name" error={fieldError(create.error, 'name')}>
+              <Input
+                id="name"
+                type="text"
+                autoComplete="name"
+                aria-describedby={
+                  fieldError(create.error, 'name') === undefined ? undefined : 'name-error'
+                }
+                {...register('name', { required: true })}
+              />
+            </Field>
 
-          <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
-            <Input
-              id="email"
-              type="email"
-              autoComplete="username"
-              aria-describedby={
-                fieldError(create.error, 'email') === undefined ? undefined : 'email-error'
-              }
-              {...register('email', { required: true })}
-            />
-          </Field>
+            <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                aria-describedby={
+                  fieldError(create.error, 'email') === undefined ? undefined : 'email-error'
+                }
+                {...register('email', { required: true })}
+              />
+            </Field>
 
-          <Field
-            label="Password"
-            htmlFor="password"
-            hint="At least 12 characters. Checked against known breach corpora."
-            error={fieldError(create.error, 'password')}
-          >
-            <Input
-              id="password"
-              type="password"
-              autoComplete="new-password"
-              aria-describedby={
-                fieldError(create.error, 'password') === undefined ? undefined : 'password-error'
-              }
-              {...register('password', { required: true })}
-            />
-          </Field>
+            <Field
+              label="Password"
+              htmlFor="password"
+              hint="At least 12 characters. Checked against known breach corpora."
+              error={fieldError(create.error, 'password')}
+            >
+              <Input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                aria-describedby={
+                  fieldError(create.error, 'password') === undefined ? undefined : 'password-error'
+                }
+                {...register('password', { required: true })}
+              />
+            </Field>
 
-          {/* Only shown when the failure was not attributable to a field — a rate
+            {/* Only shown when the failure was not attributable to a field — a rate
             limit, an outage. A duplicate banner repeating what is already
             beside the input trains people to ignore both. */}
-          {create.isError && fieldErrors(create.error).length === 0 && (
-            <ErrorView error={create.error} />
-          )}
+            {create.isError && fieldErrors(create.error).length === 0 && (
+              <ErrorView error={create.error} />
+            )}
 
-          <Button type="submit" variant="primary" className="w-full" disabled={create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create account'}
-          </Button>
-        </form>
+            <Button type="submit" variant="primary" className="w-full" disabled={create.isPending}>
+              {create.isPending ? 'Creating…' : 'Create account'}
+            </Button>
+          </form>
 
-        <p className="text-sm text-ink-muted">
-          Already have one?{' '}
-          <Link to="/login" className="text-accent underline">
-            Sign in
-          </Link>
-        </p>
+          <p className="text-sm text-ink-muted">
+            Already have one?{' '}
+            <Link to="/login" className="text-accent underline">
+              Sign in
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

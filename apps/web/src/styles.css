@@ -622,6 +622,13 @@
   }
   .data-table tbody tr:hover {
     background: color-mix(in oklab, var(--color-surface-hover) 50%, transparent);
+    /* Inset so it never shifts column widths — an outer border on a table
+       row nudges every cell right by its own width, which a hover state
+       must never do. The one-part "just a bg tint" hover the audit flagged
+       becomes a two-part signal, matching the left-edge accent every other
+       hover surface in this app already uses (the sidebar's active bar,
+       `card-tile`'s `.priority-bar`). */
+    box-shadow: inset 3px 0 0 var(--color-accent);
   }
 
   /* ------------------------------------------------------------------------
@@ -795,6 +802,25 @@
       color-mix(in oklab, var(--color-accent) 7%, transparent),
       transparent 70%
     );
+}
+
+/* --------------------------------------------------------------------------
+ * The auth card — the form floats above `.auth-backdrop` instead of sitting
+ * flush with it, the one place this app gives a surface a physical presence
+ * (§ the UI/UX audit's "no card shadow + glow combo" gap). Same shape as
+ * `packages/ui`'s Modal (`border-line` + `bg-surface-raised` + `shadow-xl`)
+ * so it reads as this app's one card idiom rather than a bespoke auth-only
+ * treatment, plus the accent glow every other elevated surface skips —
+ * earned here because this is the one screen every visitor sees first.
+ * The glow reuses `--color-accent` via `color-mix`, so a branding override's
+ * palette carries through instead of a hardcoded hue.
+ * -------------------------------------------------------------------------- */
+.auth-card {
+  position: relative;
+  border-radius: calc(var(--radius-card) + 0.5rem);
+  box-shadow:
+    var(--shadow-xl),
+    0 0 48px color-mix(in oklab, var(--color-accent) 16%, transparent);
 }
 
 /* -------------------------------------------------------------------------- *

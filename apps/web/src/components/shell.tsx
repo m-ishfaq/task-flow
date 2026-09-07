@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Keyboard,
   Menu,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
   type LucideProps,
@@ -347,6 +348,27 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
       )}
 
       <Breadcrumbs />
+
+      {/* The one visible, always-on entry point to Phase 8 search — `/` and
+          the command palette's own Search command already reach `/search`
+          (`command-palette.tsx`), but both are keyboard-only, so the feature
+          was invisible to anyone who did not already know the shortcut. This
+          is a link styled as a search field, not a real input: the actual
+          query box lives on `/search` itself, and a second live search input
+          here would duplicate that page's state for no benefit. Hidden below
+          `md` — the header is already at its narrowest-viewport budget with
+          the hamburger, breadcrumb and right-aligned icons alone (see the
+          comment on the nav below). */}
+      <Link
+        to="/search"
+        className="hidden min-w-0 max-w-sm flex-1 items-center gap-2 rounded-lg border border-line/50 bg-surface-sunken px-3 py-1.5 text-sm text-ink-faint transition-colors hover:border-line-strong hover:text-ink-muted md:flex"
+      >
+        <Search aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+        <span className="truncate">Search…</span>
+        <kbd className="ml-auto shrink-0 rounded border border-line/60 bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">
+          /
+        </kbd>
+      </Link>
 
       {/* `overflow-x-auto` + `flex-nowrap` rather than letting the row wrap:
           wrapping would grow the header past its fixed `h-12` every time the
