@@ -1179,3 +1179,56 @@ export async function connectorFor(
     return { token, providerScope: row.providerScope };
   });
 }
+
+/**
+ * The org's connected GitHub repository, resolved from the org alone —
+ * Phase 15 §7 Wave 1's read tools need this because they have no
+ * `integrationId` to start from (the model is never handed an opaque
+ * connector id; it only ever knows "the org's GitHub repo"). §7.1's own
+ * product model is "one repo, org-level" — there is no per-project
+ * attachment — so this is a genuine "the" lookup, not a list.
+ *
+ * Owns no decrypt logic of its own: it finds the row id, then hands off to
+ * `connectorFor` for the actual unwrap, so a future change to the AAD or key
+ * handling has exactly one call site to update, not two.
+ *
+ * `ORDER BY created_at DESC LIMIT 1` is a documented tie-break, not a proof
+ * of uniqueness: nothing in the schema's own constraints stops an org from
+ * ending up with two simultaneously-`'connected'` GitHub rows (`selectRepo`
+ * only revives/retires a row sharing the SAME `provider_scope`; connecting a
+ * second, different repo without disconnecting the first is not refused at
+ * that layer). Preventing that is a `integration:manage`-route concern for
+ * whenever it's worth adding, not something this read-only lookup can fix by
+ * picking differently — so it deliberately takes the most recently connected
+ * row rather than erroring on more than one.
+ */
+export async function connectedGithubRepo(
+  orgId: OrgId,
+  deps: Pick<IntegrationDeps, 'keys'>,
+): Promise<{
+  readonly integrationId: string;
+  readonly token: string;
+  readonly providerScope: string;
+}> {
+  const rowId = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.integrations.id })
+      .from(schema.integrations)
+      .where(
+        and(
+          eq(schema.integrations.provider, 'github'),
+          eq(schema.integrations.status, 'connected'),
+        ),
+      )
+      .orderBy(desc(schema.integrations.createdAt))
+      .limit(1);
+    return rows[0]?.id ?? null;
+  });
+
+  if (rowId === null) {
+    throw errors.notFound('No GitHub repository is connected for this organization.');
+  }
+
+  const connector = await connectorFor(orgId, deps, rowId, 'github');
+  return { integrationId: rowId, ...connector };
+}

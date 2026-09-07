@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { PluginKey } from '@tiptap/pm/state';
@@ -95,6 +95,20 @@ export const AssistantComposer = forwardRef<AssistantComposerHandle, AssistantCo
     const queryClient = useQueryClient();
     const { people } = useMembers();
     const [empty, setEmpty] = useState(true);
+
+    /* `useEditor` below is only given a fresh `editorProps` object on every
+       render, and nothing guarantees TipTap re-applies an inline
+       `handleKeyDown` closure reactively the way it does for a few
+       explicitly-diffed options like `editable` — so that handler cannot
+       safely close over `disabled` directly and expect to see anything but
+       whatever it was on the render that first created the editor
+       instance. A ref sidesteps needing to know which is true: whichever
+       closure ProseMirror ends up holding, reading `.current` always sees
+       the LATEST value. */
+    const disabledRef = useRef(disabled);
+    useEffect(() => {
+      disabledRef.current = disabled;
+    }, [disabled]);
 
     // Stable across renders (created once) — every plugin key must stay the
     // SAME reference for `isAnyMentionSuggestionActive`'s lookups against
@@ -213,6 +227,15 @@ export const AssistantComposer = forwardRef<AssistantComposerHandle, AssistantCo
         },
         handleKeyDown: (view, event) => {
           if (event.key !== 'Enter' || event.shiftKey) return false;
+
+          // `editable: !disabled` above stops the browser from LOOKING
+          // editable, but ProseMirror still calls this handler for every
+          // keydown regardless of that — nothing here previously checked
+          // `disabled` at all, so Enter could still fire `onSubmit()` while
+          // a turn was mid-flight or a batch of tool calls was awaiting
+          // Approve/Decline, even with the Send button right next to it
+          // correctly greyed out. Found from a real report.
+          if (disabledRef.current) return false;
 
           // The identical check `rich-text-editor.tsx`'s own
           // `handleKeyDown` makes for Chat/Docs' one mention picker,

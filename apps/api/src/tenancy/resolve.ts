@@ -125,10 +125,14 @@ export async function resolveOrgMembership(
      The read runs in `withUserScope(userId)`, NOT `withOrgScope(orgId)`, and
      that is correct for a subtle reason: identity.orgs has FORCE RLS with
      `orgs_tenant_isolation` keyed on app.org_id, which this scope clears — but
-     the caller is an ACTIVE member (we just found the membership row), so
-     `orgs_self_read` (0004) admits the row through `app.user_id`. A member of
-     a suspended org still sees the org row, which is exactly what this check
-     needs. An org that is somehow invisible here reads as `undefined` and
+     the caller is an ACTIVE member (we just found the membership row and
+     already threw above otherwise), so `orgs_self_read` admits the row
+     through `app.user_id`. (Migration 0104 widened that policy to ALSO admit
+     a suspended membership's own org row — for `listMyOrgs`, which genuinely
+     needs to see it; irrelevant here, since this function never reaches this
+     query for a non-active membership at all.) A member of a suspended org
+     still sees the org row, which is exactly what this check needs. An org
+     that is somehow invisible here reads as `undefined` and
      falls through, which is the not-suspended answer — the case the spec's
      own §3.7 correction warns to verify empirically rather than assume, and
      the tenancy suite's suspension tests pin it against real Postgres. */

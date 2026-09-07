@@ -179,3 +179,71 @@ export const integrationIssueCreated = defineEvent(
     })
     .strict(),
 );
+
+/**
+ * The four PR write events (Phase 15 §7 Wave 2 — `pr-write.service.ts`,
+ * the AI assistant's PR write tools). Same rule as the two events above and
+ * for the identical reason: no comment text, no review text — the audit log
+ * records that the org posted, where, and under which PR, never what was
+ * said. `prNumber` is public GitHub-side (it's the same number in the PR's
+ * own URL), so carrying it here is not the same disclosure a comment body
+ * would be.
+ */
+export const integrationPrCommentPosted = defineEvent(
+  'integration.pr_comment_posted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** GitHub's own id for the comment, for correlation. */
+      providerCommentId: z.number().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrReviewSubmitted = defineEvent(
+  'integration.pr_review_submitted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** Only `REQUEST_CHANGES` exists today (§7.2's own text: "post a
+          review comment, request changes") — a real enum rather than a
+          literal so a future review kind (e.g. `APPROVE`) is a value
+          addition, not a schema change. */
+      event: z.enum(['REQUEST_CHANGES']),
+      providerReviewId: z.number().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrMerged = defineEvent(
+  'integration.pr_merged',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** The merge commit's SHA, for correlation — GitHub's own id for what
+          this deployment did. */
+      sha: z.string().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrClosed = defineEvent(
+  'integration.pr_closed',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+    })
+    .strict(),
+);

@@ -170,7 +170,10 @@ export async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<Me
 }
 
 export function createAiRouter(deps: AiRouterDeps) {
-  const tools = buildToolRegistry({ searchProvider: deps.searchProvider });
+  const tools = buildToolRegistry({
+    searchProvider: deps.searchProvider,
+    prReadDeps: { keys: deps.keys },
+  });
 
   return router({
     chat: router({
@@ -210,7 +213,8 @@ export function createAiRouter(deps: AiRouterDeps) {
                 '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
                 'date, never a pre-computed relative answer. ' +
                 'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
-                'list_labels, list_members, list_sprints, list_statuses, list_channels, and ' +
+                'list_labels, list_members, list_sprints, list_statuses, list_channels, ' +
+                'list_prs, get_pr_diff, get_pr_comments, and ' +
                 "every write tool's own result — " +
                 'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
                 'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
@@ -225,7 +229,13 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'result already in this conversation actually returned — never invent, guess, ' +
                 'or reuse an id from a different kind of entity. When the user names a card by ' +
                 'its reference (e.g. "WEB-142"), call `find_card` to resolve it — `search` does ' +
-                'not index card references, only their content, so it will not find one. If you ' +
+                'not index card references, only their content, so it will not find one. For ' +
+                'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
+                '`get_pr_comments` — there is no other tool that can see GitHub, and a PR number ' +
+                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. To act on a ' +
+                'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_merge`/`pr_close` — ' +
+                'never `card_add_comment` or any Work/Chat tool, which act on a TaskFlow card or ' +
+                'channel, not a GitHub pull request. If you ' +
                 'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +

@@ -300,8 +300,11 @@ while building §6. **This paragraph itself went stale the same way PLAN.md's ro
 view), §6 (new-org Docs bootstrap) and §8 (onboarding/offboarding automation, a real six-of-ten
 subset) shipped in later passes and this paragraph was never revisited to say so** — see each
 one's own section below for what actually shipped and, for §8, what was deliberately left out and
-why. Only §7 (GitHub PR review — its own spec flags this as needing a separate review pass) still
-remains exactly as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
+why. §7 (GitHub PR review — its own spec flags this as needing a separate review pass) has since
+started: Wave 1 (read-only PR tools for the assistant) shipped; the rest of §7 — write tools, the
+webhook extension, the card↔PR link table — remains exactly as drafted in
+`ai/phase-15-ai-copilot-and-permissions.md`, designed but not built. See "Phase 15 §7 Wave 1" below
+for what actually shipped and why it turned out smaller than the spec's own text implied.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -2251,7 +2254,202 @@ executor's target-resolution discipline, and `audit.projection.test.ts`'s own "e
 event is mapped" invariant, which the new `role_default_grant.*` events had to satisfy to pass at
 all.
 
-### Phase 8 — Search & TQL (COMPLETE, all three waves)
+### Phase 15 §7 Wave 1 — GitHub/PR read tools for the AI assistant (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` · `apps/api/src/ai/tools/pr.ts` ·
+`apps/web/src/features/ai/tool-results.tsx`'s three new renderers. Spec: same file, §7 ("GitHub/PR
+integration — separate wave — larger, needs its own review pass"). §7's own text asks for four new
+permissions, read tools, write tools (comment/request-changes/merge/close, the last two
+confirmation-gated), an inbound-webhook extension for `pr.merged`, and a card↔PR link table. This
+wave ships exactly the read tools and one permission — everything else named above is real,
+separable follow-up work, not built here.
+
+**The webhook piece §7 itself calls "the largest single piece, needs its own human-review pass" —
+already existed, shipped in Phase 10 Wave 4, and §7's own text never noticed.** `apps/api/src/
+automation/integration-webhooks.ts` already verifies inbound GitHub webhook signatures
+(`packages/security/github-signature.ts`, also already built) following the identical
+order-of-operations the telephony webhook established: resolve the org from the UNVERIFIED
+`repository.full_name`, load THAT org's stored secret, verify, only then trust the payload. It's
+already a CLAUDE.md ⚠ human-review surface (Phase 10's own review pass covered it) and already
+replay-deduped (`platform.integration_deliveries`). Every inbound event becomes one generic
+`integration.github_event` domain event (`providerEvent` = the `X-GitHub-Event` header,
+`payload` = the raw body), and the automation engine's condition evaluator
+(`apps/worker/src/automation/engine.ts`) already matches rules on `provider_event`/`provider_scope`
+for it. What's genuinely still missing for "auto-move the card to Done when its PR merges" isn't a
+webhook at all — GitHub sends every `pull_request` sub-action (opened, closed, merged,
+synchronize...) as the identical `providerEvent: 'pull_request'`, and the condition evaluator has
+no payload-field matching to tell a merge from a synchronize; separately, this generic
+connector-event trigger was never exposed in the web rule-builder's `TRIGGER_OPTIONS` vocabulary at
+all — the same "shipped backend, no UI" gap this file documents for §8's six actions and the AI
+Models tab. Both are real, scoped follow-up work for a later wave, not something this wave needed
+to touch.
+
+**Scope precedent, checked rather than assumed: `ai:use` was introduced ALONE, one permission with
+one caller in the same wave — not bundled with siblings that had no caller yet.** That's the closer
+precedent than the Wave 2 `GRANTABLE_PERMISSIONS` addition (`automation:manage`/`webhook:manage`/
+`integration:manage`/`apiToken:create`/`apiToken:revoke`), which made permissions ALREADY IN the
+catalog and ALREADY CHECKED individually grantable — a different situation from registering a
+brand-new permission ahead of any code that checks it. So this wave adds exactly one permission,
+`pr:view` — not `pr:review`/`pr:merge`/`repo:connect`, §7's other three, which gate tools that don't
+exist yet. Registering all four now would reproduce the exact "flag/permission registered ahead of
+its first caller, then nobody comes back to wire it" gap this file already documents twice
+(`aiAssistant` granted to no plan for a release cycle; `analytics` checked by no route for a release
+cycle). `pr:view` follows `ai:use`'s own five-place pattern exactly: `PERMISSIONS`,
+`ORG_LEVEL_PERMISSIONS` (the connector is org furniture — `platform.integrations` has no
+per-resource tuple target), `GRANTABLE_PERMISSIONS`, `roles.ts`'s `ADMIN` array only (not
+`MEMBER`/`GUEST` — an org grants it to one trusted Member individually instead of promoting them),
+and `matrix.test.ts`'s hand-written `EXPECTED.admin`.
+
+**`GRANTABLE_PERMISSIONS`'s own test file, `member-grants.test.ts`, turned out to be a HAND-
+MAINTAINED enumeration with a hardcoded `.size` assertion, not generic coverage — found by actually
+checking rather than assuming a plan note was right.** The plan going into this wave assumed the
+member-grant write path generically covered every entry in `GRANTABLE_PERMISSIONS`, the same way
+`matrix.test.ts`'s parametrized role × permission loop covers every entry in `PERMISSIONS` for
+free. It doesn't: `member-grants.test.ts` asserts `isGrantable('pr:view')` in one explicit new test
+case, one per wave, exactly like `matrix.test.ts`'s `EXPECTED.admin` — and `expect(
+GRANTABLE_PERMISSIONS.size).toBe(11)` would have kept passing at 11 forever, silently proving
+nothing about the twelfth entry, had it not been bumped to 12 alongside the new case.
+
+**`connectedGithubRepo` (new, `integration.service.ts`) is the first "the org's connector" lookup —
+every existing read (`connectorFor`) takes a specific `integrationId`, because the AI tool registry
+never hands a tool an opaque connector id at all; the model only ever knows "the org's GitHub
+repo."** Owns no decrypt logic itself — it resolves the row id, then delegates to `connectorFor` for
+the actual unwrap, so an AAD or key-handling change still has exactly one call site. `ORDER BY
+created_at DESC LIMIT 1` is a documented tie-break, not a proof of uniqueness: nothing in the schema
+stops an org ending up with two simultaneously-`'connected'` GitHub rows (`selectRepo` only
+revives/retires a row sharing the SAME `provider_scope`; connecting a second, different repo without
+disconnecting the first isn't refused at that layer) — preventing that is a future
+`integration:manage`-route concern, not something this read-only lookup can fix by picking
+differently, so it's tested and documented rather than silently assumed impossible.
+
+**Every function in `pr-read.service.ts` checks `pr:view` itself, mirroring
+`integration-action.service.ts`'s own `assertMayManage` exactly, for the identical reason: these
+functions have no tRPC route of their own — only the AI tool registry reaches them — so a route-level
+floor doesn't exist to lean on.** `repoPath` (the path-traversal guard `createGithubIssue` already
+used before interpolating a stored `provider_scope` into a GitHub URL) is exported and reused rather
+than reimplemented a third time.
+
+**`get_pr_diff` is the one tool in this whole registry whose GitHub response isn't JSON — a diff is
+raw text — and it still comes back as a JSON-enveloped `ToolResult.content`, not raw text passed
+through.** Every other tool and `tool-results.tsx`'s own `parseJson` helper assume JSON; wrapping the
+diff as `{prNumber, truncated, diff}` keeps that assumption true end to end rather than special-
+casing one tool's transport shape. Capped at 20,000 characters — "real input-size hygiene," the same
+role `search.query`'s own limit and `ChatSendInput.messages`'s 40-cap play elsewhere — with both a
+structural `truncated: boolean` and a human-readable marker appended to the text itself, so the model
+can tell the person their diff was cut off without reasoning about the boolean alone.
+
+**`get_pr_comments` merges GitHub's two genuinely separate comment endpoints** — the Issues API's
+conversation thread and the Pulls API's inline review comments — tagged `kind: 'general' | 'review'`
+and sorted by time, because "what did reviewers say" needs both and GitHub itself never merges them.
+
+**`tool-results.tsx` gained its first renderer linking OUTSIDE TaskFlow entirely.** Every prior
+renderer's `<Link>` opens a real `apps/web` route; a GitHub PR has none, so `renderListPrs` is the
+first plain `<a target="_blank" rel="noopener noreferrer">` in this file. `renderGetPrDiff` is
+likewise the first renderer showing preformatted TEXT (a scrollable `<pre>`) rather than a
+structured list — a diff has no natural row-per-item shape the way every other tool result here
+does.
+
+### Phase 15 §7 Wave 2 — PR write tools: comment, request changes, merge, close (SHIPPED)
+
+`apps/api/src/automation/pr-write.service.ts` · four new `integration.pr_*` events
+(`integration-events.ts`) · `apps/api/src/ai/tools/pr.ts`'s four write tools ·
+`apps/web/src/features/ai/tool-results.tsx`'s `prWriteRenderer` factory. Spec: same file, §7.2
+("post a review comment, request changes. Merge and close require the confirm step from §4.2").
+Closes the write half of §7's read/write split; still not built: the webhook trigger's
+payload-level filtering, the `work.card_pull_requests` link table, and "create a branch from this
+card" (`repo:connect`, still unregistered — no caller yet).
+
+**Two new permissions, not one, following the identical alone-with-its-own-caller precedent Wave 1
+used for `pr:view`.** `pr:review` (posting a comment, requesting changes) and `pr:merge` (merge,
+close) both land in this wave because both get real callers in it — unlike Wave 1, which shipped
+only `pr:view` because `pr:review`/`pr:merge` had no caller yet. Kept as TWO permissions rather than
+one, deliberately: an org can let one Member review PRs without letting them merge or close —
+reviewing is a normal part of contributing, merging is materially more consequential, and folding
+both into one permission would remove that distinction with no way to get it back short of a new
+migration. Both are `ORG_LEVEL_PERMISSIONS` and `GRANTABLE_PERMISSIONS`, Owner/Admin by role, same
+shape as `ai:use`/`pr:view`.
+
+**All four write tools require confirmation — including the two §7.2's own text never explicitly
+demanded it for.** §7.2 only names merge/close as needing "the confirm step from §4.2"; posting a
+comment or requesting changes could have been read as auto-executable. This registry has been here
+before: `chat_post_message` and `docs_create_page` both shipped confirmation-gated despite the
+spec's own text calling them "cheap to undo... can execute directly once permitted," on the
+reasoning that one uniform rule is simpler to reason about and audit than deciding tool-by-tool
+which risk is low enough to skip — and a PR comment is exactly the same shape as a chat message:
+visible to the whole GitHub org, and anyone subscribed, the instant it posts, read before a human
+could undo it. `pr.ts`'s own header states this explicitly rather than leaving it to be inferred
+from the diff.
+
+**Every write function checks its own permission, mirroring `integration-action.service.ts`'s
+`assertMayManage` exactly, for the identical reason `pr-read.service.ts`'s functions do: no tRPC
+route protects any of these, only the AI tool registry reaches them.** `postPrComment`/
+`requestPrChanges` check `pr:review`; `mergePr`/`closePr` check `pr:merge` — refused before any
+network call, the same "provider never reached" property this codebase proves for every gate.
+
+**Every event is written to the outbox AFTER GitHub's own effect succeeds, never before — identical
+discipline to `postSlackMessage`/`createGithubIssue`, and for the identical reason: the effect is on
+a platform this deployment does not control, so it cannot share the caller's own transaction the way
+a card mutation can, and an event claiming an effect that GitHub actually refused would be a false
+entry in a hash-chained log that can never be corrected.** Four new events —
+`integration.pr_comment_posted`, `integration.pr_review_submitted`, `integration.pr_merged`,
+`integration.pr_closed` — following `integration-events.ts`'s own "OUTBOUND effects" rule to the
+letter: no comment text, no review text, ever. A test in `pr-write.service.test.ts` asserts this
+directly (`expect(JSON.stringify(payload)).not.toContain('looks good')`) rather than trusting the
+schema alone, since a schema only proves the FIELD isn't declared, not that nobody ever widens it
+later without re-reading this rule.
+
+**Every function also returns `providerScope`, a real departure from how a card write tool
+behaves.** `card_update`/`card_assign`'s own renderers deliberately read `cardId` from the tool
+CALL's `input`, never the service's OUTPUT, specifically to avoid enriching four backend services
+just for a frontend convenience the model already gave them. A PR write tool cannot follow the same
+rule: `providerScope` (`owner/repo`) is resolved entirely server-side and never appears anywhere in
+the model's own input, so there is nothing for a renderer to read off the call — returning it is
+what makes a working `https://github.com/<scope>/pull/<n>` link possible at all, not optional
+enrichment. `prWriteRenderer(verb)` in `tool-results.tsx` is the shared factory reading `prNumber`
+from `call.input` (the model already has it, same as `cardWriteRenderer`) and `providerScope` from
+the result (the one field this tool family cannot get any other way).
+
+**`mergePr`'s Zod-optional `mergeMethod` field tripped `exactOptionalPropertyTypes` the first time
+it was wired into the tool's `execute()`.** Zod's own `.optional()` inference produces
+`mergeMethod?: T | undefined`, not merely "optional" — passing that object straight through to a
+service function whose own parameter declares `mergeMethod?: T` (no explicit `| undefined`) is
+refused under this codebase's strict tsconfig, the identical trap `apps/web`'s own
+`description={condition ? text : undefined}` pattern hits and the fix documented there for. The fix
+is the same: build the object conditionally so the key is ABSENT when unset, never
+present-with-`undefined`.
+
+### Two bugs CI found on PR #134, neither caused by §7 (fixed in place)
+
+Both surfaced from the CI run §7 Wave 2's own push triggered, not from anything Wave 1 or Wave 2
+changed — pre-existing, unrelated to GitHub/PR work, fixed because this PR's author is responsible
+for its CI regardless of which change exposed the failure.
+
+**`chat_post_message`'s `dmUserIds` path failed "Not found." on every call, whether the DM was new
+or already existed.** `openDirectMessage` writes a fresh membership tuple when it opens a DM, but
+`chat.ts`'s `execute()` kept calling `sendMessage` with the same `ToolContext.subject` snapshot
+captured before the tool ran — so `actor.subject.tuples` never reflected the tuple `openDirectMessage`
+had just written. A DM is a CLOSED authorization target (`chat/shared.ts`'s `isClosedChannel`), and
+`decide.ts`'s own rule for a closed target is an unconditional deny when no applicable tuple is
+found — not even an Owner/Admin bypass reaches it — so the very next `sendMessage` in the same tool
+call was refused on the channel the caller had just been added to. Fixed by reloading tuples via
+`loadTuples(orgId, userId)` (`tenancy/resolve.ts`, the same function `chat/membership.ts` already
+uses) immediately after `openDirectMessage` returns, before building the `actor` passed to
+`sendMessage`.
+
+**`orgs_self_read` (identity.orgs' RLS policy, migration 0004) still hard-coded `m.status =
+'active'`, silently reintroducing a bug the app layer had already fixed once.** `org.service.ts`'s
+`listMyOrgs` was earlier corrected to report a suspended membership rather than omitting it (this
+file's own Phase 3 section: "narrowing to 'active' used to happen here... a suspended membership
+was indistinguishable from no membership at all") — but that function's `INNER JOIN` against
+`identity.orgs` runs inside `withUserScope`, where `orgs_self_read` is what actually admits the org
+row, and the policy itself was never updated to match. A suspended membership's org row stayed
+invisible under RLS regardless of what the app-level query intended, so the join silently dropped
+it and the fix never took effect end-to-end — caught only by CI running the real test against real
+Postgres, not by anything a mocked check could see. Migration 0104 widens the policy's `EXISTS` to
+`m.status IN ('active', 'suspended')`. `resolveOrgMembership` (`resolve.ts`) is unaffected by the
+widening: it throws `membershipSuspended()` on a non-active membership before it ever queries
+`identity.orgs`, so this only changes the one caller, `listMyOrgs`, that genuinely needs to see a
+suspended membership's own org row.
 
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).

@@ -112,6 +112,15 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
     expect(isGrantable('ai:use')).toBe(true);
   });
 
+  it('accepts the Wave 4 pr:view permission (Phase 15 §7 Wave 1)', () => {
+    expect(isGrantable('pr:view')).toBe(true);
+  });
+
+  it('accepts the Wave 5 pr:review/pr:merge permissions (Phase 15 §7 Wave 2)', () => {
+    expect(isGrantable('pr:review')).toBe(true);
+    expect(isGrantable('pr:merge')).toBe(true);
+  });
+
   it('refuses ownership-adjacent and destructive org-wide permissions', () => {
     for (const permission of [
       'org:update',
@@ -125,6 +134,6 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
   });
 
   it('has no duplicate entries', () => {
-    expect(GRANTABLE_PERMISSIONS.size).toBe(11);
+    expect(GRANTABLE_PERMISSIONS.size).toBe(14);
   });
 });

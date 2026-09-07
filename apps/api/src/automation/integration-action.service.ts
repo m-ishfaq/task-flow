@@ -238,8 +238,13 @@ const envelopeOf = (actor: AutomationActor) => ({
  * `encodeURIComponent` is not the fix on its own: it would encode the legitimate
  * separating slash too, producing `owner%2Fname` and a 404 on every call. The
  * shape check is what allows the slash to stay literal.
+ *
+ * Exported so `pr-read.service.ts` (Phase 15 §7 Wave 1) reuses the identical
+ * guard rather than re-implementing the same path-traversal check a third
+ * time — every place a `provider_scope` value is interpolated into a GitHub
+ * URL path needs it, not just this file's own outbound actions.
  */
-function repoPath(providerScope: string): string {
+export function repoPath(providerScope: string): string {
   if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(providerScope)) {
     throw errors.validation({
       integrationId: 'That connector is not bound to a valid repository.',
