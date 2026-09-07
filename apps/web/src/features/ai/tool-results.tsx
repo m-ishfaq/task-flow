@@ -23,6 +23,7 @@ import { cn } from '../../lib/cn.js';
 import type { Priority } from '../work/api.js';
 import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
 import type { ChatMessageWire, ToolCallWire } from './api.js';
+import { DiffView } from './diff-view.js';
 
 /**
  * One rendering function per tool in `apps/api/src/ai/tools/index.ts`'s
@@ -932,10 +933,79 @@ function renderGetPrDiff(result: ToolResultMessage): ReactNode | null {
 
   return (
     <ResultPanel>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-ink">
-        {diff}
-      </pre>
-      {truncated && <p className="pt-1 text-[11px] text-warning">Diff truncated.</p>}
+      <DiffView diff={diff} truncated={truncated} />
+    </ResultPanel>
+  );
+}
+
+function renderGetPrFiles(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const files: { path: string; status: string; additions: number; deletions: number }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const path = stringField(entry, 'path');
+    const status = stringField(entry, 'status');
+    const additions = entry['additions'];
+    const deletions = entry['deletions'];
+    if (
+      path === null ||
+      status === null ||
+      typeof additions !== 'number' ||
+      typeof deletions !== 'number'
+    ) {
+      return null;
+    }
+    files.push({ path, status, additions, deletions });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {files.map((file) => (
+          <li key={file.path} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-ink">
+            <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+            <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
+              {file.status}
+            </span>
+            <span className="shrink-0 font-mono text-[10px] text-success">+{file.additions}</span>
+            <span className="shrink-0 font-mono text-[10px] text-danger">-{file.deletions}</span>
+          </li>
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+function renderListRepos(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const repos: string[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const providerScope = stringField(entry, 'providerScope');
+    if (providerScope === null) return null;
+    repos.push(providerScope);
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {repos.map((scope) => (
+          <EntityRow
+            key={scope}
+            icon={
+              <GitPullRequest aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+            }
+            primary={<span className="font-mono">{scope}</span>}
+          />
+        ))}
+      </EntityList>
     </ResultPanel>
   );
 }
@@ -1014,6 +1084,7 @@ function prWriteRenderer(verb: string) {
 
 const renderPrPostComment = prWriteRenderer('Commented on');
 const renderPrRequestChanges = prWriteRenderer('Requested changes on');
+const renderPrApprove = prWriteRenderer('Approved');
 const renderPrMerge = prWriteRenderer('Merged');
 const renderPrClose = prWriteRenderer('Closed');
 
@@ -1083,6 +1154,40 @@ function renderCardLinkPr(
 }
 
 /* -------------------------------------------------------------------------- *
+ * create_branch_from_card (automation/branch.service.ts)
+ * -------------------------------------------------------------------------- */
+
+function renderCreateBranchFromCard(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!isRecord(parsed)) return null;
+  const branchName = stringField(parsed, 'branchName');
+  const url = stringField(parsed, 'url');
+  if (branchName === null || url === null) return null;
+  const alreadyExisted = parsed['alreadyExisted'] === true;
+
+  return (
+    <ResultPanel>
+      <div className="flex items-center gap-1.5 text-ink">
+        <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
+        <span>
+          {alreadyExisted ? 'Branch already existed: ' : 'Created branch '}
+          <span className="font-mono text-[11px]">{branchName}</span>
+        </span>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto shrink-0 text-[11px] text-accent underline"
+        >
+          Open
+        </a>
+      </div>
+    </ResultPanel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * Dispatch
  * -------------------------------------------------------------------------- */
 
@@ -1119,15 +1224,19 @@ const RENDERERS: Readonly<
   sprint_add_cards: (result) => renderSprintAddCards(result),
   chat_post_message: (result) => renderChatPostMessage(result),
   docs_create_page: (result, call) => renderDocsCreatePage(result, call),
+  list_repos: (result) => renderListRepos(result),
   list_prs: (result) => renderListPrs(result),
   get_pr_diff: (result) => renderGetPrDiff(result),
+  get_pr_files: (result) => renderGetPrFiles(result),
   get_pr_comments: (result) => renderGetPrComments(result),
   pr_post_comment: (result, call) => renderPrPostComment(result, call),
   pr_request_changes: (result, call) => renderPrRequestChanges(result, call),
+  pr_approve: (result, call) => renderPrApprove(result, call),
   pr_merge: (result, call) => renderPrMerge(result, call),
   pr_close: (result, call) => renderPrClose(result, call),
   list_card_prs: (result) => renderListCardPrs(result),
   card_link_pr: (result, call, ctx) => renderCardLinkPr(result, call, ctx),
+  create_branch_from_card: (result) => renderCreateBranchFromCard(result),
 };
 
 /**

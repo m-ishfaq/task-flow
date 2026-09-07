@@ -211,11 +211,11 @@ export const integrationPrReviewSubmitted = defineEvent(
       provider: z.enum(['slack', 'github']),
       providerScope: z.string(),
       prNumber: z.number(),
-      /** Only `REQUEST_CHANGES` exists today (§7.2's own text: "post a
-          review comment, request changes") — a real enum rather than a
-          literal so a future review kind (e.g. `APPROVE`) is a value
-          addition, not a schema change. */
-      event: z.enum(['REQUEST_CHANGES']),
+      /** `REQUEST_CHANGES` shipped first (§7.2's own text: "post a review
+          comment, request changes") — a real enum rather than a literal so
+          `APPROVE` (Wave 3, `approvePr`) is a value addition, not a schema
+          change. */
+      event: z.enum(['REQUEST_CHANGES', 'APPROVE']),
       providerReviewId: z.number().nullable(),
     })
     .strict(),
@@ -244,6 +244,25 @@ export const integrationPrClosed = defineEvent(
       provider: z.enum(['slack', 'github']),
       providerScope: z.string(),
       prNumber: z.number(),
+    })
+    .strict(),
+);
+
+/** `apps/api/src/automation/branch.service.ts` (Phase 15 §7 Wave 3's last
+    unbuilt action, "create a branch from this card"). `cardId` is the one
+    field none of the `integration.pr_*` events above carry — a branch is
+    created FROM a specific card, and losing that link in the audit trail
+    would leave "who created this branch and why" unanswerable the moment
+    the assistant's own transcript ages out. */
+export const integrationBranchCreated = defineEvent(
+  'integration.branch_created',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      cardId: z.string(),
+      branchName: z.string(),
     })
     .strict(),
 );

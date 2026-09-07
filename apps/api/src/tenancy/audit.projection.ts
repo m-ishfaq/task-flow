@@ -377,6 +377,7 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'integration.pr_review_submitted': { type: 'integration', key: 'integrationId' },
   'integration.pr_merged': { type: 'integration', key: 'integrationId' },
   'integration.pr_closed': { type: 'integration', key: 'integrationId' },
+  'integration.branch_created': { type: 'integration', key: 'integrationId' },
 };
 
 /**

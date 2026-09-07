@@ -187,16 +187,19 @@ export const PERMISSIONS = [
      comes back to wire it" gap this codebase has already hit twice
      (`aiAssistant` granted to no plan for a release cycle; `analytics`
      checked by no route for a release cycle). Wave 2 adds `pr:review` (gates
-     `pr_post_comment`/`pr_request_changes`) and `pr:merge` (gates
-     `pr_merge`/`pr_close`) alongside their first real callers.
-     `repo:connect` (a "create a branch from this card" action) remains
-     unregistered — still no caller. Org-level for the identical reason
-     `ai:use` is: every function these gate takes an `orgId` off the
-     `Subject` and no per-resource target — there is no tuple a PR or a repo
-     connection could be named by. */
+     `pr_post_comment`/`pr_request_changes`/`pr_approve`) and `pr:merge`
+     (gates `pr_merge`/`pr_close`) alongside their first real callers. Wave 3
+     adds `repo:connect`, gating `create_branch_from_card` — the one action
+     from the original four-permission list this codebase went without a
+     caller for the longest, closed the moment the branch-creation tool
+     existed to check it. Org-level for the identical reason `ai:use` is:
+     every function these gate takes an `orgId` off the `Subject` and no
+     per-resource target — there is no tuple a PR, a repo connection, or a
+     branch could be named by. */
   'pr:view',
   'pr:review',
   'pr:merge',
+  'repo:connect',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -318,10 +321,13 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   /* Phase 15 §7. Same reasoning as `ai:use` directly above: the connector is
      org furniture (`platform.integrations` has no per-resource tuple
      target), so a channel or board tuple must never satisfy any of these
-     three floors. */
+     four floors. `repo:connect` gates a repo-level write (creating a
+     branch) rather than a PR-level one, but the reasoning is identical: the
+     repo connection itself is the org's, not any one card's or board's. */
   'pr:view',
   'pr:review',
   'pr:merge',
+  'repo:connect',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
@@ -426,6 +432,7 @@ export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission
   'pr:view',
   'pr:review',
   'pr:merge',
+  'repo:connect',
 ]);
 
 /** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */

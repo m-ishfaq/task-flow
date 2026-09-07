@@ -14,7 +14,13 @@ import {
   selectRepo,
   type IntegrationDeps,
 } from './integration.service.js';
-import { closePr, mergePr, postPrComment, requestPrChanges } from './pr-write.service.js';
+import {
+  approvePr,
+  closePr,
+  mergePr,
+  postPrComment,
+  requestPrChanges,
+} from './pr-write.service.js';
 
 /**
  * `pr-write.service.ts` (ai/phase-15-ai-copilot-and-permissions.md §7 Wave 2).
@@ -314,6 +320,66 @@ describe('requestPrChanges', () => {
       expect(await prEvents(owner.subject.orgId)).toEqual([]);
     },
   );
+});
+
+describe('approvePr', () => {
+  it('submits an APPROVE review', async () => {
+    const { owner } = await scaffold('approve-ok');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await approvePr(owner, deps, { prNumber: 3 });
+
+    expect(result).toEqual({ reviewId: 502, providerScope: 'acme/todo' });
+    const events = await prEvents(owner.subject.orgId);
+    expect(events[0]).toMatchObject({
+      name: 'integration.pr_review_submitted',
+      payload: { prNumber: 3, event: 'APPROVE', providerReviewId: 502 },
+    });
+  });
+
+  it('an optional body is passed through and never appears in the event', async () => {
+    const { owner } = await scaffold('approve-body');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await approvePr(owner, deps, { prNumber: 3, body: 'ship it' });
+    const events = await prEvents(owner.subject.orgId);
+    expect(JSON.stringify(events[0]?.payload)).not.toContain('ship it');
+  });
+
+  it("a 422 (GitHub refusing a review on the connector's own PR) names pr_post_comment as the alternative", async () => {
+    const { owner } = await scaffold('approve-own-pr');
+    const fake = fakeGithub({ reviewStatus: 422 });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    let caught: unknown;
+    try {
+      await approvePr(owner, deps, { prNumber: 3 });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    expect((caught as Error).message).toContain('pr_post_comment');
+    expect(await prEvents(owner.subject.orgId)).toEqual([]);
+  });
+
+  it('refuses a member with no pr:review grant, before any network call', async () => {
+    const { owner, member } = await scaffold('approve-refused');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(approvePr(member, deps, { prNumber: 3 })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(fake.calls).toHaveLength(0);
+  });
 });
 
 describe('mergePr', () => {

@@ -1181,38 +1181,22 @@ export async function connectorFor(
 }
 
 /**
- * The org's connected GitHub repository, resolved from the org alone —
- * Phase 15 §7 Wave 1's read tools need this because they have no
- * `integrationId` to start from (the model is never handed an opaque
- * connector id; it only ever knows "the org's GitHub repo"). §7.1's own
- * product model is "one repo, org-level" — there is no per-project
- * attachment — so this is a genuine "the" lookup, not a list.
- *
- * Owns no decrypt logic of its own: it finds the row id, then hands off to
- * `connectorFor` for the actual unwrap, so a future change to the AAD or key
- * handling has exactly one call site to update, not two.
- *
- * `ORDER BY created_at DESC LIMIT 1` is a documented tie-break, not a proof
- * of uniqueness: nothing in the schema's own constraints stops an org from
- * ending up with two simultaneously-`'connected'` GitHub rows (`selectRepo`
- * only revives/retires a row sharing the SAME `provider_scope`; connecting a
- * second, different repo without disconnecting the first is not refused at
- * that layer). Preventing that is a `integration:manage`-route concern for
- * whenever it's worth adding, not something this read-only lookup can fix by
- * picking differently — so it deliberately takes the most recently connected
- * row rather than erroring on more than one.
+ * Every GitHub repository currently connected for the org — providerScope
+ * and integrationId only, no token decrypt, since this exists purely for
+ * the AI tool registry's `list_repos` (a person asking "which repos do we
+ * have connected" or the model disambiguating when `connectedGithubRepo`
+ * below refuses an ambiguous call) to show, never to build an API request
+ * with.
  */
-export async function connectedGithubRepo(
+export async function connectedGithubRepos(
   orgId: OrgId,
-  deps: Pick<IntegrationDeps, 'keys'>,
-): Promise<{
-  readonly integrationId: string;
-  readonly token: string;
-  readonly providerScope: string;
-}> {
-  const rowId = await withOrgScope(orgId, async (tx) => {
+): Promise<readonly { readonly integrationId: string; readonly providerScope: string }[]> {
+  return withOrgScope(orgId, async (tx) => {
     const rows = await tx
-      .select({ id: schema.integrations.id })
+      .select({
+        integrationId: schema.integrations.id,
+        providerScope: schema.integrations.providerScope,
+      })
       .from(schema.integrations)
       .where(
         and(
@@ -1220,13 +1204,77 @@ export async function connectedGithubRepo(
           eq(schema.integrations.status, 'connected'),
         ),
       )
-      .orderBy(desc(schema.integrations.createdAt))
-      .limit(1);
+      .orderBy(desc(schema.integrations.createdAt));
+    return rows;
+  });
+}
+
+/**
+ * The org's connected GitHub repository — Phase 15 §7 Wave 1's read tools
+ * need this because they have no `integrationId` to start from (the model
+ * is never handed an opaque connector id; it only ever knows "the org's
+ * GitHub repo", or, once more than one is connected, a repo it named by
+ * `owner/repo`).
+ *
+ * §7.1's original product model was "one repo, org-level" — no per-project
+ * attachment — and for a single connected repo this still resolves exactly
+ * that way with `repoScope` omitted. Nothing in the schema's own
+ * constraints ever stopped an org from ending up with two simultaneously-
+ * `'connected'` GitHub rows (`selectRepo` only revives/retires a row
+ * sharing the SAME `provider_scope`; connecting a second, different repo
+ * without disconnecting the first is not refused at that layer), and Wave 3
+ * is what actually reached that state in practice — so the old
+ * "take the most recent, silently" tie-break is gone: a caller with more
+ * than one connected repo and no explicit `repoScope` gets a clear refusal
+ * naming the ambiguity, not a guess. `apps/api/src/ai/tools/pr.ts`'s own
+ * system-prompt guidance is what turns that refusal into "call `list_repos`
+ * and ask the user which one" rather than a dead end.
+ *
+ * Owns no decrypt logic of its own: it finds the row id, then hands off to
+ * `connectorFor` for the actual unwrap, so a future change to the AAD or key
+ * handling has exactly one call site to update, not two.
+ */
+export async function connectedGithubRepo(
+  orgId: OrgId,
+  deps: Pick<IntegrationDeps, 'keys'>,
+  repoScope?: string,
+): Promise<{
+  readonly integrationId: string;
+  readonly token: string;
+  readonly providerScope: string;
+}> {
+  const rowId = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.integrations.id, providerScope: schema.integrations.providerScope })
+      .from(schema.integrations)
+      .where(
+        and(
+          eq(schema.integrations.provider, 'github'),
+          eq(schema.integrations.status, 'connected'),
+        ),
+      )
+      .orderBy(desc(schema.integrations.createdAt));
+
+    if (repoScope !== undefined) {
+      return rows.find((row) => row.providerScope === repoScope)?.id ?? null;
+    }
+    if (rows.length > 1) return 'ambiguous' as const;
     return rows[0]?.id ?? null;
   });
 
+  if (rowId === 'ambiguous') {
+    throw errors.validation(
+      { repoScope: 'required — more than one GitHub repository is connected' },
+      'More than one GitHub repository is connected for this organization — call ' +
+        '`list_repos` and specify which one (repoScope) before trying again.',
+    );
+  }
   if (rowId === null) {
-    throw errors.notFound('No GitHub repository is connected for this organization.');
+    throw errors.notFound(
+      repoScope === undefined
+        ? 'No GitHub repository is connected for this organization.'
+        : `"${repoScope}" is not a connected GitHub repository for this organization.`,
+    );
   }
 
   const connector = await connectorFor(orgId, deps, rowId, 'github');

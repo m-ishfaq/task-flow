@@ -15,7 +15,13 @@ import {
   selectRepo,
   type IntegrationDeps,
 } from './integration.service.js';
-import { getPullRequestComments, getPullRequestDiff, listPullRequests } from './pr-read.service.js';
+import {
+  getPullRequestComments,
+  getPullRequestDiff,
+  getPullRequestFiles,
+  listConnectedRepos,
+  listPullRequests,
+} from './pr-read.service.js';
 
 /**
  * `pr-read.service.ts` (ai/phase-15-ai-copilot-and-permissions.md §7 Wave 1).
@@ -310,8 +316,8 @@ describe('listPullRequests', () => {
     });
   });
 
-  it('uses the most-recently-connected repo when more than one is connected', async () => {
-    const { owner } = await scaffold('list-tiebreak');
+  it('refuses ambiguously, with zero network calls, when more than one repo is connected and no repoScope is given', async () => {
+    const { owner } = await scaffold('list-ambiguous');
     const fake = fakeGithub({ fullName: 'acme/first' });
     const deps = depsFor(fake.fetch);
     await connectedGithub(owner, deps, 'acme/first');
@@ -324,16 +330,122 @@ describe('listPullRequests', () => {
     const combined = ((input: string | URL | Request, init?: RequestInit) => {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      if (url.includes('acme/second')) {
-        calls.push(url);
-        return secondFake.fetch(input, init);
-      }
+      calls.push(url);
+      if (url.includes('acme/second')) return secondFake.fetch(input, init);
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    calls.length = 0;
+
+    await expect(listPullRequests(owner, { keys, fetchImpl: combined }, {})).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+    await expect(listPullRequests(owner, { keys, fetchImpl: combined }, {})).rejects.toThrow(
+      /More than one GitHub repository is connected/,
+    );
+    // Never reaches GitHub — resolving which repo happens before any request.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('resolves the exact repo an explicit repoScope names, when more than one is connected', async () => {
+    const { owner } = await scaffold('list-scoped');
+    const fake = fakeGithub({ fullName: 'acme/first' });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps, 'acme/first');
+
+    const secondFake = fakeGithub({ fullName: 'acme/second', pulls: [] });
+    const secondDeps = depsFor(secondFake.fetch);
+    await connectedGithub(owner, secondDeps, 'acme/second');
+
+    const combined = ((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('acme/second')) return secondFake.fetch(input, init);
       return fake.fetch(input, init);
     }) as typeof fetch;
 
-    const result = await listPullRequests(owner, { keys, fetchImpl: combined }, {});
+    const result = await listPullRequests(
+      owner,
+      { keys, fetchImpl: combined },
+      { repoScope: 'acme/second' },
+    );
     expect(result).toEqual([]);
-    expect(calls.some((url) => url.includes('acme/second'))).toBe(true);
+  });
+
+  it('a repoScope naming a repo the org never connected answers NOT_FOUND', async () => {
+    const { owner } = await scaffold('list-unknown-scope');
+    const fake = fakeGithub({});
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await expect(
+      listPullRequests(owner, deps, { repoScope: 'someone-else/other-repo' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('listConnectedRepos (via getPullRequestFiles/list_repos data source)', () => {
+  it('returns every connected repo, and refuses a member with no pr:view grant', async () => {
+    const { owner, member } = await scaffold('repos-list');
+    const fake = fakeGithub({ fullName: 'acme/first' });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps, 'acme/first');
+
+    const secondFake = fakeGithub({ fullName: 'acme/second' });
+    const secondDeps = depsFor(secondFake.fetch);
+    await connectedGithub(owner, secondDeps, 'acme/second');
+
+    const result = await listConnectedRepos(owner);
+    expect(result.map((r) => r.providerScope).sort()).toEqual(['acme/first', 'acme/second']);
+
+    await expect(listConnectedRepos(member)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('getPullRequestFiles', () => {
+  it('returns real GitHub file rows, mapped', async () => {
+    const { owner } = await scaffold('files-ok');
+    const fake = fakeGithub({});
+    // fakeGithub's own handler has no /files route; build a thin wrapper.
+    const filesFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (/\/pulls\/\d+\/files/.test(url)) {
+        return new Response(
+          JSON.stringify([
+            {
+              filename: 'src/index.ts',
+              status: 'modified',
+              additions: 3,
+              deletions: 1,
+              previous_filename: null,
+            },
+          ]),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    const deps = depsFor(filesFetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFiles(owner, deps, { prNumber: 4 });
+
+    expect(result).toEqual([
+      { path: 'src/index.ts', status: 'modified', additions: 3, deletions: 1, previousPath: null },
+    ]);
+  });
+
+  it('refuses a member with no pr:view grant, before any network call', async () => {
+    const { owner, member } = await scaffold('files-refused');
+    const fake = fakeGithub({});
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(getPullRequestFiles(member, deps, { prNumber: 4 })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(fake.calls).toHaveLength(0);
   });
 });
 

@@ -214,7 +214,8 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'date, never a pre-computed relative answer. ' +
                 'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
                 'list_labels, list_members, list_sprints, list_statuses, list_channels, ' +
-                'list_prs, get_pr_diff, get_pr_comments, list_card_prs, and ' +
+                'list_repos, list_prs, get_pr_diff, get_pr_files, get_pr_comments, ' +
+                'list_card_prs, and ' +
                 "every write tool's own result — " +
                 'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
                 'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
@@ -231,19 +232,32 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'its reference (e.g. "WEB-142"), call `find_card` to resolve it — `search` does ' +
                 'not index card references, only their content, so it will not find one. For ' +
                 'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
-                '`get_pr_comments` — there is no other tool that can see GitHub, and a PR number ' +
-                '(e.g. "PR #42") is not a cardId or any other kind of id in this app. ' +
+                '`get_pr_files`/`get_pr_comments` — there is no other tool that can see GitHub, ' +
+                'and a PR number (e.g. "PR #42") is not a cardId or any other kind of id in this ' +
+                'app. Use `get_pr_files` for "what files does this PR touch" — cheaper than ' +
+                '`get_pr_diff` and never truncated; reach for `get_pr_diff` only when the actual ' +
+                'line-by-line content matters. ' +
                 '`list_prs` defaults to OPEN pull requests only — if the user asks for closed, ' +
                 'merged, or "all" pull requests, you MUST pass `state: "closed"` or ' +
                 '`state: "all"` explicitly; do not assume the default list already covers what ' +
                 'they asked for, and do not silently narrow a request for closed PRs back to ' +
-                'open ones. To act on a ' +
-                'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_merge`/`pr_close` — ' +
-                'never `card_add_comment` or any Work/Chat tool, which act on a TaskFlow card or ' +
-                'channel, not a GitHub pull request. To connect a card to the pull request that ' +
+                'open ones. If any GitHub tool refuses because more than one repository is ' +
+                'connected, call `list_repos`, tell the user the choices, and ask which one they ' +
+                'mean — then pass that exact value as `repoScope` on every GitHub tool call for ' +
+                'the rest of THIS conversation without asking again, unless the user later says ' +
+                'to use a different repo. Never guess which connected repo to use. To act on a ' +
+                'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_approve`/`pr_merge`/' +
+                '`pr_close` — never `card_add_comment` or any Work/Chat tool, which act on a ' +
+                'TaskFlow card or channel, not a GitHub pull request. `pr_approve` and ' +
+                '`pr_request_changes` are different, mutually exclusive outcomes of the same ' +
+                'review — never call both for the same request. To connect a card to the pull ' +
+                'request that ' +
                 'implements it, use `card_link_pr` (never a comment or any other tool) — and use ' +
                 '`list_card_prs` to see which PRs are already linked to a card before asking the ' +
-                'user which one they mean. If you ' +
+                'user which one they mean. To create a git branch for a card, use ' +
+                "`create_branch_from_card` — its name is derived automatically from the card's " +
+                'own reference and title; never invent a branch name yourself, the tool takes no ' +
+                'name input at all. If you ' +
                 'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +

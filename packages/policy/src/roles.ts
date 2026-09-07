@@ -106,6 +106,7 @@ const ADMIN: readonly Permission[] = [
   'pr:view',
   'pr:review',
   'pr:merge',
+  'repo:connect',
 ];
 
 const MEMBER: readonly Permission[] = [

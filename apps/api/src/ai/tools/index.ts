@@ -26,10 +26,14 @@ import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import { createDocsCreatePageTool } from './docs.js';
 import {
   createCardLinkPrTool,
+  createCreateBranchFromCardTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createGetPrFilesTool,
   createListCardPrsTool,
   createListPrsTool,
+  createListReposTool,
+  createPrApproveTool,
   createPrCloseTool,
   createPrMergeTool,
   createPrPostCommentTool,
@@ -151,6 +155,22 @@ export interface ToolRegistryDeps {
  * `Pick<IntegrationDeps, 'keys' | 'fetchImpl'>` shape (both just need to
  * reach and decrypt the org's connector), so a second, separately-threaded
  * field here would be redundant plumbing for no functional difference.
+ *
+ * Wave 3 closes three real gaps found once an org actually connected more
+ * than one repo and asked for more than the original three read tools:
+ * `list_repos` and every existing PR tool's new optional `repoScope` input
+ * (`pr.ts`'s own `RepoScopeField`/`RepoScopeProperty`) replace
+ * `connectedGithubRepo`'s old silent "most recently connected" tie-break
+ * with an explicit refusal the model can recover from by listing repos and
+ * asking; `pr_approve` closes the asymmetry of a registry that could reject
+ * a PR but never formally approve one; `get_pr_files` answers "what does
+ * this PR touch" without the truncation risk a large PR's `get_pr_diff`
+ * carries; and `create_branch_from_card` (`repo:connect`, the one
+ * permission from §7's original four that went the longest without a
+ * caller) is the last item on §7.2's own list, "create a branch from this
+ * card" — see `branch.service.ts`'s own header for the deterministic
+ * `<reference>-<slug>` naming and why an existing branch is reported back
+ * rather than treated as a failure.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -177,14 +197,18 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListChannelsTool(),
     createChatPostMessageTool(),
     createDocsCreatePageTool(),
+    createListReposTool(),
     createListPrsTool(deps.prReadDeps),
     createGetPrDiffTool(deps.prReadDeps),
+    createGetPrFilesTool(deps.prReadDeps),
     createGetPrCommentsTool(deps.prReadDeps),
     createPrPostCommentTool(deps.prReadDeps),
     createPrRequestChangesTool(deps.prReadDeps),
+    createPrApproveTool(deps.prReadDeps),
     createPrMergeTool(deps.prReadDeps),
     createPrCloseTool(deps.prReadDeps),
     createListCardPrsTool(),
     createCardLinkPrTool(deps.prReadDeps),
+    createCreateBranchFromCardTool(deps.prReadDeps),
   ];
 }

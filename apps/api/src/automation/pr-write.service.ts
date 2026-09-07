@@ -141,11 +141,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function postPrComment(
   actor: AutomationActor,
   deps: PrWriteDeps,
-  input: { readonly prNumber: number; readonly body: string },
+  input: {
+    readonly prNumber: number;
+    readonly body: string;
+    readonly repoScope?: string | undefined;
+  },
 ): Promise<{ readonly commentId: number | null; readonly providerScope: string }> {
   assertMayReview(actor);
   const orgId = actor.subject.orgId;
-  const connector = await connectedGithubRepo(orgId, deps);
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
   const response = await fetchFn(
@@ -185,11 +189,15 @@ export async function postPrComment(
 export async function requestPrChanges(
   actor: AutomationActor,
   deps: PrWriteDeps,
-  input: { readonly prNumber: number; readonly body: string },
+  input: {
+    readonly prNumber: number;
+    readonly body: string;
+    readonly repoScope?: string | undefined;
+  },
 ): Promise<{ readonly reviewId: number | null; readonly providerScope: string }> {
   assertMayReview(actor);
   const orgId = actor.subject.orgId;
-  const connector = await connectedGithubRepo(orgId, deps);
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
   const response = await fetchFn(
@@ -226,10 +234,74 @@ export async function requestPrChanges(
   return { reviewId, providerScope: connector.providerScope };
 }
 
+/**
+ * The complement `requestPrChanges` never had — an org could ask the
+ * assistant to flag problems with a PR but never to formally sign off on
+ * one, a real, asymmetric gap found the moment "approve this PR" was tried
+ * against the tool list and nothing answered it. Shares `pr:review` (an
+ * approval is a review, the identical permission tier
+ * `requestPrChanges`/`postPrComment` already sit at) and the identical
+ * "own PR" 422 GitHub itself refuses a formal review on.
+ */
+export async function approvePr(
+  actor: AutomationActor,
+  deps: PrWriteDeps,
+  input: {
+    readonly prNumber: number;
+    readonly body?: string | undefined;
+    readonly repoScope?: string | undefined;
+  },
+): Promise<{ readonly reviewId: number | null; readonly providerScope: string }> {
+  assertMayReview(actor);
+  const orgId = actor.subject.orgId;
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
+  const fetchFn = deps.fetchImpl ?? fetch;
+
+  const response = await fetchFn(
+    `https://api.github.com/repos/${repoPath(connector.providerScope)}/pulls/${String(input.prNumber)}/reviews`,
+    {
+      method: 'POST',
+      headers: githubHeaders(connector.token),
+      body: JSON.stringify({
+        ...(input.body === undefined ? {} : { body: input.body }),
+        event: 'APPROVE',
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
+  if (!response.ok) throw githubWriteError(response.status, true);
+
+  const created = await response.json();
+  const reviewId = isRecord(created) && typeof created['id'] === 'number' ? created['id'] : null;
+
+  await withOrgScope(orgId, async (tx) => {
+    await outboxWriter.append(tx, [
+      createEvent(
+        integrationPrReviewSubmitted,
+        {
+          integrationId: connector.integrationId,
+          provider: 'github',
+          providerScope: connector.providerScope,
+          prNumber: input.prNumber,
+          event: 'APPROVE',
+          providerReviewId: reviewId,
+        },
+        envelopeOf(actor),
+      ),
+    ]);
+  });
+
+  return { reviewId, providerScope: connector.providerScope };
+}
+
 export async function mergePr(
   actor: AutomationActor,
   deps: PrWriteDeps,
-  input: { readonly prNumber: number; readonly mergeMethod?: 'merge' | 'squash' | 'rebase' },
+  input: {
+    readonly prNumber: number;
+    readonly mergeMethod?: 'merge' | 'squash' | 'rebase';
+    readonly repoScope?: string | undefined;
+  },
 ): Promise<{
   readonly merged: boolean;
   readonly sha: string | null;
@@ -237,7 +309,7 @@ export async function mergePr(
 }> {
   assertMayMerge(actor);
   const orgId = actor.subject.orgId;
-  const connector = await connectedGithubRepo(orgId, deps);
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
   const response = await fetchFn(
@@ -279,11 +351,11 @@ export async function mergePr(
 export async function closePr(
   actor: AutomationActor,
   deps: PrWriteDeps,
-  input: { readonly prNumber: number },
+  input: { readonly prNumber: number; readonly repoScope?: string | undefined },
 ): Promise<{ readonly closed: boolean; readonly providerScope: string }> {
   assertMayMerge(actor);
   const orgId = actor.subject.orgId;
-  const connector = await connectedGithubRepo(orgId, deps);
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
   const response = await fetchFn(

@@ -2536,6 +2536,87 @@ widening: it throws `membershipSuspended()` on a non-active membership before it
 `identity.orgs`, so this only changes the one caller, `listMyOrgs`, that genuinely needs to see a
 suspended membership's own org row.
 
+### Phase 15 §7 — multi-repo resolution, `pr_approve`/`get_pr_files`/branch creation, a diff viewer (SHIPPED)
+
+`packages/policy/src/{permissions,roles}.ts` (`repo:connect`) ·
+`apps/api/src/automation/integration.service.ts` (`connectedGithubRepos`, `connectedGithubRepo`'s
+ambiguity refusal) · `apps/api/src/automation/{pr-read,pr-write}.service.ts` (`repoScope` on every
+existing function, `getPullRequestFiles`, `approvePr`) · `apps/api/src/automation/branch.service.ts`
+(new) · `apps/api/src/ai/tools/pr.ts` (`list_repos`, `get_pr_files`, `pr_approve`,
+`create_branch_from_card`) · `apps/web/src/features/ai/diff-view.tsx` (new). Prompted directly by
+the project owner, in four parts: what happens with more than one connected repo, a way to create a
+branch from a card, more GitHub capability generally ("these looks very basic"), and a genuinely
+readable diff ("very tricky to read... not presentable... if we go with the diff of a pr it should
+be proper way").
+
+**Multi-repo: the old silent "most recently connected" tie-break is gone, replaced by an explicit
+refusal the model can recover from.** `connectedGithubRepo` used to pick a repo with no signal to
+anyone that a repo other than the intended one was now in use — a real, silent-wrong-answer risk
+the moment a second repo got connected, not a hypothetical one. It now takes an optional
+`repoScope`: given, it is checked against the org's own connected rows (never trusted blind — a
+value naming a repo this org never connected is refused with `NOT_FOUND`, identical to an omitted
+scope on a single-repo org); omitted with exactly one repo connected, resolution is unchanged;
+omitted with more than one connected, it throws `VALIDATION_FAILED` naming `list_repos` as the
+recovery path, with zero network calls made — the same "refused before any external effect"
+property this codebase proves for every access gate. `list_repos` (`connectedGithubRepos`, no
+GitHub call — reads `platform.integrations` directly) is what turns that refusal into "ask the
+user which one, then reuse the answer" per the project owner's own stated design: `router.ts`'s
+system prompt tells the model explicitly to call `list_repos` on that refusal, ask once, and reuse
+the chosen `repoScope` for the rest of THIS conversation unless told otherwise — a conversation-
+scoped choice, not a server-side one, since `ai.chat.send` is stateless (§4 Wave 1) and has nothing
+durable to remember it in. Every existing PR tool (`list_prs`, `get_pr_diff`, `get_pr_comments`,
+`pr_post_comment`, `pr_request_changes`, `pr_merge`, `pr_close`, `card_link_pr`) gained the
+identical optional `repoScope` field via a shared `RepoScopeField`/`RepoScopeProperty` fragment in
+`pr.ts`, rather than each tool inventing its own copy of the same three lines.
+
+**`create_branch_from_card` closes the last item on §7.2's original four-permission list —
+`repo:connect` — the one that went the longest without a caller.** Gated on `repo:connect`
+specifically, not `pr:review`/`pr:merge`: a fresh ref on the default branch is visible to the whole
+GitHub org the instant it exists, a bigger blast radius than commenting on or even merging a PR
+someone else already reviewed, so it is not something every reviewer/merger should be able to do
+without a separate grant. The branch name is `<reference>-<slug>` — e.g. `web-142-fix-login-
+redirect` — built entirely server-side from the card's own reference and title, never asked of the
+model, the identical "classification stays deterministic" instinct this codebase applies everywhere
+a name could otherwise be guessed (`standup.service.ts`'s bucketing, `card_move`'s rank derivation).
+Unlike `card_link_pr` (which records a claim with no GitHub round trip at all, by design), this
+tool creates a REAL ref, so "does a branch with this name already exist" has a real, cheap answer —
+`GET .../git/ref/heads/<name>` before ever attempting `POST .../git/refs` — and an existing branch
+is reported back (`alreadyExisted: true`) rather than treated as a failure, the same reasoning
+`linkCardPullRequest`'s own idempotency exists for: a retried confirmation should not error for no
+reason. The event (`integration.branch_created`) is written only after GitHub's own ref creation
+succeeds, identical discipline to every other PR write tool in this registry, and its audit
+projection mapping was added in the SAME change that registers the event — the exact gap CI caught
+once already for Wave 2's `integration.pr_*` events, deliberately not repeated here.
+
+**`pr_approve` closes an asymmetry: the registry could formally reject a PR (`pr_request_changes`)
+but never approve one.** Shares `pr:review` — an approval is a review, the same permission tier
+`pr_request_changes`/`pr_post_comment` already sit at — and the identical "GitHub refuses a formal
+review on the connector's own PR" 422 hint, naming `pr_post_comment` as the working alternative.
+
+**`get_pr_files` answers "what does this PR touch" without `get_pr_diff`'s truncation risk.** A
+large PR's diff routinely blows past `MAX_DIFF_CHARS` before a person learns the SHAPE of the
+change at all; the files endpoint (path, status, additions/deletions per file) is one page
+regardless of PR size, and is never truncated.
+
+**The diff viewer replaces one undifferentiated `<pre>` block of raw unified-diff text — found
+directly "very tricky to read... not presentable" — with real per-file, per-hunk structure, colored
+additions/deletions, modeled on GitHub's own diff view.** `apps/web/src/features/ai/diff-view.tsx`'s
+`parseUnifiedDiff` is exported and pure specifically so it can be tested directly against real diff
+text (`diff-view.test.ts`), the same "test the pure half" split `markdown-lite.tsx`/`api.test.ts`
+already establish for this feature — a unified diff has enough real edge cases (renames, added/
+deleted files via `/dev/null`, a file with no trailing newline, `\ No newline at end of file`
+annotations) that eyeballing the component's output is not enough to trust the parser. It never
+throws: an unrecognized line inside a hunk is treated as context rather than aborting the whole
+parse, since `get_pr_diff`'s own `MAX_DIFF_CHARS` truncation can cut a diff off mid-hunk — a real,
+expected input, not a malformed one. One real bug the test suite itself caught before this shipped:
+`text.split('\n')` produces a spurious trailing `''` whenever the diff text ends with a newline (the
+common case for real diff text), which the parser's context-line fallback was turning into a fake
+blank line appended to the last hunk — fixed by dropping exactly that one trailing artifact before
+the main parsing loop runs, never any non-trailing blank line, since a genuine blank line in the
+middle of a diff must still render as real context. `tool-results.tsx`'s `renderGetPrDiff` renders
+`DiffView` in place of the old `<pre>`; a diff `parseUnifiedDiff` cannot recognize at all still
+falls back to the raw text, so nothing renders worse than before.
+
 `packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 

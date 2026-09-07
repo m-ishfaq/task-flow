@@ -5,19 +5,40 @@ import { connectedGithubRepo } from '../../automation/integration.service.js';
 import {
   getPullRequestComments,
   getPullRequestDiff,
+  getPullRequestFiles,
+  listConnectedRepos,
   listPullRequests,
   type PrReadDeps,
 } from '../../automation/pr-read.service.js';
 import {
+  approvePr,
   closePr,
   mergePr,
   postPrComment,
   requestPrChanges,
   type PrWriteDeps,
 } from '../../automation/pr-write.service.js';
+import { createBranchFromCard, type BranchWriteDeps } from '../../automation/branch.service.js';
 import { linkCardPullRequest, listCardPullRequests } from '../../work/card-pull-request.service.js';
 import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
+
+/** `repoScope` is optional everywhere and means the same thing on every
+    tool here: which connected repo to use, required only once an org has
+    more than one (`connectedGithubRepo`'s own header). Every schema below
+    that touches GitHub includes it, kept as one literal Zod fragment rather
+    than a shared base schema — `.extend()`ing a `.strict()` object is easy
+    to get subtly wrong the moment a schema also needs `.optional()` fields
+    with different defaults, and there are only a handful of these. */
+const RepoScopeField = { repoScope: z.string().min(1).optional() };
+const RepoScopeProperty = {
+  repoScope: {
+    type: 'string',
+    description:
+      'Which connected repo to use (owner/repo), from list_repos — required only when more ' +
+      'than one repo is connected.',
+  },
+} as const;
 
 /**
  * GitHub pull-request tools (ai/phase-15-ai-copilot-and-permissions.md §7).
@@ -53,10 +74,32 @@ function workActorOf(ctx: ToolContext): WorkActor {
   return { subject: ctx.subject, requestId: ctx.requestId };
 }
 
+const ListReposInput = z.object({}).strict();
+
+export function createListReposTool(): ToolDefinition {
+  return defineTool({
+    name: 'list_repos',
+    description:
+      "Lists the organization's connected GitHub repositories. Call this whenever a PR tool " +
+      'refuses because more than one repo is connected — the refusal names the tools that need ' +
+      '`repoScope`, and this is how you find out what values are valid. Also useful up front if ' +
+      'you already expect more than one repo.',
+    jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiresConfirmation: false,
+    async execute(ctx) {
+      const repos = await listConnectedRepos(actorOf(ctx));
+      if (repos.length === 0) return { content: 'No GitHub repository is connected.' };
+      return { content: JSON.stringify(repos) };
+    },
+    inputSchema: ListReposInput,
+  });
+}
+
 const ListPrsInput = z
   .object({
     state: z.enum(['open', 'closed', 'all']).default('open'),
     limit: z.number().int().min(1).max(20).default(10),
+    ...RepoScopeField,
   })
   .strict();
 
@@ -72,6 +115,7 @@ export function createListPrsTool(deps: PrReadDeps): ToolDefinition {
       properties: {
         state: { type: 'string', enum: ['open', 'closed', 'all'] },
         limit: { type: 'integer', minimum: 1, maximum: 20 },
+        ...RepoScopeProperty,
       },
       additionalProperties: false,
     },
@@ -85,17 +129,24 @@ export function createListPrsTool(deps: PrReadDeps): ToolDefinition {
   });
 }
 
-const PrNumberInput = z.object({ prNumber: z.number().int().positive() }).strict();
+const PrNumberInput = z
+  .object({ prNumber: z.number().int().positive(), ...RepoScopeField })
+  .strict();
 
 export function createGetPrDiffTool(deps: PrReadDeps): ToolDefinition {
   return defineTool({
     name: 'get_pr_diff',
     description:
       "Fetches a pull request's diff, given its number. Long diffs are truncated — check the " +
-      "result's `truncated` field before assuming you have seen the whole change.",
+      "result's `truncated` field before assuming you have seen the whole change. For a quick " +
+      'overview of WHICH files changed without the line-by-line content, use `get_pr_files` ' +
+      'instead — cheaper, and never truncated.',
     jsonSchema: {
       type: 'object',
-      properties: { prNumber: { type: 'integer', description: 'The pull request number.' } },
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        ...RepoScopeProperty,
+      },
       required: ['prNumber'],
       additionalProperties: false,
     },
@@ -108,6 +159,33 @@ export function createGetPrDiffTool(deps: PrReadDeps): ToolDefinition {
   });
 }
 
+export function createGetPrFilesTool(deps: PrReadDeps): ToolDefinition {
+  return defineTool({
+    name: 'get_pr_files',
+    description:
+      'Lists the files a pull request changes — path, status (added/modified/removed/renamed), ' +
+      'and how many lines were added/removed in each, without the line-by-line diff content. ' +
+      'Use this for "what does this PR touch" questions; use `get_pr_diff` when the actual ' +
+      'content of the change matters.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        ...RepoScopeProperty,
+      },
+      required: ['prNumber'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: PrNumberInput,
+    async execute(ctx, input) {
+      const files = await getPullRequestFiles(actorOf(ctx), deps, input);
+      if (files.length === 0) return { content: 'This pull request changes no files.' };
+      return { content: JSON.stringify(files) };
+    },
+  });
+}
+
 export function createGetPrCommentsTool(deps: PrReadDeps): ToolDefinition {
   return defineTool({
     name: 'get_pr_comments',
@@ -116,7 +194,10 @@ export function createGetPrCommentsTool(deps: PrReadDeps): ToolDefinition {
       'code review comments — given its number.',
     jsonSchema: {
       type: 'object',
-      properties: { prNumber: { type: 'integer', description: 'The pull request number.' } },
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        ...RepoScopeProperty,
+      },
       required: ['prNumber'],
       additionalProperties: false,
     },
@@ -137,7 +218,11 @@ export function createGetPrCommentsTool(deps: PrReadDeps): ToolDefinition {
  * -------------------------------------------------------------------------- */
 
 const PrCommentInput = z
-  .object({ prNumber: z.number().int().positive(), body: z.string().min(1).max(20_000) })
+  .object({
+    prNumber: z.number().int().positive(),
+    body: z.string().min(1).max(20_000),
+    ...RepoScopeField,
+  })
   .strict();
 
 export function createPrPostCommentTool(deps: PrWriteDeps): ToolDefinition {
@@ -149,6 +234,7 @@ export function createPrPostCommentTool(deps: PrWriteDeps): ToolDefinition {
       properties: {
         prNumber: { type: 'integer', description: 'The pull request number.' },
         body: { type: 'string', description: 'The comment text.' },
+        ...RepoScopeProperty,
       },
       required: ['prNumber', 'body'],
       additionalProperties: false,
@@ -172,6 +258,7 @@ export function createPrRequestChangesTool(deps: PrWriteDeps): ToolDefinition {
       properties: {
         prNumber: { type: 'integer', description: 'The pull request number.' },
         body: { type: 'string', description: 'What needs to change, and why.' },
+        ...RepoScopeProperty,
       },
       required: ['prNumber', 'body'],
       additionalProperties: false,
@@ -185,10 +272,45 @@ export function createPrRequestChangesTool(deps: PrWriteDeps): ToolDefinition {
   });
 }
 
+const PrApproveInput = z
+  .object({
+    prNumber: z.number().int().positive(),
+    body: z.string().min(1).max(20_000).optional(),
+    ...RepoScopeField,
+  })
+  .strict();
+
+export function createPrApproveTool(deps: PrWriteDeps): ToolDefinition {
+  return defineTool({
+    name: 'pr_approve',
+    description:
+      'Submits an "approve" review on a pull request, optionally with a comment. GitHub ' +
+      "refuses this on the connector's own pull request — use `pr_post_comment` instead when " +
+      'that happens.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        body: { type: 'string', description: 'Optional comment to include with the approval.' },
+        ...RepoScopeProperty,
+      },
+      required: ['prNumber'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: PrApproveInput,
+    async execute(ctx, input) {
+      const result = await approvePr(actorOf(ctx), deps, input);
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
 const PrMergeInput = z
   .object({
     prNumber: z.number().int().positive(),
     mergeMethod: z.enum(['merge', 'squash', 'rebase']).optional(),
+    ...RepoScopeField,
   })
   .strict();
 
@@ -203,6 +325,7 @@ export function createPrMergeTool(deps: PrWriteDeps): ToolDefinition {
       properties: {
         prNumber: { type: 'integer', description: 'The pull request number.' },
         mergeMethod: { type: 'string', enum: ['merge', 'squash', 'rebase'] },
+        ...RepoScopeProperty,
       },
       required: ['prNumber'],
       additionalProperties: false,
@@ -219,6 +342,7 @@ export function createPrMergeTool(deps: PrWriteDeps): ToolDefinition {
       // for the identical Zod-optional-vs-exact-optional mismatch.
       const result = await mergePr(actorOf(ctx), deps, {
         prNumber: input.prNumber,
+        repoScope: input.repoScope,
         ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
       });
       return { content: JSON.stringify(result) };
@@ -278,7 +402,7 @@ export function createListCardPrsTool(): ToolDefinition {
 }
 
 const CardLinkPrInput = z
-  .object({ cardId: CardIdSchema, prNumber: z.number().int().positive() })
+  .object({ cardId: CardIdSchema, prNumber: z.number().int().positive(), ...RepoScopeField })
   .strict();
 
 export function createCardLinkPrTool(deps: PrReadDeps): ToolDefinition {
@@ -292,6 +416,7 @@ export function createCardLinkPrTool(deps: PrReadDeps): ToolDefinition {
       properties: {
         cardId: { type: 'string', description: 'The card, from `find_card`.' },
         prNumber: { type: 'integer', description: 'The pull request number.' },
+        ...RepoScopeProperty,
       },
       required: ['cardId', 'prNumber'],
       additionalProperties: false,
@@ -299,12 +424,44 @@ export function createCardLinkPrTool(deps: PrReadDeps): ToolDefinition {
     requiresConfirmation: true,
     inputSchema: CardLinkPrInput,
     async execute(ctx, input) {
-      const connector = await connectedGithubRepo(ctx.subject.orgId, deps);
+      const connector = await connectedGithubRepo(ctx.subject.orgId, deps, input.repoScope);
       const result = await linkCardPullRequest(workActorOf(ctx), {
         cardId: input.cardId,
         providerScope: connector.providerScope,
         prNumber: input.prNumber,
       });
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Create a branch from a card (§7.2's last unbuilt action, `repo:connect`,
+ * `apps/api/src/automation/branch.service.ts`).
+ * -------------------------------------------------------------------------- */
+
+const CreateBranchInput = z.object({ cardId: CardIdSchema, ...RepoScopeField }).strict();
+
+export function createCreateBranchFromCardTool(deps: BranchWriteDeps): ToolDefinition {
+  return defineTool({
+    name: 'create_branch_from_card',
+    description:
+      'Creates a new git branch off the connected repository’s default branch, named after ' +
+      'the card (its reference and a slugified title, e.g. `web-142-fix-login-redirect`). If a ' +
+      'branch with that name already exists, reports that instead of creating a duplicate.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The card, from `find_card`.' },
+        ...RepoScopeProperty,
+      },
+      required: ['cardId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CreateBranchInput,
+    async execute(ctx, input) {
+      const result = await createBranchFromCard(workActorOf(ctx), deps, input);
       return { content: JSON.stringify(result) };
     },
   });

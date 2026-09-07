@@ -121,6 +121,10 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
     expect(isGrantable('pr:merge')).toBe(true);
   });
 
+  it('accepts the Wave 6 repo:connect permission (Phase 15 §7 Wave 3)', () => {
+    expect(isGrantable('repo:connect')).toBe(true);
+  });
+
   it('refuses ownership-adjacent and destructive org-wide permissions', () => {
     for (const permission of [
       'org:update',
@@ -134,6 +138,6 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
   });
 
   it('has no duplicate entries', () => {
-    expect(GRANTABLE_PERMISSIONS.size).toBe(14);
+    expect(GRANTABLE_PERMISSIONS.size).toBe(15);
   });
 });

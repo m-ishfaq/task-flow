@@ -20,10 +20,14 @@ import * as lists from '../../work/list.service.js';
 import * as cards from '../../work/card.service.js';
 import {
   createCardLinkPrTool,
+  createCreateBranchFromCardTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createGetPrFilesTool,
   createListCardPrsTool,
   createListPrsTool,
+  createListReposTool,
+  createPrApproveTool,
   createPrCloseTool,
   createPrMergeTool,
   createPrPostCommentTool,
@@ -185,6 +189,11 @@ function fakeGithub(): { fetch: typeof fetch } {
       );
     }
     if (method === 'GET' && url.includes('/pulls/1/comments')) return Promise.resolve(json([]));
+    if (method === 'GET' && url.includes('/pulls/1/files')) {
+      return Promise.resolve(
+        json([{ filename: 'src/index.ts', status: 'modified', additions: 3, deletions: 1 }]),
+      );
+    }
     if (method === 'POST' && url.includes('/issues/1/comments')) {
       return Promise.resolve(json({ id: 501 }, 201));
     }
@@ -196,6 +205,20 @@ function fakeGithub(): { fetch: typeof fetch } {
     }
     if (method === 'PATCH' && url.endsWith('/pulls/1')) {
       return Promise.resolve(json({ state: 'closed' }, 200));
+    }
+    // Branch-from-card endpoints — the requested ref never exists yet, the
+    // repo's default branch is `main`, and creating the new ref succeeds.
+    if (method === 'GET' && url.includes('/git/ref/heads/') && !url.endsWith('/heads/main')) {
+      return Promise.resolve(json({ message: 'not found' }, 404));
+    }
+    if (method === 'GET' && url.endsWith('/git/ref/heads/main')) {
+      return Promise.resolve(json({ object: { sha: 'base-sha-123' } }));
+    }
+    if (method === 'GET' && url === 'https://api.github.com/repos/acme/todo') {
+      return Promise.resolve(json({ default_branch: 'main' }));
+    }
+    if (method === 'POST' && url.endsWith('/git/refs')) {
+      return Promise.resolve(json({ ref: 'refs/heads/x' }, 201));
     }
     throw new Error(`unexpected call: ${method} ${url}`);
   }) as typeof fetch;
@@ -242,25 +265,29 @@ async function makeCard(ctx: ToolContext): Promise<string> {
 }
 
 describe('requiresConfirmation', () => {
-  it('is false for all three PR read tools', () => {
+  it('is false for all five PR read tools', () => {
     const deps = integrationDeps(fakeGithub().fetch);
+    expect(createListReposTool().requiresConfirmation).toBe(false);
     expect(createListPrsTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrDiffTool(deps).requiresConfirmation).toBe(false);
+    expect(createGetPrFilesTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrCommentsTool(deps).requiresConfirmation).toBe(false);
   });
 
-  it('is true for all four PR write tools, with no exceptions', () => {
+  it('is true for all five PR write tools, with no exceptions', () => {
     const deps = integrationDeps(fakeGithub().fetch);
     expect(createPrPostCommentTool(deps).requiresConfirmation).toBe(true);
     expect(createPrRequestChangesTool(deps).requiresConfirmation).toBe(true);
+    expect(createPrApproveTool(deps).requiresConfirmation).toBe(true);
     expect(createPrMergeTool(deps).requiresConfirmation).toBe(true);
     expect(createPrCloseTool(deps).requiresConfirmation).toBe(true);
   });
 
-  it('is false for list_card_prs and true for card_link_pr', () => {
+  it('is false for list_card_prs and true for card_link_pr / create_branch_from_card', () => {
     const deps = integrationDeps(fakeGithub().fetch);
     expect(createListCardPrsTool().requiresConfirmation).toBe(false);
     expect(createCardLinkPrTool(deps).requiresConfirmation).toBe(true);
+    expect(createCreateBranchFromCardTool(deps).requiresConfirmation).toBe(true);
   });
 });
 
@@ -277,18 +304,25 @@ describe('malformed input', () => {
   });
 });
 
-describe('a guest with no pr:view/pr:review/pr:merge grant', () => {
+describe('a guest with no pr:view/pr:review/pr:merge/repo:connect grant', () => {
   it('gets an isError result, not a thrown error, for every PR tool', async () => {
     const orgId = await newOrg('pr-guest');
+    const ownerContext = await ownerCtx(orgId);
     const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ownerContext, deps);
+    const cardId = await makeCard(ownerContext);
     const ctx = guestCtx(orgId);
 
     for (const result of [
+      await createListReposTool().execute(ctx, {}),
       await createListPrsTool(deps).execute(ctx, {}),
+      await createGetPrFilesTool(deps).execute(ctx, { prNumber: 1 }),
       await createPrPostCommentTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
       await createPrRequestChangesTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
+      await createPrApproveTool(deps).execute(ctx, { prNumber: 1 }),
       await createPrMergeTool(deps).execute(ctx, { prNumber: 1 }),
       await createPrCloseTool(deps).execute(ctx, { prNumber: 1 }),
+      await createCreateBranchFromCardTool(deps).execute(ctx, { cardId }),
     ]) {
       expect(result.isError).toBe(true);
       expect(result.content).toContain('permission');
@@ -297,6 +331,42 @@ describe('a guest with no pr:view/pr:review/pr:merge grant', () => {
 });
 
 describe('success paths', () => {
+  it('list_repos returns the connected repo', async () => {
+    const orgId = await newOrg('pr-repos-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createListReposTool().execute(ctx, {});
+    const parsed = JSON.parse(result.content) as { providerScope: string }[];
+
+    expect(parsed).toEqual([{ providerScope: 'acme/todo' }]);
+  });
+
+  it('get_pr_files returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-files-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createGetPrFilesTool(deps).execute(ctx, { prNumber: 1 });
+    const parsed = JSON.parse(result.content) as { path: string; status: string }[];
+
+    expect(parsed).toEqual([expect.objectContaining({ path: 'src/index.ts', status: 'modified' })]);
+  });
+
+  it('pr_approve returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-approve-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrApproveTool(deps).execute(ctx, { prNumber: 1 });
+    const parsed = JSON.parse(result.content) as { reviewId: number; providerScope: string };
+
+    expect(parsed).toEqual({ reviewId: 502, providerScope: 'acme/todo' });
+  });
+
   it('list_prs returns the shape the frontend renderer expects', async () => {
     const orgId = await newOrg('pr-list-ok');
     const ctx = await ownerCtx(orgId);
@@ -448,5 +518,31 @@ describe('card_link_pr / list_card_prs', () => {
       prNumber: 1,
     });
     expect(result.isError).toBe(true);
+  });
+});
+
+describe('create_branch_from_card', () => {
+  it('creates a branch named deterministically from the card reference and title', async () => {
+    const orgId = await newOrg('branch-create-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+    const cardId = await makeCard(ctx);
+
+    const result = await createCreateBranchFromCardTool(deps).execute(ctx, { cardId });
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content) as {
+      branchName: string;
+      alreadyExisted: boolean;
+      providerScope: string;
+    };
+
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        branchName: 'web-1-fix-login-bug',
+        alreadyExisted: false,
+        providerScope: 'acme/todo',
+      }),
+    );
   });
 });
