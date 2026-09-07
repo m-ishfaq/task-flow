@@ -214,7 +214,7 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'date, never a pre-computed relative answer. ' +
                 'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
                 'list_labels, list_members, list_sprints, list_statuses, list_channels, ' +
-                'list_prs, get_pr_diff, get_pr_comments, and ' +
+                'list_prs, get_pr_diff, get_pr_comments, list_card_prs, and ' +
                 "every write tool's own result — " +
                 'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
                 'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
@@ -235,7 +235,10 @@ export function createAiRouter(deps: AiRouterDeps) {
                 '(e.g. "PR #42") is not a cardId or any other kind of id in this app. To act on a ' +
                 'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_merge`/`pr_close` — ' +
                 'never `card_add_comment` or any Work/Chat tool, which act on a TaskFlow card or ' +
-                'channel, not a GitHub pull request. If you ' +
+                'channel, not a GitHub pull request. To connect a card to the pull request that ' +
+                'implements it, use `card_link_pr` (never a comment or any other tool) — and use ' +
+                '`list_card_prs` to see which PRs are already linked to a card before asking the ' +
+                'user which one they mean. If you ' +
                 'do not yet have the id ' +
                 'you need, call the right list_* tool for it first and wait for its result ' +
                 'before calling anything that depends on it — do not request both in the same ' +

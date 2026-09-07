@@ -14,9 +14,15 @@ import {
   type IntegrationDeps,
 } from '../../automation/integration.service.js';
 import type { AutomationActor } from '../../automation/automation.service.js';
+import * as projects from '../../work/project.service.js';
+import * as boards from '../../work/board.service.js';
+import * as lists from '../../work/list.service.js';
+import * as cards from '../../work/card.service.js';
 import {
+  createCardLinkPrTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createListCardPrsTool,
   createListPrsTool,
   createPrCloseTool,
   createPrMergeTool,
@@ -53,9 +59,19 @@ async function newOrg(slug: string): Promise<OrgId> {
 
 async function removeOrg(orgId: string): Promise<void> {
   await admin.setOrg(orgId);
+  /* Children before parents: a link before its card, a card before its
+     list/board/project, per this codebase's own standing teardown rule
+     (`tenancy-seed.ts`'s `clearTenant`, `sprint.service.test.ts`'s own
+     `removeOrg`). */
   for (const table of [
     'platform.outbox',
     'platform.integrations',
+    'work.card_pull_requests',
+    'work.cards',
+    'work.lists',
+    'work.views',
+    'work.boards',
+    'work.projects',
     'authz.relationship_tuples',
     'identity.memberships',
   ]) {
@@ -201,6 +217,30 @@ async function connectRepo(ctx: ToolContext, deps: IntegrationDeps): Promise<voi
   await selectRepo(actor, deps, { integrationId: pending.integrationId, fullName: 'acme/todo' });
 }
 
+async function makeCard(ctx: ToolContext): Promise<string> {
+  const workActor = { subject: ctx.subject, requestId };
+  const project = await projects.createProject(workActor, {
+    name: 'Website',
+    key: 'WEB',
+    description: null,
+  });
+  const board = await boards.createBoard(workActor, {
+    projectId: project.projectId,
+    name: 'Delivery',
+  });
+  const list = await lists.createList(workActor, {
+    boardId: board.boardId,
+    name: 'Todo',
+    wipLimit: null,
+  });
+  const card = await cards.createCard(workActor, {
+    listId: list.listId,
+    title: 'Fix login bug',
+    description: null,
+  });
+  return card.cardId;
+}
+
 describe('requiresConfirmation', () => {
   it('is false for all three PR read tools', () => {
     const deps = integrationDeps(fakeGithub().fetch);
@@ -215,6 +255,12 @@ describe('requiresConfirmation', () => {
     expect(createPrRequestChangesTool(deps).requiresConfirmation).toBe(true);
     expect(createPrMergeTool(deps).requiresConfirmation).toBe(true);
     expect(createPrCloseTool(deps).requiresConfirmation).toBe(true);
+  });
+
+  it('is false for list_card_prs and true for card_link_pr', () => {
+    const deps = integrationDeps(fakeGithub().fetch);
+    expect(createListCardPrsTool().requiresConfirmation).toBe(false);
+    expect(createCardLinkPrTool(deps).requiresConfirmation).toBe(true);
   });
 });
 
@@ -340,5 +386,67 @@ describe('success paths', () => {
     const parsed = JSON.parse(result.content) as { closed: boolean; providerScope: string };
 
     expect(parsed).toEqual({ closed: true, providerScope: 'acme/todo' });
+  });
+});
+
+describe('card_link_pr / list_card_prs', () => {
+  it('links a PR to a card, resolving providerScope from the connector, and lists it back', async () => {
+    const orgId = await newOrg('card-link-pr-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+    const cardId = await makeCard(ctx);
+
+    const linked = await createCardLinkPrTool(deps).execute(ctx, { cardId, prNumber: 1 });
+    expect(linked.isError).toBeUndefined();
+    expect(JSON.parse(linked.content)).toEqual({ linked: true });
+
+    const listed = await createListCardPrsTool().execute(ctx, { cardId });
+    const parsed = JSON.parse(listed.content) as {
+      providerScope: string;
+      prNumber: number;
+      linkedBy: string;
+      linkedAt: string;
+    }[];
+    expect(parsed).toEqual([
+      expect.objectContaining({ providerScope: 'acme/todo', prNumber: 1, linkedBy: OWNER }),
+    ]);
+    expect(typeof parsed[0]?.linkedAt).toBe('string');
+  });
+
+  it('card_link_pr never reaches the network — only the connector row is read', async () => {
+    const orgId = await newOrg('card-link-pr-no-fetch');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+    const cardId = await makeCard(ctx);
+
+    let fetchCount = 0;
+    const inner = fakeGithub().fetch;
+    const countingFetch = ((input: string | URL | Request, init?: RequestInit) => {
+      fetchCount += 1;
+      return inner(input, init);
+    }) as typeof fetch;
+
+    await createCardLinkPrTool({ keys, fetchImpl: countingFetch }).execute(ctx, {
+      cardId,
+      prNumber: 1,
+    });
+
+    expect(fetchCount).toBe(0);
+  });
+
+  it('refuses a guest with no card:update', async () => {
+    const orgId = await newOrg('card-link-pr-guest');
+    const ownerContext = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ownerContext, deps);
+    const cardId = await makeCard(ownerContext);
+
+    const result = await createCardLinkPrTool(deps).execute(guestCtx(orgId), {
+      cardId,
+      prNumber: 1,
+    });
+    expect(result.isError).toBe(true);
   });
 });

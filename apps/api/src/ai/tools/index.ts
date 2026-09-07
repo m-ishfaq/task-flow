@@ -25,8 +25,10 @@ import { createSprintAddCardsTool, createSprintCreateTool } from './sprint.js';
 import { createChatPostMessageTool, createListChannelsTool } from './chat.js';
 import { createDocsCreatePageTool } from './docs.js';
 import {
+  createCardLinkPrTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createListCardPrsTool,
   createListPrsTool,
   createPrCloseTool,
   createPrMergeTool,
@@ -182,5 +184,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createPrRequestChangesTool(deps.prReadDeps),
     createPrMergeTool(deps.prReadDeps),
     createPrCloseTool(deps.prReadDeps),
+    createListCardPrsTool(),
+    createCardLinkPrTool(deps.prReadDeps),
   ];
 }

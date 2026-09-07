@@ -307,6 +307,27 @@ export const cardLabels = work.table(
   ],
 );
 
+/**
+ * A card <-> GitHub PR link (migration 0105, Phase 15 §7.2). `providerScope`
+ * + `prNumber` name the PR — no local table for it to reference, since a
+ * pull request lives on GitHub, not here.
+ */
+export const cardPullRequests = work.table(
+  'card_pull_requests',
+  {
+    orgId: uuid('org_id').notNull(),
+    cardId: uuid('card_id').notNull(),
+    providerScope: text('provider_scope').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    linkedBy: uuid('linked_by'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.cardId, table.providerScope, table.prNumber] }),
+    index('card_pull_requests_pr_idx').on(table.orgId, table.providerScope, table.prNumber),
+  ],
+);
+
 export const checklists = work.table(
   'checklists',
   {

@@ -157,6 +157,15 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.labeled': { type: 'card', key: 'cardId' },
   'checklist.created': { type: 'card', key: 'cardId' },
   'checklist.deleted': { type: 'card', key: 'cardId' },
+  /* The card<->PR link (migration 0105, Phase 15 §7.2) — the resource is the
+     CARD, not a `pull_request` type this schema has no concept of: a link
+     changes what one card is annotated with, the identical shape checklist
+     events above already have. Added in the SAME change that registers the
+     event, not a follow-up — the audit projection's own "every registered
+     event is accounted for" test exists precisely to catch a gap like the
+     one this file's Phase 15 §7 Wave 2 section already documents once. */
+  'card.pull_request_linked': { type: 'card', key: 'cardId' },
+  'card.pull_request_unlinked': { type: 'card', key: 'cardId' },
   'checklist_item.created': { type: 'card', key: 'cardId' },
   'checklist_item.updated': { type: 'card', key: 'cardId' },
   'checklist_item.deleted': { type: 'card', key: 'cardId' },
@@ -358,6 +367,16 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      `integration.github_event`) are NOT mapped here — see NEVER_AUDITED. */
   'integration.message_posted': { type: 'integration', key: 'integrationId' },
   'integration.issue_created': { type: 'integration', key: 'integrationId' },
+  /* Phase 15 §7 Wave 2's four PR write events — same shape as the two
+     above (an outbound effect this deployment took through a connector),
+     found missing here by CI rather than by review: `pr-write.service.ts`
+     shipped these with real `.strict()` schemas and real emission, but this
+     map was never updated to match, which `audit.projection.test.ts`'s own
+     "every registered event is accounted for" invariant exists to catch. */
+  'integration.pr_comment_posted': { type: 'integration', key: 'integrationId' },
+  'integration.pr_review_submitted': { type: 'integration', key: 'integrationId' },
+  'integration.pr_merged': { type: 'integration', key: 'integrationId' },
+  'integration.pr_closed': { type: 'integration', key: 'integrationId' },
 };
 
 /**

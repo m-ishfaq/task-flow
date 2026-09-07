@@ -2418,7 +2418,92 @@ refused under this codebase's strict tsconfig, the identical trap `apps/web`'s o
 is the same: build the object conditionally so the key is ABSENT when unset, never
 present-with-`undefined`.
 
-### Two bugs CI found on PR #134, neither caused by §7 (fixed in place)
+### Phase 15 §7 Wave 3 — the card↔PR link (SHIPPED)
+
+`packages/db/migrations/0105_card_pull_requests.*` · `apps/api/src/work/card-pull-request.service.ts`
+· `apps/api/src/work/detail.router.ts`'s `pullRequests:` block · `apps/api/src/ai/tools/pr.ts`'s
+`list_card_prs`/`card_link_pr`. Spec: same file, §7.2 ("a new small table linking a card to a
+PR... and a new action, 'create a feature branch from this card'"). This wave ships only the link
+table and the two tools that read/write it — still not built: `repo:connect`, "create a feature
+branch from this card," and the inbound `pr.merged` trigger the link table exists to serve (see
+below for why that trigger needed real research before it could even be scoped, let alone built).
+
+**§7.2's own text calls the inbound webhook piece "the largest single piece" and separately says
+`pr.merged` becomes "a new domain event... a new trigger name plus the already-existing `card.move`
+action, not new engine work." Both turned out to need the SAME missing piece to actually mean
+anything: a way to know WHICH card a merged PR is even about.** Before this wave, nothing recorded
+that relationship anywhere — an org's automation could react to "a `pull_request` webhook arrived"
+but had no way to turn "PR #42 merged" into "move card WEB-142." §7.1's own "what exists today"
+already correctly named this gap ("no card↔PR link"); this wave closes it. The merge-trigger itself
+is still not built — seeing this dependency only became clear from actually researching the existing
+automation engine (see the next two paragraphs), not assumed going in.
+
+**`packages/filter/src/fields.ts`'s own connector field set (`provider_event`/`provider_scope`,
+exactly two fields) turns out to be the WRONG place to add "was this a merge" filtering, and its own
+header already explains why, unprompted: "the provider's own body stays `unknown`... a field set
+over it would be this repo asserting a schema it does not own and cannot keep current." Generic
+payload-field filtering (`action = 'closed' AND merged = true`) was the first idea considered for
+"auto-move on merge" and rejected on rereading that file's own reasoning — it would mean this
+package owning a slice of GitHub's webhook schema, the exact thing that file's two-field design
+deliberately refuses to do. §7.2's own text agrees independently: `pr.merged` is a NEW, SPECIFIC
+domain event, the identical shape every other trigger in this system already is (`member.added`,
+`card.created`), not a generic catch-all filtered by payload condition. Building the merge trigger
+is therefore real, separate work — parsing GitHub's raw `pull_request` payload for
+`action === 'closed' && pull_request.merged === true` inside the inbound webhook handler and
+emitting a distinct event from it — deliberately deferred out of this wave rather than rushed in
+alongside the link table it depends on.
+
+**The link is `card:update`, not a new permission, and deliberately NOT also gated on `pr:view`.**
+`card-pull-request.service.ts`'s own header states why: linking is filling in a fact about ONE
+card, the identical `card:update` shape `checklist.service.ts` already gives "a checklist is part
+of its card, not a resource anyone grants access to separately" — and nothing about linking reads
+from GitHub at all (no fetch, no token use beyond resolving which repo the org connected), so
+requiring a SECOND permission would refuse a Member who can already edit the card from recording a
+fact they already know via other means (their own branch name, a Slack mention) for no real
+authorization reason.
+
+**No existence check against GitHub — a deliberate, narrower scope than `card_add_labels`'s own
+label-id handling, not an oversight.** A label id is checked against a local table and a fabricated
+one fails a real foreign key; a PR number has no local row to validate against, and verifying it
+would mean a second permission (`pr:view`) plus a real network call just to record a claim. The
+link is exactly that: a claim a person or the assistant can make and later correct, not a
+synchronized mirror of GitHub's own state.
+
+**Modeled directly on `comms.recording_cards` (migration 0034), the closest existing precedent for
+"attach an external thing to a card": a composite FK back to `work.cards(org_id, id)` so a link can
+never point at another tenant's card even if application code got it wrong, and MANY on both sides
+for the identical reason `recording_cards` is — one card can span several PRs (a large feature), and
+in principle one PR could reference more than one card. The "PR" side is plain columns
+(`provider_scope` + `pr_number`), not a foreign key: there is no local table for a GitHub pull
+request to reference. A second index, ordered PR-first rather than card-first, exists for the
+reverse lookup a future merge-trigger action will need ("given this PR, which cards name it") —
+added now, while the migration was already being written, since the need is already certain from
+§7.2's own text, not speculative.**
+
+**`providerScope` is caller-supplied to the SERVICE, unlike every PR read/write tool — a deliberate
+asymmetry, not an inconsistency.** `pr-read.service.ts`/`pr-write.service.ts` always resolve the
+repo via `connectedGithubRepo`, never from caller input, because they use it to build a real GitHub
+API URL, where a caller-supplied scope would be a path-traversal-shaped redirection risk
+(`repoPath`'s own doc comment). This service makes no such call — `providerScope` is inert data
+written to one row, so an arbitrary string here is not unsafe the way it would be in a URL. The one
+caller today (`card_link_pr`) still resolves it from the org's own connector before calling the
+service, for a different reason: consistency with what a person sees when they open the PR (the
+same `owner/repo` the read tools already show), not because the service itself needs the
+guarantee.
+
+**`linkCardPullRequest` is idempotent via `onConflictDoNothing` on the composite primary key, the
+identical shape `memberGrants.grant`/`revoke` already use for a retried batch** — linking a PR that
+is already linked is not a different fact, and a second `card_link_pr` call for the same reference
+should not fail or duplicate the row. Idempotency is at the ROW level only, not the event: each
+call still emits its own `card.pull_request_linked`, the same "every call is a real attempt worth
+recording" reasoning the identity/tenancy idempotent routes already accept, proven directly in
+`card-pull-request.service.test.ts`'s own idempotency case (one row, two events).
+
+**The audit projection's two new entries (`card.pull_request_linked`/`.unlinked`, both mapped to
+`{type: 'card', key: 'cardId'}`) were added in the SAME change that registers the events, not a
+follow-up pass — the identical gap CI had just caught one commit earlier for Wave 2's four
+`integration.pr_*` events (see this file's own "Two bugs CI found on PR #134" section, directly
+below), deliberately not repeated here.**
 
 Both surfaced from the CI run §7 Wave 2's own push triggered, not from anything Wave 1 or Wave 2
 changed — pre-existing, unrelated to GitHub/PR work, fixed because this PR's author is responsible

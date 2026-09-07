@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { CardIdSchema } from '@taskflow/contracts';
 import type { AutomationActor } from '../../automation/automation.service.js';
+import { connectedGithubRepo } from '../../automation/integration.service.js';
 import {
   getPullRequestComments,
   getPullRequestDiff,
@@ -13,6 +15,8 @@ import {
   requestPrChanges,
   type PrWriteDeps,
 } from '../../automation/pr-write.service.js';
+import { linkCardPullRequest, listCardPullRequests } from '../../work/card-pull-request.service.js';
+import type { WorkActor } from '../../work/shared.js';
 import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
 
 /**
@@ -42,6 +46,10 @@ import { defineTool, type ToolContext, type ToolDefinition } from './registry.js
  */
 
 function actorOf(ctx: ToolContext): AutomationActor {
+  return { subject: ctx.subject, requestId: ctx.requestId };
+}
+
+function workActorOf(ctx: ToolContext): WorkActor {
   return { subject: ctx.subject, requestId: ctx.requestId };
 }
 
@@ -232,6 +240,71 @@ export function createPrCloseTool(deps: PrWriteDeps): ToolDefinition {
     inputSchema: PrNumberInput,
     async execute(ctx, input) {
       const result = await closePr(actorOf(ctx), deps, input);
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * The card <-> PR link (ai/phase-15-ai-copilot-and-permissions.md §7.2,
+ * `work/card-pull-request.service.ts`). Neither tool below touches GitHub —
+ * `list_card_prs` reads `work.card_pull_requests` directly, and
+ * `card_link_pr` only resolves the org's connector to learn `providerScope`
+ * (never to make a GitHub call), then writes one row through the real,
+ * `card:update`-checked service. See that service's own header for why this
+ * needs no `pr:view` and performs no existence check against GitHub.
+ * -------------------------------------------------------------------------- */
+
+const ListCardPrsInput = z.object({ cardId: CardIdSchema }).strict();
+
+export function createListCardPrsTool(): ToolDefinition {
+  return defineTool({
+    name: 'list_card_prs',
+    description: 'Lists the pull requests linked to a card.',
+    jsonSchema: {
+      type: 'object',
+      properties: { cardId: { type: 'string', description: 'The card, from `find_card`.' } },
+      required: ['cardId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: ListCardPrsInput,
+    async execute(ctx, input) {
+      const links = await listCardPullRequests(workActorOf(ctx), input);
+      if (links.length === 0) return { content: 'No pull requests are linked to this card.' };
+      return { content: JSON.stringify(links) };
+    },
+  });
+}
+
+const CardLinkPrInput = z
+  .object({ cardId: CardIdSchema, prNumber: z.number().int().positive() })
+  .strict();
+
+export function createCardLinkPrTool(deps: PrReadDeps): ToolDefinition {
+  return defineTool({
+    name: 'card_link_pr',
+    description:
+      "Links a pull request (by number, on the organization's connected repo) to a card, so " +
+      'anyone opening the card can see which PR relates to it.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The card, from `find_card`.' },
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+      },
+      required: ['cardId', 'prNumber'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardLinkPrInput,
+    async execute(ctx, input) {
+      const connector = await connectedGithubRepo(ctx.subject.orgId, deps);
+      const result = await linkCardPullRequest(workActorOf(ctx), {
+        cardId: input.cardId,
+        providerScope: connector.providerScope,
+        prNumber: input.prNumber,
+      });
       return { content: JSON.stringify(result) };
     },
   });

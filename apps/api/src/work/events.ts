@@ -375,6 +375,37 @@ export const checklistDeleted = defineEvent(
     .strict(),
 );
 
+/**
+ * A card <-> GitHub PR link (migration 0105, Phase 15 §7.2). `providerScope`
+ * + `prNumber` name the PR — carried here rather than an `integrationId`,
+ * because the audience for "what happened to this CARD" should not need to
+ * know which internal connector row a repo resolved to; the scope string
+ * (`owner/repo`) is the fact a person reading the card's history recognizes.
+ */
+export const cardPullRequestLinked = defineEvent(
+  'card.pull_request_linked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
+export const cardPullRequestUnlinked = defineEvent(
+  'card.pull_request_unlinked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
 export const checklistItemCreated = defineEvent(
   'checklist_item.created',
   z

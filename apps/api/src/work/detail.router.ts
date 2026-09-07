@@ -18,6 +18,7 @@ import type { WorkActor } from './shared.js';
 import * as labels from './label.service.js';
 import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
+import * as pullRequests from './card-pull-request.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
 
@@ -260,6 +261,57 @@ export function createCardDetailRouter() {
         .input(z.object({ itemId: ChecklistItemIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => checklists.deleteItem(actor(ctx), input)),
+    }),
+
+    /**
+     * GitHub PR links (ai/phase-15-ai-copilot-and-permissions.md §7.2). Every
+     * route here is `card:read`/`card:update`, the identical shape checklists
+     * use — a link is part of its card, not a resource anyone grants access
+     * to separately. See `card-pull-request.service.ts`'s own header for why
+     * this is NOT also gated on `pr:view`.
+     */
+    pullRequests: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({ cardId: CardIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                providerScope: z.string(),
+                prNumber: z.number().int(),
+                linkedBy: z.string().nullable(),
+                linkedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => pullRequests.listCardPullRequests(actor(ctx), input)),
+
+      link: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              prNumber: z.number().int().positive(),
+            })
+            .strict(),
+        )
+        .output(z.object({ linked: z.literal(true) }))
+        .mutation(({ input, ctx }) => pullRequests.linkCardPullRequest(actor(ctx), input)),
+
+      unlink: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              prNumber: z.number().int().positive(),
+            })
+            .strict(),
+        )
+        .output(z.object({ unlinked: z.boolean() }))
+        .mutation(({ input, ctx }) => pullRequests.unlinkCardPullRequest(actor(ctx), input)),
     }),
 
     fields: router({

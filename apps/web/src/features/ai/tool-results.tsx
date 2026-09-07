@@ -1018,6 +1018,71 @@ const renderPrMerge = prWriteRenderer('Merged');
 const renderPrClose = prWriteRenderer('Closed');
 
 /* -------------------------------------------------------------------------- *
+ * list_card_prs / card_link_pr (work/card-pull-request.service.ts)
+ * -------------------------------------------------------------------------- */
+
+function renderListCardPrs(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
+
+  const links: { providerScope: string; prNumber: number }[] = [];
+  for (const entry of parsed) {
+    if (!isRecord(entry)) return null;
+    const providerScope = stringField(entry, 'providerScope');
+    const prNumber = entry['prNumber'];
+    if (providerScope === null || typeof prNumber !== 'number') return null;
+    links.push({ providerScope, prNumber });
+  }
+
+  return (
+    <ResultPanel>
+      <EntityList>
+        {links.map((link) => (
+          <li key={`${link.providerScope}#${String(link.prNumber)}`}>
+            <a
+              href={`https://github.com/${link.providerScope}/pull/${String(link.prNumber)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-surface-hover"
+            >
+              <GitPullRequest aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                {link.providerScope}#{link.prNumber}
+              </span>
+            </a>
+          </li>
+        ))}
+      </EntityList>
+    </ResultPanel>
+  );
+}
+
+/** Reads `cardId` from the CALL's input (the model already has it, same as
+    every other card-write renderer) — `linkCardPullRequest`'s own output
+    carries no card identity back, on the identical "no backend enrichment
+    for a frontend convenience" reasoning `cardWriteRenderer`'s own header
+    states. */
+function renderCardLinkPr(
+  result: ToolResultMessage,
+  call: ToolCallWire,
+  ctx: ToolResultRenderContext,
+): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const cardId = call.input['cardId'];
+  const prNumber = call.input['prNumber'];
+  if (typeof cardId !== 'string' || typeof prNumber !== 'number') return null;
+
+  return (
+    <CardActionResult
+      cardId={cardId}
+      verb={`Linked PR #${String(prNumber)}`}
+      onOpenCard={ctx.onOpenCard}
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * Dispatch
  * -------------------------------------------------------------------------- */
 
@@ -1061,6 +1126,8 @@ const RENDERERS: Readonly<
   pr_request_changes: (result, call) => renderPrRequestChanges(result, call),
   pr_merge: (result, call) => renderPrMerge(result, call),
   pr_close: (result, call) => renderPrClose(result, call),
+  list_card_prs: (result) => renderListCardPrs(result),
+  card_link_pr: (result, call, ctx) => renderCardLinkPr(result, call, ctx),
 };
 
 /**
