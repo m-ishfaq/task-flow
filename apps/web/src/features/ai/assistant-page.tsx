@@ -183,7 +183,7 @@ const CAPABILITIES: readonly {
     a card is typed directly (find_card resolves it), and a label has no
     picker since tagging a card is itself a confirmed step. */
 const REFERENCE_HINTS: readonly { readonly label: string; readonly example: string }[] = [
-  { label: 'A person', example: '@Priya' },
+  { label: 'A person', example: '@Moosa' },
   { label: 'A project', example: '#Website' },
   { label: 'A board', example: '&Delivery' },
   { label: 'A sprint', example: '%Sprint 14' },
@@ -198,13 +198,14 @@ const REFERENCE_HINTS: readonly { readonly label: string; readonly example: stri
    the picker and gets the "zero error" benefit `entity-reference.ts`'s own
    header describes. */
 const EXAMPLE_PROMPTS: readonly string[] = [
+  'List all the tools you have',
   'What am I working on this week?',
   'Create a card in',
   'Move the card',
   'What are the overdue tasks for',
   'List the open PRs',
+  'Link card to the PR#',
   'What did reviewers say on PR #',
-  'Link',
 ];
 
 export function AssistantPage() {
@@ -363,7 +364,7 @@ export function AssistantPage() {
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-[1400px] gap-6 p-6">
+    <div className="mx-auto flex h-full max-w-350 gap-6 p-6 overflow-y-hidden">
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <PageHeader
           title="Assistant"
@@ -489,7 +490,7 @@ export function AssistantPage() {
       {/* Persistent on wide screens — the same content the mobile toggle
           above opens inline, just never collapsed here since the width to
           show it alongside the conversation is exactly what's available. */}
-      <aside className="hidden w-80 shrink-0 lg:block">
+      <aside className="hidden w-80 shrink-0 lg:block overflow-y-auto">
         <div className="sticky top-6">
           <CapabilitiesPanel onUseExample={useExample} variant="sidebar" />
         </div>
