@@ -100,6 +100,38 @@ export async function isChannelMember(
   return rows.length > 0;
 }
 
+/**
+ * Every channel id this user currently holds a `member` tuple on — read
+ * FRESH from the database, never from an in-memory `Subject.tuples` snapshot.
+ *
+ * `findDirectMessage` (`channel.service.ts`) used to derive its candidate
+ * list by filtering `actor.subject.tuples` directly — a snapshot resolved
+ * once at the start of whatever request built it. That is stale the moment
+ * a SECOND `openDirectMessage` call reuses the SAME `actor` after a FIRST
+ * call already wrote a new channel-member tuple: the assistant's
+ * multi-round tool-calling loop does exactly this, calling `chat_post_message`
+ * more than once within one HTTP request against one unrefreshed
+ * `ctx.subject`. The stale read made `findDirectMessage` see zero
+ * candidates, silently opening a DUPLICATE DM on every subsequent call
+ * instead of reusing the one just created — found by CI, a real test
+ * asserting the SECOND call returns the SAME channel id as the first.
+ */
+export async function channelIdsForMember(tx: ChatTx, userId: UserId): Promise<readonly string[]> {
+  const rows = await tx
+    .select({ channelId: schema.relationshipTuples.objectId })
+    .from(schema.relationshipTuples)
+    .where(
+      and(
+        eq(schema.relationshipTuples.subjectType, 'user'),
+        eq(schema.relationshipTuples.subjectId, userId),
+        eq(schema.relationshipTuples.relation, CHANNEL_MEMBER_RELATION),
+        eq(schema.relationshipTuples.objectType, CHANNEL_OBJECT_TYPE),
+      ),
+    );
+
+  return rows.map((row) => row.channelId);
+}
+
 /** The members of several channels at once, grouped by channel id. */
 export async function membersOfChannels(
   tx: ChatTx,
