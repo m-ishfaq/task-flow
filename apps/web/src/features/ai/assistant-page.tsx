@@ -107,28 +107,28 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
  * surface than a one-sentence reply ever needs.
  */
 
-const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
-  {
-    heading: 'Look things up',
-    items: [
-      'Search cards, messages, docs, and comments',
-      'What’s assigned to you and still open',
-      'A project’s boards, sprints, labels, statuses, and members',
-      'Channels and DMs you can see',
-    ],
-  },
-  {
-    heading: 'Make changes — always confirmed first',
-    items: [
-      'Create a card with assignees, labels, priority, due date, and sprint all at once',
-      'Update, assign, unassign, or tag a card, or set its status',
-      'Move a card to a different list — even on a different board',
-      'Comment on a card, tagging people',
-      'Create a sprint, or add cards to one',
-      'Post a message in a channel or start a DM, or create a Docs page',
-    ],
-  },
-];
+// const CAPABILITIES: readonly { readonly heading: string; readonly items: readonly string[] }[] = [
+//   {
+//     heading: 'Look things up',
+//     items: [
+//       'Search cards, messages, docs, and comments',
+//       'What’s assigned to you and still open',
+//       'A project’s boards, sprints, labels, statuses, and members',
+//       'Channels and DMs you can see',
+//     ],
+//   },
+//   {
+//     heading: 'Make changes — always confirmed first',
+//     items: [
+//       'Create a card with assignees, labels, priority, due date, and sprint all at once',
+//       'Update, assign, unassign, or tag a card, or set its status',
+//       'Move a card to a different list — even on a different board',
+//       'Comment on a card, tagging people',
+//       'Create a sprint, or add cards to one',
+//       'Post a message in a channel or start a DM, or create a Docs page',
+//     ],
+//   },
+// ];
 
 /** How to point at a specific thing. The first four are real triggers —
     typing the character opens a picker that inserts an already-resolved
@@ -153,8 +153,9 @@ const REFERENCE_HINTS: readonly { readonly label: string; readonly example: stri
    header describes. */
 const EXAMPLE_PROMPTS: readonly string[] = [
   'What am I working on this week?',
-  'Create a card in #Website / &Delivery / ~Todo, "Fix login bug", assign @Priya, due Friday',
-  'Move WEB-142 to In Review',
+  'Create a card in',
+  'Move the card',
+  'What are the overdue tasks for',
 ];
 
 export function AssistantPage() {
@@ -394,7 +395,7 @@ export function AssistantPage() {
 function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: string) => void }) {
   return (
     <div className="space-y-3 rounded-xl border border-line bg-surface-sunken/50 p-4 text-sm">
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* <div className="grid gap-4 sm:grid-cols-2">
         {CAPABILITIES.map((group) => (
           <div key={group.heading} className="space-y-1.5">
             <p className="text-xs font-semibold text-ink-muted">{group.heading}</p>
@@ -405,7 +406,7 @@ function CapabilitiesPanel({ onUseExample }: { readonly onUseExample: (prompt: s
             </ul>
           </div>
         ))}
-      </div>
+      </div> */}
       {/* A literal " · " between entries, not CSS gap alone — the identical
           collapse-on-copy bug `tool-results.tsx`'s own header now documents
           for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
