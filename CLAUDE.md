@@ -406,6 +406,87 @@ never be left pointing at a version that no longer exists. Fixed in the test (cl
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
+### Email invitations (SHIPPED) — the gap `addMember`'s own doc comment named
+
+`packages/db/migrations/0107_identity_invitations.*` · `identity.invitations` ·
+`identity.invitation_lookup` · `apps/api/src/tenancy/{invitation.service,invitation-mail}.ts` ·
+`tenancy.invitations` sub-router · `apps/web/src/features/auth/accept-invite-page.tsx` ·
+`apps/web/src/features/admin/settings-page.tsx`'s `MemberSection`. Phase 2's own header named this
+as a deliberate deferral, and `addMember`'s doc comment spelled out exactly what it would take:
+"an invitations table, a mailed token, and an acceptance flow that decides what happens when the
+invited address later registers by another route." This is that slice, unaltered in shape from
+what was named seven phases ago.
+
+**Two tables, not one — the same "resolve the tenant before you have a scope" problem
+`comms.subaccount_orgs`/`billing.customer_orgs` already solved twice.** `identity.invitations`
+carries everything about the invitation (email, role, status, who sent it) and is an ordinary
+RLS-protected tenant table, read and written only inside `withOrgScope(orgId)` — every operation
+on it (`createInvitation`, `listInvitations`, `revokeInvitation`) is called by an admin who
+already knows which org they're acting in. `acceptInvitation` is the one caller who does NOT:
+it is invoked by someone holding nothing but an opaque token, by definition not yet a member of
+the org the token names, so there is no scope to open until the org is known.
+`identity.invitation_lookup` (`token_hash -> org_id`, no more) exists solely to answer that one
+question, over `resolveOrgByInvitationToken` (`packages/db/src/tenancy-directory.ts`) — the
+identical `withGlobalScope` shape `resolveOrgBySubaccountSid`/`resolveOrgByStripeCustomerId`
+already use, added to `scripts/check-migration-rls.mjs`'s `RLS_EXEMPT` list with the same "holds
+nothing worth protecting, and the column set is the control" reasoning as its two siblings. Unlike
+those two, this lookup answers to a caller who has already PROVEN possession of the credential (a
+raw token, hashed before it ever reaches the resolver) — there is no signature left to verify
+afterward, only pending/expiry/email checks the accept flow makes once inside the real scope.
+
+**A separate flow from `addMember`, not a widening of it.** `addMember`'s existing contract —
+instant, known-account-only, `NOT_FOUND` for an unregistered address — stays exactly as it was;
+existing tests and its own route depend on that. `createInvitation` is a second door, always
+mailed, always the same `{ status: 'invited' }` answer whether or not the address already has an
+account — an admin cannot use it to learn anything about an address beyond what `members.list`
+already tells them about their own org. `apps/web`'s Members section now offers only the second
+door (the single "Invite" form calls `invitations.send`, not `members.add`) — not because
+`addMember` was wrong, but because offering both would ask an admin to guess which one a given
+address needs, and the invitation flow's answer is a strict superset of what instant-add could do.
+
+**One row per pending invite, rotated on resend, never duplicated.**
+`invitations_org_email_pending_key` is a partial unique index on `(org_id, lower(email)) WHERE
+status = 'pending'` — re-inviting an address that already has a pending row can't create a second
+one, so `createInvitation` ROTATES the existing row's token instead: a new hash, a fresh
+`invitation_lookup` entry, and the OLD lookup row deleted in the same transaction. A stale earlier
+email's link stops resolving an org the instant a newer one is sent, and the pending list never
+shows the same person twice.
+
+**Acceptance checks the invited EMAIL against the AUTHENTICATED caller's own account, not against
+who clicked the link.** A forwarded invitation email must not hand away access to whoever happens
+to be signed in when they click it. `acceptInvitation` reads the caller's own `identity.users` row
+(no RLS — readable from any scope, the same reasoning `addMember`'s own comment gives) and refuses
+with `FORBIDDEN` on a mismatch, naming the fix ("sign in with that address") rather than leaving
+the reader to guess. Expiry is checked the same call, marking the row `expired` and deleting its
+lookup entry rather than leaving a token that resolves an org forever with nothing behind it.
+
+**Idempotent against a real race: the invited person joining some other way before they accept.**
+If the org's admin adds the same address via `addMember`, or the person is added through automation,
+between the invite being sent and being accepted, `acceptInvitation` does not attempt a second
+membership insert (which would violate the unique `(org_id, user_id)` index) — it returns
+`alreadyMember: true` and still marks the invitation accepted, emitting `invitation.accepted` but
+NOT a second `member.added` (that event already fired from whichever path actually created the
+membership).
+
+**`member.added` fires from `acceptInvitation` exactly as it does from `addMember`** — every
+existing consumer (audit, notifications, search indexing, the `member.added` automation trigger,
+Phase 15 §8's onboarding checklist) keeps working with no separate case for "joined via invitation."
+`invitation.accepted`/`invitation.sent`/`invitation.revoked` exist only for what `member.added`
+cannot express on its own: which invitation this was, and its own lifecycle.
+
+**The accept page is click-to-confirm, not auto-fire on mount** — the identical StrictMode/
+mail-scanner reasoning `verify-email-page.tsx`'s own header documents at length, reapplied here
+rather than relearned: a double-mounted effect can spend a single-use token with no observer left
+to hear the result, and a security scanner following the link before a human sees it would burn it
+silently. Requires a session (`requireSession` in `router.tsx`, not `requireOrg` — the whole point
+of this page is reaching it with no org selected yet), and `beforeLoad` carries the token forward
+into `next` so a visitor bounced to `/login` lands back here, still holding it, once signed in.
+
+**Mobile got the functional swap, not the pending-invitations list.** `org-settings.tsx`'s "Add
+member" form now calls `invitations.send` instead of `members.add` — the actual gap this feature
+closes — but has no resend/revoke UI or pending list yet, a real, narrower scope for this pass
+rather than an oversight this screen was built to ignore.
+
 ### Phase 15 §1 — org-level permission grants (SHIPPED, extended past its own spec)
 
 `packages/policy/src/permissions.ts` (`GRANTABLE_PERMISSIONS`) · `authz.member_grants` ·
@@ -4048,8 +4129,9 @@ disable the rule.
 and claim/write/mark are one transaction, which makes the audit projection exactly-once. Later
 consumers get at-least-once and must be idempotent.
 
-Deferred deliberately: email invitations (`members.add` requires an existing account), and the
-permission debug **page** — the `tenancy.authz.explain` endpoint ships now, its UI with `apps/web`.
+Deferred deliberately: email invitations (`members.add` requires an existing account — _shipped
+later, see "Email invitations" below_), and the permission debug **page** — the
+`tenancy.authz.explain` endpoint ships now, its UI with `apps/web`.
 
 ### Phase 1 — identity
 

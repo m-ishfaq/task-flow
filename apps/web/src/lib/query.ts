@@ -246,6 +246,8 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 
   members: (orgId: string) => ['org', orgId, 'members'] as const,
+  /** Pending email invitations (migration 0107) — settings-page.tsx's invite panel. */
+  invitations: (orgId: string) => ['org', orgId, 'invitations'] as const,
   /** Individual, org-level permission grants (ai/phase-15-...md §1) — settings-page.tsx's Permissions section. */
   memberGrants: (orgId: string) => ['org', orgId, 'member-grants'] as const,
   /** One org's role default grant bundles (§8 checklist item 3) — settings-page.tsx's Role defaults section. */

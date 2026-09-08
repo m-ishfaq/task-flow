@@ -9,6 +9,7 @@ interface Outputs {
   orgs: Awaited<ReturnType<typeof api.tenancy.orgs.list.query>>;
   org: Awaited<ReturnType<typeof api.tenancy.orgs.get.query>>;
   members: Awaited<ReturnType<typeof api.tenancy.members.list.query>>;
+  invitations: Awaited<ReturnType<typeof api.tenancy.invitations.list.query>>;
   memberGrants: Awaited<ReturnType<typeof api.tenancy.memberGrants.list.query>>;
   explain: Awaited<ReturnType<typeof api.tenancy.authz.explain.query>>;
 }
@@ -17,6 +18,7 @@ export type OrgMembership = Wire<Outputs['orgs']>[number];
 export type OrgDetail = Wire<Outputs['org']>;
 export type SettingsCapabilities = OrgDetail['capabilities'];
 export type Member = Wire<Outputs['members']>[number];
+export type PendingInvitation = Wire<Outputs['invitations']>[number];
 export type MemberGrant = Wire<Outputs['memberGrants']>[number];
 export type Explanation = Wire<Outputs['explain']>;
 
@@ -54,6 +56,14 @@ export function membersQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.members(orgId),
     queryFn: async () => wire(await api.tenancy.members.list.query(undefined)),
+  });
+}
+
+/** Pending email invitations (migration 0107) — settings-page.tsx's invite panel. */
+export function invitationsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.invitations(orgId),
+    queryFn: async () => wire(await api.tenancy.invitations.list.query(undefined)),
   });
 }
 

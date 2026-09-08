@@ -125,11 +125,16 @@ export function createAppRouter(deps: AppRouterDeps) {
     /**
      * Tenancy, authorization and audit (Phase 2).
      *
-     * Takes `trialDays` (Phase 12 Wave 3) and nothing else: everything else
-     * it needs is the tenant-scoped database and the policy engine, both of
-     * which are module-level and stateless.
+     * Takes `trialDays` (Phase 12 Wave 3) and, since email invitations
+     * (migration 0107), `invitationMail` — reusing billing's own mail deps,
+     * the identical reuse `platformAdmin`'s own `mail` field already makes
+     * below, rather than building a second `MailQueue` wiring path for one
+     * more mail class.
      */
-    tenancy: createTenancyRouter({ trialDays: deps.billing.trialDays }),
+    tenancy: createTenancyRouter({
+      trialDays: deps.billing.trialDays,
+      invitationMail: deps.billing.mail,
+    }),
 
     /**
      * Work — projects, boards, lists, cards, card detail, attachments (Phase 3).

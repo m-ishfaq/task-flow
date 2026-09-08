@@ -227,6 +227,53 @@ export const roleDefaultGrantRemoved = defineEvent(
     .strict(),
 );
 
+/**
+ * Email invitations (migration 0107). `invitation.service.ts`'s only writer.
+ *
+ * `invitationSent` covers both a brand-new invitation and a RESEND (rotating
+ * an existing pending row's token) — both are "an admin caused mail to go to
+ * this address just now," which is what an audit trail actually wants to
+ * answer, not whether the underlying row was new.
+ */
+export const invitationSent = defineEvent(
+  'invitation.sent',
+  z
+    .object({
+      invitationId: z.string(),
+      orgId: z.string(),
+      email: z.string(),
+      role: z.string(),
+      invitedBy: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * An invitation turned into a membership. `member.added` (above) fires
+ * alongside this in the same transaction — every consumer built for "someone
+ * joined" (audit, notifications, search indexing, automation's `member.added`
+ * trigger) keeps working with no separate case for "joined via invitation."
+ * This event exists only for the fact `member.added` cannot express on its
+ * own: WHICH invitation this was, and that it is now consumed.
+ */
+export const invitationAccepted = defineEvent(
+  'invitation.accepted',
+  z
+    .object({
+      invitationId: z.string(),
+      orgId: z.string(),
+      userId: z.string(),
+      email: z.string(),
+      role: z.string(),
+    })
+    .strict(),
+);
+
+export const invitationRevoked = defineEvent(
+  'invitation.revoked',
+  z.object({ invitationId: z.string(), orgId: z.string(), email: z.string() }).strict(),
+);
+
 /*
  * NOT HERE YET: `access.denied`.
  *

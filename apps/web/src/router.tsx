@@ -25,6 +25,7 @@ import { LoginPage } from './features/auth/login-page.js';
 import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
+import { AcceptInvitePage } from './features/auth/accept-invite-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
 import { OAuthCallbackPage } from './features/auth/oauth-callback-page.js';
 import { AccountPage } from './features/auth/account-page.js';
@@ -167,6 +168,31 @@ const resetPasswordRoute = createRoute({
   path: '/reset-password',
   validateSearch: TokenSearch,
   component: ResetPasswordPage,
+});
+
+/**
+ * Where an invitation email's link lands (migration 0107). Fixed by
+ * `apps/api/src/tenancy/invitation-mail.ts` — the same published-contract
+ * reasoning `verifyEmailRoute`/`resetPasswordRoute` state above.
+ *
+ * Unlike those two, this one is `requireSession`, not anonymous — accepting
+ * an invitation is inherently "as someone," and `AcceptInvitePage` needs a
+ * real session to call `invitations.accept` at all. `beforeLoad` carries the
+ * token forward into `next` so a visitor bounced to `/login` lands back here,
+ * still holding it, once they sign in — deliberately NOT `requireOrg`: the
+ * whole point of this page is reaching it with no org selected yet.
+ */
+const acceptInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite/accept',
+  validateSearch: TokenSearch,
+  beforeLoad: ({ search }) =>
+    requireSession(
+      search.token === undefined
+        ? '/invite/accept'
+        : `/invite/accept?token=${encodeURIComponent(search.token)}`,
+    ),
+  component: AcceptInvitePage,
 });
 
 const forgotPasswordRoute = createRoute({
@@ -712,6 +738,7 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   verifyEmailRoute,
   resetPasswordRoute,
+  acceptInviteRoute,
   forgotPasswordRoute,
   oauthCallbackRoute,
   integrationsCallbackRoute,

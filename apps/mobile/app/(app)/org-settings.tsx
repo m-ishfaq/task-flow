@@ -144,9 +144,17 @@ export default function OrgSettingsScreen() {
     },
   });
 
+  /**
+   * Email invitations (migration 0107) — the door `members.add` was never
+   * built to cover, the identical swap `settings-page.tsx`'s own
+   * `MemberSection` makes on web. Always sends mail, whether or not the
+   * address already has a TaskFlow account. No pending-invitations list or
+   * resend/revoke here yet — a real, narrower scope than web's for this
+   * pass, not a parity gap this screen was built to ignore.
+   */
   const add = useMutation({
     mutationFn: (input: { email: string; role: Role }) =>
-      apiClient.tenancy.members.add.mutate(input),
+      apiClient.tenancy.invitations.send.mutate(input),
     onSuccess: async () => {
       setEmail('');
       await refreshMembers();
@@ -351,12 +359,12 @@ export default function OrgSettingsScreen() {
                   {add.isPending ? (
                     <ActivityIndicator color={colors.accentInk.hex} />
                   ) : (
-                    <Text style={styles.saveButtonText}>Add member</Text>
+                    <Text style={styles.saveButtonText}>Send invitation</Text>
                   )}
                 </Pressable>
                 {add.isError && (
                   <Text style={styles.sectionError} accessibilityRole="alert">
-                    {apiErrorOf(add.error)?.error.message ?? 'They could not be added.'}
+                    {apiErrorOf(add.error)?.error.message ?? 'The invitation could not be sent.'}
                   </Text>
                 )}
               </View>

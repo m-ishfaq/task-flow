@@ -1,10 +1,12 @@
 import { z } from 'zod';
-import { OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
+import { InvitationIdSchema, OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
 import { route, router, selfRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import type { Actor } from './org.service.js';
 import * as orgs from './org.service.js';
 import * as members from './member.service.js';
+import * as invitations from './invitation.service.js';
+import type { InvitationServiceDeps } from './invitation.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
 import * as memberGrants from './member-grant.service.js';
@@ -42,6 +44,14 @@ const Role = z.enum(['owner', 'admin', 'member', 'guest']);
 export interface TenancyRouterDeps {
   /** Phase 12 Wave 3 §3.4 — how long a newly created org's trial runs. */
   readonly trialDays: number;
+  /**
+   * Where invitation email goes. Optional, the same shape `billing.mail` and
+   * `platformAdmin`'s reuse of it already establish: without a queue,
+   * invitations still WRITE (the row, the token, the event) but nothing is
+   * sent — a test or a mailer-less instance gets a working invitation record
+   * with no delivery, rather than a crash.
+   */
+  readonly invitationMail?: InvitationServiceDeps['mail'];
 }
 
 export function createTenancyRouter(deps: TenancyRouterDeps) {
@@ -210,6 +220,76 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .mutation(({ input, ctx }) =>
           members.transferOwnership(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
+    }),
+
+    /**
+     * Email invitations (migration 0107) — the door `members.add` was never
+     * built to cover: an address with no TaskFlow account yet. See
+     * `invitation.service.ts`'s own header for why this is a second flow
+     * rather than a change to `add`'s existing, instant, known-account-only
+     * contract.
+     */
+    invitations: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                invitationId: z.string(),
+                email: z.string(),
+                role: z.string(),
+                invitedBy: z.string().nullable(),
+                createdAt: z.date(),
+                expiresAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => invitations.listInvitations(ctx.principal.org.orgId)),
+
+      /**
+       * Same permission `members.add` already uses. Resending an existing
+       * pending invitation goes through this identical route — see
+       * `createInvitation`'s own header on why a resend rotates the row
+       * rather than creating a second one.
+       */
+      send: route({ permission: 'member:invite' })
+        .input(z.object({ email: z.string().trim().email().max(254), role: Role }).strict())
+        .output(z.object({ status: z.literal('invited') }))
+        .mutation(({ input, ctx }) =>
+          invitations.createInvitation(ctx.principal.org.orgId, input, actorOf(ctx), {
+            mail: deps.invitationMail,
+          }),
+        ),
+
+      revoke: route({ permission: 'member:invite' })
+        .input(z.object({ invitationId: InvitationIdSchema }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          invitations.revokeInvitation(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
+       * `selfRoute`, like `orgs.create`/`orgs.list` above and for the
+       * identical reason: the caller is, by definition, not yet a member of
+       * the org the token names, so no org permission can describe this —
+       * `acceptInvitation` itself resolves which org from the token and
+       * checks the invitation is addressed to the caller's own account.
+       */
+      accept: selfRoute({
+        selfReason:
+          'Redeeming an invitation cannot require membership of the org it grants — the whole point is that the caller is not yet a member. acceptInvitation resolves the org from the token itself and verifies it was addressed to the authenticated caller.',
+      })
+        .input(z.object({ token: z.string().min(1).max(200) }).strict())
+        .output(
+          z.object({
+            orgId: z.string(),
+            orgName: z.string(),
+            role: z.string(),
+            alreadyMember: z.boolean(),
+          }),
+        )
+        .mutation(({ input, ctx }) => invitations.acceptInvitation(actorOf(ctx), input)),
     }),
 
     teams: router({

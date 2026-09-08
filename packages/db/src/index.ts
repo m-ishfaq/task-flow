@@ -95,6 +95,7 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
 export { resolveOrgByStripeCustomerId } from './billing-directory.js';
+export { resolveOrgByInvitationToken } from './tenancy-directory.js';
 export { resolveApiToken } from './api-tokens.js';
 export { recordOperationalEvent, type OperationalEventInput } from './ops-events.js';
 

@@ -37,6 +37,7 @@ import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import {
   membersQuery,
+  invitationsQuery,
   memberGrantsQuery,
   orgDetailQuery,
   roleDefaultGrantsQuery,
@@ -180,6 +181,7 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 function MemberSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const members = useQuery(membersQuery(orgId));
+  const invitations = useQuery(invitationsQuery(orgId));
   const org = useQuery(orgDetailQuery(orgId));
   const { guard, dialog } = useStepUp();
   const currentUserId = useSession((state) => state.userId);
@@ -220,10 +222,27 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
+  const refreshInvitations = () =>
+    queryClient.invalidateQueries({ queryKey: keys.invitations(orgId) });
 
-  const add = useMutation({
-    mutationFn: (input: { email: string; role: Role }) => api.tenancy.members.add.mutate(input),
-    onSuccess: refresh,
+  /**
+   * Email invitations (migration 0107) — the door `members.add` was never
+   * built to cover. Always sends mail, whether or not the address already
+   * has a TaskFlow account: `invitations.send` answers the same
+   * `{ status: 'invited' }` either way, so there is nothing here for the UI
+   * to branch on. `members.add`'s own instant-add route still exists and is
+   * still tested, but this is now the ONE form on this page — offering both
+   * would ask an admin to guess which one an address needs.
+   */
+  const invite = useMutation({
+    mutationFn: (input: { email: string; role: Role }) =>
+      api.tenancy.invitations.send.mutate(input),
+    onSuccess: refreshInvitations,
+  });
+
+  const revokeInvitation = useMutation({
+    mutationFn: (invitationId: string) => api.tenancy.invitations.revoke.mutate({ invitationId }),
+    onSuccess: refreshInvitations,
   });
 
   const changeRole = useMutation({
@@ -356,14 +375,23 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
             className="flex flex-wrap gap-2 items-center"
             onSubmit={(event) => {
               event.preventDefault();
-              if (email.trim() !== '') add.mutate({ email: email.trim(), role });
+              if (email.trim() !== '') {
+                invite.mutate(
+                  { email: email.trim(), role },
+                  {
+                    onSuccess: () => {
+                      setEmail('');
+                    },
+                  },
+                );
+              }
             }}
           >
             <div className="min-w-[16rem] flex-1">
               <Field
-                label="Add a member"
+                label="Invite a member"
                 htmlFor="member-email"
-                hint={`The person must already have a ${productName} account — email invitations arrive in a later phase.`}
+                hint={`We'll email an invitation link. Works whether or not they already have a ${productName} account.`}
               >
                 <Input
                   id="member-email"
@@ -392,14 +420,67 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               ))}
             </select>
 
-            <Button type="submit" variant="primary" disabled={add.isPending || email.trim() === ''}>
-              {add.isPending ? 'Adding…' : 'Add'}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={invite.isPending || email.trim() === ''}
+            >
+              {invite.isPending ? 'Sending…' : 'Invite'}
             </Button>
           </form>
 
-          {add.isError && <ErrorText error={add.error} />}
+          {invite.isError && <ErrorText error={invite.error} />}
         </AddPanel>
       )}
+
+      {capabilities.inviteMember &&
+        invitations.data !== undefined &&
+        invitations.data.length > 0 && (
+          <div className="rounded-xl border border-line/50 p-3">
+            <div className="mb-2 text-xs font-medium text-ink-muted">
+              Pending invitations ({invitations.data.length})
+            </div>
+            <ul className="divide-y divide-line/40">
+              {invitations.data.map((invitation) => (
+                <li
+                  key={invitation.invitationId}
+                  className="flex items-center justify-between gap-2 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-ink">{invitation.email}</div>
+                    <div className="text-xs text-ink-muted">
+                      Invited as {invitation.role} · expires {formatDate(invitation.expiresAt)}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={invite.isPending}
+                      onClick={() => {
+                        invite.mutate({ email: invitation.email, role: invitation.role as Role });
+                      }}
+                    >
+                      Resend
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={revokeInvitation.isPending}
+                      className="text-ink-muted hover:text-danger"
+                      onClick={() => {
+                        revokeInvitation.mutate(invitation.invitationId);
+                      }}
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {revokeInvitation.isError && <ErrorText error={revokeInvitation.error} />}
+          </div>
+        )}
 
       {/* Ownership has exactly one holder, so this button is NEVER usable by
           anyone but the current Owner — not "usually not," never. That is
