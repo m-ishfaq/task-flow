@@ -427,6 +427,7 @@ export function AssistantPage() {
                   key={index}
                   message={message}
                   resultsById={resultsById}
+                  orgId={orgId}
                   onOpenCard={setOpenCardId}
                 />
               ))
@@ -646,10 +647,12 @@ function isDisplayable(message: ChatMessageWire): message is DisplayableMessage 
 function MessageBubble({
   message,
   resultsById,
+  orgId,
   onOpenCard,
 }: {
   readonly message: DisplayableMessage;
   readonly resultsById: ReturnType<typeof toolResultsById>;
+  readonly orgId: string;
   readonly onOpenCard: (cardId: CardId) => void;
 }) {
   switch (message.role) {
@@ -682,7 +685,7 @@ function MessageBubble({
               </div>
             )}
             {(message.toolCalls ?? []).map((call) => {
-              const rendered = renderToolResult(call, resultsById, { onOpenCard });
+              const rendered = renderToolResult(call, resultsById, { orgId, onOpenCard });
               return (
                 <div key={call.id}>
                   {rendered ?? (

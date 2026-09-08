@@ -3458,6 +3458,79 @@ now asserts `JSON.stringify(result).length <= 20_000` directly, the real contrac
 trusting the raw diff's own length as a proxy for it. The existing truncation test was widened
 the same way rather than left checking the old, wrong invariant.
 
+### Phase 15 §7 — inline file-diff browsing in the assistant transcript (SHIPPED)
+
+`apps/web/src/features/ai/tool-results.tsx`'s `useResolvedRepoScope`/`InlineFileDiff`/`PrFileRow`/
+`GetPrDiffResult`/`GetPrFilesResult` · `ToolResultRenderContext`'s new `orgId` field ·
+`assistant-page.tsx`'s `MessageBubble`. Prompted directly, alongside the token-refresh fix above,
+in the same message: "on card detail where we can select a file to see its diff for large diff in
+pr lets do same in assistant as well instead of us calling the assistant to get diff for specific
+file but not in modal incase of assistant."
+
+**The card panel already had this — `pr-diff-dialog.tsx`'s `PrDiffButton` lets a person click a
+file from a PR's file list and see just that file's diff, with no detour back through anything
+that has to re-decide what to fetch.** It reaches that through two plain queries,
+`work.pullRequests.files`/`.fileDiff` — `pr:view`-gated, and deliberately carrying no `cardId` at
+all (unlike their `list`/`link`/`unlink` siblings on the same router), since both ask GitHub about
+a `repoScope`+`prNumber` pair and nothing about the card. That statelessness is exactly what makes
+them reachable from the assistant transcript too: nothing about either route assumes a card is
+open, so the identical queries the card panel already calls work here unchanged — this is a
+frontend-only fix, no new backend route, no new permission, no new service function.
+
+**"But not in modal incase of assistant" is the one real design difference from the card panel's
+own version.** `PrDiffButton` opens `PrDiffDialogBody` inside a `ModalRoot` because a diff there is
+scratch viewing triggered from a small icon button with no room of its own. A tool result in the
+assistant transcript already renders inside its own bordered `ResultPanel`, in the flow of the
+conversation — wrapping THAT in a second, floating dialog would be a modal inside what already
+reads as a self-contained panel. `GetPrDiffResult`/`GetPrFilesResult` render everything inline,
+toggling between diff/file-list/single-file-diff views within the same panel the tool result
+already occupies, mirroring `PrDiffDialogBody`'s own state machine (`browseFiles`/`selectedPath`)
+one level flatter — no `ModalRoot`, no `ModalContent`, no `ModalTitle`.
+
+**Neither `get_pr_diff` nor `get_pr_files`' own JSON ever carried a `providerScope`** — no caller
+needed one before this file could query anything of its own, the identical "no backend enrichment
+for a frontend convenience" reasoning `cardWriteRenderer`'s own header already gives for reading a
+card's identity off the tool CALL rather than enriching the SERVICE's output. A click here needs a
+real repo to ask `work.pullRequests.fileDiff` about, so `useResolvedRepoScope` resolves it from
+what IS available without touching the backend at all: the call's own `repoScope` input when the
+model named one explicitly (a multi-repo org — see §7's own `list_repos`/`connectedGithubRepo`
+disambiguation), or, the common case, the org's single connected repo via `githubReposQuery` (the
+identical `work.githubRepos.list` route the card panel's own repo picker already uses). More than
+one connected repo and no explicit scope in this call resolves to `null`, and the drill-down stays
+non-interactive rather than guessing which repo a click should ask about — the same "refuse rather
+than guess" instinct `connectedGithubRepo`'s own ambiguity refusal already applies server-side, one
+layer up in the frontend.
+
+**`GetPrDiffResult` offers "Browse by file" whenever a repo resolves, not only when the diff came
+back truncated — matching `PrDiffDialogBody`'s own always-available toggle exactly**, while the
+truncation NOTE beneath the diff stays conditional on `truncated`, since that sentence is only true
+then. `GetPrFilesResult` needs no such toggle at all: every row is already the file list, so a
+click goes straight to `InlineFileDiff` with nothing to switch between first.
+
+**`InlineFileDiff` is this file's own `PrSingleFileDiff` — the identical component
+`pr-diff-dialog.tsx` already has, reimplemented here rather than exported and shared.**
+`features/work/detail/pr-diff-dialog.tsx` already imports `DiffView`/`singleFileDiffText` from
+`features/ai/diff-view.tsx`; this fix adds a cross-feature import running the OTHER direction —
+`tool-results.tsx` (in `features/ai`) importing `githubReposQuery`/`pullRequestFilesQuery`/
+`pullRequestFileDiffQuery` from `features/work/api.ts` — the identical precedent
+`card-quick-view.tsx`'s own move from `features/standup` to `features/work` already set for
+reusing a component across a feature boundary in this codebase. A third shared module for one
+25-line component was not worth it for what is, in both places, a thin wrapper around one query
+and a `DiffView`.
+
+**`ToolResultRenderContext` gained its one new field, `orgId`, because these are the first two
+renderers in this file to query anything beyond what the tool result itself already carried** —
+every renderer before this either parsed the tool's own JSON or (`onOpenCard`) opened UI already
+mounted elsewhere. `assistant-page.tsx` already holds `orgId` (`useSession((state) => state.orgId)`,
+line 234) for its own routing needs, so threading it into `MessageBubble` and then into `ctx` was
+the entire wiring change on that side.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app to run
+against**, the identical caveat every UI-only pass in this session already states. Verified by what
+a sandbox without one can prove: `tsc`, `eslint`, and the guardrail selftest, all clean. A person
+should open the assistant, ask about a PR with `get_pr_diff`/`get_pr_files`, and click a file
+before calling this done.
+
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every
 document row in the tenant, including a message in a DM between two other people — and
 `member` genuinely holds `channel:read` from the role matrix, so a route that stopped at its

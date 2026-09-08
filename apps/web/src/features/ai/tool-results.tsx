@@ -1,8 +1,10 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
   CircleDot,
   FileText,
   GitPullRequest,
@@ -17,10 +19,15 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
-import { Avatar, Badge } from '../../components/primitives.js';
+import { Avatar, Badge, SkeletonRows } from '../../components/primitives.js';
 import { formatDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import type { Priority } from '../work/api.js';
+import {
+  githubReposQuery,
+  pullRequestFileDiffQuery,
+  pullRequestFilesQuery,
+  type Priority,
+} from '../work/api.js';
 import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
 import type { ChatMessageWire, ToolCallWire } from './api.js';
 import { DiffView, singleFileDiffText } from './diff-view.js';
@@ -71,9 +78,26 @@ import { DiffView, singleFileDiffText } from './diff-view.js';
  * TaskFlow route, so `renderListPrs` is the first plain external `<a>` here
  * rather than a `<Link>`, and `renderGetPrDiff` is the first renderer
  * showing preformatted text instead of a structured list.
+ *
+ * ## `get_pr_diff`/`get_pr_files` browse a file's diff directly, no round trip
+ *
+ * The card panel's own `PrDiffButton` (`pr-diff-dialog.tsx`) lets a person
+ * click a file from a PR's file list and see just that file's diff, with no
+ * detour back through anything that has to re-decide what to fetch — a
+ * plain `work.pullRequests.files`/`.fileDiff` query. `GetPrDiffResult`/
+ * `GetPrFilesResult` below give the assistant transcript the identical
+ * capability, reached the identical way (a click), rather than requiring a
+ * person to type a follow-up message asking the model to call
+ * `get_pr_file_diff` on their behalf. Inline in the transcript, not a modal:
+ * this page has no card-panel dialog context to open one into, and a tool
+ * result already renders inside its own bordered panel in the flow of the
+ * conversation. `ctx.orgId` is what makes this possible — the one new field
+ * this context needed, since these two are the first renderers to query
+ * anything beyond what the tool result itself already carried.
  */
 
 export interface ToolResultRenderContext {
+  readonly orgId: string;
   readonly onOpenCard: (cardId: CardId) => void;
 }
 
@@ -923,7 +947,234 @@ function renderListPrs(result: ToolResultMessage): ReactNode | null {
   );
 }
 
-function renderGetPrDiff(result: ToolResultMessage): ReactNode | null {
+/* -------------------------------------------------------------------------- *
+ * Shared: resolving which connected repo a PR call is about, and one file's
+ * own diff, browsed inline — no assistant round trip.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `get_pr_diff`/`get_pr_files`' own JSON never carries a `providerScope` —
+ * neither result needed one before this file could query anything itself,
+ * on the identical "no backend enrichment for a frontend convenience"
+ * reasoning `cardWriteRenderer`'s own header states for `cardId`. A click
+ * here needs a real repo to ask `work.pullRequests.fileDiff` about, so it
+ * has to be resolved from what IS available: the call's own `repoScope`
+ * input when the model named one explicitly (a multi-repo org), or — the
+ * common case — the org's one connected repo, the same default
+ * `connectedGithubRepo` itself falls back to server-side. `null` means
+ * neither holds (more than one connected repo, no explicit scope in this
+ * call): the drill-down below stays non-interactive rather than guessing
+ * which repo a click should ask about.
+ */
+function useResolvedRepoScope(orgId: string, explicitRepoScope: string | null): string | null {
+  const repos = useQuery({ ...githubReposQuery(orgId), enabled: explicitRepoScope === null });
+  if (explicitRepoScope !== null) return explicitRepoScope;
+  if (repos.data?.length !== 1) return null;
+  return repos.data[0]?.providerScope ?? null;
+}
+
+/**
+ * One file's own diff, fetched directly through `work.pullRequests.fileDiff`
+ * — the fix for "instead of us calling the assistant to get diff for
+ * specific file." Mirrors `pr-diff-dialog.tsx`'s own `PrSingleFileDiff` (the
+ * card panel's identical drill-down over the same route), reached inline in
+ * the transcript rather than inside a modal — this page has no card-panel
+ * dialog to open one into, and a tool result already renders inside its own
+ * bordered panel in the flow of the conversation.
+ */
+function InlineFileDiff({
+  orgId,
+  providerScope,
+  prNumber,
+  path,
+  onBack,
+}: {
+  readonly orgId: string;
+  readonly providerScope: string;
+  readonly prNumber: number;
+  readonly path: string;
+  readonly onBack: () => void;
+}) {
+  const fileDiff = useQuery(pullRequestFileDiffQuery(orgId, providerScope, prNumber, path));
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
+      >
+        <ChevronLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
+        All files
+      </button>
+      {fileDiff.isPending ? (
+        <SkeletonRows rows={4} />
+      ) : fileDiff.isError ? (
+        <ErrorNote message="Could not load this file's diff." />
+      ) : (
+        <DiffView
+          diff={singleFileDiffText(fileDiff.data.path, fileDiff.data.patch)}
+          truncated={fileDiff.data.truncated}
+        />
+      )}
+    </div>
+  );
+}
+
+interface PrFileEntry {
+  readonly path: string;
+  readonly status: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+/** One file row — clickable straight into `InlineFileDiff` once a repo is
+    resolved, a plain (non-interactive) row otherwise. Shared by
+    `GetPrFilesResult` and `GetPrDiffResult`'s own "Browse by file" fallback
+    below, so a click behaves identically from either entry point. */
+function PrFileRow({
+  file,
+  onSelect,
+}: {
+  readonly file: PrFileEntry;
+  readonly onSelect: (() => void) | null;
+}) {
+  const content = (
+    <>
+      <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
+        {file.status}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] text-success">+{file.additions}</span>
+      <span className="shrink-0 font-mono text-[10px] text-danger">-{file.deletions}</span>
+    </>
+  );
+
+  if (onSelect === null) {
+    return <li className="flex items-center gap-2 rounded-md px-1.5 py-1 text-ink">{content}</li>;
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-ink hover:bg-surface-hover"
+      >
+        {content}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * `get_pr_diff`'s result, with an inline "Browse by file" fallback — the
+ * identical dual view `pr-diff-dialog.tsx`'s `PrDiffDialogBody` already
+ * gives the card panel, minus the modal: a whole-PR diff has a real ceiling
+ * (GitHub's own 406 past a certain size, and `fitDiffToBudget`'s own
+ * truncation under that), and this is how a person recovers from either
+ * without typing a follow-up message asking the model to call
+ * `get_pr_file_diff` on their behalf. The toggle is offered whenever a repo
+ * resolves, not only when truncated — matching the card panel's own
+ * always-available "Browse by file" button — while the truncation NOTE
+ * stays conditional on `truncated`, since that sentence is only true then.
+ */
+function GetPrDiffResult({
+  diff,
+  truncated,
+  orgId,
+  prNumber,
+  explicitRepoScope,
+}: {
+  readonly diff: string;
+  readonly truncated: boolean;
+  readonly orgId: string;
+  readonly prNumber: number;
+  readonly explicitRepoScope: string | null;
+}) {
+  const [browseFiles, setBrowseFiles] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const repoScope = useResolvedRepoScope(orgId, explicitRepoScope);
+  const files = useQuery({
+    ...pullRequestFilesQuery(orgId, repoScope ?? '', prNumber),
+    enabled: browseFiles && repoScope !== null && selectedPath === null,
+  });
+
+  return (
+    <ResultPanel>
+      {repoScope !== null && (
+        <div className="mb-1 flex justify-end">
+          <button
+            type="button"
+            className="text-[11px] text-accent underline"
+            onClick={() => {
+              setBrowseFiles((current) => !current);
+              setSelectedPath(null);
+            }}
+          >
+            {browseFiles ? 'View full diff' : 'Browse by file'}
+          </button>
+        </div>
+      )}
+      {browseFiles && repoScope !== null ? (
+        selectedPath !== null ? (
+          <InlineFileDiff
+            orgId={orgId}
+            providerScope={repoScope}
+            prNumber={prNumber}
+            path={selectedPath}
+            onBack={() => {
+              setSelectedPath(null);
+            }}
+          />
+        ) : files.isPending ? (
+          <SkeletonRows rows={4} />
+        ) : files.isError ? (
+          <ErrorNote message="Could not load the file list." />
+        ) : files.data.length === 0 ? (
+          <p className="text-[11px] text-ink-faint">This pull request changes no files.</p>
+        ) : (
+          <ul className="space-y-1">
+            {files.data.map((file) => (
+              <PrFileRow
+                key={file.path}
+                file={file}
+                onSelect={() => {
+                  setSelectedPath(file.path);
+                }}
+              />
+            ))}
+          </ul>
+        )
+      ) : (
+        <>
+          <DiffView diff={diff} truncated={truncated} />
+          {truncated && repoScope !== null && (
+            <p className="mt-1 text-[11px] text-ink-faint">
+              This diff was too large to show in full.{' '}
+              <button
+                type="button"
+                className="text-accent underline"
+                onClick={() => {
+                  setBrowseFiles(true);
+                }}
+              >
+                Browse by file
+              </button>{' '}
+              to see any one file&apos;s own change in full.
+            </p>
+          )}
+        </>
+      )}
+    </ResultPanel>
+  );
+}
+
+function renderGetPrDiff(
+  result: ToolResultMessage,
+  call: ToolCallWire,
+  ctx: ToolResultRenderContext,
+): ReactNode | null {
   if (result.isError === true) return <ErrorNote message={result.content} />;
   const parsed = parseJson(result.content);
   if (!isRecord(parsed)) return null;
@@ -931,19 +1182,97 @@ function renderGetPrDiff(result: ToolResultMessage): ReactNode | null {
   if (diff === null) return null;
   const truncated = parsed['truncated'] === true;
 
+  const prNumber = call.input['prNumber'];
+  if (typeof prNumber !== 'number') {
+    // No PR number to browse files by — the plain diff is still the whole
+    // answer, just without the interactive fallback.
+    return (
+      <ResultPanel>
+        <DiffView diff={diff} truncated={truncated} />
+      </ResultPanel>
+    );
+  }
+  const explicitRepoScope =
+    typeof call.input['repoScope'] === 'string' ? call.input['repoScope'] : null;
+
+  return (
+    <GetPrDiffResult
+      diff={diff}
+      truncated={truncated}
+      orgId={ctx.orgId}
+      prNumber={prNumber}
+      explicitRepoScope={explicitRepoScope}
+    />
+  );
+}
+
+/**
+ * `get_pr_files`' result, each row clickable straight into `InlineFileDiff`
+ * — the direct counterpart to `GetPrDiffResult`'s own "Browse by file"
+ * fallback, for a person (or the model) that called this tool first rather
+ * than reaching it from a truncated diff.
+ */
+function GetPrFilesResult({
+  files,
+  orgId,
+  prNumber,
+  explicitRepoScope,
+}: {
+  readonly files: readonly PrFileEntry[];
+  readonly orgId: string;
+  readonly prNumber: number;
+  readonly explicitRepoScope: string | null;
+}) {
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const repoScope = useResolvedRepoScope(orgId, explicitRepoScope);
+
+  if (selectedPath !== null && repoScope !== null) {
+    return (
+      <ResultPanel>
+        <InlineFileDiff
+          orgId={orgId}
+          providerScope={repoScope}
+          prNumber={prNumber}
+          path={selectedPath}
+          onBack={() => {
+            setSelectedPath(null);
+          }}
+        />
+      </ResultPanel>
+    );
+  }
+
   return (
     <ResultPanel>
-      <DiffView diff={diff} truncated={truncated} />
+      <ul className="space-y-1">
+        {files.map((file) => (
+          <PrFileRow
+            key={file.path}
+            file={file}
+            onSelect={
+              repoScope === null
+                ? null
+                : () => {
+                    setSelectedPath(file.path);
+                  }
+            }
+          />
+        ))}
+      </ul>
     </ResultPanel>
   );
 }
 
-function renderGetPrFiles(result: ToolResultMessage): ReactNode | null {
+function renderGetPrFiles(
+  result: ToolResultMessage,
+  call: ToolCallWire,
+  ctx: ToolResultRenderContext,
+): ReactNode | null {
   if (result.isError === true) return <ErrorNote message={result.content} />;
   const parsed = parseJson(result.content);
   if (!Array.isArray(parsed)) return <ResultPanel>{result.content}</ResultPanel>;
 
-  const files: { path: string; status: string; additions: number; deletions: number }[] = [];
+  const files: PrFileEntry[] = [];
   for (const entry of parsed) {
     if (!isRecord(entry)) return null;
     const path = stringField(entry, 'path');
@@ -961,22 +1290,30 @@ function renderGetPrFiles(result: ToolResultMessage): ReactNode | null {
     files.push({ path, status, additions, deletions });
   }
 
+  const prNumber = call.input['prNumber'];
+  if (typeof prNumber !== 'number') {
+    // No PR number to drill into a file's diff with — the plain list is
+    // still the whole answer, just without the interactive fallback.
+    return (
+      <ResultPanel>
+        <ul className="space-y-1">
+          {files.map((file) => (
+            <PrFileRow key={file.path} file={file} onSelect={null} />
+          ))}
+        </ul>
+      </ResultPanel>
+    );
+  }
+  const explicitRepoScope =
+    typeof call.input['repoScope'] === 'string' ? call.input['repoScope'] : null;
+
   return (
-    <ResultPanel>
-      <EntityList>
-        {files.map((file) => (
-          <li key={file.path} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-ink">
-            <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
-              {file.status}
-            </span>
-            <span className="shrink-0 font-mono text-[10px] text-success">+{file.additions}</span>
-            <span className="shrink-0 font-mono text-[10px] text-danger">-{file.deletions}</span>
-          </li>
-        ))}
-      </EntityList>
-    </ResultPanel>
+    <GetPrFilesResult
+      files={files}
+      orgId={ctx.orgId}
+      prNumber={prNumber}
+      explicitRepoScope={explicitRepoScope}
+    />
   );
 }
 
@@ -1326,8 +1663,8 @@ const RENDERERS: Readonly<
   docs_create_page: (result, call) => renderDocsCreatePage(result, call),
   list_repos: (result) => renderListRepos(result),
   list_prs: (result) => renderListPrs(result),
-  get_pr_diff: (result) => renderGetPrDiff(result),
-  get_pr_files: (result) => renderGetPrFiles(result),
+  get_pr_diff: (result, call, ctx) => renderGetPrDiff(result, call, ctx),
+  get_pr_files: (result, call, ctx) => renderGetPrFiles(result, call, ctx),
   get_pr_file_content: (result) => renderGetPrFileContent(result),
   get_pr_file_diff: (result) => renderGetPrFileDiff(result),
   get_pr_comments: (result) => renderGetPrComments(result),
