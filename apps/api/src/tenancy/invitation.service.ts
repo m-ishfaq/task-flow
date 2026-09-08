@@ -364,7 +364,15 @@ export async function acceptInvitation(
   const orgId = await resolveOrgByInvitationToken(tokenHash);
   if (orgId === undefined) throw errors.notFound('That invitation link is invalid or has expired.');
 
-  return withOrgScope(orgId, async (tx) => {
+  /* Two transactions, not one. `withOrgScope` wraps its callback in a real
+     Postgres transaction, and throwing out of that callback rolls back
+     EVERYTHING it did — the mark-expired UPDATE included, since the throw
+     right below it was in the same transaction. A real test caught this:
+     `listInvitations` still returned the row after an "expired" accept,
+     because the flip to `status = 'expired'` never actually committed. This
+     first transaction commits the expiry (if any) on its own, unconditional
+     on whether the caller goes on to see a thrown NOT_FOUND for it. */
+  const invitation = await withOrgScope(orgId, async (tx) => {
     const now = new Date();
 
     const rows = await tx
@@ -385,19 +393,27 @@ export async function acceptInvitation(
       )
       .limit(1);
 
-    const invitation = rows[0];
-    if (!invitation) throw errors.notFound('That invitation link is invalid or has expired.');
+    const row = rows[0];
+    if (!row) return null;
 
-    if (invitation.expiresAt <= now) {
+    if (row.expiresAt <= now) {
       await tx
         .update(schema.invitations)
         .set({ status: 'expired', updatedAt: now })
-        .where(eq(schema.invitations.id, invitation.id));
+        .where(eq(schema.invitations.id, row.id));
       await tx
         .delete(schema.invitationLookup)
         .where(eq(schema.invitationLookup.tokenHash, tokenHash));
-      throw errors.notFound('That invitation link is invalid or has expired.');
+      return null;
     }
+
+    return row;
+  });
+
+  if (!invitation) throw errors.notFound('That invitation link is invalid or has expired.');
+
+  return withOrgScope(orgId, async (tx) => {
+    const now = new Date();
 
     // identity.users carries no RLS — readable from any scope, the same
     // reasoning addMember's own comment gives.

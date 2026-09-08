@@ -137,9 +137,17 @@ async function recordCall(
     requestId,
   });
   await withOrgScope(orgId, async (tx) => {
+    // `recordings_stored_has_key` (migration 0033) refuses `status = 'stored'`
+    // with no `stored_at` — a 'stored' row with no key is unrepresentable by
+    // design, and that includes the timestamp half of "stored", not just the
+    // key.
     await tx
       .update(schema.recordings)
-      .set({ status: 'stored', storageKey: `recordings/${registered.recordingId}` })
+      .set({
+        status: 'stored',
+        storageKey: `recordings/${registered.recordingId}`,
+        storedAt: new Date(),
+      })
       .where(eq(schema.recordings.id, registered.recordingId));
   });
   return { callId: placed.callId, recordingId: registered.recordingId };

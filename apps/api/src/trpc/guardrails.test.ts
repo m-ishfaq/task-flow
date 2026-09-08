@@ -380,6 +380,11 @@ describe('the real application router', () => {
          before any session exists, the same reasoning docs.public.getPage
          above already established for this list. */
       'platformAdmin.branding.public',
+      /* Email invitations (migration 0107) — read from the invite link
+         itself, before any session exists. The token IS the proof, the
+         same reason `auth.verifyEmail` above is public; it reveals only
+         what the invited address's own inbox already received. */
+      'tenancy.invitations.preview',
     ]);
   });
 
@@ -512,6 +517,15 @@ describe('the real application router', () => {
          resolve permissions against. */
       'rtc.prefs.get',
       'rtc.prefs.set',
+      /* Redeeming an email invitation (migration 0107) — the caller is, by
+         definition, not yet a member of the org the token names, so no org
+         permission can describe this, the identical reasoning `orgs.create`/
+         `orgs.list` below already give. `acceptInvitation` resolves which
+         org from the token itself and checks it was addressed to the
+         authenticated caller's own account. `invitations.preview` is NOT
+         here — it needs no session at all, so it is `publicRoute` in the
+         list above instead. */
+      'tenancy.invitations.accept',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

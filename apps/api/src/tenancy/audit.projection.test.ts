@@ -152,6 +152,15 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'saved_search.created',
   'saved_search.updated',
   'saved_search.deleted',
+  /* Email invitations (migration 0107). `invitation.accepted` IS mapped (to
+     `member`/`userId`, in `RESOURCE_OF` — it carries a real account id and
+     fires alongside `member.added`). `invitation.sent`/`.revoked` carry no
+     `userId` yet, and the same `saved_search.*` reasoning one block up
+     applies: no container but the org (already in `org_id` on every row),
+     and `invitation` is deliberately absent from `RESOURCE_TYPES` since no
+     relationship tuple can point at one. */
+  'invitation.sent',
+  'invitation.revoked',
 ]);
 
 /**

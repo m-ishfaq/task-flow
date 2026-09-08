@@ -97,6 +97,18 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      for a fact about the org's own standing rather than one person's. */
   'role_default_grant.set': { type: 'org', key: 'orgId' },
   'role_default_grant.removed': { type: 'org', key: 'orgId' },
+  /* Email invitations (migration 0107). Only `invitation.accepted` gets a
+     real mapping — it carries a genuine `userId` (the account that just
+     joined) and fires in the same transaction as `member.added`, so
+     resolving it to the identical `{member, userId}` shape lets "what
+     happened to this account" find both events together. `invitation.sent`
+     and `invitation.revoked` are in `UNMAPPED` (audit.projection.test.ts)
+     rather than forced here: neither carries a `userId` yet, and `invitation`
+     is deliberately absent from `RESOURCE_TYPES` (packages/policy) — no
+     relationship tuple can point at one — so inventing a type to satisfy
+     this table would be the tail wagging the policy engine, the identical
+     reasoning that file's own `saved_search.*` entries already give. */
+  'invitation.accepted': { type: 'member', key: 'userId' },
 
   /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
      model: there is no `list` resource type, because a list is not
