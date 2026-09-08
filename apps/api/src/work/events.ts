@@ -406,6 +406,38 @@ export const cardPullRequestUnlinked = defineEvent(
     .strict(),
 );
 
+/**
+ * A linked PR merged — the trigger `ai/phase-15-ai-copilot-and-permissions.md`
+ * §7.2 named ("a new domain event... a new trigger name plus the
+ * already-existing `card.move` action") and that section's own earlier
+ * account said still needed research before it could be scoped: the missing
+ * piece was knowing WHICH card a merged PR is about at all, which the
+ * `work.card_pull_requests` link table (and its PR-first reverse index,
+ * built for exactly this) now answers.
+ *
+ * Emitted from `integration-webhooks.ts`'s GitHub route, never from a rule
+ * action — it carries a real `cardId`, so it is an ORDINARY card trigger as
+ * far as `resourceForTrigger`/`cardIdOf` are concerned (no `connector`-set
+ * special case needed), and a rule built on it composes with the
+ * already-existing `card.move` action exactly as that spec entry predicted.
+ * One card linked to a PR that merges emits one of these; a PR linked to
+ * SEVERAL cards (the many-to-many shape `card_pull_requests` was built for)
+ * emits one per card, each with its own `cardId` — never a batch, since a
+ * rule's blast radius is "the card the trigger named" (`cardIdOf`'s own
+ * doc comment) and a single event naming several cards would break that.
+ */
+export const cardPullRequestMerged = defineEvent(
+  'card.pull_request_merged',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
 export const cardBranchLinked = defineEvent(
   'card.branch_linked',
   z

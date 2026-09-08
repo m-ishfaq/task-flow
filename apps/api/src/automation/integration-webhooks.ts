@@ -1,8 +1,20 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { unsafeAsId, type KeyProvider, type OrgId } from '@taskflow/contracts';
-import { and, eq, outboxWriter, resolveIntegrationOrg, schema, withOrgScope } from '@taskflow/db';
+import { unsafeAsId, type KeyProvider, type OrgId, type RequestId } from '@taskflow/contracts';
+import {
+  and,
+  eq,
+  outboxWriter,
+  resolveIntegrationOrg,
+  schema,
+  withOrgScope,
+  type TenantDb,
+} from '@taskflow/db';
 import { createEvent } from '@taskflow/events';
 import { decryptString, verifyGitHubSignature, verifySlackSignature } from '@taskflow/security';
+import {
+  autoLinkPullRequestFromBranchName,
+  notifyPullRequestMerged,
+} from '../work/card-pull-request.service.js';
 import { integrationGithubEvent, integrationSlackEvent } from './integration-events.js';
 import { integrationTokenAad } from './integration.service.js';
 
@@ -283,13 +295,27 @@ function registerRoutes(app: FastifyInstance, deps: IntegrationWebhookDeps): voi
 
       if (claimed.length === 0) return 'replayed' as const;
 
+      const requestId = unsafeAsId<'RequestId'>(request.id);
+
       await outboxWriter.append(tx, [
         createEvent(
           integrationGithubEvent,
           { providerScope: fullName, providerEvent: eventType, payload: parsed },
-          { orgId, actorId: null, requestId: unsafeAsId<'RequestId'>(request.id) },
+          { orgId, actorId: null, requestId },
         ),
       ]);
+
+      /* The two `pull_request` derivatives (ai/phase-15-ai-copilot-and-
+         permissions.md §7.2's last documented automation gap) — in the SAME
+         transaction as the delivery claim above, so a rolled-back delivery
+         rolls these back with it and a replayed one never reaches them at
+         all. Both are genuine no-ops on the ordinary case (most
+         `pull_request` deliveries are neither a merge nor open from a
+         reference-shaped branch), not errors. */
+      if (eventType === 'pull_request') {
+        await handlePullRequestPayload(tx, orgId, fullName, payload, requestId);
+      }
+
       return 'emitted' as const;
     });
 
@@ -401,6 +427,52 @@ async function loadGithubVerify(
       ),
     };
   });
+}
+
+/**
+ * The two `pull_request` derivatives (ai/phase-15-ai-copilot-and-permissions.md
+ * §7.2's last documented automation gap — see `card.pull_request_merged`'s
+ * own doc comment in `work/events.ts` and `autoLinkPullRequestFromBranchName`'s
+ * in `work/card-pull-request.service.ts` for the reasoning each closes).
+ *
+ * Reads GitHub's actual `pull_request` webhook shape by hand rather than a
+ * Zod schema — `integration-events.ts`'s own header already explains why the
+ * generic connector payload stays `unknown`: the provider's own body belongs
+ * to GitHub, not this repo, and a closed schema here would turn a benign
+ * upstream field change into a hard failure. `action === 'closed'` plus
+ * `pull_request.merged === true` is GitHub's own documented way to tell a
+ * real merge from an ordinary close — merging always closes a PR, but
+ * closing does not imply a merge.
+ */
+async function handlePullRequestPayload(
+  tx: TenantDb,
+  orgId: OrgId,
+  providerScope: string,
+  payload: Record<string, unknown>,
+  requestId: RequestId,
+): Promise<void> {
+  const pr = payload['pull_request'];
+  if (typeof pr !== 'object' || pr === null) return;
+  const prNumber = (pr as Record<string, unknown>)['number'];
+  if (typeof prNumber !== 'number') return;
+
+  if (payload['action'] === 'closed' && (pr as Record<string, unknown>)['merged'] === true) {
+    await notifyPullRequestMerged(tx, orgId, providerScope, prNumber, requestId);
+  }
+
+  if (payload['action'] === 'opened') {
+    const branchName = stringField((pr as Record<string, unknown>)['head'], 'ref');
+    if (branchName !== undefined) {
+      await autoLinkPullRequestFromBranchName(
+        tx,
+        orgId,
+        providerScope,
+        prNumber,
+        branchName,
+        requestId,
+      );
+    }
+  }
 }
 
 /**

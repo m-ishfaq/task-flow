@@ -2427,6 +2427,10 @@ PR... and a new action, 'create a feature branch from this card'"). This wave sh
 table and the two tools that read/write it — still not built: `repo:connect`, "create a feature
 branch from this card," and the inbound `pr.merged` trigger the link table exists to serve (see
 below for why that trigger needed real research before it could even be scoped, let alone built).
+_(`repo:connect`/"create a feature branch from this card" shipped in the very next §7 pass below;
+the inbound `pr.merged` trigger — as `card.pull_request_merged`, paired with auto-link-by-branch-
+name — shipped later still; see "Phase 15 §7.2 — auto-move on merge, auto-link by branch name" for
+what actually closed both of §7.2's remaining named gaps.)_
 
 **§7.2's own text calls the inbound webhook piece "the largest single piece" and separately says
 `pr.merged` becomes "a new domain event... a new trigger name plus the already-existing `card.move`
@@ -2796,7 +2800,9 @@ repo-picker fix — four picked ("UI polish first"): a copy-checkout-command act
 a colored PR-state icon plus a CI pass/fail dot, and a "view diff" button reachable from the card
 panel with no assistant detour. Deliberately not built in this pass: auto-move-on-merge,
 auto-link-by-branch-name, "create PR from card," and branch/PR cleanup on archive — bigger-scope
-items the project owner chose to defer, all still real, separate follow-up work.
+items the project owner chose to defer, all still real, separate follow-up work. _(The first two —
+auto-move-on-merge and auto-link-by-branch-name — have since shipped; see "Phase 15 §7.2 —
+auto-move on merge, auto-link by branch name.")_
 
 **Copy checkout command needed no backend at all — it composes
 `git fetch origin <branch> && git checkout <branch>` from data the branch row already has.**
@@ -2953,6 +2959,96 @@ Verified instead by what a sandbox WITHOUT Docker can prove for certain: `tsc`, 
 `isSafeUrl` regression above), `pnpm check:encoding`, and the guardrail selftest. A person should
 confirm the actual rendering looks right before calling this done, per this file's own standing
 rule that a green non-visual check is not the same claim as "this works when you look at it."
+
+### Phase 15 §7.2 — auto-move on merge, auto-link by branch name (SHIPPED)
+
+`apps/api/src/work/events.ts` (`cardPullRequestMerged`) ·
+`apps/api/src/work/card-pull-request.service.ts` (`notifyPullRequestMerged`,
+`autoLinkPullRequestFromBranchName`) · `apps/api/src/automation/integration-webhooks.ts`'s
+`handlePullRequestPayload` · `apps/api/src/tenancy/audit.projection.ts` ·
+`apps/web/src/features/automation/vocabulary.ts` · `apps/mobile/src/lib/automation.ts`. Prompted
+directly, naming both of §7.2's own remaining documented gaps by name: "auto-move card on PR
+merge" and "auto-link PR to card by branch name."
+
+**Both features share one missing piece, and it was already closed before this pass started —
+Wave 3's `work.card_pull_requests` link table, plus the PR-first reverse index that table's own
+migration comment already named as built "for a future 'PR merged -> move its linked cards'
+trigger."** Neither feature needed a migration; both are read/write logic over a table and index
+that already existed, closing the dependency §7 Wave 3's own account of this gap described.
+
+**Auto-move is a genuinely NEW domain event, `card.pull_request_merged`, not a payload-filter
+condition on the existing generic `integration.github_event` trigger — exactly the design §7.2's
+own text called for and Wave 3's account of researching this gap rejected the alternative for.**
+`packages/filter/src/fields.ts`'s two-field connector set (`provider_event`/`provider_scope`) was
+the first idea considered and rejected on rereading that file's own header: filtering on
+`action = 'closed' AND merged = true` would mean this repo asserting a schema slice of GitHub's
+own webhook body it does not own. A specific event is the same shape every other trigger in this
+system already is (`member.added`, `card.created`) — and because it carries a real `cardId`, it
+needed no `connector`-set special case in `resourceForTrigger` at all: it is an ORDINARY card
+trigger as far as the engine's `evaluableRowFor`/`cardIdOf` are concerned, so `apps/worker` needed
+zero code changes — the existing generic "a card trigger re-reads the card row" path just works,
+proven by reusing the identical mechanism `card.moved`/`card.assigned`/etc. already exercise.
+
+**One event per linked card, never a single event naming several — `cardIdOf`'s own doc comment
+states the property this design preserves: "a rule cannot name a DIFFERENT card than the event
+that fired it... 'this card' keeps the blast radius of a rule equal to the blast radius of its
+trigger."** A PR linked to two cards (the many-to-many shape migration 0105 was built for) fires
+the SAME rule twice, once per card, each execution acting only on the card its own event named —
+not a batch action reaching across every card a PR happens to touch. `notifyPullRequestMerged`
+does the fan-out: one query over the reverse index, one `card.pull_request_merged` per row.
+
+**"Move to Done" needed no new ACTION at all — `card.move` (Wave 1) already takes a `listId`, and
+a rule author already picks the target list directly when building the rule, independent of
+whatever fired it.** The only web/mobile change either platform needed was one new
+`TRIGGER_OPTIONS` entry pairing with that already-existing action — exactly what §7.2's own text
+predicted ("a new trigger name plus the already-existing `card.move` action, not new engine
+work"). Placed in the MAIN trigger list, not the card-less connector/§8 exceptions section, since
+it carries a real `cardId` and is — unlike those two pairs — fully editable on mobile too, with no
+`EDITOR_TRIGGER_OPTIONS` exclusion needed.
+
+**Auto-link parses a card reference off the PR's own HEAD BRANCH name, matching only a LEADING
+`<key>-<number>` prefix — the exact inverse of `branch.service.ts`'s own `<reference>-<slug>`
+naming, not a scan for a reference anywhere in the string.** `web-142-fix-login-redirect` names
+`WEB-142`; a key that happened to appear mid-branch-name unrelated to a real reference would be a
+false positive a full-string scan risks and a prefix anchor does not. Deliberately scoped to the
+convention this codebase's own `create_branch_from_card`/the UI branch-create button already
+produce, not every naming convention a person might invent by hand.
+
+**Auto-link fires on `action: 'opened'` only, not every `pull_request` delivery** — the literal
+shape of the ask ("if someone OPENS a PR from..."), and the one point in a PR's life the branch
+name is decided; a later `synchronize` (a new push) cannot rename the branch a PR already opened
+from. Running it on more events would find nothing new, just spend more no-op queries.
+
+**Both new functions in `card-pull-request.service.ts` take an already-open `tx: TenantDb`
+directly, never a `WorkActor`, and neither calls `enforceOn` — there is no human on the other end
+of an inbound webhook delivery to authorize.** `integration-webhooks.ts` calls both from INSIDE
+its own existing `withOrgScope` block, the SAME transaction that claims the delivery-dedupe row
+and appends `integration.github_event` — so a card gets linked or notified of a merge in the same
+atomic unit as the delivery being recorded (a rolled-back delivery rolls these back with it), and
+a replayed delivery never reaches either function at all, since the dedupe check runs first and
+returns before either is called. This mirrors `emitSlackTrigger`/`loadGithubVerify`'s own precedent
+of a system function taking a transaction rather than opening a second one, applied one level
+lower — an actual card mutation, not just a trigger emission.
+
+**`autoLinkPullRequestFromBranchName` deliberately does NOT reuse `linkCardPullRequest`'s own
+looser "emit unconditionally, even on an existing row" behavior — it checks `.returning()` and
+only emits when a row was actually inserted.** `linkCardPullRequest`'s own test proves it emits a
+fresh event on every call regardless of conflict, which is safe there because a human clicking
+"Link" twice is a rare, deliberate retry. This function runs on every `opened` delivery for every
+PR an org receives; emitting unconditionally would produce a duplicate `card.pull_request_linked`
+the moment GitHub redelivers (rare, but real) rather than only when something genuinely changed.
+
+**The audit projection's new entry (`card.pull_request_merged` -> `{type: 'card', key: 'cardId'}`)
+was added in the SAME change that registers the event, not a follow-up pass — the identical gap
+CI already caught once for Wave 2's `integration.pr_*` events, deliberately not repeated a third
+time.**
+
+**Tests split the same way the service/webhook boundary does: `card-pull-request.service.test.ts`
+covers both new functions' own edge cases directly (multi-card fan-out, no-match no-ops, the
+idempotency contrast with `linkCardPullRequest`), and `integration-webhooks.test.ts` gained four
+END-TO-END wiring cases proving a real POST through the route actually reaches them in the same
+transaction as the delivery claim — not re-testing the business logic a second time, since the
+service-level suite already owns that.**
 
 ### Phase 15 §1 — the Individual permissions list, regrouped one row per person (SHIPPED)
 

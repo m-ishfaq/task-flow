@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { unsafeAsId, type CardId, type ListId, type OrgId, type UserId } from '@taskflow/contracts';
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, withOrgScope } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
 import { TEST_ENV } from '../testing/fixtures.js';
@@ -11,11 +11,13 @@ import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import {
+  autoLinkPullRequestFromBranchName,
   linkCardPullRequest,
   listCardPullRequests,
+  notifyPullRequestMerged,
   unlinkCardPullRequest,
 } from './card-pull-request.service.js';
-import { cardPullRequestLinked, cardPullRequestUnlinked } from './events.js';
+import { cardPullRequestLinked, cardPullRequestMerged, cardPullRequestUnlinked } from './events.js';
 import type { WorkActor } from './shared.js';
 
 /**
@@ -114,13 +116,16 @@ async function scaffold(slug: string): Promise<Fixture> {
   return { orgId, owner, listId: list.listId };
 }
 
-async function makeCard(owner: WorkActor, fixture: Fixture): Promise<{ cardId: CardId }> {
+async function makeCard(
+  owner: WorkActor,
+  fixture: Fixture,
+): Promise<{ cardId: CardId; reference: string }> {
   const card = await cards.createCard(owner, {
     listId: fixture.listId,
     title: 'Fix login bug',
     description: null,
   });
-  return { cardId: card.cardId };
+  return { cardId: card.cardId, reference: card.reference };
 }
 
 beforeAll(async () => {
@@ -249,5 +254,153 @@ describe('unlinkCardPullRequest', () => {
       prNumber: 999,
     });
     expect(result).toEqual({ unlinked: false });
+  });
+});
+
+/**
+ * The two system-caller functions the GitHub webhook invokes directly
+ * (`ai/phase-15-ai-copilot-and-permissions.md` §7.2's last documented
+ * automation gap) — neither takes a `WorkActor`, so these tests call them
+ * inside their own `withOrgScope`, the same shape `integration-webhooks.ts`
+ * itself uses.
+ */
+describe('notifyPullRequestMerged', () => {
+  it('emits card.pull_request_merged for every card linked to the PR, never a batch', async () => {
+    const fixture = await scaffold('card-pr-merged-multi');
+    const cardA = await makeCard(fixture.owner, fixture);
+    const cardB = await makeCard(fixture.owner, fixture);
+    await linkCardPullRequest(fixture.owner, {
+      cardId: cardA.cardId,
+      providerScope: 'acme/website',
+      prNumber: 55,
+    });
+    await linkCardPullRequest(fixture.owner, {
+      cardId: cardB.cardId,
+      providerScope: 'acme/website',
+      prNumber: 55,
+    });
+
+    await withOrgScope(fixture.orgId, (tx) =>
+      notifyPullRequestMerged(tx, fixture.orgId, 'acme/website', 55, requestId),
+    );
+
+    const events = await outboxFor(fixture.orgId);
+    const merged = events.filter((event) => event.name === cardPullRequestMerged.name);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((event) => event.payload['cardId']).sort()).toEqual(
+      [cardA.cardId, cardB.cardId].sort(),
+    );
+    for (const event of merged) {
+      expect(event.payload).toMatchObject({ providerScope: 'acme/website', prNumber: 55 });
+    }
+  });
+
+  it('does nothing when no card is linked to the PR', async () => {
+    const fixture = await scaffold('card-pr-merged-none');
+
+    await withOrgScope(fixture.orgId, (tx) =>
+      notifyPullRequestMerged(tx, fixture.orgId, 'acme/website', 999, requestId),
+    );
+
+    const events = await outboxFor(fixture.orgId);
+    expect(events.filter((event) => event.name === cardPullRequestMerged.name)).toHaveLength(0);
+  });
+});
+
+describe('autoLinkPullRequestFromBranchName', () => {
+  it('links the card its branch name references, and emits card.pull_request_linked with linkedBy null', async () => {
+    const fixture = await scaffold('card-pr-autolink-ok');
+    const card = await makeCard(fixture.owner, fixture);
+    const branchName = `${card.reference.toLowerCase()}-fix-login-redirect`;
+
+    await withOrgScope(fixture.orgId, (tx) =>
+      autoLinkPullRequestFromBranchName(
+        tx,
+        fixture.orgId,
+        'acme/website',
+        61,
+        branchName,
+        requestId,
+      ),
+    );
+
+    const links = await listCardPullRequests(fixture.owner, { cardId: card.cardId });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      providerScope: 'acme/website',
+      prNumber: 61,
+      linkedBy: null,
+    });
+
+    const events = await outboxFor(fixture.orgId);
+    const linked = events.filter((event) => event.name === cardPullRequestLinked.name);
+    expect(linked).toHaveLength(1);
+    expect(linked[0]?.payload).toMatchObject({
+      cardId: card.cardId,
+      providerScope: 'acme/website',
+      prNumber: 61,
+    });
+  });
+
+  it('does nothing when the branch name has no recognizable reference', async () => {
+    const fixture = await scaffold('card-pr-autolink-no-ref');
+    const card = await makeCard(fixture.owner, fixture);
+
+    await withOrgScope(fixture.orgId, (tx) =>
+      autoLinkPullRequestFromBranchName(
+        tx,
+        fixture.orgId,
+        'acme/website',
+        62,
+        'fix-something-unrelated',
+        requestId,
+      ),
+    );
+
+    const links = await listCardPullRequests(fixture.owner, { cardId: card.cardId });
+    expect(links).toHaveLength(0);
+  });
+
+  it('does nothing when the branch name references a card that does not exist', async () => {
+    const fixture = await scaffold('card-pr-autolink-missing-card');
+
+    await withOrgScope(fixture.orgId, (tx) =>
+      autoLinkPullRequestFromBranchName(
+        tx,
+        fixture.orgId,
+        'acme/website',
+        63,
+        'web-999999-fix-nothing',
+        requestId,
+      ),
+    );
+
+    const events = await outboxFor(fixture.orgId);
+    expect(events.filter((event) => event.name === cardPullRequestLinked.name)).toHaveLength(0);
+  });
+
+  it('is idempotent — running it twice for the same PR writes one row and emits one event, unlike linkCardPullRequest', async () => {
+    const fixture = await scaffold('card-pr-autolink-idempotent');
+    const card = await makeCard(fixture.owner, fixture);
+    const branchName = `${card.reference.toLowerCase()}-fix-x`;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await withOrgScope(fixture.orgId, (tx) =>
+        autoLinkPullRequestFromBranchName(
+          tx,
+          fixture.orgId,
+          'acme/website',
+          64,
+          branchName,
+          requestId,
+        ),
+      );
+    }
+
+    const links = await listCardPullRequests(fixture.owner, { cardId: card.cardId });
+    expect(links).toHaveLength(1);
+
+    const events = await outboxFor(fixture.orgId);
+    expect(events.filter((event) => event.name === cardPullRequestLinked.name)).toHaveLength(1);
   });
 });

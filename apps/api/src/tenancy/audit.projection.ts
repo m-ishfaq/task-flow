@@ -166,6 +166,12 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      one this file's Phase 15 §7 Wave 2 section already documents once. */
   'card.pull_request_linked': { type: 'card', key: 'cardId' },
   'card.pull_request_unlinked': { type: 'card', key: 'cardId' },
+  /* Auto-move-on-merge (§7.2's last documented automation gap) — emitted by
+     the GitHub webhook itself, not a card mutation route, but the resource
+     is still the CARD it names. Mapped in the same change that registers
+     the event, the identical discipline the two comments above already
+     state the reason for. */
+  'card.pull_request_merged': { type: 'card', key: 'cardId' },
   /* The card<->branch link (migration 0106) — the identical `card.pull_
      request_linked` shape directly above, one entity type over: the
      resource is the CARD, not a `branch` type this schema has no concept

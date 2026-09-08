@@ -84,6 +84,13 @@ export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'checklist_item.updated', label: 'A checklist item is checked or edited' },
   { event: 'attachment.uploaded', label: 'A file is attached to a card' },
   { event: 'card.field_set', label: "A card's custom field changes" },
+  /* §7.2's last documented automation gap — a linked PR merging. Carries a
+     real cardId (one event per linked card; see that event's own doc
+     comment in apps/api/src/work/events.ts), so it belongs in this main
+     list, not the card-less exceptions below — pairing it with the
+     already-existing `card.move` action is what turns "when a PR merges,
+     move the card to Done" into a rule anyone can build. */
+  { event: 'card.pull_request_merged', label: 'A linked pull request merges' },
   /* Wave 4 slice 3 (§7.5) — no card, deliberately; see the header note. */
   { event: 'integration.slack_event', label: 'A Slack event arrives (message, reaction, …)' },
   { event: 'integration.github_event', label: 'A GitHub event arrives (push, issue, …)' },

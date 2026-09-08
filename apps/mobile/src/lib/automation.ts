@@ -84,6 +84,12 @@ export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'checklist_item.updated', label: 'A checklist item is checked or edited' },
   { event: 'attachment.uploaded', label: 'A file is attached to a card' },
   { event: 'card.field_set', label: "A card's custom field changes" },
+  /* §7.2's last documented automation gap — carries a real cardId (see that
+     event's own doc comment in apps/api/src/work/events.ts), so unlike the
+     connector/§8 pairs below it needs no EDITOR_TRIGGER_OPTIONS exclusion:
+     it pairs with the already-supported `card.move` action exactly like
+     any other card trigger, fully editable here too. */
+  { event: 'card.pull_request_merged', label: 'A linked pull request merges' },
   { event: 'integration.slack_event', label: 'A Slack event arrives (message, reaction, …)' },
   { event: 'integration.github_event', label: 'A GitHub event arrives (push, issue, …)' },
   /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — present here purely for
