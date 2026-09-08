@@ -19,6 +19,7 @@ interface Outputs {
   availableNumbers: Awaited<ReturnType<typeof api.telephony.numbers.search.query>>;
   calls: Awaited<ReturnType<typeof api.telephony.calls.list.query>>;
   callRecordings: Awaited<ReturnType<typeof api.telephony.recordings.list.query>>;
+  orgRecordings: Awaited<ReturnType<typeof api.telephony.recordings.browse.query>>;
   cardRecordings: Awaited<ReturnType<typeof api.telephony.cards.recordings.query>>;
   threads: Awaited<ReturnType<typeof api.telephony.messages.threads.query>>;
   messages: Awaited<ReturnType<typeof api.telephony.messages.list.query>>;
@@ -30,6 +31,7 @@ export type PhoneNumberRecord = Wire<Outputs['numbers']>[number];
 export type AvailableNumber = Wire<Outputs['availableNumbers']>[number];
 export type CallRecord = Wire<Outputs['calls']>[number];
 export type CallRecording = Wire<Outputs['callRecordings']>[number];
+export type OrgRecording = Wire<Outputs['orgRecordings']>[number];
 export type CardRecording = Wire<Outputs['cardRecordings']>[number];
 export type MessageThread = Wire<Outputs['threads']>[number];
 export type ThreadMessage = Wire<Outputs['messages']>[number];
@@ -59,6 +61,26 @@ export function callRecordingsQuery(orgId: string, callId: string) {
     queryKey: keys.callRecordings(orgId, callId),
     queryFn: async () => wire(await api.telephony.recordings.list.query({ callId })),
   });
+}
+
+/**
+ * Every stored recording, org-wide — the recordings browser
+ * (`recordings.browse`, `recording:read`). Fetched as a plain function
+ * rather than `queryOptions`, matching `people-page.tsx`'s own precedent
+ * for a cursor-paginated list: `useInfiniteQuery` is built inline in the
+ * one component that renders it, with `before` (this page's oldest
+ * `createdAt`) as the next page's cursor.
+ */
+export async function orgRecordingsPage(
+  before: string | null,
+): Promise<{ readonly recordings: readonly OrgRecording[]; readonly nextBefore: string | null }> {
+  const page = wire(await api.telephony.recordings.browse.query({ limit: 50, before }));
+  const last = page[page.length - 1];
+  return {
+    recordings: page,
+    /* Fewer rows than the page size means there is nothing older left. */
+    nextBefore: last === undefined || page.length < 50 ? null : last.createdAt,
+  };
 }
 
 /**

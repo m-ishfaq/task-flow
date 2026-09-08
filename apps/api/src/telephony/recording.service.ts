@@ -1,9 +1,10 @@
-import { eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import { errors, type OrgId } from '@taskflow/contracts';
+import { desc, eq, inArray, lt, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { errors, type OrgId, type PhoneNumber } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { enforce } from '@taskflow/policy';
 import { recordingDownloaded, recordingStarted } from './events.js';
+import { loadOrgDataKey, openCounterparty } from './counterparty.js';
 import { envelopeOf, orgOf, webhookContext, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
 
@@ -133,6 +134,113 @@ export async function listRecordings(
       createdAt: row.createdAt,
     }));
   });
+}
+
+export interface OrgRecordingRecord {
+  readonly recordingId: string;
+  readonly callId: string;
+  readonly status: string;
+  readonly durationSeconds: number | null;
+  readonly createdAt: Date;
+  readonly direction: 'inbound' | 'outbound';
+  readonly counterparty: PhoneNumber;
+  readonly attachedCardIds: readonly string[];
+}
+
+/**
+ * Every stored recording, org-wide — not one call's, not one card's.
+ *
+ * `recording-section.tsx`'s own header names this exact gap: only a
+ * per-call list (`listRecordings` above, needs a `callId` in hand) and a
+ * per-card list (`recording-card.service.ts`'s `listCardRecordings`,
+ * needs a `cardId`) existed, so a reviewer with neither had no way to
+ * browse what the org has recorded at all.
+ *
+ * `recording:read` alone, same as `listRecordings` — no target, because
+ * every telephony permission is a flat role grant (§6.3). Ordered newest
+ * first with a `createdAt` cursor (`before`), the same shape
+ * `tenancy.audit.list` uses for its own `seq` cursor — recordings have no
+ * numeric sequence, so the timestamp column already indexed for ordering
+ * (`recordings_org_id_key`'s sibling created-at ordering used elsewhere in
+ * this file) is what the cursor is built on instead.
+ *
+ * The counterparty is decrypted here exactly as `listCalls` does for the
+ * call log — one key unwrap for the whole page, not one per row — because
+ * `recording:read` is the same permission that already lets an Admin see
+ * every call's counterparty in the call log; a recording without knowing
+ * who it is a recording OF would be a strictly worse version of a screen
+ * this org can already open.
+ */
+export async function listOrgRecordings(
+  actor: TelephonyActor,
+  deps: TelephonyDeps,
+  input: { readonly limit: number; readonly before: Date | null },
+): Promise<readonly OrgRecordingRecord[]> {
+  enforce(actor.subject, 'recording:read');
+
+  const orgId = orgOf(actor);
+
+  const rows = await withOrgScope(orgId, async (tx) => {
+    const recordingRows = await tx
+      .select({
+        id: schema.recordings.id,
+        callId: schema.recordings.callId,
+        status: schema.recordings.status,
+        durationSeconds: schema.recordings.durationSeconds,
+        createdAt: schema.recordings.createdAt,
+        direction: schema.calls.direction,
+        ciphertext: schema.calls.counterpartyCiphertext,
+      })
+      .from(schema.recordings)
+      .innerJoin(schema.calls, eq(schema.calls.id, schema.recordings.callId))
+      .where(input.before === null ? undefined : lt(schema.recordings.createdAt, input.before))
+      .orderBy(desc(schema.recordings.createdAt))
+      .limit(input.limit);
+
+    if (recordingRows.length === 0) return [];
+
+    /* One card lookup for the whole page, not one per row — the recording
+       ids are already in hand from the query above. */
+    const cardRows = await tx
+      .select({
+        recordingId: schema.recordingCards.recordingId,
+        cardId: schema.recordingCards.cardId,
+      })
+      .from(schema.recordingCards)
+      .where(
+        inArray(
+          schema.recordingCards.recordingId,
+          recordingRows.map((row) => row.id),
+        ),
+      );
+
+    const cardIdsByRecording = new Map<string, string[]>();
+    for (const row of cardRows) {
+      const existing = cardIdsByRecording.get(row.recordingId);
+      if (existing === undefined) {
+        cardIdsByRecording.set(row.recordingId, [row.cardId]);
+      } else {
+        existing.push(row.cardId);
+      }
+    }
+
+    return recordingRows.map((row) => ({ ...row, cardIds: cardIdsByRecording.get(row.id) ?? [] }));
+  });
+
+  if (rows.length === 0) return [];
+
+  const dataKey = await loadOrgDataKey(orgId, deps.keys);
+
+  return rows.map((row) => ({
+    recordingId: row.id,
+    callId: row.callId,
+    status: row.status,
+    durationSeconds: row.durationSeconds,
+    createdAt: row.createdAt,
+    direction: row.direction as 'inbound' | 'outbound',
+    counterparty: openCounterparty(dataKey, orgId, row.callId, row.ciphertext),
+    attachedCardIds: row.cardIds,
+  }));
 }
 
 /**

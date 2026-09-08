@@ -7,6 +7,7 @@ import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { CallsPanel } from './calls-panel.js';
 import { NumbersPanel } from './numbers-panel.js';
 import { MessagesPanel } from './messages-panel.js';
+import { RecordingsPanel } from './recordings-panel.js';
 import { SpendPanel } from './spend-panel.js';
 
 /**
@@ -39,6 +40,7 @@ const TABS = [
   { id: 'calls', label: 'Calls', capability: 'readCalls' },
   { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers' },
   { id: 'messages', label: 'Messages', capability: 'readSms' },
+  { id: 'recordings', label: 'Recordings', capability: 'readRecordings' },
   { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers' },
 ] as const satisfies readonly {
   id: string;
@@ -125,6 +127,9 @@ export function TelephonyPage() {
           <NumbersPanel orgId={orgId} />
         )}
         {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
+        {tab === 'recordings' && capabilities?.readRecordings === true && (
+          <RecordingsPanel orgId={orgId} />
+        )}
         {tab === 'spend' && capabilities?.readPhoneNumbers === true && <SpendPanel orgId={orgId} />}
       </div>
     </div>

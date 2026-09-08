@@ -405,7 +405,10 @@ const telephonyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/calls',
   validateSearch: z.object({
-    tab: z.enum(['calls', 'numbers', 'messages', 'spend']).optional().catch(undefined),
+    tab: z
+      .enum(['calls', 'numbers', 'messages', 'recordings', 'spend'])
+      .optional()
+      .catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
     /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
        TRANSCRIPT search hit has somewhere to land — a hit whose permalink

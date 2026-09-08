@@ -188,6 +188,31 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
         ),
 
       /**
+       * Every stored recording, org-wide — the browse view `recording-
+       * section.tsx`'s own header names as missing (only per-call and
+       * per-card lists existed). `before` is a `createdAt` cursor, mirroring
+       * `tenancy.audit.list`'s own cursor shape one column over.
+       */
+      browse: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
+        .input(
+          z
+            .object({
+              limit: z.number().int().min(1).max(100).default(50),
+              before: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .query(async ({ ctx, input }) =>
+          recordings.listOrgRecordings(actorOf(ctx), deps(), {
+            limit: input.limit,
+            before: input.before === null ? null : new Date(input.before),
+          }),
+        ),
+
+      /**
        * Owner-only, step-up, and audited.
        *
        * PLAN.md §8.5: "Access requires explicit permission plus step-up auth.

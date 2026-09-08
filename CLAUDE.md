@@ -3552,7 +3552,8 @@ their UI inside their own phase, and this phase's spec never said Wave 5 would c
 shipped in the same session that found the gap — `apps/web/src/features/telephony` (numbers, calls,
 messages, spend) behind a new `/calls` sidebar item, and `recording-section.tsx` for attaching a
 recording to a Work card. See `ai/phase-7-voice.md`'s own Wave 5 note for the two API-surface gaps
-this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search).
+this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search —
+_the second half of that is closed; see "Org-wide recordings browser" below_).
 
 ### Phase 7 — Voice & Messaging: Waves 1–3 complete, Wave 4 split
 
@@ -3781,6 +3782,53 @@ other sweep on SIGTERM/SIGINT) rather than inventing a different pattern for one
 job. It reuses `main.ts`'s own `notificationMail.queue` — the same `MailQueue` instance the
 notification digest sweep and relay already send through — rather than opening a fourth queue in
 the process for no reason.
+
+### Org-wide recordings browser (SHIPPED) — the gap `recording-section.tsx`'s own header named
+
+`apps/api/src/telephony/recording.service.ts`'s `listOrgRecordings` · `recordings.browse` route ·
+`apps/web/src/features/telephony/recordings-panel.tsx` — a new "Recordings" tab on `/calls`.
+Closes the gap `recording-section.tsx`'s own header comment names explicitly: only a per-call list
+(`recordings.list`, needs a `callId` in hand) and a per-card list (`cards.recordings`, needs a
+`cardId`) existed, so a reviewer with neither — someone doing a compliance pass, say — had no way
+to see what the org has recorded at all.
+
+**`recording:read` alone, same permission as the two lists it complements — no new permission, no
+new capability field.** Admin-and-Owner by role, exactly like `listRecordings`; `readRecordings`
+(`SettingsCapabilities`, added in Phase 15 §1's sweep) already gates the card section and the
+Spend tab's itemized report, and now gates this tab too — one boolean, one meaning, reused rather
+than a second field for the identical question.
+
+**The counterparty is decrypted here exactly as `listCalls` decrypts it for the call log — one key
+unwrap for the whole page, not one per row.** `recording:read` is the same permission that already
+lets an Admin see every call's counterparty in the call log; a recordings browser that could not
+say who a recording is a recording OF would be a strictly worse version of a screen this org can
+already open. The join is `recordings INNER JOIN calls` — every recording's `callId` always names
+a real call (the only writer, `registerRecording`, requires one) — so an inner join costs nothing
+an outer join would have bought.
+
+**Cursor-paginated on `createdAt`, not a numeric sequence — recordings have none, unlike the audit
+log's `seq`.** `tenancy.audit.list`'s own `before` cursor is the closer precedent than a page
+number: newest first, `lt(recordings.createdAt, before)` for the next page, `useInfiniteQuery` on
+the client (`people-page.tsx`'s own "Load more" shape) rather than a numbered pager — the row count
+is unbounded and a person reviewing recordings is scrolling back in time, not jumping to a page.
+
+**Which cards a recording is attached to is a second, batched query per page — not a second round
+trip per row.** `comms.recording_cards` is many-to-many (one recording can, in principle, be
+attached to more than one card, the same shape `recording-card.service.ts`'s own precedent already
+allows); `listOrgRecordings` fetches every attachment for the page's recording ids in one
+`inArray` query and folds them into a `Map`, the identical "one lookup for the whole page" shape
+the counterparty key unwrap already uses one function up. The row links to `CardQuickView` — the
+same "open the real card panel with no board in hand" mechanism the standup view and the AI
+assistant's `my_cards` renderer already established — rather than a third bespoke way to jump to a
+card.
+
+**No test file existed for `recording.service.ts` at all before this — a real, previously
+documented gap** (this file's own Phase 7 status header: "`number.service.ts`, `recording.service.ts`
+and `transcript.service.ts` still have no dedicated test file"). `recording.service.test.ts` is new,
+proving the property only real Postgres can: the JOIN's counterparty decryption round-trips
+correctly, the `attachedCardIds` batch join is correct against a real `recording_cards` row, the
+`before` cursor genuinely excludes what came at or after it, and a Member — who holds no
+`recording:read` — is refused before any row is read.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 

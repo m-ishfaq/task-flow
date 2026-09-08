@@ -312,6 +312,8 @@ export const keys = {
   /** Recordings attached to one Work card (§3.9). */
   cardRecordings: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'recordings'] as const,
+  /** Every stored recording, org-wide — the recordings browser. */
+  orgRecordings: (orgId: string) => ['org', orgId, 'telephony', 'recordings'] as const,
   /**
    * Dialable people — the directory folded down to members who have a work
    * phone (`telephony/api.ts`). Its own key rather than `directory(orgId, …)`:
