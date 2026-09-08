@@ -216,10 +216,10 @@ function SaveViewDialog({
       api.work.views.create.mutate({
         boardId,
         name,
-        /* Insights are ephemeral and not persistable — the API only accepts
-             board/table/list. Sending 'insights' would fail validation, so
-             fall back to 'board' for saved views. */
-        type: current.type === 'insights' ? 'board' : current.type,
+        /* Insights and Calendar are ephemeral and not persistable — the API
+             only accepts board/table/list. Sending either would fail
+             validation, so fall back to 'board' for saved views. */
+        type: current.type === 'insights' || current.type === 'calendar' ? 'board' : current.type,
         groupBy: current.groupBy,
         sortBy: current.sortBy,
         filter: current.filter,

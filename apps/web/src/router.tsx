@@ -296,7 +296,7 @@ const boardRoute = createRoute({
   parseParams: (params) => ({ boardId: BoardIdSchema.parse(params.boardId) }),
   stringifyParams: (params) => ({ boardId: params.boardId }),
   validateSearch: z.object({
-    view: z.enum(['board', 'table', 'list', 'insights']).catch('board').optional(),
+    view: z.enum(['board', 'table', 'list', 'calendar', 'insights']).catch('board').optional(),
     card: CardIdSchema.optional().catch(undefined),
     project: ProjectIdSchema.optional().catch(undefined),
     /**

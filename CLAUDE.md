@@ -3668,6 +3668,57 @@ button behind a `browserSupportsWebAuthn()` check, and `account-page.tsx`'s `Pas
 real test coverage (`login-page.test.tsx`, `passkey-section.test.tsx`). Nothing here needed
 building; the deferral note itself was the only thing behind.
 
+### Calendar view (SHIPPED) — the §10.4 surface's due-date half
+
+`apps/web/src/features/work/calendar-view.tsx` · `board-page.tsx`'s `ViewToggle` and render switch ·
+`view-match.ts`'s `BoardArrangement.type` · `router.tsx`'s `boardRoute` search schema. The Phase 3
+deferral note above named "Calendar and timeline views" together as one un-scheduled §10.4 surface;
+this ships the calendar half — a month grid over due dates — and deliberately not the timeline half.
+
+**A due-date calendar, not a Gantt-style timeline — a real scope decision, not half a feature.**
+`cardsQuery`'s summary shape (the same one `board-view.tsx`/`list-view.tsx`/`table-view.tsx` all
+already read) carries `dueDate` but not `startDate` — Phase 3's own note on `cards.update` states
+why the table/list views never fetch it either. A timeline over a start/end SPAN would need a
+different query shape and a materially bigger rendering surface (overlapping bars, drag-to-resize);
+"what's due when" is the question a due-date calendar answers with the data already on screen, and
+is what was actually missing.
+
+**A fifth renderer alongside board/list/table/insights, not a new subsystem.** `'calendar'` joins
+`BoardArrangement['type']` and `boardRoute`'s `view` search-param enum exactly the way `'insights'`
+already did — client-only, never sent to `work.views.create` (whose server-side enum is still just
+board/table/list), so `view-tabs.tsx`'s `SaveViewDialog` falls a calendar arrangement back to
+`'board'` the identical way it already does for insights. `board-page.tsx` fetches `cardsQuery`
+exactly ONCE regardless of which view is showing — the calendar reads the SAME cards array board/
+list/table already render, so switching to it is instant and can never disagree with the other
+views about which cards match the current filter.
+
+**Grouping and sorting are hidden for calendar, the same way they already are for table** — a
+month grid is inherently grouped by day, and `groupBy`/`sortBy` have no meaning to give it.
+
+**The visible month is local component state, not the URL.** Unlike `view`/`filter`/`groupBy`/
+`sortBy` (§10.5, which the URL owns so a filtered, arranged board is one shareable link), which
+month someone happens to be scrolled to is not part of "what this board shows" — `table-view.tsx`'s
+own scroll position is the closest existing precedent for state that stays local. A pasted link
+opens on the current month, not wherever the last viewer navigated to.
+
+**`useState(() => new Date())`, a lazy initializer, never a bare `new Date()` in the render body**
+— the same React Compiler purity constraint `lib/format.ts`'s own header already states as the
+reason `hasPassed`/`oooStatus` read the clock in a plain function rather than inline in a
+component. The initializer runs once, to seed which month opens first; the "Today" button reads
+the clock again, but from inside an event handler, which is not render and needs no such care.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+actually run against.** Verified by what a sandbox without one can prove: `tsc`, `eslint`, and the
+guardrail selftest, all clean, following this file's own standing rule that a green non-visual
+check is not the same claim as "this works when you look at it." A person should open a board and
+switch to Calendar before calling this done.
+
+**Deliberately not built in this pass: a true start/end timeline (the other half of §10.4's
+name), drag-to-reschedule from the grid (rescheduling still goes through opening the card, same as
+every other card-detail edit), and a My Tasks / cross-board calendar** — `home-page.tsx` has no
+view switcher at all today, board-scoped or otherwise, and adding a calendar there is a separate,
+real piece of work rather than a natural extension of this one.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

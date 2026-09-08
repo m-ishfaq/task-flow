@@ -17,7 +17,7 @@ import type { GroupBy, SortBy } from './grouping.js';
  */
 
 export interface BoardArrangement {
-  readonly type: 'board' | 'table' | 'list' | 'insights';
+  readonly type: 'board' | 'table' | 'list' | 'calendar' | 'insights';
   readonly groupBy: GroupBy;
   readonly sortBy: SortBy;
   readonly filter: FilterNode | null;

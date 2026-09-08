@@ -14,6 +14,7 @@ import { useBoardRoom } from './use-board-room.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
 import { ListView } from './list-view.js';
+import { CalendarView } from './calendar-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
 import { ViewTabs } from './view-tabs.js';
 import { BulkBar } from './bulk-bar.js';
@@ -255,9 +256,10 @@ export function BoardPage() {
           )}
 
           {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for
-              the table, which has its own columns, so they only render for
+              the table, which has its own columns, and for the calendar,
+              which is inherently grouped by date — so they only render for
               board and list. */}
-          {view !== 'table' && (
+          {view !== 'table' && view !== 'calendar' && (
             <>
               <GroupBySelect
                 value={groupBy}
@@ -366,6 +368,15 @@ export function BoardPage() {
           />
         )}
 
+        {view === 'calendar' && (
+          <CalendarView
+            cards={sprintCards}
+            onOpenCard={(cardId) => {
+              setSearch({ card: cardId as CardId });
+            }}
+          />
+        )}
+
         {view === 'insights' && <BoardInsightsPanel orgId={orgId} boardId={boardId} />}
 
         <BulkBar
@@ -399,8 +410,8 @@ function ViewToggle({
   value,
   onChange,
 }: {
-  readonly value: 'board' | 'table' | 'list' | 'insights';
-  readonly onChange: (value: 'board' | 'table' | 'list' | 'insights') => void;
+  readonly value: 'board' | 'table' | 'list' | 'calendar' | 'insights';
+  readonly onChange: (value: 'board' | 'table' | 'list' | 'calendar' | 'insights') => void;
 }) {
   return (
     <div
@@ -408,7 +419,7 @@ function ViewToggle({
       role="group"
       aria-label="View"
     >
-      {(['board', 'list', 'table', 'insights'] as const).map((mode) => (
+      {(['board', 'list', 'table', 'calendar', 'insights'] as const).map((mode) => (
         <button
           key={mode}
           type="button"
