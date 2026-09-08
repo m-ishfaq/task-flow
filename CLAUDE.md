@@ -2953,7 +2953,48 @@ Verified instead by what a sandbox WITHOUT Docker can prove for certain: `tsc`, 
 `isSafeUrl` regression above), `pnpm check:encoding`, and the guardrail selftest. A person should
 confirm the actual rendering looks right before calling this done, per this file's own standing
 rule that a green non-visual check is not the same claim as "this works when you look at it."
-`apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
+
+### Phase 15 §7 — `get_pr_diff` could 500 the whole assistant turn on a real PR (FIXED)
+
+`apps/api/src/automation/pr-read.service.ts`. Found from a real report — "tell me the diff for pr
+135" answered "The assistant could not reply" — traced to a server log showing `ai.chat.send`
+throwing on its own OUTPUT validation: `messages[14].content` (the `tool_result` for that exact
+`get_pr_diff` call) failed `String must contain at most 20000 character(s)`. This looked, at
+first, like it could be the same dead-GitHub-token 401 this file documents finding and fixing
+elsewhere in this phase — it was not; `getPullRequestDiff` reached GitHub fine and returned 200.
+
+**The old `MAX_DIFF_CHARS = 20_000` capped the wrong string.** It bounded the RAW diff text
+fetched from GitHub, chosen — the comment said so explicitly — to match `router.ts`'s own
+`ChatMessage` `tool_result` variant's `content: z.string().max(20_000)` ceiling exactly. But
+`execute()` never sends the raw diff as `content` — it sends
+`JSON.stringify({prNumber, truncated, diff})`, and `JSON.stringify` turns every real newline in
+the diff into the two characters `\n`. A unified diff is mostly newlines, so a diff already
+sitting at the raw 20,000-character cap routinely serialized to well over router.ts's own
+ceiling — the exact PR in the report never needed truncating by the old rule (its raw diff was
+under 20,000 characters) and still blew the budget once JSON-encoded. **No test in this file
+caught it because none of them ever asserted the SERIALIZED size of a large diff** — the existing
+truncation test only checked `result.diff.length`, never `JSON.stringify(result).length`, which
+is the number that actually crosses the wire and the number `router.ts`'s schema actually
+validates.
+
+**The fix, `fitDiffToBudget`, binary-searches the actual serialized size instead of guessing a
+raw-text cap.** `MAX_TOOL_RESULT_CONTENT_CHARS = 19_500` — a little under router.ts's 20,000, as
+headroom for the `{"prNumber":...,"truncated":...,"diff":"..."}` wrapper's own overhead and for
+the truncation notice appended to a cut diff — is checked against
+`JSON.stringify({prNumber, truncated, diff: candidate}).length` directly, not against
+`candidate.length`. A fixed divisor (e.g. "assume JSON escaping adds 20%") was considered and
+rejected: escape expansion is content-dependent — a diff full of quotes and backslashes (a JSON
+file, a Windows path, a regex) escapes far more per character than a plain-prose one — so no
+single ratio is safe for every diff a real PR could contain. The search is valid because
+`size(mid)` is monotonically non-decreasing in `mid`: every additional raw character can only add
+characters to the JSON-encoded output, never remove any.
+
+**`pr-read.service.test.ts` gained the regression case the original bug needed and the old test
+suite didn't have**: a diff built from 1,900 short lines (19,000 raw characters — under the OLD
+flat cap, so the old code would have returned `truncated: false` and still overflowed the wire)
+now asserts `JSON.stringify(result).length <= 20_000` directly, the real contract, rather than
+trusting the raw diff's own length as a proxy for it. The existing truncation test was widened
+the same way rather than left checking the old, wrong invariant.
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every
 document row in the tenant, including a message in a DM between two other people — and

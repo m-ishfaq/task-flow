@@ -42,14 +42,25 @@ export type PrReadDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'>;
 const TIMEOUT_MS = 10_000;
 const MAX_LIST_LIMIT = 20;
 const DEFAULT_LIST_LIMIT = 10;
-/* ~5k tokens — real input-size hygiene, the same role `search.query`'s own
-   result cap and `ChatSendInput.messages`'s 40-element cap play elsewhere in
-   this registry, not a product decision about how much of a diff a person
-   may see (they can still open the PR in a browser). A truncated diff is
-   marked BOTH structurally (`truncated: boolean`) and in the text itself, so
-   the model can tell the person their diff was cut off without having to
-   reason about the boolean alone. */
-const MAX_DIFF_CHARS = 20_000;
+/**
+ * Mirrors `router.ts`'s `ChatMessage` `tool_result` variant's own
+ * `content: z.string().max(20_000)` — the hard ceiling `execute()`'s whole
+ * `JSON.stringify({prNumber, truncated, diff})` result must fit under, not
+ * just the raw diff text. A flat `MAX_DIFF_CHARS = 20_000` on the raw diff
+ * (this constant's own previous shape) missed exactly that distinction:
+ * `JSON.stringify` turns every real newline in the diff into the two
+ * characters `\n`, and a unified diff is mostly newlines, so a diff already
+ * at the raw 20,000-character cap serialized to well over router.ts's own
+ * ceiling on `content` — `ai.chat.send` then 500'd on its own OUTPUT
+ * validation (`String must contain at most 20000 character(s)`), found from
+ * a real report ("tell me the diff for pr 135" — "The assistant could not
+ * reply") rather than any test in this file, since none of them assert the
+ * SERIALIZED size of a large diff. Kept a little below 20,000, not equal to
+ * it, as a safety margin for the `{"prNumber":...,"truncated":...,
+ * "diff":"..."}` wrapper's own overhead and for the truncation notice
+ * `fitDiffToBudget` appends to a cut diff.
+ */
+const MAX_TOOL_RESULT_CONTENT_CHARS = 19_500;
 const MAX_COMMENTS = 30;
 const MAX_FILES = 50;
 /* One page is enough for a rollup — a status DOT needs "did anything fail,
@@ -252,11 +263,54 @@ export async function listPullRequests(
   return body.map(toPrSummary).filter((pr): pr is PrSummary => pr !== null);
 }
 
+function diffTruncationNote(shown: number, total: number): string {
+  return `\n\n… [diff truncated at ${String(shown)} characters; ${String(total - shown)} more characters omitted]`;
+}
+
+export interface PrDiffResult {
+  readonly prNumber: number;
+  readonly truncated: boolean;
+  readonly diff: string;
+}
+
+/**
+ * Slices `raw` down until `JSON.stringify({prNumber, truncated, diff})` —
+ * the exact string `execute()` hands back as `ToolResult.content` — fits
+ * under `MAX_TOOL_RESULT_CONTENT_CHARS`. Binary search rather than a fixed
+ * divisor: JSON's escape expansion is content-dependent (a quote-and-
+ * backslash-heavy diff — JSON, a regex, a Windows path — escapes far more
+ * per character than a plain-prose one), so no single constant ratio is
+ * safe for every diff; searching the actual serialized size is what makes
+ * this correct regardless of what the diff contains. `size(mid)` is
+ * monotonically non-decreasing in `mid` (each additional raw character can
+ * only add characters to the JSON-encoded output, never remove any), which
+ * is what makes the search valid.
+ */
+function fitDiffToBudget(prNumber: number, raw: string): PrDiffResult {
+  const whole: PrDiffResult = { prNumber, truncated: false, diff: raw };
+  if (JSON.stringify(whole).length <= MAX_TOOL_RESULT_CONTENT_CHARS) return whole;
+
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    const candidate = raw.slice(0, mid) + diffTruncationNote(mid, raw.length);
+    const size = JSON.stringify({ prNumber, truncated: true, diff: candidate }).length;
+    if (size <= MAX_TOOL_RESULT_CONTENT_CHARS) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return { prNumber, truncated: true, diff: raw.slice(0, lo) + diffTruncationNote(lo, raw.length) };
+}
+
 export async function getPullRequestDiff(
   actor: AutomationActor,
   deps: PrReadDeps,
   input: { readonly prNumber: number; readonly repoScope?: string | undefined },
-): Promise<{ readonly prNumber: number; readonly truncated: boolean; readonly diff: string }> {
+): Promise<PrDiffResult> {
   assertMayView(actor);
   const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
@@ -271,12 +325,7 @@ export async function getPullRequestDiff(
   if (!response.ok) throw githubReadError(response.status);
 
   const raw = await response.text();
-  const truncated = raw.length > MAX_DIFF_CHARS;
-  const diff = truncated
-    ? `${raw.slice(0, MAX_DIFF_CHARS)}\n\n… [diff truncated at ${String(MAX_DIFF_CHARS)} characters; ${String(raw.length - MAX_DIFF_CHARS)} more characters omitted]`
-    : raw;
-
-  return { prNumber: input.prNumber, truncated, diff };
+  return fitDiffToBudget(input.prNumber, raw);
 }
 
 export async function getPullRequestComments(
@@ -358,9 +407,9 @@ function toFile(raw: unknown): PrFile | null {
  * and the additions/deletions count per file. A real gap `get_pr_diff`
  * alone left open: a diff answers "what changed, line by line," which is
  * the wrong shape for "which files does this PR touch" — a large PR's diff
- * routinely blows past `MAX_DIFF_CHARS` before a person ever learns the
- * SHAPE of the change, where the files list is one page regardless of PR
- * size.
+ * routinely needs truncating (see `fitDiffToBudget`) before a person ever
+ * learns the SHAPE of the change, where the files list is one page
+ * regardless of PR size.
  */
 export async function getPullRequestFiles(
   actor: AutomationActor,

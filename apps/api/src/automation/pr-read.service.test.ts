@@ -466,7 +466,7 @@ describe('getPullRequestDiff', () => {
     });
   });
 
-  it('truncates a diff past the cap and marks it', async () => {
+  it('truncates a diff past the cap and marks it, keeping the serialized result under the budget', async () => {
     const { owner } = await scaffold('diff-truncated');
     const longDiff = 'x'.repeat(25_000);
     const fake = fakeGithub({ diff: longDiff });
@@ -476,8 +476,33 @@ describe('getPullRequestDiff', () => {
     const result = await getPullRequestDiff(owner, deps, { prNumber: 1 });
 
     expect(result.truncated).toBe(true);
-    expect(result.diff.startsWith('x'.repeat(20_000))).toBe(true);
-    expect(result.diff).toContain('truncated at 20000 characters');
+    expect(result.diff.startsWith('x')).toBe(true);
+    expect(result.diff).toContain('diff truncated at');
+    // The real contract: `execute()`'s `JSON.stringify(result)` — what
+    // actually crosses the wire as `ToolResult.content` — must fit under
+    // router.ts's own `ChatMessage` tool_result `content: z.string().max(20_000)`.
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(20_000);
+  });
+
+  it('truncates a newline-heavy diff whose RAW length is under the old flat cap but whose JSON-encoded size is not — the exact shape that made ai.chat.send 500 on a real PR', async () => {
+    // Found from a real report ("tell me the diff for pr 135" — "The
+    // assistant could not reply"): a diff made mostly of short lines is
+    // mostly newlines, and `JSON.stringify` turns each real newline into
+    // the two characters `\n`, so a diff well under the OLD raw 20,000-char
+    // cap could still serialize past router.ts's own ceiling on `content`.
+    // 1,900 lines of 9 characters + a newline = 19,000 raw characters —
+    // under the old cap, over the new budget once escaped.
+    const { owner } = await scaffold('diff-newline-heavy');
+    const longDiff = `${'x'.repeat(9)}\n`.repeat(1_900);
+    expect(longDiff.length).toBe(19_000);
+    const fake = fakeGithub({ diff: longDiff });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestDiff(owner, deps, { prNumber: 135 });
+
+    expect(result.truncated).toBe(true);
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(20_000);
   });
 
   it('a nonexistent PR answers NOT_FOUND with a message naming the PR, not the connector', async () => {
