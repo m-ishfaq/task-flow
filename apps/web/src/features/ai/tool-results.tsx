@@ -1148,6 +1148,46 @@ const renderPrApprove = prWriteRenderer('Approved');
 const renderPrMerge = prWriteRenderer('Merged');
 const renderPrClose = prWriteRenderer('Closed');
 
+/**
+ * `pr_comment_on_file` — a real, small variant of `prWriteRenderer` rather
+ * than that same factory: unlike the general-thread write tools above, this
+ * one has a `path` (from `call.input`, the model already put it there —
+ * same reasoning `cardWriteRenderer`/`prWriteRenderer` both give for
+ * reading identity off the call rather than the service's own output)
+ * worth showing alongside the PR number, and it links to GitHub's own
+ * "Files changed" tab rather than the bare PR page, since that's where the
+ * comment actually lives.
+ */
+function renderPrCommentOnFile(result: ToolResultMessage, call: ToolCallWire): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const prNumber = call.input['prNumber'];
+  const path = call.input['path'];
+  if (typeof prNumber !== 'number' || typeof path !== 'string') return null;
+  const parsed = parseJson(result.content);
+  const providerScope = isRecord(parsed) ? stringField(parsed, 'providerScope') : null;
+
+  return (
+    <ResultPanel>
+      <div className="flex items-center gap-1.5 text-ink">
+        <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
+        <span className="min-w-0 flex-1 truncate">
+          Commented on <span className="font-mono text-[11px]">{path}</span> in PR #{prNumber}
+        </span>
+        {providerScope !== null && (
+          <a
+            href={`https://github.com/${providerScope}/pull/${String(prNumber)}/files`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto shrink-0 text-[11px] text-accent underline"
+          >
+            Open
+          </a>
+        )}
+      </div>
+    </ResultPanel>
+  );
+}
+
 /* -------------------------------------------------------------------------- *
  * list_card_prs / card_link_pr (work/card-pull-request.service.ts)
  * -------------------------------------------------------------------------- */
@@ -1292,6 +1332,7 @@ const RENDERERS: Readonly<
   get_pr_file_diff: (result) => renderGetPrFileDiff(result),
   get_pr_comments: (result) => renderGetPrComments(result),
   pr_post_comment: (result, call) => renderPrPostComment(result, call),
+  pr_comment_on_file: (result, call) => renderPrCommentOnFile(result, call),
   pr_request_changes: (result, call) => renderPrRequestChanges(result, call),
   pr_approve: (result, call) => renderPrApprove(result, call),
   pr_merge: (result, call) => renderPrMerge(result, call),

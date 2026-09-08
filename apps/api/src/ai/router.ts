@@ -261,9 +261,14 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'mean — then pass that exact value as `repoScope` on every GitHub tool call for ' +
                 'the rest of THIS conversation without asking again, unless the user later says ' +
                 'to use a different repo. Never guess which connected repo to use. To act on a ' +
-                'pull request, use `pr_post_comment`/`pr_request_changes`/`pr_approve`/`pr_merge`/' +
-                '`pr_close` — never `card_add_comment` or any Work/Chat tool, which act on a ' +
-                'TaskFlow card or channel, not a GitHub pull request. `pr_approve` and ' +
+                'pull request, use `pr_post_comment`/`pr_comment_on_file`/`pr_request_changes`/' +
+                '`pr_approve`/`pr_merge`/`pr_close` — never `card_add_comment` or any Work/Chat ' +
+                'tool, which act on a TaskFlow card or channel, not a GitHub pull request. ' +
+                "`pr_post_comment` posts to the PR's general conversation thread; use " +
+                '`pr_comment_on_file` instead whenever the feedback is about one specific file ' +
+                '(get the exact `path` from `get_pr_files`) — only pass `line` if the user wants ' +
+                'it pinned to one line, and confirm that line is real via `get_pr_file_diff` ' +
+                'first, since GitHub refuses a line not part of the diff. `pr_approve` and ' +
                 '`pr_request_changes` are different, mutually exclusive outcomes of the same ' +
                 'review — never call both for the same request. To connect a card to the pull ' +
                 'request that ' +

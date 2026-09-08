@@ -248,6 +248,33 @@ export const integrationPrClosed = defineEvent(
     .strict(),
 );
 
+/**
+ * A file-scoped PR review comment (`pr_comment_on_file`) — the same
+ * "no comment text" rule the four events above already state, plus `path`
+ * (and no `line`: a specific line number is not the STABLE fact an access
+ * review asks about a comment months later, since GitHub's own line-vs-diff
+ * mapping shifts as a PR gets new commits — the file it was about does
+ * not). A genuinely new mutation shape from `postPrComment`'s general
+ * conversation-thread comment, not a variant of it: GitHub answers the two
+ * with different endpoints and a different required `commit_id`/`path`, so
+ * this gets its own event rather than reusing `integration.pr_comment_
+ * posted` with an optional `path` bolted on.
+ */
+export const integrationPrFileCommentPosted = defineEvent(
+  'integration.pr_file_comment_posted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      path: z.string(),
+      /** GitHub's own id for the comment, for correlation. */
+      providerCommentId: z.number().nullable(),
+    })
+    .strict(),
+);
+
 /** `apps/api/src/automation/branch.service.ts` (Phase 15 §7 Wave 3's last
     unbuilt action, "create a branch from this card"). `cardId` is the one
     field none of the `integration.pr_*` events above carry — a branch is

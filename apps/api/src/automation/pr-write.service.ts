@@ -8,6 +8,7 @@ import type { AutomationActor } from './automation.service.js';
 import {
   integrationPrClosed,
   integrationPrCommentPosted,
+  integrationPrFileCommentPosted,
   integrationPrMerged,
   integrationPrReviewSubmitted,
 } from './integration-events.js';
@@ -97,7 +98,11 @@ function githubHeaders(token: string): Record<string, string> {
  * step to suggest, and the org's actual need (a documented objection on the
  * PR) had a working path the whole time.
  */
-function githubWriteError(status: number, reviewOwnPrHint = false): Error {
+function githubWriteError(
+  status: number,
+  reviewOwnPrHint = false,
+  invalidPositionHint = false,
+): Error {
   if (status === 404) {
     return errors.notFound('That pull request does not exist, or the connector cannot see it.');
   }
@@ -115,6 +120,17 @@ function githubWriteError(status: number, reviewOwnPrHint = false): Error {
         'opened the pull request — this is a permanent GitHub rule for the connected account, ' +
         'not something that will succeed on retry. Use `pr_post_comment` to leave the feedback ' +
         'as a regular comment instead.',
+    );
+  }
+  /* Specific to `postPrFileComment`: an out-of-range `line` (not part of
+     this PR's actual diff) is by far the most likely 422 here, unlike a
+     "reviewing your own PR" refusal — GitHub applies no such restriction to
+     a plain review comment, only to a formal approve/request-changes. */
+  if (status === 422 && invalidPositionHint) {
+    return errors.serviceUnavailable(
+      "GitHub rejected that — the path or line is not part of this pull request's diff. Use " +
+        '`get_pr_files`/`get_pr_file_diff` to confirm the exact path and a real changed line ' +
+        'number, or omit `line` to comment on the file as a whole instead.',
     );
   }
   /* 401 means the token itself is dead — revoked, or the OAuth App's own
@@ -191,6 +207,106 @@ export async function postPrComment(
   });
 
   return { commentId, providerScope: connector.providerScope };
+}
+
+/**
+ * A comment scoped to one FILE within a pull request — GitHub's own review-
+ * comment endpoint, not the general conversation thread `postPrComment`
+ * posts to. Needs the PR's HEAD sha first (an extra round trip
+ * `pr-read.service.ts`'s `getPullRequestStatus`/`getPullRequestFileContent`
+ * already pay for the identical reason: `commit_id` has to name the real
+ * commit the comment is anchored to, not whatever the default branch
+ * currently holds).
+ *
+ * `line` is optional and, when omitted, the comment is posted with
+ * `subject_type: 'file'` — GitHub's own file-level review comment, with no
+ * line at all. This is the DEFAULT rather than something a caller has to
+ * ask for on purpose: a line number is only meaningful if it is part of the
+ * diff GitHub is currently showing, which the model has no reliable way to
+ * confirm without a prior `get_pr_file_diff` call, while "comment on this
+ * file" (what a person actually asks for the overwhelming majority of the
+ * time) always succeeds. When `line` IS given, `side: 'RIGHT'` pins it to
+ * the new (post-change) version of the file — the side a comment about the
+ * CURRENT code almost always means; there is no tool-level way to comment
+ * on a removed line's own old content, a deliberate, narrower scope than
+ * GitHub's own web UI offers.
+ */
+export async function postPrFileComment(
+  actor: AutomationActor,
+  deps: PrWriteDeps,
+  input: {
+    readonly prNumber: number;
+    readonly path: string;
+    readonly body: string;
+    readonly line?: number | undefined;
+    readonly repoScope?: string | undefined;
+  },
+): Promise<{
+  readonly commentId: number | null;
+  readonly path: string;
+  readonly providerScope: string;
+}> {
+  assertMayReview(actor);
+  const orgId = actor.subject.orgId;
+  const connector = await connectedGithubRepo(orgId, deps, input.repoScope);
+  const fetchFn = deps.fetchImpl ?? fetch;
+  const repo = repoPath(connector.providerScope);
+
+  const prResponse = await fetchFn(
+    `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}`,
+    { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
+  );
+  if (!prResponse.ok) throw githubWriteError(prResponse.status);
+  const prBody: unknown = await prResponse.json();
+  if (!isRecord(prBody)) {
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+  }
+  const head = prBody['head'];
+  if (!isRecord(head) || typeof head['sha'] !== 'string') {
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+  }
+  const headSha = head['sha'];
+
+  const response = await fetchFn(
+    `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}/comments`,
+    {
+      method: 'POST',
+      headers: githubHeaders(connector.token),
+      body: JSON.stringify({
+        body: input.body,
+        commit_id: headSha,
+        path: input.path,
+        ...(input.line === undefined
+          ? { subject_type: 'file' }
+          : { line: input.line, side: 'RIGHT' }),
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
+  if (!response.ok) throw githubWriteError(response.status, false, true);
+
+  const created = await response.json();
+  const commentId = isRecord(created) && typeof created['id'] === 'number' ? created['id'] : null;
+
+  // After the effect, never before — see this file's own header.
+  await withOrgScope(orgId, async (tx) => {
+    await outboxWriter.append(tx, [
+      createEvent(
+        integrationPrFileCommentPosted,
+        {
+          integrationId: connector.integrationId,
+          provider: 'github',
+          providerScope: connector.providerScope,
+          prNumber: input.prNumber,
+          path: input.path,
+          providerCommentId: commentId,
+        },
+        envelopeOf(actor),
+      ),
+    ]);
+  });
+
+  return { commentId, path: input.path, providerScope: connector.providerScope };
 }
 
 export async function requestPrChanges(

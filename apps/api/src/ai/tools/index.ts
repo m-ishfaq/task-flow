@@ -37,6 +37,7 @@ import {
   createListReposTool,
   createPrApproveTool,
   createPrCloseTool,
+  createPrCommentOnFileTool,
   createPrMergeTool,
   createPrPostCommentTool,
   createPrRequestChangesTool,
@@ -195,6 +196,19 @@ export interface ToolRegistryDeps {
  * already calls and reads that response's own per-file `patch` field (never
  * surfaced by the plain list), scanning for a name match since GitHub has
  * no "give me just this file" query on that endpoint.
+ *
+ * `pr_comment_on_file` closes the write-side gap prompted directly right
+ * behind it: once a person could ask the assistant to look at one specific
+ * file's own change, the natural next ask is to leave feedback ON that
+ * file — never possible before, since `pr_post_comment`'s only target is
+ * the PR's general conversation thread. Defaults to a file-level GitHub
+ * review comment (`subject_type: 'file'`, no line at all) rather than
+ * requiring a line number every time: a line is only valid if it is
+ * genuinely part of the diff, which the model has no reliable way to
+ * confirm without a separate `get_pr_file_diff` call first, while "comment
+ * on this file" always succeeds and is what a person asks for the
+ * overwhelming majority of the time. `line` stays available for when
+ * someone does want it pinned to one line.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -229,6 +243,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createGetPrFileDiffTool(deps.prReadDeps),
     createGetPrCommentsTool(deps.prReadDeps),
     createPrPostCommentTool(deps.prReadDeps),
+    createPrCommentOnFileTool(deps.prReadDeps),
     createPrRequestChangesTool(deps.prReadDeps),
     createPrApproveTool(deps.prReadDeps),
     createPrMergeTool(deps.prReadDeps),

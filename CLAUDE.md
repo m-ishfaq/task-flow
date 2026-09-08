@@ -4167,6 +4167,88 @@ the three new pure-function cases, all clean. A person should open a card with a
 diff is large enough to hit GitHub's own 406, click "View diff," and confirm the file browser
 appears with the original error shown above the list, before calling this done.
 
+### Phase 15 §7 — `pr_comment_on_file`, a review comment scoped to one file (SHIPPED)
+
+`apps/api/src/automation/integration-events.ts` (`integrationPrFileCommentPosted`) ·
+`apps/api/src/tenancy/audit.projection.ts` · `apps/api/src/automation/pr-write.service.ts`
+(`postPrFileComment`, `githubWriteError`'s new `invalidPositionHint`) ·
+`apps/api/src/ai/tools/pr.ts` (`createPrCommentOnFileTool`) · `apps/api/src/ai/tools/index.ts` ·
+`apps/api/src/ai/router.ts` · `apps/web/src/features/ai/tool-results.tsx` (`renderPrCommentOnFile`).
+Prompted directly, right behind `get_pr_file_diff` shipping (this file's own account of that
+feature): once a person could ask the assistant to look at one specific file's own change, the
+natural next ask was to leave feedback ON that file — not possible before, since `pr_post_comment`'s
+only target is the PR's general conversation thread.
+
+**A genuinely new mutation shape, not a variant of `postPrComment` — GitHub answers the two with
+different endpoints and a different required payload.** The general-thread comment is
+`POST /issues/{n}/comments`, no `commit_id` needed. A file-scoped review comment is
+`POST /pulls/{n}/comments`, and it requires `commit_id` (the PR's own HEAD sha, fetched via a real
+extra round trip — `GET /pulls/{n}` — the identical "pay for an extra request to name the real
+commit" pattern `getPullRequestStatus`/`getPullRequestFileContent` already established for the same
+reason) plus `path`. `postPrFileComment` is a new function, not a `path`-optional branch bolted
+onto `postPrComment`.
+
+**Defaults to a file-level comment, not a line — the opposite of what "review comment" usually
+implies, and a deliberate choice.** `line` is optional; when omitted, the request carries
+`subject_type: 'file'` (GitHub's own file-level review comment, no line at all). A line is only
+valid if it is genuinely part of the diff GitHub is currently showing, and the model has no
+reliable way to confirm that without a prior `get_pr_file_diff` call — while "comment on this file"
+always succeeds and is what a person asks for the overwhelming majority of the time. When `line` IS
+given, `side: 'RIGHT'` pins it to the new (post-change) version of the file, the side a comment
+about the CURRENT code almost always means; there is no tool-level way to comment on a removed
+line's own old content, a deliberate, narrower scope than GitHub's own web UI offers.
+
+**`line` is deliberately excluded from the event payload, even though it is part of the write's own
+input.** `integrationPrFileCommentPosted`'s own doc comment states why: a line number is not the
+STABLE fact an access review asks about a comment months later, since GitHub's own line-vs-diff
+mapping shifts as a PR gets new commits — the file it was about does not. Like every other
+`integration.pr_*` event, no comment text is ever stored (proven directly in
+`pr-write.service.test.ts`, the same `JSON.stringify(payload)).not.toContain(...)` assertion
+`postPrComment`'s own test already makes). The audit projection mapping
+(`'integration.pr_file_comment_posted': {type: 'integration', key: 'integrationId'}`) was added in
+the SAME change that registers the event — the exact gap CI caught twice already for earlier
+`integration.pr_*` events, deliberately not repeated a third time.
+
+**Reuses `pr:review`, no new permission.** Posting a comment scoped to one file is the same
+authorization tier as posting one to the general thread — `pr_post_comment`/`pr_request_changes`/
+`pr_approve` all already sit behind `pr:review`, and inventing a narrower permission for a
+narrower-scoped comment would be a distinction with no real difference in blast radius. Confirmed
+before any network call, mirroring every other PR write tool's own refusal test.
+
+**Requires confirmation, no exception** — the same uniform rule every write tool in this registry
+has followed since Wave 2: one rule everywhere is simpler to audit than deciding tool-by-tool which
+risk is low enough to skip.
+
+**A new 422 hint, distinct from `requestPrChanges`'s "reviewing your own PR" hint.** `githubWriteError`
+gained a third boolean parameter, `invalidPositionHint` — an out-of-range `line` (not part of this
+PR's actual diff) is by far the most likely 422 here, unlike a "reviewing your own PR" refusal,
+which GitHub applies only to a formal approve/request-changes, never a plain review comment. The
+hint names the real recovery path — `get_pr_files`/`get_pr_file_diff` to confirm the exact path and
+a real changed line number, or omit `line` entirely — rather than a generic "GitHub answered 422."
+
+**The system prompt tells the model explicitly when to reach for this tool over `pr_post_comment`,
+and to confirm a line is real before pinning to one** — the identical "nothing about a tool's own
+existence tells the model when to use it" instinct this file's own `find_card` entry already states,
+applied here to a second tool with an easy-to-confuse sibling.
+
+**The frontend renderer is a small, distinct function, not a reuse of `prWriteRenderer`.** Unlike
+the general-thread write-tool renderers, this one has a `path` (read from `call.input`, the model
+already put it there — the identical reasoning `cardWriteRenderer`/`prWriteRenderer` both give for
+reading identity off the call rather than the service's own output) worth showing alongside the PR
+number, and it links to GitHub's own "Files changed" tab rather than the bare PR page, since that
+is where the comment actually lives.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`, all
+clean; both new/extended test files collect and run to the expected DB-connection failure in this
+sandbox (no Docker here, the same standing limitation every DB-backed suite in this session hits) —
+CI is the real signal, as with every prior Phase 15 wave.** Backend tests cover: the file-level
+default (asserting the real request body carries `subject_type: 'file'` and neither `line` nor
+`side`), a given line (asserting `line`/`side: 'RIGHT'` and no `subject_type`), the permission
+refusal before any network call, the 422 hint naming both recovery tools, and a failed head-sha
+lookup refusing before any comment POST is attempted. Tool-wrapper tests cover
+`requiresConfirmation`, the guest-refusal sweep, and the success-path JSON shape the frontend
+renderer expects.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

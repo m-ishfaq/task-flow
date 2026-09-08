@@ -19,6 +19,7 @@ import {
   closePr,
   mergePr,
   postPrComment,
+  postPrFileComment,
   requestPrChanges,
 } from './pr-write.service.js';
 
@@ -179,10 +180,23 @@ interface FakeWriteOptions {
   readonly reviewStatus?: number;
   readonly mergeStatus?: number;
   readonly closeStatus?: number;
+  /** The bare `GET .../pulls/{n}` `postPrFileComment` fetches first, for the
+      PR's own head sha. */
+  readonly prStatus?: number;
+  readonly fileCommentStatus?: number;
 }
 
-function fakeGithub(options: FakeWriteOptions = {}): { fetch: typeof fetch; calls: string[] } {
+/** `bodies` is parallel to `calls` (same index for the same request) — a
+    `GET` carries no body, so that slot is `undefined` — added specifically
+    for `postPrFileComment`'s own tests, which need to prove `subject_type`/
+    `line`/`side` were actually sent, not just that a 2xx came back. */
+function fakeGithub(options: FakeWriteOptions = {}): {
+  fetch: typeof fetch;
+  calls: string[];
+  bodies: unknown[];
+} {
   const calls: string[] = [];
+  const bodies: unknown[] = [];
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -190,6 +204,7 @@ function fakeGithub(options: FakeWriteOptions = {}): { fetch: typeof fetch; call
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     calls.push(url);
+    bodies.push(typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined);
 
     if (url === 'https://github.com/login/oauth/access_token') {
       return Promise.resolve(json({ access_token: 'gho_test_token' }));
@@ -218,10 +233,20 @@ function fakeGithub(options: FakeWriteOptions = {}): { fetch: typeof fetch; call
         json(status < 400 ? { state: 'closed' } : { message: 'nope' }, status),
       );
     }
+    if ((init?.method ?? 'GET') === 'GET' && /\/pulls\/\d+$/.test(url)) {
+      const status = options.prStatus ?? 200;
+      return Promise.resolve(
+        json(status < 400 ? { head: { sha: 'deadbeef' } } : { message: 'nope' }, status),
+      );
+    }
+    if (init?.method === 'POST' && /\/pulls\/\d+\/comments$/.test(url)) {
+      const status = options.fileCommentStatus ?? 201;
+      return Promise.resolve(json(status < 400 ? { id: 601 } : { message: 'nope' }, status));
+    }
     throw new Error(`unexpected call: ${url} (${init?.method ?? 'GET'})`);
   }) as typeof fetch;
 
-  return { fetch: fn, calls };
+  return { fetch: fn, calls, bodies };
 }
 
 async function connectedGithub(actor: AutomationActor, deps: IntegrationDeps): Promise<void> {
@@ -275,6 +300,120 @@ describe('postPrComment', () => {
     await expect(postPrComment(owner, deps, { prNumber: 999, body: 'x' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+    expect(await prEvents(owner.subject.orgId)).toEqual([]);
+  });
+});
+
+describe('postPrFileComment', () => {
+  it('defaults to a file-level comment (subject_type: file, no line) when line is omitted', async () => {
+    const { owner } = await scaffold('file-comment-default');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await postPrFileComment(owner, deps, {
+      prNumber: 12,
+      path: 'apps/api/src/ai/complete.ts',
+      body: 'this could use a comment',
+    });
+
+    expect(result).toEqual({
+      commentId: 601,
+      path: 'apps/api/src/ai/complete.ts',
+      providerScope: 'acme/todo',
+    });
+    const postIndex = fake.calls.findIndex((url) => url.endsWith('/pulls/12/comments'));
+    expect(postIndex).toBeGreaterThanOrEqual(0);
+    expect(fake.bodies[postIndex]).toMatchObject({
+      commit_id: 'deadbeef',
+      path: 'apps/api/src/ai/complete.ts',
+      subject_type: 'file',
+    });
+    expect(fake.bodies[postIndex]).not.toHaveProperty('line');
+    expect(fake.bodies[postIndex]).not.toHaveProperty('side');
+
+    const events = await prEvents(owner.subject.orgId);
+    expect(events.map((e) => e.name)).toEqual(['integration.pr_file_comment_posted']);
+    expect(events[0]?.payload).toMatchObject({
+      prNumber: 12,
+      path: 'apps/api/src/ai/complete.ts',
+      providerCommentId: 601,
+    });
+    // No comment text, and no line number — see the event's own doc comment.
+    expect(JSON.stringify(events[0]?.payload)).not.toContain('this could use a comment');
+    expect(events[0]?.payload).not.toHaveProperty('line');
+  });
+
+  it('pins to the new side of a given line', async () => {
+    const { owner } = await scaffold('file-comment-line');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await postPrFileComment(owner, deps, {
+      prNumber: 12,
+      path: 'apps/api/src/ai/complete.ts',
+      body: 'fix this line',
+      line: 42,
+    });
+
+    const postIndex = fake.calls.findIndex((url) => url.endsWith('/pulls/12/comments'));
+    expect(fake.bodies[postIndex]).toMatchObject({ line: 42, side: 'RIGHT' });
+    expect(fake.bodies[postIndex]).not.toHaveProperty('subject_type');
+  });
+
+  it('refuses a member with no pr:review grant, before any network call', async () => {
+    const { owner, member } = await scaffold('file-comment-refused');
+    const fake = fakeGithub();
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(
+      postPrFileComment(member, deps, { prNumber: 12, path: 'x.ts', body: 'x' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it(
+    'a 422 (line not part of the diff) is refused naming get_pr_files/get_pr_file_diff as the ' +
+      'recovery path, not the generic 422 hint',
+    async () => {
+      const { owner } = await scaffold('file-comment-422');
+      const fake = fakeGithub({ fileCommentStatus: 422 });
+      const deps = depsFor(fake.fetch);
+      await connectedGithub(owner, deps);
+
+      let caught: unknown;
+      try {
+        await postPrFileComment(owner, deps, {
+          prNumber: 12,
+          path: 'apps/api/src/ai/complete.ts',
+          body: 'x',
+          line: 9999,
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain('get_pr_files');
+      expect((caught as Error).message).toContain('get_pr_file_diff');
+      expect(await prEvents(owner.subject.orgId)).toEqual([]);
+    },
+  );
+
+  it('a failure to resolve the head sha is refused before any comment is posted', async () => {
+    const { owner } = await scaffold('file-comment-nopr');
+    const fake = fakeGithub({ prStatus: 404 });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await expect(
+      postPrFileComment(owner, deps, { prNumber: 999, path: 'x.ts', body: 'x' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(fake.calls.some((url) => url.endsWith('/pulls/999/comments'))).toBe(false);
     expect(await prEvents(owner.subject.orgId)).toEqual([]);
   });
 });

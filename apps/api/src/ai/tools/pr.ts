@@ -17,6 +17,7 @@ import {
   closePr,
   mergePr,
   postPrComment,
+  postPrFileComment,
   requestPrChanges,
   type PrWriteDeps,
 } from '../../automation/pr-write.service.js';
@@ -316,6 +317,54 @@ export function createPrPostCommentTool(deps: PrWriteDeps): ToolDefinition {
     inputSchema: PrCommentInput,
     async execute(ctx, input) {
       const result = await postPrComment(actorOf(ctx), deps, input);
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+const PrFileCommentInput = z
+  .object({
+    prNumber: z.number().int().positive(),
+    path: z.string().min(1).max(1024),
+    body: z.string().min(1).max(20_000),
+    line: z.number().int().positive().optional(),
+    ...RepoScopeField,
+  })
+  .strict();
+
+export function createPrCommentOnFileTool(deps: PrWriteDeps): ToolDefinition {
+  return defineTool({
+    name: 'pr_comment_on_file',
+    description:
+      'Posts a review comment on a specific FILE within a pull request — not the general ' +
+      'conversation thread (use `pr_post_comment` for that). Get the exact `path` from ' +
+      '`get_pr_files` first. By default the comment is attached to the file as a whole; only ' +
+      'pass `line` if the user specifically wants it pinned to one line — that line has to ' +
+      'actually be part of the diff (check with `get_pr_file_diff` first), or GitHub refuses it.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        path: {
+          type: 'string',
+          description: 'The file path within the repository, exactly as get_pr_files reports it.',
+        },
+        body: { type: 'string', description: 'The comment text.' },
+        line: {
+          type: 'integer',
+          description:
+            'Optional. A specific line number, from the new/changed side of the diff, to pin ' +
+            'the comment to. Omit to comment on the file as a whole.',
+        },
+        ...RepoScopeProperty,
+      },
+      required: ['prNumber', 'path', 'body'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: PrFileCommentInput,
+    async execute(ctx, input) {
+      const result = await postPrFileComment(actorOf(ctx), deps, input);
       return { content: JSON.stringify(result) };
     },
   });

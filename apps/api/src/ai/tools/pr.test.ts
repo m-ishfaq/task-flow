@@ -31,6 +31,7 @@ import {
   createListReposTool,
   createPrApproveTool,
   createPrCloseTool,
+  createPrCommentOnFileTool,
   createPrMergeTool,
   createPrPostCommentTool,
   createPrRequestChangesTool,
@@ -207,6 +208,17 @@ function fakeGithub(): { fetch: typeof fetch } {
     if (method === 'POST' && url.includes('/issues/1/comments')) {
       return Promise.resolve(json({ id: 501 }, 201));
     }
+    // PR #2 exists solely for `pr_comment_on_file`'s own tests: GET
+    // `/pulls/1` above already answers with a plain-text diff body (for
+    // `get_pr_diff`), which is not valid JSON — `postPrFileComment`'s own
+    // `GET .../pulls/{n}` needs a real `{head: {sha}}` JSON response, so it
+    // needs a PR number the diff handler above doesn't already own.
+    if (method === 'GET' && url.endsWith('/pulls/2')) {
+      return Promise.resolve(json({ head: { sha: 'deadbeef' } }));
+    }
+    if (method === 'POST' && url.endsWith('/pulls/2/comments')) {
+      return Promise.resolve(json({ id: 601 }, 201));
+    }
     if (method === 'POST' && url.endsWith('/pulls/1/reviews')) {
       return Promise.resolve(json({ id: 502 }, 200));
     }
@@ -286,9 +298,10 @@ describe('requiresConfirmation', () => {
     expect(createGetPrCommentsTool(deps).requiresConfirmation).toBe(false);
   });
 
-  it('is true for all five PR write tools, with no exceptions', () => {
+  it('is true for all six PR write tools, with no exceptions', () => {
     const deps = integrationDeps(fakeGithub().fetch);
     expect(createPrPostCommentTool(deps).requiresConfirmation).toBe(true);
+    expect(createPrCommentOnFileTool(deps).requiresConfirmation).toBe(true);
     expect(createPrRequestChangesTool(deps).requiresConfirmation).toBe(true);
     expect(createPrApproveTool(deps).requiresConfirmation).toBe(true);
     expect(createPrMergeTool(deps).requiresConfirmation).toBe(true);
@@ -331,6 +344,11 @@ describe('a guest with no pr:view/pr:review/pr:merge/repo:connect grant', () => 
       await createGetPrFilesTool(deps).execute(ctx, { prNumber: 1 }),
       await createGetPrFileDiffTool(deps).execute(ctx, { prNumber: 1, path: 'src/index.ts' }),
       await createPrPostCommentTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
+      await createPrCommentOnFileTool(deps).execute(ctx, {
+        prNumber: 2,
+        path: 'src/index.ts',
+        body: 'x',
+      }),
       await createPrRequestChangesTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
       await createPrApproveTool(deps).execute(ctx, { prNumber: 1 }),
       await createPrMergeTool(deps).execute(ctx, { prNumber: 1 }),
@@ -450,6 +468,26 @@ describe('success paths', () => {
     const parsed = JSON.parse(result.content) as { commentId: number; providerScope: string };
 
     expect(parsed).toEqual({ commentId: 501, providerScope: 'acme/todo' });
+  });
+
+  it('pr_comment_on_file returns the shape the frontend renderer expects', async () => {
+    const orgId = await newOrg('pr-comment-on-file-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createPrCommentOnFileTool(deps).execute(ctx, {
+      prNumber: 2,
+      path: 'src/index.ts',
+      body: 'this could use a comment',
+    });
+    const parsed = JSON.parse(result.content) as {
+      commentId: number;
+      path: string;
+      providerScope: string;
+    };
+
+    expect(parsed).toEqual({ commentId: 601, path: 'src/index.ts', providerScope: 'acme/todo' });
   });
 
   it('pr_request_changes returns the shape the frontend renderer expects', async () => {
