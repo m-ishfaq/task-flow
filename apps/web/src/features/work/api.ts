@@ -324,6 +324,40 @@ export function pullRequestDiffQuery(orgId: string, providerScope: string, prNum
   });
 }
 
+/** The files a PR touches — `pr:view`-gated like `diff` above. The fallback
+    `pr-diff-dialog.tsx` reaches for when the whole-PR diff cannot be shown
+    at all (GitHub's own 406 on a PR too large to diff that way) or came
+    back truncated: this route is never truncated, so it always answers,
+    and lets a person then ask for one specific file's own change. */
+export function pullRequestFilesQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestFiles(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.files.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
+/** One file's own diff within a PR — `pr:view`-gated like `diff` above,
+    fetched only once a person picks a file from `pullRequestFilesQuery`'s
+    own list (the `enabled` callers pass mirrors `pullRequestDiffQuery`'s
+    "fetch on demand" own instinct, one level narrower). */
+export function pullRequestFileDiffQuery(
+  orgId: string,
+  providerScope: string,
+  prNumber: number,
+  path: string,
+) {
+  return queryOptions({
+    queryKey: keys.pullRequestFileDiff(orgId, providerScope, prNumber, path),
+    queryFn: async () =>
+      wire(
+        await api.work.pullRequests.fileDiff.query({ prNumber, path, repoScope: providerScope }),
+      ),
+    retry: false,
+  });
+}
+
 /* -------------------------------------------------------------------------- *
  * Optimistic cache edits
  * -------------------------------------------------------------------------- */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseUnifiedDiff } from './diff-view.js';
+import { parseUnifiedDiff, singleFileDiffText } from './diff-view.js';
 
 /**
  * `diff-view.tsx`'s own header explains why this exists: `get_pr_diff`'s
@@ -142,5 +142,46 @@ rename to new-name.ts
     expect(() => parseUnifiedDiff(truncated)).not.toThrow();
     const files = parseUnifiedDiff(truncated);
     expect(files[0]?.hunks[0]?.lines.at(-1)).toEqual({ kind: 'del', text: 'remo' });
+  });
+});
+
+describe('singleFileDiffText', () => {
+  it('wraps a real per-file patch (starting with @@) in a minimal diff --git header', () => {
+    const patch = '@@ -1,2 +1,3 @@\n context\n-old\n+new\n';
+
+    const wrapped = singleFileDiffText('src/foo.ts', patch);
+
+    expect(wrapped).toBe(
+      'diff --git a/src/foo.ts b/src/foo.ts\n--- a/src/foo.ts\n+++ b/src/foo.ts\n' + patch,
+    );
+    // And the wrapped text actually parses into a real file/hunk, proving
+    // this is not just string concatenation that happens to look right.
+    const files = parseUnifiedDiff(wrapped);
+    expect(files).toHaveLength(1);
+    expect(files[0]?.newPath).toBe('src/foo.ts');
+    expect(files[0]?.hunks).toHaveLength(1);
+  });
+
+  it('passes non-hunk text through unwrapped, so DiffView falls back to plain text', () => {
+    const explanation =
+      'GitHub did not provide a line-by-line diff for this file — it is likely binary, too ' +
+      'large to diff that way, or unchanged in content.';
+
+    const result = singleFileDiffText('assets/logo.png', explanation);
+
+    expect(result).toBe(explanation);
+    // Wrapping it would have produced a file with zero hunks (an empty box
+    // in DiffView, silently swallowing the explanation) rather than the
+    // zero-files-parsed fallback that actually shows this text — the exact
+    // regression this function exists to prevent.
+    expect(parseUnifiedDiff(result)).toHaveLength(0);
+  });
+
+  it('treats leading whitespace before @@ as still real hunk syntax', () => {
+    const patch = '\n@@ -1 +1 @@\n-a\n+b\n';
+
+    const wrapped = singleFileDiffText('a.ts', patch);
+
+    expect(wrapped).toContain('diff --git a/a.ts b/a.ts');
   });
 });

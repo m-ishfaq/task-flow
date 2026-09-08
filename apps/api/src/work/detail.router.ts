@@ -24,7 +24,12 @@ import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
 import { createBranchFromCard, type BranchWriteDeps } from '../automation/branch.service.js';
 import { connectedGithubRepos } from '../automation/integration.service.js';
-import { getPullRequestDiff, getPullRequestStatus } from '../automation/pr-read.service.js';
+import {
+  getPullRequestDiff,
+  getPullRequestFileDiff,
+  getPullRequestFiles,
+  getPullRequestStatus,
+} from '../automation/pr-read.service.js';
 
 /**
  * Card detail routes — labels, statuses, checklists, custom fields, comments
@@ -403,6 +408,59 @@ export function createCardDetailRouter(deps: { readonly branch: BranchWriteDeps 
           }),
         )
         .query(({ input, ctx }) => getPullRequestDiff(actor(ctx), deps.branch, input)),
+
+      /**
+       * The files a PR touches, and (below) one file's own diff — the fix
+       * for a diff too large to fetch whole at all (a genuinely large PR's
+       * `diff` route above answering 406, or `truncated: true`), the same
+       * gap `get_pr_file_diff`'s own header documents closing for the AI
+       * assistant. Both `pr:view`-gated like `status`/`diff` above, for the
+       * identical reason: live GitHub content, not the card's own link-table
+       * row `list`/`link`/`unlink` touch.
+       */
+      files: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                path: z.string(),
+                status: z.string(),
+                additions: z.number().int(),
+                deletions: z.number().int(),
+                previousPath: z.string().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => getPullRequestFiles(actor(ctx), deps.branch, input)),
+
+      fileDiff: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              path: z.string().min(1).max(1024),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            prNumber: z.number().int(),
+            path: z.string(),
+            truncated: z.boolean(),
+            patch: z.string(),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestFileDiff(actor(ctx), deps.branch, input)),
     }),
 
     /**

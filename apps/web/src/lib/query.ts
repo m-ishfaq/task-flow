@@ -229,6 +229,10 @@ export const keys = {
     ['org', orgId, 'pullRequestStatus', providerScope, prNumber] as const,
   pullRequestDiff: (orgId: string, providerScope: string, prNumber: number) =>
     ['org', orgId, 'pullRequestDiff', providerScope, prNumber] as const,
+  pullRequestFiles: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestFiles', providerScope, prNumber] as const,
+  pullRequestFileDiff: (orgId: string, providerScope: string, prNumber: number, path: string) =>
+    ['org', orgId, 'pullRequestFileDiff', providerScope, prNumber, path] as const,
 
   labels: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'labels'] as const,

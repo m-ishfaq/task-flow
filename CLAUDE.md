@@ -4101,6 +4101,72 @@ registry is held to.** `pr.test.ts`'s own drift — its `requiresConfirmation` t
 five PR read tools" after `get_pr_file_content` shipped with no update to that count — was
 corrected in the same pass rather than left to compound a second time.
 
+### Phase 15 §7.2 — the same file-diff fallback, reached directly from the card panel (SHIPPED)
+
+`apps/api/src/work/detail.router.ts`'s `pullRequests.files`/`.fileDiff` · `apps/web/src/features/
+work/{api,detail/pr-diff-dialog}.tsx` · `apps/web/src/features/ai/diff-view.tsx`'s exported
+`singleFileDiffText`. Prompted directly, immediately behind `get_pr_file_diff`'s own AI-tool
+version shipping: "lets do it for in card diff view as well... it shows just the error incase of
+large commit diff in a pr." `PrDiffButton`'s dialog (`pr-diff-dialog.tsx`) had exactly the failure
+mode this file's own `get_pr_file_diff` section already fixed for the assistant — `diff.isError`
+rendered a bare `ErrorView` and nothing else, on the identical GitHub 406 ("too large to diff that
+way") a genuinely large PR hits.
+
+**Two new routes, not a new pipeline — `work.pullRequests.files`/`.fileDiff` wrap the exact same
+`getPullRequestFiles`/`getPullRequestFileDiff` the AI tool registry already calls, `pr:view`-gated
+like `status`/`diff` on the same router.** No new service code, no new authorization question:
+these are the identical live-GitHub-content routes `status`/`diff`'s own header already explains
+the gating for, just two more doors onto functions that already existed for a different caller.
+
+**The dialog's fallback is one derived boolean, not two render paths.** `showFiles =
+browseFiles || diff.isError` folds "the whole diff genuinely could not be fetched" and "someone
+clicked Browse by file on a diff that DID load" into the same branch — the file-browsing UI has no
+separate copy of itself for the error case, it just also renders `fallbackError` (the original
+diff query's own error) above the file list when that's why the person is looking at it, rather
+than silently discarding the reason and leaving them to guess. `canShowFullDiff = !diff.isError`
+hides the toggle button entirely once there is truly nothing to toggle back to — Phase 15 §1's
+"hide, don't disable" rule applied to a dialog control rather than a permission-gated one.
+
+**A truncated (but not errored) diff gets an inline nudge, not a silent gap.** `diff.data.truncated
+=== true` renders a sentence directly under the (partial) `DiffView` output — "This diff was too
+large to show in full. Browse by file to see any one file's own change in full." — rather than
+leaving someone to notice the cutoff on their own and wonder whether the file-browsing option even
+exists for this case.
+
+**`singleFileDiffText` moved out of `tool-results.tsx`'s `renderGetPrFileDiff` into `diff-view.tsx`
+itself, exported, and both callers now share it** — the exact synthetic-`diff --git`-header logic
+(and its "only wrap real hunk syntax, or a plain-English 'no patch available' explanation gets
+silently swallowed into an empty box" guard) that section's own entry already documents finding a
+bug in before shipping, now proven once and reused rather than risking a second, subtly different
+copy the day this card-panel version was written. `diff-view.test.ts` gained three direct cases for
+the extracted function — wraps real hunk syntax into a parseable file, passes non-hunk text through
+unwrapped (and asserts `parseUnifiedDiff` of the result is still empty, the actual property that
+matters), and confirms leading whitespace before `@@` doesn't defeat the check — the same "test the
+pure half directly" split this codebase already holds `parseUnifiedDiff` itself to.
+
+**Drill-down, not a two-pane layout — `PrFileBrowser` renders EITHER the file list OR one selected
+file's diff, never both at once.** The dialog's own height is already capped (`max-h-[85vh]`,
+`overflow-y-auto`), and splitting it into a side-by-side file-list-plus-diff layout would mean two
+independently-scrolling regions inside an already-constrained modal; a single "← All files" backlink
+(`ChevronLeft`, matching `card-identity-bar.tsx`'s own back-navigation icon choice) is the simpler
+interaction and reuses the identical vertical space `DiffView` already expects.
+
+**No dedicated component test — matching this file's own established gap for `detail.router.ts`
+("every route in it is a thin pass-through to a real, already-tested service function") and for
+every other card-panel dialog in this directory.** `getPullRequestFiles`/`getPullRequestFileDiff`
+already have full service-level coverage from the AI-tool version of this same feature;
+`pr-diff-dialog.tsx`'s own new branching (`showFiles`, `canShowFullDiff`, the drill-down) is thin
+enough — and heavy enough on live React Query/tRPC wiring — that this codebase's own established
+line (component-level tests only for files with no comparable precedent already accepting the same
+gap) was followed rather than introducing a new pattern for one dialog.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app to run
+against, the identical caveat every UI-only pass this session already states.** Verified by what a
+sandbox without one can prove: `tsc`, `eslint`, the guardrail selftest, and a real `vitest run` of
+the three new pure-function cases, all clean. A person should open a card with a linked PR whose
+diff is large enough to hit GitHub's own 406, click "View diff," and confirm the file browser
+appears with the original error shown above the list, before calling this done.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

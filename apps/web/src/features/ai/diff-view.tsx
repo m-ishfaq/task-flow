@@ -130,6 +130,31 @@ export function parseUnifiedDiff(text: string): readonly DiffFile[] {
   return files;
 }
 
+/**
+ * Wraps a single FILE's own `patch` — GitHub's per-file hunk text, with none
+ * of the `diff --git`/`---`/`+++` lines a whole-PR diff has one of per file
+ * — in a minimal synthetic header so `parseUnifiedDiff` can find a file
+ * boundary at all. Shared by `tool-results.tsx`'s `get_pr_file_diff`
+ * renderer and the card panel's own single-file diff view, both of which
+ * reuse this same GitHub response shape.
+ *
+ * Only wraps when `patch` actually looks like real hunk syntax (starts with
+ * `@@`) — real GitHub `patch` text always does when present. When GitHub
+ * gave no patch at all (binary, too large to diff, or a pure rename),
+ * `getPullRequestFileDiff` puts a plain-English explanation in `patch`
+ * instead, and wrapping THAT in a synthetic header would be a real bug:
+ * `parseUnifiedDiff` would open a file with zero hunks (nothing in a
+ * sentence matches `@@`) and `DiffView` would render an empty box, silently
+ * swallowing the explanation. Left unwrapped, that same text has no
+ * `diff --git` line to find, `parseUnifiedDiff` returns zero files, and
+ * `DiffView`'s own no-files-parsed fallback renders it as plain
+ * preformatted text instead — exactly right for a sentence, and free.
+ */
+export function singleFileDiffText(path: string, patch: string): string {
+  if (!patch.trimStart().startsWith('@@')) return patch;
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patch}`;
+}
+
 const STATUS_LABEL: Readonly<Record<DiffFile['status'], string>> = {
   added: 'added',
   deleted: 'deleted',
