@@ -13,8 +13,7 @@ import {
   SkeletonRows,
 } from '../../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../../components/error-view.js';
-import { cardBranchesQuery, cardPullRequestsQuery } from '../api.js';
-import { integrationsQuery } from '../../automation/api.js';
+import { cardBranchesQuery, cardPullRequestsQuery, githubReposQuery } from '../api.js';
 import { defaultBranchName, normalizedBranchName } from './branch-name.js';
 
 /**
@@ -40,6 +39,22 @@ import { defaultBranchName, normalizedBranchName } from './branch-name.js';
  * "hide entirely" rule. Reading the branch list needs no such gate: seeing
  * what already exists is `card:read`, the identical split
  * `readPhoneNumbers` draws against `placeCalls` elsewhere in this app.
+ *
+ * ## The repo picker, and the shared "remembered" choice
+ *
+ * `githubReposQuery` (`work.githubRepos.list`, `card:read`-gated — see that
+ * route's own header for why it replaced `automation.integration.list`,
+ * which needed `integration:manage` and refused a plain `card:update`/
+ * `repo:connect` holder before they ever reached the permission the action
+ * itself needed) is fetched ONCE here and threaded to both subsections. With
+ * exactly one connected repo, both forms behave as before — no picker, the
+ * one repo is implied. With more than one, each form needs a real choice
+ * before it can submit; `selectedRepoScope` is lifted to THIS component so
+ * picking a repo in one form (say, linking a PR) is remembered for the
+ * other (creating a branch) without asking twice — the same "ask once,
+ * reuse for the rest of the session" shape the assistant's own multi-repo
+ * handling already uses, just scoped to one open card instead of one
+ * conversation.
  */
 
 export function DevelopmentSection({
@@ -55,20 +70,80 @@ export function DevelopmentSection({
   readonly title: string;
   readonly canCreateBranches: boolean;
 }) {
+  const repos = useQuery(githubReposQuery(orgId));
+  const [selectedRepoScope, setSelectedRepoScope] = useState<string | null>(null);
+
   return (
     <Section title="Development">
       <div className="space-y-5">
-        <PullRequestSubsection orgId={orgId} cardId={cardId} />
+        <PullRequestSubsection
+          orgId={orgId}
+          cardId={cardId}
+          repos={repos.data ?? []}
+          reposLoaded={repos.isSuccess}
+          selectedRepoScope={selectedRepoScope}
+          onSelectRepoScope={setSelectedRepoScope}
+        />
         <BranchSubsection
           orgId={orgId}
           cardId={cardId}
           reference={reference}
           title={title}
           canCreate={canCreateBranches}
+          repos={repos.data ?? []}
+          reposLoaded={repos.isSuccess}
+          selectedRepoScope={selectedRepoScope}
+          onSelectRepoScope={setSelectedRepoScope}
         />
       </div>
     </Section>
   );
+}
+
+interface RepoPickerProps {
+  readonly repos: readonly { readonly providerScope: string }[];
+  readonly value: string | null;
+  readonly onChange: (scope: string) => void;
+}
+
+/** Shown only when more than one repo is connected — with zero or one, the
+    caller already knows which repo to use and never renders this. */
+function RepoPicker({ repos, value, onChange }: RepoPickerProps) {
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+      Repository
+      <select
+        aria-label="Repository"
+        value={value ?? ''}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        <option value="" disabled>
+          Choose…
+        </option>
+        {repos.map((repo) => (
+          <option key={repo.providerScope} value={repo.providerScope}>
+            {repo.providerScope}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** The repo a form should act against: the one connected repo when there is
+    only one, the shared picker's choice when there is more than one, or
+    `undefined` while that choice is still unmade — the caller disables its
+    submit control on `undefined` the same way it already does while
+    `!reposLoaded`. */
+function effectiveRepoScope(
+  repos: readonly { readonly providerScope: string }[],
+  selected: string | null,
+): string | undefined {
+  if (repos.length === 1) return repos[0]?.providerScope;
+  return selected ?? undefined;
 }
 
 /* -------------------------------------------------------------------------- *
@@ -78,19 +153,24 @@ export function DevelopmentSection({
 function PullRequestSubsection({
   orgId,
   cardId,
+  repos,
+  reposLoaded,
+  selectedRepoScope,
+  onSelectRepoScope,
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
+  readonly repos: readonly { readonly providerScope: string }[];
+  readonly reposLoaded: boolean;
+  readonly selectedRepoScope: string | null;
+  readonly onSelectRepoScope: (scope: string) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const linked = useQuery(cardPullRequestsQuery(orgId, cardId));
-  const integrations = useQuery(integrationsQuery(orgId));
   const [prNumber, setPrNumber] = useState('');
 
-  const repo = integrations.data?.find(
-    (row) => row.provider === 'github' && row.status === 'connected',
-  );
+  const repoScope = effectiveRepoScope(repos, selectedRepoScope);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: keys.cardPullRequests(orgId, cardId) });
@@ -160,20 +240,23 @@ function PullRequestSubsection({
       )}
       {unlink.isError && <ErrorText error={unlink.error} />}
 
-      {integrations.isSuccess && repo === undefined ? (
+      {reposLoaded && repos.length === 0 ? (
         <p className="text-[11px] text-ink-faint">
           Connect a GitHub repository (Settings → Automation) to link pull requests.
         </p>
       ) : (
         <form
-          className="flex items-center gap-1.5"
+          className="flex flex-wrap items-center gap-1.5"
           onSubmit={(event) => {
             event.preventDefault();
             const parsed = Number(prNumber);
-            if (repo === undefined || !Number.isInteger(parsed) || parsed <= 0) return;
-            link.mutate({ providerScope: repo.providerScope, prNumber: parsed });
+            if (repoScope === undefined || !Number.isInteger(parsed) || parsed <= 0) return;
+            link.mutate({ providerScope: repoScope, prNumber: parsed });
           }}
         >
+          {repos.length > 1 && (
+            <RepoPicker repos={repos} value={selectedRepoScope} onChange={onSelectRepoScope} />
+          )}
           <Input
             value={prNumber}
             onChange={(event) => {
@@ -183,13 +266,13 @@ function PullRequestSubsection({
             min={1}
             placeholder="PR number"
             className="h-7 w-28 text-xs"
-            disabled={repo === undefined}
+            disabled={repoScope === undefined}
           />
           <Button
             type="submit"
             size="sm"
             variant="ghost"
-            disabled={link.isPending || prNumber === ''}
+            disabled={link.isPending || prNumber === '' || repoScope === undefined}
           >
             Link
           </Button>
@@ -210,23 +293,28 @@ function BranchSubsection({
   reference,
   title,
   canCreate,
+  repos,
+  reposLoaded,
+  selectedRepoScope,
+  onSelectRepoScope,
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
   readonly reference: string;
   readonly title: string;
   readonly canCreate: boolean;
+  readonly repos: readonly { readonly providerScope: string }[];
+  readonly reposLoaded: boolean;
+  readonly selectedRepoScope: string | null;
+  readonly onSelectRepoScope: (scope: string) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const linked = useQuery(cardBranchesQuery(orgId, cardId));
-  const integrations = useQuery(integrationsQuery(orgId));
   const [formOpen, setFormOpen] = useState(false);
   const [branchNameInput, setBranchNameInput] = useState('');
 
-  const repo = integrations.data?.find(
-    (row) => row.provider === 'github' && row.status === 'connected',
-  );
+  const repoScope = effectiveRepoScope(repos, selectedRepoScope);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: keys.cardBranches(orgId, cardId) });
@@ -237,8 +325,12 @@ function BranchSubsection({
   };
 
   const create = useMutation({
-    mutationFn: (branchName: string) =>
-      api.work.branches.create.mutate(branchName === '' ? { cardId } : { cardId, branchName }),
+    mutationFn: (input: { branchName: string; repoScope: string }) =>
+      api.work.branches.create.mutate(
+        input.branchName === ''
+          ? { cardId, repoScope: input.repoScope }
+          : { cardId, branchName: input.branchName, repoScope: input.repoScope },
+      ),
     onSuccess: async (result) => {
       setFormOpen(false);
       setBranchNameInput('');
@@ -312,12 +404,12 @@ function BranchSubsection({
       )}
       {unlink.isError && <ErrorText error={unlink.error} />}
 
-      {!canCreate ? null : integrations.isSuccess && repo === undefined ? (
+      {!canCreate ? null : reposLoaded && repos.length === 0 ? (
         <p className="text-[11px] text-ink-faint">
           Connect a GitHub repository (Settings → Automation) to create branches.
         </p>
       ) : !formOpen ? (
-        <Button size="sm" variant="ghost" onClick={openForm} disabled={repo === undefined}>
+        <Button size="sm" variant="ghost" onClick={openForm} disabled={!reposLoaded}>
           <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
           Create branch
         </Button>
@@ -326,9 +418,13 @@ function BranchSubsection({
           className="space-y-1.5"
           onSubmit={(event) => {
             event.preventDefault();
-            create.mutate(branchNameInput.trim());
+            if (repoScope === undefined) return;
+            create.mutate({ branchName: branchNameInput.trim(), repoScope });
           }}
         >
+          {repos.length > 1 && (
+            <RepoPicker repos={repos} value={selectedRepoScope} onChange={onSelectRepoScope} />
+          )}
           <FocusOnMountInput
             value={branchNameInput}
             onChange={(event) => {
@@ -343,7 +439,12 @@ function BranchSubsection({
             </p>
           )}
           <div className="flex items-center gap-1.5">
-            <Button type="submit" size="sm" variant="ghost" disabled={create.isPending}>
+            <Button
+              type="submit"
+              size="sm"
+              variant="ghost"
+              disabled={create.isPending || repoScope === undefined}
+            >
               {create.isPending ? 'Creating…' : 'Create'}
             </Button>
             <Button

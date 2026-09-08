@@ -2706,7 +2706,46 @@ be.** This mirrors `tool-results.tsx`'s own precedent for the first renderer in 
 outside TaskFlow entirely — nothing about a GitHub PR or branch has a real `apps/web` route to
 open with `<Link>`.
 
-`packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
+### Phase 15 §7.2 — a repo picker for the PR-link and branch-create forms (SHIPPED)
+
+`apps/api/src/work/detail.router.ts`'s `githubRepos:` block ·
+`apps/web/src/features/work/{api,detail/development-section}.tsx`. Prompted directly, from a
+screenshot: the branch-create form failing outright with
+`repoScope: required — more than one GitHub repository is connected` — `connectedGithubRepo`'s own
+deliberate ambiguity refusal (§7's own text), reachable the moment a second org connects a second
+repo, with no UI path to resolve it. "Same goes to pr" extended the identical fix to the PR-link
+form in the same request.
+
+**The fix is two bugs, not one — a missing picker, and the wrong permission gating its data
+source.** Both forms' only source of "which repo is connected" was `integrationsQuery`
+(`automation.integration.list`, gated on `integration:manage` — Owner/Admin, or an individually
+granted Member) via a bare `.find()`, which both picks silently wrong the moment a second repo
+exists AND is the wrong floor for who should be able to link a PR (`card:update`) or create a
+branch (`repo:connect`) in the first place — neither of which implies `integration:manage`. Fixing
+only the picker would still 403 a Member who holds `repo:connect` but not `integration:manage`.
+
+**`work.githubRepos.list` is a new, deliberately narrower route — `card:read`-gated, not
+`integration:manage` or `pr:view`.** Its own header states why: repo names are non-sensitive data
+(the identical reasoning the AI tool's own `list_repos` already relies on), and both real callers
+of this route — the PR-link form (`card:update`) and the branch-create form (`repo:connect`) — are
+only ever reachable from a card detail panel a caller already opened, which is itself `card:read`.
+Gating the LIST on the loosest permission any of its callers could need, rather than the strictest
+action behind it, is the same "gate on what the caller actually needs, not a stricter unrelated
+permission" instinct this codebase already applies elsewhere (`standup.service.ts`'s
+`project:read` floor vs. Analytics's narrower one). It wraps the existing `connectedGithubRepos`
+(`automation/integration.service.ts`) unchanged — no new service logic, only a new, correctly-
+scoped door to it.
+
+**The repo choice is lifted to `DevelopmentSection`, the shared parent, not duplicated per
+form.** `githubReposQuery` is fetched ONCE there; `selectedRepoScope` lives there too, so picking a
+repo while linking a PR is remembered for creating a branch in the same card session without
+asking twice — the identical "ask once, reuse for the rest of the session" shape the AI
+assistant's own multi-repo conversation handling already established (§7's own account of
+`list_repos`), just scoped to one open card instead of one conversation. `effectiveRepoScope`
+collapses the single-repo case back to today's zero-friction behavior (the sole repo is implied,
+no picker rendered at all) and only asks when there is a genuine choice to make; both forms' submit
+controls disable on an unmade choice (`repoScope === undefined`) the same way they already disable
+on `!reposLoaded`.
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every

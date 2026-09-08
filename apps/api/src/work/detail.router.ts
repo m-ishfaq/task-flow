@@ -23,6 +23,7 @@ import * as cardBranches from './card-branch.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
 import { createBranchFromCard, type BranchWriteDeps } from '../automation/branch.service.js';
+import { connectedGithubRepos } from '../automation/integration.service.js';
 
 /**
  * Card detail routes — labels, statuses, checklists, custom fields, comments
@@ -263,6 +264,33 @@ export function createCardDetailRouter(deps: { readonly branch: BranchWriteDeps 
         .input(z.object({ itemId: ChecklistItemIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => checklists.deleteItem(actor(ctx), input)),
+    }),
+
+    /**
+     * The org's connected GitHub repositories — `providerScope` only, no
+     * token, the identical shape `apps/api/src/ai/tools/pr.ts`'s `list_repos`
+     * tool already exposes to the assistant (`connectedGithubRepos`, no
+     * GitHub call — reads `platform.integrations` directly).
+     *
+     * Deliberately floored on `card:read`, NOT `integration:manage` (the
+     * floor `automation.integration.list` uses) and NOT `pr:view` (the floor
+     * the assistant's own `list_repos` tool uses): the only two callers are
+     * the PR-link form (needs `card:update` to actually link) and the
+     * branch-create form (needs `repo:connect` to actually create) below,
+     * both reachable only from an already-open card, and repo NAMES are not
+     * sensitive the way a connector's token is — the identical reasoning
+     * `list_repos`'s own tool description gives. Gating this on
+     * `integration:manage` instead — the mistake this route replaces — meant
+     * a Member holding `card:update` or `repo:connect` but not
+     * `integration:manage` got a bare FORBIDDEN just from OPENING the
+     * link/create form, before ever reaching the permission the action
+     * itself actually needs.
+     */
+    githubRepos: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({}).strict())
+        .output(z.array(z.object({ providerScope: z.string() })).readonly())
+        .query(({ ctx }) => connectedGithubRepos(actor(ctx).subject.orgId)),
     }),
 
     /**

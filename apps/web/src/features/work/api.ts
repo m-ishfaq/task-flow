@@ -281,6 +281,18 @@ export function cardBranchesQuery(orgId: string, cardId: CardId) {
   });
 }
 
+/** The org's connected GitHub repositories — `providerScope` only
+    (`work.githubRepos.list`, `card:read`-gated; see that route's own header
+    for why this is NOT `automation.integration.list`, which needs
+    `integration:manage`). Feeds the repo picker the PR-link and
+    branch-create forms both show once more than one repo is connected. */
+export function githubReposQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.githubRepos(orgId),
+    queryFn: async () => wire(await api.work.githubRepos.list.query({})),
+  });
+}
+
 /* -------------------------------------------------------------------------- *
  * Optimistic cache edits
  * -------------------------------------------------------------------------- */
