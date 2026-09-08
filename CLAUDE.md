@@ -2904,6 +2904,116 @@ no picker rendered at all) and only asks when there is a genuine choice to make;
 controls disable on an unmade choice (`repoScope === undefined`) the same way they already disable
 on `!reposLoaded`.
 
+### Phase 15 §7 — transparent GitHub OAuth token refresh (SHIPPED)
+
+`packages/db/migrations/0109_integrations_token_refresh.*` ·
+`apps/api/src/automation/{connector-aad,token-refresh}.ts` (both new) ·
+`apps/api/src/automation/integration.service.ts`'s `connectorFor`/`loadConnector`/
+`completeGithub`/`reviveRetiredRepo`/`disconnectIntegration` · the widened `PrReadDeps`/
+`PrWriteDeps`/`BranchWriteDeps`/`AiRouterDeps`. Prompted directly, from a real transcript: `show me
+the pr 134` failing with `Tool "get_pr_diff" failed: GitHub answered 401 — the connector token is
+invalid or was revoked`, and the project owner's own diagnosis leading the report — "it is auto
+resetting the token after some time or the token is TTL not good."
+
+**The diagnosis was right, and this codebase had no way to see it.** `completeGithub` (the OAuth
+code-exchange handler) has, since the connector shipped, stored only `access_token` from GitHub's
+`POST /login/oauth/access_token` response — never `expires_in`, `refresh_token`, or
+`refresh_token_expires_in`. Those three fields are not always absent: GitHub OAuth Apps (as
+opposed to GitHub Apps) carry an opt-in, per-App setting — "expire user tokens" — that this
+deployment has no visibility into or control over, since it belongs to whoever owns the connecting
+OAuth App's registration on GitHub's side. Migration 0056's own header assumed the credential was
+"non-expiring by construction" — true for an App with that setting off, silently false the moment
+it's on. With the setting on, the access token this codebase stored genuinely stops working on its
+own schedule, and the only recovery path was the manual "reconnect the repository" flow — which is
+exactly the loop the report describes.
+
+**Five new nullable columns on `platform.integrations`, expand-only, migration 0109**:
+`refresh_token_ciphertext`/`refresh_token_wrapped`/`refresh_token_master_id` (the identical
+envelope-encryption shape the access token already has — its own data key, never a new one, since
+a data key is not being rotated, only a second plaintext it protects) plus `token_expires_at`/
+`refresh_token_expires_at` (plain, unencrypted timestamps — an expiry instant is not a secret).
+Every column reads NULL for Slack (which never expires by GitHub's mechanism) and for any GitHub
+connection whose App has the expiry setting off — the overwhelming majority of existing rows —
+and `connectorFor`'s whole refresh path is a no-op for exactly that case, unchanged from before
+this capability existed.
+
+**`connectorFor` is the one chokepoint every real caller already went through, so it is the one
+place that needed to change.** `pr-read.service.ts`, `pr-write.service.ts`, `branch.service.ts`,
+and the AI tool registry's GitHub tools all resolve their token through `connectedGithubRepo` ->
+`connectorFor` — none of them decrypt a token themselves. `connectorFor` now: loads the row
+(`loadConnector`, decrypting both the access and, if present, the refresh token under the row's
+own AAD); if the row is GitHub, has a real `tokenExpiresAt` within `TOKEN_REFRESH_MARGIN_MS` (5
+minutes — a request that started against a token with 30 seconds left could easily outlive it
+mid-flight to GitHub) or already past, and holds a refresh token, calls GitHub's refresh grant
+(`grant_type=refresh_token`, the SAME endpoint and same `client_id`/`client_secret` pair the
+initial code exchange uses); on success, re-encrypts under the SAME data key (no re-wrap — the key
+itself isn't rotating) and persists in a short, separate transaction; and returns the fresh token
+to the caller. Every other combination — Slack, a non-expiring GitHub row, a token that isn't near
+expiry yet — returns the stored token exactly as before, in one combined early-return guard.
+
+**A refresh call happens OUTSIDE any open `withOrgScope` transaction, and the write is a separate,
+short one afterward — the identical discipline `pr-write.service.ts`'s own header already states
+for every GitHub-touching function in this module: "the effect is on a platform this deployment
+does not control... an event claiming an effect that GitHub actually refused would be a false
+entry."** `loadConnector` reads and decrypts inside its own transaction and returns; the network
+call to GitHub happens with no transaction open at all; `persistRefreshedGithubToken` (in the new
+`token-refresh.ts`) opens a fresh, short `withOrgScope` only once the new token is already in hand,
+guarded on `status = 'connected'` so a disconnect that raced the refresh wins outright rather than
+being silently undone by a refresh that read the row before the disconnect committed.
+
+**A failed refresh — network error, a dead refresh token, GitHub down — never throws a new error
+class. It falls back silently to the stale token already in hand**, and the REAL caller's own
+GitHub request surfaces the exact same honest 401 with its existing "reconnect the repository"
+hint, exactly as it always has. `parseGithubTokenGrant` treats GitHub's own documented failure
+shape for this endpoint — a 200 response carrying an `error` field rather than a non-2xx status —
+identically to a network failure or a non-2xx response: all three return `null`, and `connectorFor`
+treats `null` the same as "no refresh attempted." A refresh mechanism that turned a transient
+GitHub hiccup into a new 500 would be a regression, not a fix — the acceptance bar mirrors Phase
+7's spend gate for the identical reason: the case that matters most is not that a refresh
+succeeds, it's that a failed one degrades to exactly today's behavior.
+
+**`ConnectorForDeps` makes the OAuth App's `client_id`/`client_secret` an OPTIONAL field on the
+type `connectorFor` takes — deliberately, to preserve `integration-action.service.ts`'s own
+standing boundary that `apps/worker` must never hold OAuth client secrets at all.**
+`IntegrationActionDeps` (unchanged) stays `Pick<IntegrationDeps, 'keys' | 'fetchImpl'>`, so the
+worker's `github.create_issue` automation action falls through to the stale token exactly as every
+caller did before this capability existed — a real, accepted scope narrowing, not an oversight:
+only `apps/api`-only callers (`PrReadDeps`, `PrWriteDeps`, `BranchWriteDeps`, `AiRouterDeps`, all
+widened to include `providers`) gain transparent refresh.
+
+**`token-refresh.ts` and `connector-aad.ts` are both new files, deliberately NOT named
+`*.service.ts` — the `rebalance.ts`/`counters.ts` precedent CLAUDE.md's own layout section already
+documents ("repositories mutate by design").** `persistRefreshedGithubToken`'s own DB write has no
+product-level domain event of its own to emit: the event belongs to whatever the REAL caller was
+doing (posting a PR comment, reading a diff), not to the credential bookkeeping that happened to
+make it possible — guardrail 11's `**/*.service.ts` scope is what makes that a legitimate omission
+rather than a silent one. `connector-aad.ts` holds only `integrationTokenAad`, extracted into its
+own zero-dependency file so `token-refresh.ts` can use the identical AAD without an `import-x/
+no-cycle` violation: `token-refresh.ts` already imports from `integration.service.ts`
+(structurally, not by name — see below), so a value import running the other direction would be a
+cycle the linter refuses. `integration.service.ts` re-exports the function under its original
+name, so `integration-webhooks.ts` (the only other importer) needed no change.
+
+**`token-refresh.ts` never imports a TYPE from `integration.service.ts` either, even though
+`import-x/no-cycle` would otherwise refuse it for a type-only import too — it uses a small, local,
+structurally-identical interface instead.** `GithubOAuthCredentials` (`{clientId, clientSecret}`)
+and an inline `{fetchImpl?: typeof fetch}` deps shape mirror `ConnectorProviderCredentials`/
+`Pick<IntegrationDeps, 'fetchImpl'>` exactly; TypeScript's structural typing means
+`integration.service.ts` can pass its real objects straight through with no import needed in
+either direction, and no third file's imports needed touching.
+
+**Tested in `integration.service.test.ts`'s new "transparent refresh (migration 0109)" describe
+block**, extending the existing fake-`fetch`-based fixture (a `FakeProviderOptions.onRefresh`
+hook, distinguishing `grant_type=refresh_token` from the ordinary code exchange by parsing the
+POST body): a credential with no `tokenExpiresAt` is never refreshed, for both Slack and a
+non-expiring GitHub row, with zero extra network calls made; a near-expiry token refreshes
+transparently and a SECOND call against the new, far-future expiry does not refresh again; a
+network failure and a GitHub error-body response both fall back to the stale token with no throw;
+`apps/worker`'s deps shape (no `providers`) never attempts a refresh even when a row is due;
+and `reviveRetiredRepo` carries a refresh token across a repo revive, proven by refreshing through
+the REVIVED row's own id afterward — not merely that the pending row's credentials decrypted, but
+that the SURVIVING row's re-encrypted copy actually works.
+
 ### Phase 15 §7 — a missing 401 hint on every GitHub call site (SHIPPED)
 
 `apps/api/src/automation/{branch,pr-read,pr-write,integration-action}.service.ts`. Prompted

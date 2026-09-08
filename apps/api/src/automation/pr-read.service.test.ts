@@ -143,9 +143,11 @@ afterAll(async () => {
   await admin.end();
 });
 
+const GITHUB_PROVIDERS = { github: { clientId: 'github-client', clientSecret: 'github-secret' } };
+
 function depsFor(fetchImpl: typeof fetch): IntegrationDeps {
   return {
-    providers: { github: { clientId: 'github-client', clientSecret: 'github-secret' } },
+    providers: GITHUB_PROVIDERS,
     redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
     webhookOrigin: 'https://app.test',
     jwtStateSecret: Buffer.alloc(32, 9),
@@ -339,12 +341,14 @@ describe('listPullRequests', () => {
     }) as typeof fetch;
     calls.length = 0;
 
-    await expect(listPullRequests(owner, { keys, fetchImpl: combined }, {})).rejects.toMatchObject({
+    await expect(
+      listPullRequests(owner, { keys, providers: GITHUB_PROVIDERS, fetchImpl: combined }, {}),
+    ).rejects.toMatchObject({
       code: 'VALIDATION_FAILED',
     });
-    await expect(listPullRequests(owner, { keys, fetchImpl: combined }, {})).rejects.toThrow(
-      /More than one GitHub repository is connected/,
-    );
+    await expect(
+      listPullRequests(owner, { keys, providers: GITHUB_PROVIDERS, fetchImpl: combined }, {}),
+    ).rejects.toThrow(/More than one GitHub repository is connected/);
     // Never reaches GitHub — resolving which repo happens before any request.
     expect(calls).toHaveLength(0);
   });
@@ -368,7 +372,7 @@ describe('listPullRequests', () => {
 
     const result = await listPullRequests(
       owner,
-      { keys, fetchImpl: combined },
+      { keys, providers: GITHUB_PROVIDERS, fetchImpl: combined },
       { repoScope: 'acme/second' },
     );
     expect(result).toEqual([]);

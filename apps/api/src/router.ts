@@ -153,7 +153,11 @@ export function createAppRouter(deps: AppRouterDeps) {
          folded into `WorkRouterDeps` itself, so `main.ts`'s own `deps.work`
          construction (attachments only) does not need to know about a
          connector this module reaches only through the composition root. */
-      branch: { keys: deps.automation.keys },
+      /* `providers` (migration 0109) travels alongside `keys` now too — the
+         client_id/secret pair `connectorFor`'s transparent-refresh path
+         needs to renew a near-expiry GitHub token, the same reasoning
+         `BranchWriteDeps`'s own comment gives. */
+      branch: { keys: deps.automation.keys, providers: deps.automation.integration.providers },
     }),
 
     /**
@@ -292,7 +296,11 @@ export function createAppRouter(deps: AppRouterDeps) {
      * makes just below, for the identical reason (one master key, kept
      * unambiguous by AAD, not by a fourth `SoftwareKeyProvider` instance).
      */
-    ai: createAiRouter({ keys: deps.automation.keys, searchProvider }),
+    ai: createAiRouter({
+      keys: deps.automation.keys,
+      searchProvider,
+      providers: deps.automation.integration.providers,
+    }),
 
     /**
      * The standup view (Phase 15 §5) — assembled from existing card/sprint

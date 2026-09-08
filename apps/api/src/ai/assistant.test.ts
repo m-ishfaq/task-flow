@@ -41,6 +41,7 @@ const NO_PR_DEPS: PrReadDeps = {
     currentMasterKeyId: 'test-master',
     masterKeys: masterKeysFromBase64({ 'test-master': Buffer.alloc(32, 7).toString('base64') }),
   }),
+  providers: {},
   fetchImpl: () => {
     throw new Error('no PR tool should be called in this test file');
   },

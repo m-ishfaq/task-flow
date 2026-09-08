@@ -60,7 +60,12 @@ import {
  * <n>` link, not optional enrichment.
  */
 
-export type PrWriteDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'>;
+/* 'providers' (migration 0109) is what lets `connectedGithubRepo` ->
+   `connectorFor` refresh a near-expiry GitHub token transparently before
+   any of the functions below ever reach GitHub — the client_id/secret pair
+   the refresh call itself needs to authenticate as this deployment's OAuth
+   App. */
+export type PrWriteDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl' | 'providers'>;
 
 const TIMEOUT_MS = 10_000;
 

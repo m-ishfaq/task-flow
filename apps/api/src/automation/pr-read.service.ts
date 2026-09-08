@@ -37,7 +37,11 @@ import type { AutomationActor } from './automation.service.js';
  * never that an arbitrary string reaches GitHub unchecked.
  */
 
-export type PrReadDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'>;
+/* 'providers' (migration 0109) — see `PrWriteDeps`'s identical comment in
+   pr-write.service.ts: the client_id/secret pair `connectorFor`'s own
+   transparent-refresh path needs to authenticate a refresh call as this
+   deployment's OAuth App. */
+export type PrReadDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl' | 'providers'>;
 
 const TIMEOUT_MS = 10_000;
 const MAX_LIST_LIMIT = 20;

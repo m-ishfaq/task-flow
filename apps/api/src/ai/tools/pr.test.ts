@@ -573,7 +573,11 @@ describe('card_link_pr / list_card_prs', () => {
       return inner(input, init);
     }) as typeof fetch;
 
-    await createCardLinkPrTool({ keys, fetchImpl: countingFetch }).execute(ctx, {
+    await createCardLinkPrTool({
+      keys,
+      providers: { github: { clientId: 'c', clientSecret: 's' } },
+      fetchImpl: countingFetch,
+    }).execute(ctx, {
       cardId,
       prNumber: 1,
     });

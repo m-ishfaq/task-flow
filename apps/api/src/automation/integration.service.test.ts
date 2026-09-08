@@ -11,10 +11,12 @@ import type { AutomationActor } from './automation.service.js';
 import {
   beginIntegration,
   completeIntegration,
+  connectorFor,
   disconnectIntegration,
   listIntegrations,
   listReposForIntegration,
   selectRepo,
+  type ConnectorForDeps,
   type IntegrationDeps,
 } from './integration.service.js';
 import { createGithubIssue, postSlackMessage } from './integration-action.service.js';
@@ -225,6 +227,20 @@ interface FakeProviderOptions {
   readonly githubToken?: string;
   readonly login?: string;
   readonly repos?: readonly { name: string; full_name: string }[];
+  /** migration 0109 — present only when a test wants the code-exchange
+      response to carry these, simulating an OAuth App with GitHub's "expire
+      user tokens" setting on. Omitted (every existing test in this file)
+      means the exchange answers with `access_token` alone, exactly as it
+      always has, and `connectorFor` treats the row as non-expiring. */
+  readonly githubExpiresInSeconds?: number;
+  readonly githubRefreshToken?: string;
+  readonly githubRefreshTokenExpiresInSeconds?: number;
+  /** What a `grant_type=refresh_token` call to the SAME endpoint answers.
+      Undefined means no test using this fake ever drives a refresh — a call
+      with no handler configured throws, so a test that unexpectedly
+      triggers one fails loudly rather than silently mismatching a case
+      below. */
+  readonly onRefresh?: (params: URLSearchParams) => 'network-fail' | Response;
 }
 
 function fakeProvider(options: FakeProviderOptions = {}): {
@@ -239,7 +255,7 @@ function fakeProvider(options: FakeProviderOptions = {}): {
 
   /* A synchronous function returning promises — no `await` anywhere, which
      is what makes the response construction straight-line and testable. */
-  const fn = ((input: string | URL | Request) => {
+  const fn = ((input: string | URL | Request, init?: RequestInit) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     calls.push(url);
@@ -263,8 +279,38 @@ function fakeProvider(options: FakeProviderOptions = {}): {
             team_name: options.teamName ?? 'Acme Workspace',
           }),
         );
-      case 'https://github.com/login/oauth/access_token':
-        return Promise.resolve(json({ access_token: options.githubToken ?? 'gho_test_token' }));
+      case 'https://github.com/login/oauth/access_token': {
+        const bodyText =
+          typeof init?.body === 'string'
+            ? init.body
+            : init?.body instanceof URLSearchParams
+              ? init.body.toString()
+              : '';
+        const params = new URLSearchParams(bodyText);
+        if (params.get('grant_type') === 'refresh_token') {
+          if (options.onRefresh === undefined) {
+            throw new Error('unexpected refresh call: no onRefresh handler configured');
+          }
+          const result = options.onRefresh(params);
+          return result === 'network-fail'
+            ? Promise.reject(new Error('network down'))
+            : Promise.resolve(result);
+        }
+        return Promise.resolve(
+          json({
+            access_token: options.githubToken ?? 'gho_test_token',
+            ...(options.githubExpiresInSeconds === undefined
+              ? {}
+              : { expires_in: options.githubExpiresInSeconds }),
+            ...(options.githubRefreshToken === undefined
+              ? {}
+              : { refresh_token: options.githubRefreshToken }),
+            ...(options.githubRefreshTokenExpiresInSeconds === undefined
+              ? {}
+              : { refresh_token_expires_in: options.githubRefreshTokenExpiresInSeconds }),
+          }),
+        );
+      }
       case 'https://api.github.com/user':
         return Promise.resolve(json({ login: options.login ?? 'octocat' }));
       case GITHUB_REPOS_URL:
@@ -1145,5 +1191,288 @@ describe('the outbound connector actions', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+});
+
+/**
+ * Transparent GitHub token refresh (migration 0109).
+ *
+ * The root cause this closes: a GitHub OAuth App can opt into GitHub's
+ * "expire user tokens" setting, an external, per-App choice this codebase
+ * has no visibility into — when it's on, the code-exchange response carries
+ * `expires_in`/`refresh_token`/`refresh_token_expires_in`, which nothing
+ * here ever captured before. The connector then went dead on its own
+ * schedule, surfacing as a real caller's honest 401 with no way to tell
+ * "revoked" from "merely expired" apart — and the only fix was a manual
+ * reconnect. `connectorFor` is the one chokepoint that decides whether a
+ * refresh is due; every real caller (`pr-read.service.ts`, `pr-write.
+ * service.ts`, `branch.service.ts`, the AI tool registry) goes through it,
+ * so proving the property here proves it for all of them at once.
+ *
+ * The acceptance bar mirrors Phase 7's spend gate: the case that matters
+ * most is not that a refresh happens, it's that a FAILED refresh never
+ * throws a new error class — it falls back to the stale token in hand, and
+ * the real caller's own GitHub request surfaces the honest 401 exactly as
+ * it always has. A refresh mechanism that turned a transient GitHub outage
+ * into a 500 would be a regression, not a fix.
+ */
+describe('transparent refresh (migration 0109)', () => {
+  it('a credential with no tokenExpiresAt is never refreshed — the no-op default', async () => {
+    const { owner } = await scaffold('refresh-noop-slack');
+    const fake = fakeProvider({ teamId: 'T0001' });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+    const connected = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-1', state },
+      requestId,
+    );
+    expect(connected.status).toBe('connected');
+    if (connected.status !== 'connected') return;
+
+    const callsBefore = fake.calls.length;
+    const result = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'slack');
+    expect(result.token.length).toBeGreaterThan(0);
+    /* No refresh attempt at all — Slack rows never carry a `tokenExpiresAt`,
+       so `connectorFor`'s combined guard returns before ever consulting
+       `deps.providers`, let alone reaching the network. */
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('a GitHub connection whose App never opted into expiry is also never refreshed', async () => {
+    const { owner } = await scaffold('refresh-noop-github');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    const callsBefore = fake.calls.length;
+    const result = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
+    expect(result.token).toBe('gho_test_token');
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('refreshes a near-expiry GitHub token transparently and persists the new credential', async () => {
+    const { owner } = await scaffold('refresh-success');
+    let refreshCalls = 0;
+    const fake = fakeProvider({
+      /* Inside the 5-minute TOKEN_REFRESH_MARGIN_MS — due for refresh the
+         instant `connectorFor` is called. */
+      githubExpiresInSeconds: 60,
+      githubRefreshToken: 'refresh-original',
+      onRefresh: (params) => {
+        refreshCalls += 1;
+        expect(params.get('client_id')).toBe('github-client');
+        expect(params.get('client_secret')).toBe('github-secret');
+        expect(params.get('refresh_token')).toBe('refresh-original');
+        return new Response(
+          JSON.stringify({
+            access_token: 'gho_refreshed',
+            expires_in: 3600,
+            /* GitHub rotates the refresh token on every use. */
+            refresh_token: 'refresh-rotated',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      },
+    });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    const before = await credentialColumns(owner.subject.orgId, connected.integrationId);
+
+    const first = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
+    expect(first.token).toBe('gho_refreshed');
+    expect(refreshCalls).toBe(1);
+
+    /* Persisted: a second call, now against the far-future expiry the
+       refresh just wrote, must not refresh a second time. */
+    const second = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
+    expect(second.token).toBe('gho_refreshed');
+    expect(refreshCalls).toBe(1);
+
+    const after = await credentialColumns(owner.subject.orgId, connected.integrationId);
+    expect(after.tokenCiphertext).not.toBe(before.tokenCiphertext);
+  });
+
+  it('a network failure during refresh falls back silently to the stale token', async () => {
+    const { owner } = await scaffold('refresh-network-fail');
+    let refreshCalls = 0;
+    const fake = fakeProvider({
+      githubToken: 'gho_stale',
+      githubExpiresInSeconds: 60,
+      githubRefreshToken: 'refresh-original',
+      onRefresh: () => {
+        refreshCalls += 1;
+        return 'network-fail';
+      },
+    });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    /* THE assertion: no throw, and the caller gets back exactly the token it
+       already had — the real caller's own GitHub request is what surfaces
+       the honest, existing 401, not a new error shape invented here. */
+    const result = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
+    expect(result.token).toBe('gho_stale');
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('a dead refresh token (a GitHub error body at HTTP 200) falls back silently', async () => {
+    const { owner } = await scaffold('refresh-dead-token');
+    let refreshCalls = 0;
+    const fake = fakeProvider({
+      githubToken: 'gho_stale_2',
+      githubExpiresInSeconds: 60,
+      githubRefreshToken: 'refresh-dead',
+      onRefresh: () => {
+        refreshCalls += 1;
+        /* GitHub's own documented shape for this endpoint: a malformed or
+           expired refresh token answers 200 with an `error` field, not a
+           non-2xx status — `parseGithubTokenGrant` treats this as null. */
+        return new Response(JSON.stringify({ error: 'bad_refresh_token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    const result = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
+    expect(result.token).toBe('gho_stale_2');
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('apps/worker deps shape (no `providers`) never attempts a refresh', async () => {
+    /* `ConnectorForDeps.providers` is OPTIONAL specifically so a caller like
+       `apps/worker`'s automation executor — which must never hold the
+       OAuth App's client secret, `integration-action.service.ts`'s own
+       standing boundary — falls through to the stale token exactly as every
+       caller did before this refresh capability existed, rather than being
+       handed a new deps field it has no business holding. */
+    const { owner } = await scaffold('refresh-no-providers');
+    const fake = fakeProvider({ githubExpiresInSeconds: 60, githubRefreshToken: 'refresh-x' });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    const callsBefore = fake.calls.length;
+    const workerDeps: ConnectorForDeps = { keys, fetchImpl: fake.fetch };
+    const result = await connectorFor(
+      owner.subject.orgId,
+      workerDeps,
+      connected.integrationId,
+      'github',
+    );
+    expect(result.token.length).toBeGreaterThan(0);
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('reviveRetiredRepo carries the refresh token across a revive, and it works afterward', async () => {
+    /* The revive path (selectRepo's `reviveRetiredRepo`) decrypts a pending
+       row's credentials under ITS OWN AAD and re-encrypts them under the
+       retired row's — this proves the refresh token makes that same trip,
+       not just the access token, by refreshing through the REVIVED row's id
+       afterward. A refresh that only worked because it was silently reading
+       the pending row's own (already-superseded) credentials would still
+       pass a test that never re-decrypts through the survivor's id. */
+    const { owner } = await scaffold('refresh-revive');
+    let refreshCalls = 0;
+    const fake = fakeProvider({
+      githubExpiresInSeconds: 60,
+      githubRefreshToken: 'refresh-original',
+      onRefresh: (params) => {
+        refreshCalls += 1;
+        expect(params.get('refresh_token')).toBe('refresh-original');
+        return new Response(
+          JSON.stringify({ access_token: 'gho_refreshed_after_revive', expires_in: 3600 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      },
+    });
+    const deps = depsFor(fake.fetch);
+
+    const first = await beginState(owner, deps, 'github');
+    const firstPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state: first.state },
+      requestId,
+    );
+    if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: firstPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+
+    /* A fresh code exchange — the same fake, so the same expiry/refresh
+       token shape — lands a new pending row that then revives the retired
+       one above via the SAME `fullName`. */
+    const second = await beginState(owner, deps, 'github');
+    const secondPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: second.state },
+      requestId,
+    );
+    if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    const revived = await selectRepo(owner, deps, {
+      integrationId: secondPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    expect(revived.integrationId).toBe(connected.integrationId);
+
+    const result = await connectorFor(owner.subject.orgId, deps, revived.integrationId, 'github');
+    expect(result.token).toBe('gho_refreshed_after_revive');
+    expect(refreshCalls).toBe(1);
   });
 });

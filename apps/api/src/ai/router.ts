@@ -12,6 +12,7 @@ import {
 } from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
+import type { IntegrationDeps } from '../automation/integration.service.js';
 import { resolveAiProvider } from './provider-resolver.js';
 import { buildToolRegistry } from './tools/index.js';
 import { runAssistantTurn } from './assistant.js';
@@ -137,6 +138,11 @@ function toWireMessage(message: AiMessage): ChatMessageWire {
 export interface AiRouterDeps {
   readonly keys: KeyProvider;
   readonly searchProvider: SearchProvider;
+  /** Threaded into `prReadDeps` below — `connectorFor`'s transparent GitHub
+      token refresh (migration 0109) needs the OAuth App's client_id/secret
+      to authenticate a refresh call, the same reasoning `PrReadDeps`'s own
+      comment gives. */
+  readonly providers: IntegrationDeps['providers'];
 }
 
 /**
@@ -172,7 +178,7 @@ export async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<Me
 export function createAiRouter(deps: AiRouterDeps) {
   const tools = buildToolRegistry({
     searchProvider: deps.searchProvider,
-    prReadDeps: { keys: deps.keys },
+    prReadDeps: { keys: deps.keys, providers: deps.providers },
   });
 
   return router({

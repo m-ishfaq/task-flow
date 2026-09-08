@@ -827,6 +827,16 @@ export const integrations = platform.table(
     verifyWrapped: bytea('verify_wrapped'),
     verifyMasterId: text('verify_master_id'),
 
+    /* Migration 0109. NULL for Slack and for a GitHub OAuth App with no
+       expiration enabled — the same "absence is the signal" shape as the
+       verify_* columns above. Encrypted under the SAME data key as
+       token_*, never a second one — see the migration's own header. */
+    refreshTokenCiphertext: bytea('refresh_token_ciphertext'),
+    refreshTokenWrapped: bytea('refresh_token_wrapped'),
+    refreshTokenMasterId: text('refresh_token_master_id'),
+    tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+
     /** SET NULL, not CASCADE — the row is the org's, not the person's. */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

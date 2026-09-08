@@ -1,5 +1,11 @@
 import { and, desc, eq, ne, schema, withOrgScope, outboxWriter, type TenantDb } from '@taskflow/db';
-import { errors, unsafeAsId, type KeyProvider, type OrgId } from '@taskflow/contracts';
+import {
+  errors,
+  unsafeAsId,
+  type DataKey,
+  type KeyProvider,
+  type OrgId,
+} from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import {
   decryptString,
@@ -14,11 +20,18 @@ import {
   type ConnectorStateClaims,
 } from '@taskflow/security';
 import type { AutomationActor } from './automation.service.js';
+import { integrationTokenAad } from './connector-aad.js';
 import {
   integrationConnected,
   integrationDisconnected,
   integrationPending,
 } from './integration-events.js';
+import {
+  expiresAtFrom,
+  parseGithubTokenGrant,
+  persistRefreshedGithubToken,
+  refreshGithubToken,
+} from './token-refresh.js';
 
 /**
  * Connector connect/disconnect (ai/phase-10-automation.md §7, Wave 4 slice 2).
@@ -89,6 +102,25 @@ export interface IntegrationDeps {
   readonly fetchImpl?: typeof fetch;
 }
 
+/**
+ * What `connectorFor` needs — narrower than `IntegrationDeps`, and
+ * `providers` is OPTIONAL rather than required, on purpose (migration
+ * 0109). `IntegrationActionDeps` (integration-action.service.ts) is this
+ * SAME shape, its own header explaining why: handing `apps/worker` a
+ * struct carrying the GitHub/Slack OAuth App's client secrets — which it
+ * has never needed and still does not — is how a process ends up holding
+ * credentials nobody meant to give it. Without `providers`, transparent
+ * refresh (below) simply never triggers for that caller; the worker's own
+ * `github.create_issue` action keeps today's exact behaviour (a near-expiry
+ * token fails with the ordinary 401) rather than gaining a capability that
+ * would cost that boundary to grant. `PrReadDeps`/`PrWriteDeps`/
+ * `BranchWriteDeps` (all `apps/api`-only) DO supply `providers`, since
+ * nothing there is a second process boundary to protect against.
+ */
+export type ConnectorForDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'> & {
+  readonly providers?: IntegrationDeps['providers'];
+};
+
 export interface IntegrationSummary {
   readonly integrationId: string;
   readonly provider: ConnectorProvider;
@@ -121,10 +153,12 @@ const envelopeOf = (actor: IntegrationActor) => ({
  * org's connector. Exported for slice 4's executor, which decrypts at action
  * time — one definition in one file keeps the two sides from drifting (a
  * mismatch fails loud, but only after the action already failed).
+ *
+ * The definition itself lives in `connector-aad.ts` now (migration 0109) —
+ * see that file's own header for why — and is re-exported here under its
+ * original name so no existing importer needs to change.
  */
-export function integrationTokenAad(orgId: string, integrationId: string): string {
-  return `integration-token:${orgId}:${integrationId}`;
-}
+export { integrationTokenAad };
 
 function credentialsFor(
   deps: IntegrationDeps,
@@ -427,7 +461,8 @@ async function completeGithub(
   userId: AutomationActor['subject']['userId'],
   requestId: AutomationActor['requestId'],
 ): Promise<Extract<CompleteResult, { provider: 'github' }>> {
-  const { token, login, repos } = await exchangeGithubCode(deps, credentials, code);
+  const { token, login, repos, expiresInSeconds, refreshToken, refreshTokenExpiresInSeconds } =
+    await exchangeGithubCode(deps, credentials, code);
 
   /* A fresh verify secret on EVERY complete, including a reconnect: a
      re-wiring of the connector is a deliberate act, and the org re-pastes the
@@ -453,16 +488,18 @@ async function completeGithub(
     const integrationId = (await existingRowId(tx, 'github', login)) ?? newId<'IntegrationId'>();
 
     const dataKey = await deps.keys.generateDataKey({ orgId });
-    const tokenCiphertext = encryptString(
-      dataKey.plaintext.key,
-      token,
-      integrationTokenAad(orgId, integrationId),
-    );
-    const verifyCiphertext = encryptString(
-      dataKey.plaintext.key,
-      verifySecret,
-      integrationTokenAad(orgId, integrationId),
-    );
+    const aad = integrationTokenAad(orgId, integrationId);
+    const tokenCiphertext = encryptString(dataKey.plaintext.key, token, aad);
+    const verifyCiphertext = encryptString(dataKey.plaintext.key, verifySecret, aad);
+    /* Present only when the connecting OAuth App has GitHub's "expire user
+       tokens" setting on — migration 0109's own header. Encrypted under the
+       SAME data key as the access token; absent, every refresh_* column
+       stays NULL and `connectorFor` treats this row exactly as it always
+       has. */
+    const refreshTokenCiphertext =
+      refreshToken === null ? null : encryptString(dataKey.plaintext.key, refreshToken, aad);
+    const tokenExpiresAt = expiresAtFrom(expiresInSeconds);
+    const refreshTokenExpiresAt = expiresAtFrom(refreshTokenExpiresInSeconds);
 
     const rows = await tx
       .insert(schema.integrations)
@@ -479,6 +516,13 @@ async function completeGithub(
         verifyCiphertext: Buffer.from(verifyCiphertext),
         verifyWrapped: Buffer.from(dataKey.wrapped.wrapped),
         verifyMasterId: dataKey.wrapped.masterKeyId,
+        refreshTokenCiphertext:
+          refreshTokenCiphertext === null ? null : Buffer.from(refreshTokenCiphertext),
+        refreshTokenWrapped:
+          refreshTokenCiphertext === null ? null : Buffer.from(dataKey.wrapped.wrapped),
+        refreshTokenMasterId: refreshTokenCiphertext === null ? null : dataKey.wrapped.masterKeyId,
+        tokenExpiresAt,
+        refreshTokenExpiresAt,
         createdBy: userId,
       })
       .onConflictDoUpdate({
@@ -496,6 +540,18 @@ async function completeGithub(
           verifyCiphertext: Buffer.from(verifyCiphertext),
           verifyWrapped: Buffer.from(dataKey.wrapped.wrapped),
           verifyMasterId: dataKey.wrapped.masterKeyId,
+          /* A reconnect ALWAYS overwrites these, even to null — a stale
+             refresh token from a previous connect must never survive a
+             fresh code exchange that came back without one (e.g. the
+             OAuth App's expiration setting was turned off in between). */
+          refreshTokenCiphertext:
+            refreshTokenCiphertext === null ? null : Buffer.from(refreshTokenCiphertext),
+          refreshTokenWrapped:
+            refreshTokenCiphertext === null ? null : Buffer.from(dataKey.wrapped.wrapped),
+          refreshTokenMasterId:
+            refreshTokenCiphertext === null ? null : dataKey.wrapped.masterKeyId,
+          tokenExpiresAt,
+          refreshTokenExpiresAt,
           createdBy: userId,
         },
       })
@@ -706,13 +762,20 @@ export async function disconnectIntegration(
       .set({
         status: 'disconnected',
         /* The wipe. Name and providerScope survive for the audit trail; the
-           material that could act as the org is gone. */
+           material that could act as the org is gone — the refresh token
+           (migration 0109) included, since it is just as capable of
+           minting a live access token as the access token itself. */
         tokenCiphertext: null,
         tokenWrapped: null,
         tokenMasterId: null,
         verifyCiphertext: null,
         verifyWrapped: null,
         verifyMasterId: null,
+        refreshTokenCiphertext: null,
+        refreshTokenWrapped: null,
+        refreshTokenMasterId: null,
+        tokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
       })
       .where(
         and(
@@ -820,7 +883,14 @@ async function exchangeGithubCode(
   deps: IntegrationDeps,
   credentials: ConnectorProviderCredentials,
   code: string,
-): Promise<{ readonly token: string; readonly login: string; readonly repos: readonly RepoRef[] }> {
+): Promise<{
+  readonly token: string;
+  readonly login: string;
+  readonly repos: readonly RepoRef[];
+  readonly expiresInSeconds: number | null;
+  readonly refreshToken: string | null;
+  readonly refreshTokenExpiresInSeconds: number | null;
+}> {
   const fetchFn = deps.fetchImpl ?? fetch;
 
   const tokenResponse = await fetchFn('https://github.com/login/oauth/access_token', {
@@ -836,12 +906,12 @@ async function exchangeGithubCode(
   if (!tokenResponse.ok) {
     throw errors.validation({ code: 'GitHub rejected the authorization code.' });
   }
-  const tokenBody = (await tokenResponse.json()) as { access_token?: unknown };
-  if (typeof tokenBody.access_token !== 'string') {
+  const grant = parseGithubTokenGrant(await tokenResponse.json());
+  if (grant === null) {
     throw errors.validation({ code: 'GitHub did not return an access token.' });
   }
 
-  const token = tokenBody.access_token;
+  const token = grant.token;
   const authHeaders = { ...GITHUB_HEADERS, authorization: `Bearer ${token}` };
 
   const userResponse = await fetchFn('https://api.github.com/user', { headers: authHeaders });
@@ -854,7 +924,14 @@ async function exchangeGithubCode(
   }
 
   const repos = await githubRepos(deps, token);
-  return { token, login: user.login, repos };
+  return {
+    token,
+    login: user.login,
+    repos,
+    expiresInSeconds: grant.expiresInSeconds,
+    refreshToken: grant.refreshToken,
+    refreshTokenExpiresInSeconds: grant.refreshTokenExpiresInSeconds,
+  };
 }
 
 /* One page of `/user/repos`, and the ceiling on how many we will walk.
@@ -946,6 +1023,11 @@ async function reviveRetiredRepo(
       verifyCiphertext: schema.integrations.verifyCiphertext,
       verifyWrapped: schema.integrations.verifyWrapped,
       verifyMasterId: schema.integrations.verifyMasterId,
+      refreshTokenCiphertext: schema.integrations.refreshTokenCiphertext,
+      refreshTokenWrapped: schema.integrations.refreshTokenWrapped,
+      refreshTokenMasterId: schema.integrations.refreshTokenMasterId,
+      tokenExpiresAt: schema.integrations.tokenExpiresAt,
+      refreshTokenExpiresAt: schema.integrations.refreshTokenExpiresAt,
     })
     .from(schema.integrations)
     .where(
@@ -985,6 +1067,27 @@ async function reviveRetiredRepo(
     new Uint8Array(pending.verifyCiphertext),
     pendingAad,
   );
+  /* The refresh token (migration 0109) travels the identical
+     decrypt-under-old-AAD/re-encrypt-under-new-AAD path as the access
+     token above — absent whenever the pending row's own connect never got
+     one, in which case this stays null and the revived row simply has no
+     refresh capability, same as any other non-expiring connection. */
+  const refreshToken =
+    pending.refreshTokenCiphertext === null ||
+    pending.refreshTokenWrapped === null ||
+    pending.refreshTokenMasterId === null
+      ? null
+      : decryptString(
+          (
+            await deps.keys.unwrapDataKey({
+              wrapped: new Uint8Array(pending.refreshTokenWrapped),
+              masterKeyId: pending.refreshTokenMasterId,
+              encryptionContext: { orgId },
+            })
+          ).key,
+          new Uint8Array(pending.refreshTokenCiphertext),
+          pendingAad,
+        );
 
   /* Re-encrypted under the REVIVED row's AAD — the whole reason this is a
      decrypt/encrypt rather than a column copy. */
@@ -992,6 +1095,8 @@ async function reviveRetiredRepo(
   const dataKey = await deps.keys.generateDataKey({ orgId });
   const tokenCiphertext = encryptString(dataKey.plaintext.key, token, revivedAad);
   const verifyCiphertext = encryptString(dataKey.plaintext.key, verifySecret, revivedAad);
+  const refreshTokenCiphertext =
+    refreshToken === null ? null : encryptString(dataKey.plaintext.key, refreshToken, revivedAad);
 
   const revivedRows = await tx
     .update(schema.integrations)
@@ -1004,6 +1109,13 @@ async function reviveRetiredRepo(
       verifyCiphertext: Buffer.from(verifyCiphertext),
       verifyWrapped: Buffer.from(dataKey.wrapped.wrapped),
       verifyMasterId: dataKey.wrapped.masterKeyId,
+      refreshTokenCiphertext:
+        refreshTokenCiphertext === null ? null : Buffer.from(refreshTokenCiphertext),
+      refreshTokenWrapped:
+        refreshTokenCiphertext === null ? null : Buffer.from(dataKey.wrapped.wrapped),
+      refreshTokenMasterId: refreshTokenCiphertext === null ? null : dataKey.wrapped.masterKeyId,
+      tokenExpiresAt: pending.tokenExpiresAt,
+      refreshTokenExpiresAt: pending.refreshTokenExpiresAt,
       createdBy: actor.subject.userId,
     })
     .where(eq(schema.integrations.id, retiredId))
@@ -1032,6 +1144,11 @@ async function reviveRetiredRepo(
       verifyCiphertext: null,
       verifyWrapped: null,
       verifyMasterId: null,
+      refreshTokenCiphertext: null,
+      refreshTokenWrapped: null,
+      refreshTokenMasterId: null,
+      tokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
     })
     .where(eq(schema.integrations.id, pendingId));
 
@@ -1114,25 +1231,27 @@ async function tokenForRow(
   return (await connectorFor(orgId, deps, integrationId, expectedProvider)).token;
 }
 
-/**
- * The token AND the row's scope, for slice 4's outbound actions (§7.6).
- *
- * `github.create_issue` needs the repository, and the repository is the ROW's
- * `provider_scope` — not something the rule carries. That is the whole reason
- * this returns both: an action naming a repo directly would be a stored string
- * interpolated into a URL path, and the org could then post issues to any repo
- * its token happens to reach rather than the one it connected. Reading the
- * scope off the row makes "which repository" a property of the connector, which
- * is the thing `integration:manage` actually governs.
- *
- * `tokenForRow` above is the narrower caller that only wants the credential.
- */
-export async function connectorFor(
+/** How long before real expiry a token is treated as due for refresh — a
+    request that started against a token with 30 seconds left could easily
+    outlive it mid-flight to GitHub. */
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+interface DecryptedConnector {
+  readonly provider: ConnectorProvider;
+  readonly providerScope: string;
+  readonly token: string;
+  readonly refreshToken: string | null;
+  readonly tokenExpiresAt: Date | null;
+  readonly dataKey: DataKey;
+  readonly tokenWrapped: Uint8Array;
+}
+
+async function loadConnector(
   orgId: OrgId,
   deps: Pick<IntegrationDeps, 'keys'>,
   integrationId: string,
   expectedProvider: ConnectorProvider,
-): Promise<{ readonly token: string; readonly providerScope: string }> {
+): Promise<DecryptedConnector> {
   return withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({
@@ -1141,6 +1260,8 @@ export async function connectorFor(
         tokenCiphertext: schema.integrations.tokenCiphertext,
         tokenWrapped: schema.integrations.tokenWrapped,
         tokenMasterId: schema.integrations.tokenMasterId,
+        refreshTokenCiphertext: schema.integrations.refreshTokenCiphertext,
+        tokenExpiresAt: schema.integrations.tokenExpiresAt,
       })
       .from(schema.integrations)
       .where(eq(schema.integrations.id, integrationId))
@@ -1170,14 +1291,102 @@ export async function connectorFor(
       encryptionContext: { orgId },
     });
 
-    const token = decryptString(
-      dataKey.key,
-      new Uint8Array(row.tokenCiphertext),
-      integrationTokenAad(orgId, integrationId),
-    );
+    const aad = integrationTokenAad(orgId, integrationId);
+    const token = decryptString(dataKey.key, new Uint8Array(row.tokenCiphertext), aad);
+    const refreshToken =
+      row.refreshTokenCiphertext === null
+        ? null
+        : decryptString(dataKey.key, new Uint8Array(row.refreshTokenCiphertext), aad);
 
-    return { token, providerScope: row.providerScope };
+    return {
+      provider: row.provider,
+      providerScope: row.providerScope,
+      token,
+      refreshToken,
+      tokenExpiresAt: row.tokenExpiresAt,
+      dataKey,
+      tokenWrapped: new Uint8Array(row.tokenWrapped),
+    };
   });
+}
+
+/**
+ * The token AND the row's scope, for slice 4's outbound actions (§7.6).
+ *
+ * `github.create_issue` needs the repository, and the repository is the ROW's
+ * `provider_scope` — not something the rule carries. That is the whole reason
+ * this returns both: an action naming a repo directly would be a stored string
+ * interpolated into a URL path, and the org could then post issues to any repo
+ * its token happens to reach rather than the one it connected. Reading the
+ * scope off the row makes "which repository" a property of the connector, which
+ * is the thing `integration:manage` actually governs.
+ *
+ * `tokenForRow` above is the narrower caller that only wants the credential.
+ *
+ * ## Transparent refresh (migration 0109)
+ *
+ * A GitHub row whose OAuth App has "expire user tokens" on carries a real
+ * `tokenExpiresAt` and a refresh token; every other row (Slack, or a GitHub
+ * connection whose App never opted in) has `tokenExpiresAt === null` and
+ * this whole block is a no-op, unchanged from before this capability
+ * existed. When it IS due, the refresh call happens OUTSIDE any database
+ * transaction — the same discipline every other GitHub-touching function in
+ * this module and its siblings (`pr-write.service.ts`'s own header) already
+ * holds for a third-party round trip — and the row is updated in a second,
+ * short transaction only once the new token is in hand. A refresh that
+ * fails for any reason (dead refresh token, network error, GitHub down)
+ * never throws a new error: it falls through to the stale token, and the
+ * REAL caller's own GitHub request surfaces the honest 401 with its
+ * existing "reconnect" hint — exactly today's behaviour, not a regression.
+ */
+export async function connectorFor(
+  orgId: OrgId,
+  deps: ConnectorForDeps,
+  integrationId: string,
+  expectedProvider: ConnectorProvider,
+): Promise<{ readonly token: string; readonly providerScope: string }> {
+  const connector = await loadConnector(orgId, deps, integrationId, expectedProvider);
+
+  /* One combined guard, not a separate boolean — keeping the
+     `refreshToken === null` check IN this early-return is what lets
+     TypeScript narrow `connector.refreshToken` to `string` for the rest of
+     the function; a separate `dueForRefresh` boolean computed the same
+     condition but threw that narrowing away. */
+  if (
+    connector.provider !== 'github' ||
+    connector.tokenExpiresAt === null ||
+    connector.tokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_MARGIN_MS ||
+    connector.refreshToken === null
+  ) {
+    return { token: connector.token, providerScope: connector.providerScope };
+  }
+
+  /* `deps.providers` is OPTIONAL on this type — see `ConnectorForDeps`'s own
+     comment. Absent (a caller like apps/worker that was never handed OAuth
+     App credentials) falls through to the stored token exactly as every
+     caller already did before this refresh capability existed. */
+  const credentials = deps.providers?.github;
+  // Configuration changed out from under an already-connected repo — fall
+  // through to the stored (soon to fail) token rather than a new error
+  // shape nobody asked for.
+  if (credentials === undefined) {
+    return { token: connector.token, providerScope: connector.providerScope };
+  }
+
+  const refreshed = await refreshGithubToken(deps, credentials, connector.refreshToken);
+  if (refreshed === null) {
+    return { token: connector.token, providerScope: connector.providerScope };
+  }
+
+  await persistRefreshedGithubToken(
+    orgId,
+    integrationId,
+    connector.dataKey,
+    connector.tokenWrapped,
+    refreshed,
+  );
+
+  return { token: refreshed.token, providerScope: connector.providerScope };
 }
 
 /**
@@ -1236,7 +1445,7 @@ export async function connectedGithubRepos(
  */
 export async function connectedGithubRepo(
   orgId: OrgId,
-  deps: Pick<IntegrationDeps, 'keys'>,
+  deps: ConnectorForDeps,
   repoScope?: string,
 ): Promise<{
   readonly integrationId: string;

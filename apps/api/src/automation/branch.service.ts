@@ -70,7 +70,9 @@ import { integrationBranchCreated } from './integration-events.js';
  * branch is created that nothing would ever record as belonging to it.
  */
 
-export type BranchWriteDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl'>;
+/* 'providers' (migration 0109) — see `PrWriteDeps`'s identical comment in
+   pr-write.service.ts. */
+export type BranchWriteDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl' | 'providers'>;
 
 const TIMEOUT_MS = 10_000;
 /* GitHub refuses a ref name over 250 bytes outright; well short of that is
