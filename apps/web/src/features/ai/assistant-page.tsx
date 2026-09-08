@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import {
   Bot,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   GitPullRequest,
   MessageCircle,
@@ -431,9 +432,11 @@ export function AssistantPage() {
           )}
 
           {busy && (
-            <div className="flex items-center gap-2 text-xs text-ink-faint">
-              <Bot aria-hidden="true" className="size-4 animate-pulse" />
-              Thinking…
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+                <Bot aria-hidden="true" className="size-3.5 animate-pulse" strokeWidth={2} />
+              </div>
+              <span className="text-xs text-ink-faint">Thinking…</span>
             </div>
           )}
         </div>
@@ -510,10 +513,18 @@ export function AssistantPage() {
 }
 
 /**
- * `CAPABILITIES`, rendered — grouped exactly as they're written above, plus
- * clickable example prompts that fill the draft box rather than sending it,
- * so a person can see the exact wording that reaches a tool and edit it
- * before anything happens.
+ * `CAPABILITIES`/`EXAMPLE_PROMPTS`/`REFERENCE_HINTS`, rendered.
+ *
+ * REDESIGNED after a direct report: the original layout put every capability
+ * bullet on screen at once, in full sentences, with the actual actionable
+ * part — the clickable example prompts — pushed to the very bottom, under
+ * all of it. That is backwards for what a person actually does with this
+ * panel: skim for "can it do X," then click something to try. The example
+ * prompts now come FIRST, and the full capability list is one `<details>`
+ * disclosure away rather than always-on text — the same native, JS-free
+ * collapsible `calls-panel.tsx`'s own transcript expander already uses.
+ * Nothing was cut; the same four groups and every item still exist, just
+ * not painted on screen unless someone actually asks to see them.
  */
 /**
  * `variant="inline"` (default) is the mobile/narrow-screen collapsible
@@ -536,45 +547,14 @@ function CapabilitiesPanel({
   return (
     <div
       className={cn(
-        'space-y-4 rounded-xl p-4 text-sm',
+        'space-y-4 rounded-xl p-4',
         isSidebar
-          ? 'bg-surface-raised ring-1 ring-line/60'
-          : 'border border-line bg-surface-sunken/50',
+          ? 'bg-surface-raised ring-1 ring-line/50'
+          : 'border border-line/70 bg-surface-sunken/40',
       )}
     >
-      <div>
-        <p className="mb-2.5 text-xs font-semibold text-ink-muted">What I can do</p>
-        <div className={cn('gap-x-4 gap-y-3', isSidebar ? 'space-y-3' : 'grid sm:grid-cols-2')}>
-          {CAPABILITIES.map((group) => (
-            <div key={group.heading} className="space-y-1.5">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                <span className="text-ink-faint">{group.icon}</span>
-                {group.heading}
-              </p>
-              <ul className="space-y-1 text-xs leading-relaxed text-ink-faint">
-                {group.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* A literal " · " between entries, not CSS gap alone — the identical
-          collapse-on-copy bug `tool-results.tsx`'s own header now documents
-          for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
-      <p className="border-t border-line/60 pt-3 text-xs text-ink-faint">
-        <span className="font-semibold text-ink-muted">Point at things: </span>
-        {REFERENCE_HINTS.map((hint, index) => (
-          <span key={hint.label}>
-            {index > 0 && ' · '}
-            {hint.label} (<span className="font-mono text-ink-muted">{hint.example}</span>)
-          </span>
-        ))}
-      </p>
-      <div className="space-y-1.5 border-t border-line/60 pt-3">
-        <p className="text-xs font-semibold text-ink-muted">Try one</p>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-ink-faint">Try asking</p>
         <div className="flex flex-wrap gap-1.5">
           {EXAMPLE_PROMPTS.map((prompt) => (
             <button
@@ -583,13 +563,57 @@ function CapabilitiesPanel({
               onClick={() => {
                 onUseExample(prompt);
               }}
-              className="rounded-full border border-line/60 bg-surface px-2.5 py-1 text-xs text-ink hover:border-accent hover:text-accent"
+              className="rounded-full border border-line/50 bg-surface px-2.5 py-1 text-[12px] text-ink-muted transition-colors hover:border-accent/60 hover:text-accent"
             >
               {prompt}
             </button>
           ))}
         </div>
       </div>
+
+      {/* No default marker — `ChevronRight` below is the disclosure
+          indicator, rotated open via the `group-open:` variant, so the
+          native `<details>` triangle would just be a second, redundant one
+          sitting next to it. */}
+      <details className="group border-t border-line/50 pt-3 [&_summary::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-ink-faint hover:text-ink-muted">
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3 shrink-0 transition-transform group-open:rotate-90"
+          />
+          Everything it can do
+        </summary>
+        <div
+          className={cn('mt-3 gap-x-5 gap-y-3', isSidebar ? 'space-y-3' : 'grid sm:grid-cols-2')}
+        >
+          {CAPABILITIES.map((group) => (
+            <div key={group.heading} className="space-y-1.5">
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+                <span className="opacity-70">{group.icon}</span>
+                {group.heading}
+              </p>
+              <ul className="space-y-1 pl-0.5 text-[12px] leading-relaxed text-ink-faint">
+                {group.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      {/* A literal " · " between entries, not CSS gap alone — the identical
+          collapse-on-copy bug `tool-results.tsx`'s own header now documents
+          for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
+      <p className="border-t border-line/50 pt-3 text-[11px] text-ink-faint/90">
+        <span className="font-medium text-ink-faint">Point at things: </span>
+        {REFERENCE_HINTS.map((hint, index) => (
+          <span key={hint.label}>
+            {index > 0 && ' · '}
+            {hint.label} (<span className="font-mono">{hint.example}</span>)
+          </span>
+        ))}
+      </p>
     </div>
   );
 }
@@ -634,17 +658,25 @@ function MessageBubble({
       // to read, never for a person to see in their own sent bubble.
       return (
         <div className="flex justify-end">
-          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 text-sm text-white">
+          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-white">
             {stripReferenceEmbeds(message.content)}
           </p>
         </div>
       );
     case 'assistant':
       return (
-        <div className="flex justify-start">
-          <div className="max-w-[85%] space-y-2">
+        <div className="flex items-start gap-2.5">
+          {/* A small avatar mark, the same "who's speaking" cue Claude/
+              ChatGPT both use — the user's own bubble needs none (it's
+              already right-aligned in accent color, unambiguous), but a
+              left-aligned assistant bubble with no mark reads as just
+              another block of page text rather than a reply. */}
+          <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+            <Bot aria-hidden="true" className="size-3.5" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 max-w-[85%] space-y-2">
             {message.content !== '' && (
-              <div className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2 text-sm text-ink">
+              <div className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-ink">
                 <MarkdownLite text={message.content} />
               </div>
             )}
@@ -698,18 +730,24 @@ function PendingActions({
         {calls.map((call) => (
           <li
             key={call.id}
-            className="flex items-center justify-between gap-3 rounded-lg bg-surface px-2.5 py-1.5"
+            className="flex items-start justify-between gap-3 rounded-lg bg-surface px-2.5 py-2"
           >
-            <span className="min-w-0 truncate font-mono text-xs text-ink">
-              {call.name}
+            <div className="min-w-0">
+              <p className="font-mono text-xs font-medium text-ink">{call.name}</p>
+              {/* Each field its OWN small segment, not one run-on string —
+                  `key: "value", key2: "value2"` reads as raw JSON; this
+                  keeps the key dim and the value legible without the
+                  quote-marks JSON.stringify adds around a plain string. */}
               {Object.keys(call.input).length > 0 && (
-                <span className="ml-1.5 text-ink-faint">
-                  {Object.entries(call.input)
-                    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-                    .join(', ')}
-                </span>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {Object.entries(call.input).map(([key, value]) => (
+                    <span key={key} className="text-[11px] text-ink-faint">
+                      {key}: <span className="text-ink-muted">{formatCallValue(value)}</span>
+                    </span>
+                  ))}
+                </div>
               )}
-            </span>
+            </div>
             {decided.has(call.id) ? (
               <span className="shrink-0 text-xs text-ink-faint">
                 {approved.has(call.id) ? 'Approved' : 'Declined'}
@@ -754,4 +792,15 @@ function PendingActions({
       )}
     </div>
   );
+}
+
+/** A plain string renders bare, without the quote marks `JSON.stringify`
+    would wrap it in — a call.input value is overwhelmingly a plain string
+    (a title, a name, an id) and quoted text next to an unquoted key already
+    reads as raw JSON, the exact "messy formatting" this row exists to
+    avoid. Anything else (a number, a boolean, an array, an object) still
+    goes through `JSON.stringify`, since those have no unambiguous bare
+    rendering of their own. */
+function formatCallValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }

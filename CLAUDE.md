@@ -2872,6 +2872,87 @@ as a fact distinct from closed, a still-running check rolling up to `'pending'` 
 `'failure'`, the checks-endpoint-failure degrading to `'none'` without failing the call, and the
 `pr:view` refusal with zero network calls made — the same "refused before the network call"
 property every access gate in this codebase proves the same way.
+
+### Phase 15 §4 — assistant page polish: a lighter capabilities panel, real markdown (SHIPPED)
+
+`apps/web/src/features/ai/{assistant-page,markdown-lite,markdown-lite.test}.tsx`. Prompted
+directly: the capabilities sidebar was "too much text… hard to read," with the actually-actionable
+"Try one" example prompts buried underneath all of it, and the assistant's own replies still looked
+"raw" — visible markdown syntax, messy formatting — despite `markdown-lite.tsx` already existing to
+prevent exactly that for lists.
+
+**The capabilities panel is reordered, not rewritten — nothing in `CAPABILITIES`/
+`EXAMPLE_PROMPTS`/`REFERENCE_HINTS` was cut.** The original layout painted all four capability
+groups, in full sentences, before ever reaching the example prompts — backwards for what a person
+actually does with the panel (skim for "can it do X," then click something to try). Renamed to
+"Try asking" and moved to the TOP, `EXAMPLE_PROMPTS`' own chip styling untouched. The full
+capability list — the wall of text that prompted the report — moved behind a single `<details>`
+disclosure ("Everything it can do"), collapsed by default: the native, JS-free collapsible
+`calls-panel.tsx`'s own transcript expander already established in this codebase, not a new
+pattern. `ChevronRight` rotates via Tailwind's `group-open:` variant; the browser's own default
+disclosure triangle is hidden (`[&_summary::-webkit-details-marker]:hidden`) since a second
+indicator next to a custom chevron would be redundant. Every text size/weight in the panel stepped
+down one notch (`text-xs font-semibold` → `text-[11px]`/`text-[12px]` `font-medium`) — the literal
+"lighter" the report asked for, not just a reorganization.
+
+**`markdown-lite.tsx` gained inline code, links, and fenced code blocks — the exact three
+constructs a code-adjacent assistant reply reaches for that bold+lists never covered.** A reply
+mentioning a command or a PR link showed literal backticks/brackets, the identical "syntax visible,
+not rendered" complaint the original bold/list fix already solved once for markdown. `InlineSegment`
+widened from `{text, bold}` to a real discriminated union (`text` / `code` / `link`) so a single
+ordered scan (`INLINE_TOKEN`, one regex with three alternatives) produces segments in the order they
+actually appear — resolving one construct at a time and re-scanning the leftovers would let a later
+pass corrupt an earlier one's output (e.g. bolding text that sits inside a code span). Still
+deliberately NOT a general markdown parser: no headings, no tables, no nested lists — the system
+prompt still caps the model's own commentary at one short sentence, so the added surface is exactly
+what a short, code-adjacent answer needs, not a step toward full CommonMark.
+
+**A link's `href` is checked against `isSafeUrl` before it ever renders as a real, clickable
+anchor — the identical scheme whitelist `work/richtext.ts` already enforces for a TipTap `link`
+mark, applied here for the identical reason.** A `[text](url)` pair reaching this renderer can
+originate from content the model merely ECHOED (a PR description, a doc) rather than composed
+itself, so `javascript:`/`data:` reached through a link is script execution through otherwise-plain
+chat text, not a hypothetical rule 4 already exists to close everywhere else. A link that fails the
+check renders as its own literal `[text](url)` text instead of a dead or dangerous anchor.
+
+**`isSafeUrl`'s first draft used a base URL (`new URL(url, 'https://placeholder.invalid')`), and a
+test written directly against it — not assumed — caught why that was wrong before it shipped.**
+The WHATWG `URL` constructor resolves ANY non-absolute text as a relative PATH against a supplied
+base, so `isSafeUrl('not a url at all')` returned `true` — the base's own `https:` scheme silently
+inherited by text that was never a URL at all, defeating the entire check for exactly the
+malformed input it exists to catch. Fixed by dropping the base entirely: with none, only a real
+absolute URL (a real scheme, `javascript:`/`data:` included, which is what the check is FOR) ever
+parses at all. `markdown-lite.test.ts` keeps the case (`isSafeUrl('not a url at all')` →
+`false`) as the regression proof, not just the two `javascript:`/`data:` cases the security
+property itself needed.
+
+**`PendingActions`' confirmation row rendered a tool's `input` as one run-on
+`` `key: "value", key2: "value2"` `` string — exactly the "raw JSON" look the report named.**
+`formatCallValue` drops `JSON.stringify`'s quote marks for a plain string (the overwhelming
+majority of a real tool's input — a title, a name, an id) while still stringifying anything else
+(a number, boolean, array, or object, none of which has an unambiguous bare rendering of their
+own); each field now renders as its own small segment in a wrapped row, dimmed key next to a
+legible value, rather than one long string a person has to parse themselves.
+
+**The assistant's chat bubble gained a small avatar mark — the same "who's speaking" cue Claude and
+ChatGPT both use — because a left-aligned, unmarked bubble read as just another block of page text,
+not a reply.** A 24px circle (`bg-accent/10` with a `Bot` glyph) sits beside every assistant bubble
+and the "Thinking…" indicator alike, so the loading state and the eventual reply share one visual
+identity rather than the icon-plus-text row the "Thinking…" state used before. The user's own bubble
+gets no such mark — right-aligned in solid accent color is already unambiguous, and a mark on both
+sides would be visual noise for no disambiguation gained. Bubble padding and line-height both grew
+slightly (`py-2` → `py-2.5`, explicit `leading-relaxed`) for the same "reads like a real reply, not
+a cramped notification" polish, and the user bubble gained `whitespace-pre-wrap` so a genuinely
+multi-line question — the composer already supports Shift+Enter — displays its own line breaks
+instead of collapsing them.
+
+**Not verified in a live browser — this sandbox has no Postgres, and the assistant page needs a
+real org session, an AI provider config, and a live model to render past its own empty state.**
+Verified instead by what a sandbox WITHOUT Docker can prove for certain: `tsc`, `eslint`, a real
+`vitest run` of `markdown-lite.test.ts` (pure logic, no database — 19 passing cases including the
+`isSafeUrl` regression above), `pnpm check:encoding`, and the guardrail selftest. A person should
+confirm the actual rendering looks right before calling this done, per this file's own standing
+rule that a green non-visual check is not the same claim as "this works when you look at it."
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every
