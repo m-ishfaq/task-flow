@@ -111,8 +111,16 @@ function githubReadError(status: number): Error {
   if (status === 404) {
     return errors.notFound('That pull request does not exist, or the connector cannot see it.');
   }
+  /* 401 means the token itself is dead — revoked, or the OAuth App's own
+     secret rotated — never something a retry recovers from, unlike 403
+     (a live token that merely lost scope, or transient rate limiting). */
   const hint =
-    status === 403 ? ' — the connector token no longer has access, or GitHub is rate limiting' : '';
+    status === 401
+      ? ' — the connector token is invalid or was revoked; reconnect the repository ' +
+        '(Settings → Automation)'
+      : status === 403
+        ? ' — the connector token no longer has access, or GitHub is rate limiting'
+        : '';
   return errors.serviceUnavailable(`GitHub answered ${String(status)}${hint}.`);
 }
 

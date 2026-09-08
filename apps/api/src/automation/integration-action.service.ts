@@ -175,13 +175,18 @@ export async function createGithubIssue(
   if (!response.ok) {
     /* 410 is the one worth naming: GitHub answers it when Issues are DISABLED
        on the repository, which reads as a permissions problem and is not one.
-       403 covers both "the token lost access" and secondary rate limiting. */
+       401 is the token itself being dead (revoked, or the OAuth App's own
+       secret rotated) — never something a retry recovers from, unlike 403
+       (a live token that merely lost write access, or rate limiting). */
     const hint =
       response.status === 410
         ? ' — Issues are disabled on that repository'
-        : response.status === 403
-          ? ' — the connector token no longer has write access, or GitHub is rate limiting'
-          : '';
+        : response.status === 401
+          ? ' — the connector token is invalid or was revoked; reconnect the repository ' +
+            '(Settings → Automation)'
+          : response.status === 403
+            ? ' — the connector token no longer has write access, or GitHub is rate limiting'
+            : '';
     throw errors.serviceUnavailable(`GitHub answered ${String(response.status)}${hint}.`);
   }
 

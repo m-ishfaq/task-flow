@@ -117,12 +117,19 @@ function githubWriteError(status: number, reviewOwnPrHint = false): Error {
         'as a regular comment instead.',
     );
   }
+  /* 401 means the token itself is dead — revoked, or the OAuth App's own
+     secret rotated — never something a retry recovers from, unlike 403
+     (a live token that merely lost write access, or transient rate
+     limiting). */
   const hint =
-    status === 403
-      ? ' — the connector token no longer has write access, or GitHub is rate limiting'
-      : status === 422
-        ? ' — GitHub rejected the request (e.g. you cannot review your own pull request)'
-        : '';
+    status === 401
+      ? ' — the connector token is invalid or was revoked; reconnect the repository ' +
+        '(Settings → Automation)'
+      : status === 403
+        ? ' — the connector token no longer has write access, or GitHub is rate limiting'
+        : status === 422
+          ? ' — GitHub rejected the request (e.g. you cannot review your own pull request)'
+          : '';
   return errors.serviceUnavailable(`GitHub answered ${String(status)}${hint}.`);
 }
 

@@ -2746,6 +2746,45 @@ collapses the single-repo case back to today's zero-friction behavior (the sole 
 no picker rendered at all) and only asks when there is a genuine choice to make; both forms' submit
 controls disable on an unmade choice (`repoScope === undefined`) the same way they already disable
 on `!reposLoaded`.
+
+### Phase 15 §7 — a missing 401 hint on every GitHub call site (SHIPPED)
+
+`apps/api/src/automation/{branch,pr-read,pr-write,integration-action}.service.ts`. Prompted
+directly, from a real local server log: `work.branches.create` failing with a bare
+`GitHub answered 401.` — no hint, no next step, on the one status code this codebase's own
+established "name the GitHub status code that has a real explanation" pattern had never covered.
+
+**403, 404, 405, 409, 410 and 422 all had actionable hints already — `pr-read.service.ts`'s
+`githubReadError`, `pr-write.service.ts`'s `githubWriteError`, and
+`integration-action.service.ts`'s `createGithubIssue` each name at least one of them — and 401 was
+absent from every one of them, including `branch.service.ts`, which had no hint mapping at ALL
+across its four GitHub call sites.** 401 is not a variant of 403: 403 means a live, valid token
+that merely lost scope or is being rate-limited (worth retrying, or waiting out); 401 means the
+token itself is dead — revoked at GitHub, or the connected OAuth App's own client secret rotated —
+which no retry will ever recover from. Collapsing the two into one generic
+`GitHub answered ${status}.` message left a person staring at a permanently-failing action with no
+signal that the fix is "reconnect the repository," not "try again."
+
+**Every one of the four files gets the identical hint text, phrased to match each file's own
+existing 403 wording rather than sharing one new helper across files.** This follows the
+codebase's own existing convention here — the near-identical 403 hint ("the connector token no
+longer has \[write \]access, or GitHub is rate limiting") is already duplicated, worded slightly
+differently, across `pr-read.service.ts`, `pr-write.service.ts`, and
+`integration-action.service.ts`, rather than factored into one shared function; a fourth
+near-duplicate for `branch.service.ts` (which needed a genuinely new local `githubErrorHint`
+helper, since it had none before) matches that precedent rather than introducing a shared
+abstraction none of the other three ever adopted. The hint names the actual recovery path —
+"reconnect the repository (Settings → Automation)" — the identical phrase
+`development-section.tsx`'s own empty-state text already uses for the same action.
+
+**No new test was added for the hint text itself, matching the existing gap rather than papering
+over it.** None of the four files' existing 403/404/410/422 hints have dedicated test coverage
+either — `pr-read.service.test.ts`/`pr-write.service.test.ts` assert error `code`
+(`NOT_FOUND`/etc.), never the hint string inside a `SERVICE_UNAVAILABLE` message, and
+`branch.service.test.ts`/`integration-action.service.test.ts` have never covered any non-2xx
+GitHub response at all. Inventing string-content assertions for one status code while every
+sibling hint stays untested would be inconsistent scope for what is, in every file it touches, a
+message-wording fix — not a behavior change to the error `code` a caller can already branch on.
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every

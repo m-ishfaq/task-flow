@@ -101,6 +101,24 @@ function slugify(value: string): string {
     .replace(/-+$/, '');
 }
 
+/* 401 means the token itself is dead — revoked, or the OAuth App's own
+   secret rotated — never something a retry recovers from, unlike 403 (a
+   live token that merely lost write access, or transient rate limiting).
+   The same distinction pr-read.service.ts's own `githubReadError` and
+   pr-write.service.ts's `githubWriteError` already draw. */
+function githubErrorHint(status: number): string {
+  if (status === 401) {
+    return (
+      ' — the connector token is invalid or was revoked; reconnect the repository ' +
+      '(Settings → Automation)'
+    );
+  }
+  if (status === 403) {
+    return ' — the connector token no longer has write access, or GitHub is rate limiting';
+  }
+  return '';
+}
+
 function assertMayConnect(actor: WorkActor): void {
   if (!can(actor.subject, 'repo:connect').allowed) {
     throw errors.forbidden(
@@ -186,14 +204,20 @@ export async function createBranchFromCard(
     };
   }
   if (existingRes.status !== 404) {
-    throw errors.serviceUnavailable(`GitHub answered ${String(existingRes.status)}.`);
+    throw errors.serviceUnavailable(
+      `GitHub answered ${String(existingRes.status)}${githubErrorHint(existingRes.status)}.`,
+    );
   }
 
   const repoRes = await fetchFn(`https://api.github.com/repos/${repo}`, {
     headers,
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!repoRes.ok) throw errors.serviceUnavailable(`GitHub answered ${String(repoRes.status)}.`);
+  if (!repoRes.ok) {
+    throw errors.serviceUnavailable(
+      `GitHub answered ${String(repoRes.status)}${githubErrorHint(repoRes.status)}.`,
+    );
+  }
   const repoBody = await repoRes.json();
   const defaultBranch =
     isRecord(repoBody) && typeof repoBody['default_branch'] === 'string'
@@ -207,7 +231,11 @@ export async function createBranchFromCard(
     `https://api.github.com/repos/${repo}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
     { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
   );
-  if (!baseRes.ok) throw errors.serviceUnavailable(`GitHub answered ${String(baseRes.status)}.`);
+  if (!baseRes.ok) {
+    throw errors.serviceUnavailable(
+      `GitHub answered ${String(baseRes.status)}${githubErrorHint(baseRes.status)}.`,
+    );
+  }
   const baseBody = await baseRes.json();
   const baseSha =
     isRecord(baseBody) &&
@@ -227,7 +255,8 @@ export async function createBranchFromCard(
   });
   if (!createRes.ok) {
     throw errors.serviceUnavailable(
-      `GitHub answered ${String(createRes.status)} creating the branch.`,
+      `GitHub answered ${String(createRes.status)} creating the branch` +
+        `${githubErrorHint(createRes.status)}.`,
     );
   }
 
