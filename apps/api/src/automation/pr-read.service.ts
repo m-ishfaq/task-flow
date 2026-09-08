@@ -63,6 +63,15 @@ const DEFAULT_LIST_LIMIT = 10;
 const MAX_TOOL_RESULT_CONTENT_CHARS = 19_500;
 const MAX_COMMENTS = 30;
 const MAX_FILES = 50;
+/** GitHub's `/pulls/{n}/files` endpoint has no "find this one filename"
+    query — the only way to get one file's own `patch` is to page through
+    the same listing `getPullRequestFiles` uses and scan for a match.
+    `per_page=100` (GitHub's own max) keeps this to one request for the
+    overwhelming majority of PRs; capped at 5 pages (500 files) as real
+    input-size hygiene against a pathological PR, the same role `MAX_FILES`
+    plays for the plain listing — a PR that large has bigger problems than
+    this lookup being unable to find one file in it. */
+const MAX_FILE_DIFF_LOOKUP_PAGES = 5;
 /* One page is enough for a rollup — a status DOT needs "did anything fail,
    is anything still running," never the full per-check breakdown a person
    would get by opening the PR on GitHub. */
@@ -440,6 +449,134 @@ export async function getPullRequestFiles(
 
   const body = (await response.json()) as unknown[];
   return body.map(toFile).filter((file): file is PrFile => file !== null);
+}
+
+export interface PrFileDiffResult {
+  readonly prNumber: number;
+  readonly path: string;
+  readonly truncated: boolean;
+  readonly patch: string;
+}
+
+function filePatchTruncationNote(shown: number, total: number): string {
+  return `\n\n… [diff truncated at ${String(shown)} characters; ${String(total - shown)} more characters omitted — open the file on GitHub to see the rest]`;
+}
+
+/**
+ * `fitDiffToBudget`'s own binary-search shape, repeated rather than factored
+ * into one shared generic — the third near-duplicate of that pattern in this
+ * file (alongside `fitFileContentToBudget`), matching `githubReadError`'s own
+ * precedent of writing each case out rather than building an abstraction none
+ * of the others would meaningfully simplify. A single file's own patch is
+ * rarely anywhere near this budget — the whole reason this tool exists is
+ * that ONE file's diff is normally far smaller than the whole PR's — but a
+ * single file can still be enormous, so the same defensive truncation
+ * applies rather than trusting that in every case.
+ */
+function fitFilePatchToBudget(prNumber: number, path: string, raw: string): PrFileDiffResult {
+  const whole: PrFileDiffResult = { prNumber, path, truncated: false, patch: raw };
+  if (JSON.stringify(whole).length <= MAX_TOOL_RESULT_CONTENT_CHARS) return whole;
+
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    const candidate = raw.slice(0, mid) + filePatchTruncationNote(mid, raw.length);
+    const size = JSON.stringify({ prNumber, path, truncated: true, patch: candidate }).length;
+    if (size <= MAX_TOOL_RESULT_CONTENT_CHARS) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return {
+    prNumber,
+    path,
+    truncated: true,
+    patch: raw.slice(0, lo) + filePatchTruncationNote(lo, raw.length),
+  };
+}
+
+/**
+ * One file's own line-by-line diff, within a PR — the gap prompted directly:
+ * a large PR's whole diff (`get_pr_diff`) routinely has to truncate before
+ * showing every file, but `get_pr_files` already tells you the exact SHAPE
+ * (which files, how many lines each) with no truncation risk at all, so
+ * "show me the change to just this one file" has a real, always-answerable
+ * shape this tool exists to serve.
+ *
+ * GitHub's `/pulls/{n}/files` response — the same endpoint
+ * `getPullRequestFiles` already calls — carries a per-file `patch` field
+ * (the unified-diff hunks for JUST that file, no `diff --git`/`---`/`+++`
+ * header the way `get_pr_diff`'s whole-PR diff has one per file) that the
+ * plain file LIST never surfaces. There is no "give me file X's patch"
+ * query GitHub accepts directly, so this pages through the same listing and
+ * scans for a match — bounded by `MAX_FILE_DIFF_LOOKUP_PAGES`, the real
+ * input-size-hygiene role `MAX_FILES` plays for the plain listing.
+ *
+ * A path that does not match any file this PR actually changed is refused
+ * by NAME, pointing at `get_pr_files` for the real list — not a bare
+ * "Not found." the way an invented id elsewhere in this registry once was,
+ * per this codebase's own documented fix for that exact failure mode
+ * (`registry.ts`'s thrown-error prefix).
+ *
+ * GitHub itself omits `patch` for a file it judges too large to diff, or
+ * binary, or a pure rename with no content change — reported back as a
+ * plain-English explanation in `patch` rather than an empty string or a
+ * thrown error, since the file DID match; there is simply nothing to show,
+ * and `get_pr_file_content` is named as the working alternative for seeing
+ * the file's own text.
+ */
+export async function getPullRequestFileDiff(
+  actor: AutomationActor,
+  deps: PrReadDeps,
+  input: {
+    readonly prNumber: number;
+    readonly path: string;
+    readonly repoScope?: string | undefined;
+  },
+): Promise<PrFileDiffResult> {
+  assertMayView(actor);
+  const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
+  const fetchFn = deps.fetchImpl ?? fetch;
+  const repo = repoPath(connector.providerScope);
+  const headers = githubHeaders(connector.token);
+
+  let match: Record<string, unknown> | undefined;
+  for (let page = 1; page <= MAX_FILE_DIFF_LOOKUP_PAGES; page += 1) {
+    const response = await fetchFn(
+      `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}/files?per_page=100&page=${String(page)}`,
+      { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
+    );
+    if (!response.ok) throw githubReadError(response.status);
+    const body = (await response.json()) as unknown[];
+    if (body.length === 0) break;
+    match = body.filter(isRecord).find((file) => file['filename'] === input.path);
+    if (match !== undefined || body.length < 100) break;
+  }
+
+  if (match === undefined) {
+    throw errors.notFound(
+      `"${input.path}" is not one of the files this pull request changed. ` +
+        'Use get_pr_files for the exact list of paths.',
+    );
+  }
+
+  const patch = match['patch'];
+  if (typeof patch !== 'string') {
+    return {
+      prNumber: input.prNumber,
+      path: input.path,
+      truncated: false,
+      patch:
+        'GitHub did not provide a line-by-line diff for this file — it is likely binary, too ' +
+        'large to diff that way, or unchanged in content (e.g. a pure rename). Use ' +
+        'get_pr_file_content to see its current text instead.',
+    };
+  }
+
+  return fitFilePatchToBudget(input.prNumber, input.path, patch);
 }
 
 function rollupChecksStatus(raw: unknown): PrStatus['checksStatus'] {

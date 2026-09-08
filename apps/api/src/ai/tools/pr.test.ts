@@ -23,6 +23,8 @@ import {
   createCreateBranchFromCardTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createGetPrFileContentTool,
+  createGetPrFileDiffTool,
   createGetPrFilesTool,
   createListCardPrsTool,
   createListPrsTool,
@@ -191,7 +193,15 @@ function fakeGithub(): { fetch: typeof fetch } {
     if (method === 'GET' && url.includes('/pulls/1/comments')) return Promise.resolve(json([]));
     if (method === 'GET' && url.includes('/pulls/1/files')) {
       return Promise.resolve(
-        json([{ filename: 'src/index.ts', status: 'modified', additions: 3, deletions: 1 }]),
+        json([
+          {
+            filename: 'src/index.ts',
+            status: 'modified',
+            additions: 3,
+            deletions: 1,
+            patch: '@@ -1,2 +1,3 @@\n context\n-old\n+new\n',
+          },
+        ]),
       );
     }
     if (method === 'POST' && url.includes('/issues/1/comments')) {
@@ -265,12 +275,14 @@ async function makeCard(ctx: ToolContext): Promise<string> {
 }
 
 describe('requiresConfirmation', () => {
-  it('is false for all five PR read tools', () => {
+  it('is false for all seven PR read tools', () => {
     const deps = integrationDeps(fakeGithub().fetch);
     expect(createListReposTool().requiresConfirmation).toBe(false);
     expect(createListPrsTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrDiffTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrFilesTool(deps).requiresConfirmation).toBe(false);
+    expect(createGetPrFileContentTool(deps).requiresConfirmation).toBe(false);
+    expect(createGetPrFileDiffTool(deps).requiresConfirmation).toBe(false);
     expect(createGetPrCommentsTool(deps).requiresConfirmation).toBe(false);
   });
 
@@ -317,6 +329,7 @@ describe('a guest with no pr:view/pr:review/pr:merge/repo:connect grant', () => 
       await createListReposTool().execute(ctx, {}),
       await createListPrsTool(deps).execute(ctx, {}),
       await createGetPrFilesTool(deps).execute(ctx, { prNumber: 1 }),
+      await createGetPrFileDiffTool(deps).execute(ctx, { prNumber: 1, path: 'src/index.ts' }),
       await createPrPostCommentTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
       await createPrRequestChangesTool(deps).execute(ctx, { prNumber: 1, body: 'x' }),
       await createPrApproveTool(deps).execute(ctx, { prNumber: 1 }),
@@ -353,6 +366,30 @@ describe('success paths', () => {
     const parsed = JSON.parse(result.content) as { path: string; status: string }[];
 
     expect(parsed).toEqual([expect.objectContaining({ path: 'src/index.ts', status: 'modified' })]);
+  });
+
+  it("get_pr_file_diff returns just the one file's own patch", async () => {
+    const orgId = await newOrg('pr-file-diff-ok');
+    const ctx = await ownerCtx(orgId);
+    const deps = integrationDeps(fakeGithub().fetch);
+    await connectRepo(ctx, deps);
+
+    const result = await createGetPrFileDiffTool(deps).execute(ctx, {
+      prNumber: 1,
+      path: 'src/index.ts',
+    });
+    const parsed = JSON.parse(result.content) as {
+      path: string;
+      truncated: boolean;
+      patch: string;
+    };
+
+    expect(parsed).toEqual({
+      prNumber: 1,
+      path: 'src/index.ts',
+      truncated: false,
+      patch: '@@ -1,2 +1,3 @@\n context\n-old\n+new\n',
+    });
   });
 
   it('pr_approve returns the shape the frontend renderer expects', async () => {

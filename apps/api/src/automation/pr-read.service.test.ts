@@ -19,6 +19,7 @@ import {
   getPullRequestComments,
   getPullRequestDiff,
   getPullRequestFileContent,
+  getPullRequestFileDiff,
   getPullRequestFiles,
   getPullRequestStatus,
   listConnectedRepos,
@@ -811,6 +812,150 @@ describe('getPullRequestFileContent', () => {
 
     await expect(
       getPullRequestFileContent(member, deps, { prNumber: 1, path: 'src/index.ts' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(fake.calls).toHaveLength(0);
+  });
+});
+
+/** `getPullRequestFileDiff` pages through `/pulls/{n}/files` — the same
+    endpoint `getPullRequestFiles` calls — looking for one filename, so the
+    fake needs to answer per PAGE rather than a flat list the way
+    `getPullRequestFiles`'s own inline wrapper does. `pages[i]` is what page
+    `i + 1` (GitHub's own 1-based `page` param) returns. */
+function fakeGithubWithFiles(pages: readonly (readonly Record<string, unknown>[])[]): {
+  fetch: typeof fetch;
+  calls: string[];
+} {
+  const fake = fakeGithub({});
+  const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (/\/pulls\/\d+\/files/.test(url)) {
+      fake.calls.push(url);
+      const pageParam = new URL(url).searchParams.get('page');
+      const page = pageParam === null ? 1 : Number(pageParam);
+      const body = pages[page - 1] ?? [];
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return fake.fetch(input, init);
+  }) as typeof fetch;
+  return { fetch: fn, calls: fake.calls };
+}
+
+describe('getPullRequestFileDiff', () => {
+  it("returns the matching file's own patch, not the whole PR's", async () => {
+    const { owner } = await scaffold('file-diff-ok');
+    const fake = fakeGithubWithFiles([
+      [
+        { filename: 'src/a.ts', patch: '@@ -1,2 +1,3 @@\n context\n-old\n+new\n' },
+        { filename: 'src/b.ts', patch: '@@ -1 +1 @@\n-x\n+y\n' },
+      ],
+    ]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileDiff(owner, deps, { prNumber: 4, path: 'src/b.ts' });
+
+    expect(result).toEqual({
+      prNumber: 4,
+      path: 'src/b.ts',
+      truncated: false,
+      patch: '@@ -1 +1 @@\n-x\n+y\n',
+    });
+  });
+
+  it('pages through the listing to find a file beyond the first 100', async () => {
+    const { owner } = await scaffold('file-diff-paged');
+    const filler = Array.from({ length: 100 }, (_, i) => ({
+      filename: `src/filler-${String(i)}.ts`,
+      patch: '@@ -1 +1 @@\n-a\n+b\n',
+    }));
+    const target = { filename: 'src/second-page.ts', patch: '@@ -1 +1 @@\n-p\n+q\n' };
+    const fake = fakeGithubWithFiles([filler, [target]]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileDiff(owner, deps, {
+      prNumber: 4,
+      path: 'src/second-page.ts',
+    });
+
+    expect(result.patch).toBe('@@ -1 +1 @@\n-p\n+q\n');
+    expect(fake.calls.filter((call) => call.includes('/files')).length).toBe(2);
+  });
+
+  it('stops after MAX_FILE_DIFF_LOOKUP_PAGES pages rather than paging forever', async () => {
+    const { owner } = await scaffold('file-diff-cap');
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({
+      filename: `src/filler-${String(i)}.ts`,
+      patch: '@@ -1 +1 @@\n-a\n+b\n',
+    }));
+    // A 6th page exists but must never be fetched.
+    const fake = fakeGithubWithFiles([fullPage, fullPage, fullPage, fullPage, fullPage, fullPage]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await expect(
+      getPullRequestFileDiff(owner, deps, { prNumber: 4, path: 'src/never-there.ts' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(fake.calls.filter((call) => call.includes('/files')).length).toBe(5);
+  });
+
+  it('refuses by name, naming get_pr_files, when the path matches no changed file', async () => {
+    const { owner } = await scaffold('file-diff-nomatch');
+    const fake = fakeGithubWithFiles([[{ filename: 'src/a.ts', patch: '@@ -1 +1 @@\n-x\n+y\n' }]]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await expect(
+      getPullRequestFileDiff(owner, deps, { prNumber: 4, path: 'src/nope.ts' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(
+      getPullRequestFileDiff(owner, deps, { prNumber: 4, path: 'src/nope.ts' }),
+    ).rejects.toThrow(/is not one of the files this pull request changed/);
+  });
+
+  it('explains rather than fails when GitHub gives no patch (binary/too large/pure rename)', async () => {
+    const { owner } = await scaffold('file-diff-nopatch');
+    const fake = fakeGithubWithFiles([[{ filename: 'assets/logo.png', status: 'modified' }]]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileDiff(owner, deps, {
+      prNumber: 4,
+      path: 'assets/logo.png',
+    });
+
+    expect(result.truncated).toBe(false);
+    expect(result.patch).toContain('did not provide a line-by-line diff');
+  });
+
+  it('keeps the serialized result under the tool-result content budget for a huge patch', async () => {
+    const { owner } = await scaffold('file-diff-truncated');
+    const hugePatch = '@@ -1,1 +1,4000 @@\n' + '+line\n'.repeat(4000);
+    const fake = fakeGithubWithFiles([[{ filename: 'src/big.ts', patch: hugePatch }]]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileDiff(owner, deps, { prNumber: 4, path: 'src/big.ts' });
+
+    expect(result.truncated).toBe(true);
+    expect(result.patch).toContain('diff truncated at');
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(20_000);
+  });
+
+  it('refuses a member with no pr:view grant, before any network call', async () => {
+    const { owner, member } = await scaffold('file-diff-refused');
+    const fake = fakeGithubWithFiles([[{ filename: 'src/a.ts', patch: '@@ -1 +1 @@\n-x\n+y\n' }]]);
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(
+      getPullRequestFileDiff(member, deps, { prNumber: 4, path: 'src/a.ts' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(fake.calls).toHaveLength(0);
   });

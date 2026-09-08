@@ -4033,6 +4033,74 @@ reason. Verified by what a sandbox without one can prove: `tsc`, `eslint`, and t
 selftest, all clean. A person should open a board at a narrow viewport and click "Tools" before
 calling this done.
 
+### Phase 15 §7 — `get_pr_file_diff`, one file's own change within a large PR (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts`'s `getPullRequestFileDiff`/`fitFilePatchToBudget` ·
+`apps/api/src/ai/tools/pr.ts`'s `get_pr_file_diff` · `apps/web/src/features/ai/tool-results.tsx`'s
+`renderGetPrFileDiff`. Prompted directly: `get_pr_diff` truncates on a genuinely large PR (this
+session's own real example, PR #134), and once truncated there was no way to ask for just one
+file's own change — `get_pr_files` already lists every path with no truncation risk, but had
+nothing to hand back once a person picked one.
+
+**GitHub's `/pulls/{n}/files` response — the same endpoint `getPullRequestFiles` already calls —
+carries a per-file `patch` field the plain listing never surfaced: the unified-diff HUNKS for
+just that one file, with none of the `diff --git`/`---`/`+++` header lines a whole-PR diff has
+one of per file.** There is no "give me just this file" query GitHub accepts on that endpoint, so
+`getPullRequestFileDiff` pages through the same listing (`per_page=100`, GitHub's own max) and
+scans for a filename match — bounded at `MAX_FILE_DIFF_LOOKUP_PAGES = 5` (500 files), the
+identical real-input-size-hygiene role `MAX_FILES` already plays for the plain listing: a PR that
+large has bigger problems than this lookup being unable to find one file in it.
+
+**A path that matches no changed file is refused BY NAME, pointing at `get_pr_files` for the real
+list — never a bare "Not found."** — the exact failure mode this file's own Phase 15 §4 Wave 1
+section already documents finding and fixing once for `card_add_labels` (a model fabricating a
+plausible-looking id that fails a foreign key with no indication which call even failed). A PR
+number and a file path are both caller-supplied here with nothing local to validate them against
+until the real GitHub response comes back, so the refusal is written explicitly rather than
+inherited from a generic error path.
+
+**When GitHub itself omits `patch` — a binary file, one too large to diff that way, or a pure
+rename with no content change — the result carries a plain-English explanation in `patch` instead
+of an empty string or a thrown error**, naming `get_pr_file_content` as the working alternative for
+seeing the file's own text. The file DID match; there is simply nothing GitHub will show as a diff
+for it, which is a different, non-error outcome from the path not matching at all.
+
+**Truncation is `fitDiffToBudget`'s own binary-search shape, a third near-duplicate rather than a
+shared generic — matching this file's own `githubReadError` precedent of writing each case out
+per-status rather than building an abstraction for two.** A single file's own patch is rarely
+anywhere near `MAX_TOOL_RESULT_CONTENT_CHARS` — the whole reason this tool exists is that one
+file's diff is normally far smaller than the whole PR's — but a single file can still be huge, so
+the same defensive truncation applies rather than assuming it never will be.
+
+**The frontend reuses `DiffView`/`parseUnifiedDiff` wholesale, synthesizing a minimal `diff --git`
+header around the raw per-file `patch` — but ONLY when the patch actually looks like real hunk
+syntax (`trimStart().startsWith('@@')`).** Wrapping GitHub's explanatory "no diff available"
+sentence in that same synthetic header would have been a real bug caught before shipping: with a
+header but no `@@` line, `parseUnifiedDiff` opens a file with zero hunks and `DiffView` renders an
+empty box, silently swallowing the explanation. Left unwrapped, that same text has no `diff --git`
+line for the parser to find, `parseUnifiedDiff` returns zero files, and `DiffView`'s own
+no-files-parsed fallback renders it as plain preformatted text — exactly right for a sentence, and
+free, since that fallback already existed for a diff shape the parser could not otherwise
+recognize.
+
+**The service's own `patch` field stays exactly what GitHub gave it — no header synthesized
+server-side.** The synthetic wrapping is a presentation-only transformation that belongs in the
+renderer alone; a raw per-file patch is also the more useful shape for anything else that might
+read this result later, the model's own reasoning about it included.
+
+**The system prompt tells the model explicitly: on a `get_pr_diff` truncation, call `get_pr_files`
+for the untruncated list, then `get_pr_file_diff` once per file the user actually wants — never
+tell the user the rest of the change cannot be shown.** This is the concrete workflow the feature
+exists to enable, stated directly in `router.ts` rather than left for the model to infer from the
+tool's own description.
+
+**Tests prove the pagination bound directly** (`pr-read.service.test.ts`'s own cap-boundary case:
+six full pages of filler files, five real requests made, the sixth never fetched) **alongside the
+match/no-match/no-patch/truncation/refused-before-network-call properties every other tool in this
+registry is held to.** `pr.test.ts`'s own drift — its `requiresConfirmation` test still said "all
+five PR read tools" after `get_pr_file_content` shipped with no update to that count — was
+corrected in the same pass rather than left to compound a second time.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

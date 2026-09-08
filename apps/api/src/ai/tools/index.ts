@@ -30,6 +30,7 @@ import {
   createGetPrCommentsTool,
   createGetPrDiffTool,
   createGetPrFileContentTool,
+  createGetPrFileDiffTool,
   createGetPrFilesTool,
   createListCardPrsTool,
   createListPrsTool,
@@ -184,6 +185,16 @@ export interface ToolRegistryDeps {
  * rather than a shared generic, matching this file's own
  * `githubReadError` precedent of writing each status hint out rather than
  * building a table for two.
+ *
+ * `get_pr_file_diff` closes the gap prompted directly once a PR's own diff
+ * (`get_pr_diff`) got too large to show whole: `get_pr_files` already lists
+ * every changed path with no truncation risk, but had no way to then ask
+ * for one of those files' own line-by-line change — the natural "narrow
+ * down and drill in" a person or the model would reach for on a huge PR.
+ * Pages through the same `/pulls/{n}/files` listing `getPullRequestFiles`
+ * already calls and reads that response's own per-file `patch` field (never
+ * surfaced by the plain list), scanning for a name match since GitHub has
+ * no "give me just this file" query on that endpoint.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -215,6 +226,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createGetPrDiffTool(deps.prReadDeps),
     createGetPrFilesTool(deps.prReadDeps),
     createGetPrFileContentTool(deps.prReadDeps),
+    createGetPrFileDiffTool(deps.prReadDeps),
     createGetPrCommentsTool(deps.prReadDeps),
     createPrPostCommentTool(deps.prReadDeps),
     createPrRequestChangesTool(deps.prReadDeps),

@@ -6,6 +6,7 @@ import {
   getPullRequestComments,
   getPullRequestDiff,
   getPullRequestFileContent,
+  getPullRequestFileDiff,
   getPullRequestFiles,
   listConnectedRepos,
   listPullRequests,
@@ -221,6 +222,38 @@ export function createGetPrFileContentTool(deps: PrReadDeps): ToolDefinition {
     inputSchema: GetFileContentInput,
     async execute(ctx, input) {
       const result = await getPullRequestFileContent(actorOf(ctx), deps, input);
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+export function createGetPrFileDiffTool(deps: PrReadDeps): ToolDefinition {
+  return defineTool({
+    name: 'get_pr_file_diff',
+    description:
+      "Fetches ONE file's own line-by-line change within a pull request — the fix for a large " +
+      'PR where `get_pr_diff` truncates before showing everything. Call `get_pr_files` first to ' +
+      'get the exact list of paths this PR touches, then call this once per file the user cares ' +
+      'about. Get the exact `path` from `get_pr_files` — this refuses cleanly if it does not ' +
+      'match a real changed file. May report that GitHub gave no diff for this file (binary, too ' +
+      'large, or a pure rename) — in that case use `get_pr_file_content` instead.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        path: {
+          type: 'string',
+          description: 'The file path within the repository, exactly as get_pr_files reports it.',
+        },
+        ...RepoScopeProperty,
+      },
+      required: ['prNumber', 'path'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: GetFileContentInput,
+    async execute(ctx, input) {
+      const result = await getPullRequestFileDiff(actorOf(ctx), deps, input);
       return { content: JSON.stringify(result) };
     },
   });

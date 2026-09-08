@@ -1017,6 +1017,51 @@ function renderGetPrFileContent(result: ToolResultMessage): ReactNode | null {
   );
 }
 
+/**
+ * One file's own diff within a PR — reuses `DiffView`/`parseUnifiedDiff`
+ * wholesale rather than a second implementation, even though GitHub's
+ * per-file `patch` field (what `get_pr_file_diff` returns) is NOT a
+ * complete unified diff on its own: it is just the `@@ ...@@` hunks, with
+ * none of the `diff --git`/`---`/`+++` header lines `parseUnifiedDiff`
+ * needs to recognize a file boundary at all. A minimal synthetic header is
+ * prepended, in the renderer only — the service's own `patch` field stays
+ * exactly what GitHub gave it, since a raw per-file patch is also the more
+ * useful shape for anything else that might read this result later (the
+ * model's own reasoning included).
+ *
+ * The synthetic header is added ONLY when `patch` actually looks like real
+ * hunk syntax (starts with `@@`) — real GitHub `patch` text always does
+ * when present. When GitHub gave no patch at all (a binary file, one too
+ * large to diff, or a pure rename), `getPullRequestFileDiff` puts a
+ * plain-English explanation in `patch` instead, and wrapping THAT in a
+ * synthetic `diff --git` header would be a real bug: `parseUnifiedDiff`
+ * would open a file with zero hunks (nothing in the sentence matches `@@`)
+ * and `DiffView` would render an empty box, silently swallowing the
+ * explanation entirely. Passed through unwrapped instead, the same text
+ * has no `diff --git` line for `parseUnifiedDiff` to find, `files.length`
+ * comes back `0`, and `DiffView`'s own no-files-parsed fallback renders it
+ * as plain preformatted text — exactly right for a sentence, and free.
+ */
+function renderGetPrFileDiff(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!isRecord(parsed)) return null;
+  const path = stringField(parsed, 'path');
+  const patch = stringField(parsed, 'patch');
+  if (path === null || patch === null) return null;
+  const truncated = parsed['truncated'] === true;
+
+  const diff = patch.trimStart().startsWith('@@')
+    ? `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patch}`
+    : patch;
+
+  return (
+    <ResultPanel>
+      <DiffView diff={diff} truncated={truncated} />
+    </ResultPanel>
+  );
+}
+
 function renderListRepos(result: ToolResultMessage): ReactNode | null {
   if (result.isError === true) return <ErrorNote message={result.content} />;
   const parsed = parseJson(result.content);
@@ -1266,6 +1311,7 @@ const RENDERERS: Readonly<
   get_pr_diff: (result) => renderGetPrDiff(result),
   get_pr_files: (result) => renderGetPrFiles(result),
   get_pr_file_content: (result) => renderGetPrFileContent(result),
+  get_pr_file_diff: (result) => renderGetPrFileDiff(result),
   get_pr_comments: (result) => renderGetPrComments(result),
   pr_post_comment: (result, call) => renderPrPostComment(result, call),
   pr_request_changes: (result, call) => renderPrRequestChanges(result, call),
