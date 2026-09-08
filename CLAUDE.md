@@ -487,6 +487,77 @@ member" form now calls `invitations.send` instead of `members.add` — the actua
 closes — but has no resend/revoke UI or pending list yet, a real, narrower scope for this pass
 rather than an oversight this screen was built to ignore.
 
+### Email invitations — onboarding a person with NO account yet (SHIPPED, closes a real gap)
+
+`apps/api/src/tenancy/invitation.service.ts`'s `previewInvitation` · `tenancy.invitations.preview`
+(a `publicRoute`) · `apps/web/src/lib/pending-next.ts` · `apps/web/src/features/auth/
+invite-preview.ts` · `login-page.tsx`/`register-page.tsx`/`verify-email-page.tsx`'s invite-aware
+changes. Prompted directly, from a real question: "are we sure enough once signup the invite link
+will still be available to land on it" — this codebase's own answer, honestly, had been NO.
+
+**Every hop in the multi-step signup chain — `/login` → `/register` → a SEPARATE verification
+email → back to `/login` — dropped the destination on the floor, one link at a time, and this was
+true even OUTSIDE the invitation case.** `acceptInviteRoute`'s own `beforeLoad` correctly carries
+the invite token into `next` when bouncing an unauthenticated visitor to `/login` — but
+`login-page.tsx`'s "Create one" link was a bare `<Link to="/register">` with no `search` at all,
+`registerRoute` had no `next` search field to receive one if it had, and `verify-email-page.tsx`'s
+"Go to sign in" link (on EVERY registration, not just an invite-driven one) was a bare
+`<Link to="/login">`. Someone who had no account yet, followed the invite link, registered, and
+verified their email landed on a plain `/projects` or `/orgs` with no route back to the invitation
+they started from — they had to dig the original email back out and click it a second time.
+
+**`next` cannot travel through registration the way it travels through login, and the reason is
+structural, not a bug in how it was wired: `auth.register` answers "check your email" with no
+session and no redirect, and the verification link that follows is clicked from wherever the mail
+client opens it — often a NEW TAB, sometimes days later.** A destination held in this tab's React
+state, or even a URL param on `/register` itself, is already gone by the time that click happens.
+`pending-next.ts`'s `storePendingNext`/`peekPendingNext`/`clearPendingNext` close that gap with
+`localStorage` — shared across every tab of the same browser, unlike `sessionStorage` — accepting
+for a single-use, narrowly-scoped invitation token (join one org, as one role, for one email) the
+identical trade `session.ts`'s own header explicitly REFUSES for the access token: an XSS reading
+this can redeem one pending invite early, not act as the user. Explicitly does NOT cover verifying
+on a different device than the one used to register (a phone's inbox opening a link nothing on
+that phone's browser ever stored) — a real, stated limitation rather than something hidden;
+closing that would mean encoding the destination into the verification email's own link, a change
+to `apps/api/src/identity`'s mail pipeline this fix does not need for the common case (verifying
+in the same browser, even a different tab) to work.
+
+**`peekPendingNext`/`clearPendingNext` are deliberately TWO functions, not one read-and-clear —
+the identical split `assistant-seed.ts`'s own `useAssistantSeedStore` already makes, for the
+identical StrictMode reason.** A single "read and consume" function called from a lazy `useState`
+initializer would clear `localStorage` on React StrictMode's THROWAWAY first invocation and hand
+the kept render `null`, degrading a feature that works in production into one that silently drops
+the destination in dev. `VerifyEmailPage` peeks in its initializer (safe to call twice — no side
+effect) and clears from an effect keyed on `verify.isSuccess` (idempotent to run twice —
+`removeItem` on an absent key is a no-op).
+
+**The second half of "not good onboarding" was about someone who has NEVER used the product at
+all — no account, no context, landing on a bare sign-in form with nothing telling them why they
+are there.** `tenancy.invitations.preview` is a new `publicRoute` (no session, the token itself is
+the proof — the identical trust model `auth.verifyEmail`/`auth.resendVerification` already use for
+a mailed, single-use token) returning the org name, invited email, and role. Revealing the invited
+email back to whoever holds the token is not a new disclosure: it is the address that already
+received this exact link in its own inbox. Read-only — an expired row is left for `acceptInvitation`
+itself to flip to `'expired'` on redemption; a page load, or a mail-scanner prefetch, must not have
+a mutating side effect (`invitation.service.test.ts`'s own `previewInvitation` case proves the
+status stays `'pending'` after a refused, expired preview).
+
+**Both `/login` and `/register` preview the invite (via `inviteTokenFromNext`, parsing the token out
+of a `next` path that names `/invite/accept`) and show "You've been invited to join {orgName}" —
+context an unauthenticated visitor previously had zero of.** `/register` goes one step further:
+`invitedEmail` locks the email field (`values`, not `defaultValues` — react-hook-form's `values`
+option re-syncs once the preview query resolves after the form has already mounted, deep-compared
+so it does not fight a person's own typing in the OTHER fields). Locking is not a UX nicety — the
+only account that can ever redeem this invitation is one registered under that EXACT address, per
+`acceptInvitation`'s own email-match check, so letting someone type a different one would mean
+discovering the mismatch only after already registering and verifying, for nothing.
+
+**Deliberately not built: any of this on `apps/mobile`.** Email invitations' own mobile scope was
+already "the functional swap only, not the pending-invitations list" — this pass is the same web-only
+scoping, for the identical reason: mobile has no deep-link handler for `/invite/accept` at all today,
+and building one is real, separate work (app-scheme registration, a native equivalent of this whole
+multi-hop chain) this fix does not attempt.
+
 ### Phase 15 §1 — org-level permission grants (SHIPPED, extended past its own spec)
 
 `packages/policy/src/permissions.ts` (`GRANTABLE_PERMISSIONS`) · `authz.member_grants` ·
@@ -3721,6 +3792,48 @@ every other card-detail edit), and a My Tasks / cross-board calendar** — `home
 view switcher at all today, board-scoped or otherwise, and adding a calendar there is a separate,
 real piece of work rather than a natural extension of this one.
 
+### Calendar view — day popover, overdue cue, a real small-screen layout (SHIPPED)
+
+`apps/web/src/features/work/calendar-view.tsx`. Prompted directly: "very basic, not good... need
+more features" and "the small screen view is not good, fully responsive." Both real, and both
+about the SAME first version — a fixed 7-column grid with no way to see a day's full card list and
+no responsive behavior at all below desktop width.
+
+**Three additions, not a rewrite — the same `byDay` bucketing this view already built stays the
+one data model both renderers now read.** A day cell's "+N more" used to be dead, static text —
+the report the calendar's own dead-end complaint traces to directly. It is now a real
+`PopoverRoot`/`PopoverTrigger`/`PopoverContent` (the identical primitive `card-tile.tsx`'s own
+quick-assign popover already uses, not a new pattern) opening the day's FULL card list, scrollable,
+each row still opening the real card via the same `onOpenCard` the truncated inline rows already
+call. A day strictly before today with at least one card gets its date number tinted `text-danger`
+— `isOverdueDay`, the same date-only definition `lib/format.ts`'s `formatDueDate` already uses for
+a card tile's own overdue badge (never accounting for the card's own completion status — matched
+to that existing precedent rather than inventing a stricter one). Neither addition needed a second
+query or a second bucketing pass; both read the one `byDay` map the component already built.
+
+**The responsive fix is two renderers over the identical `byDay` data, not one grid trying to
+survive every width.** A cramped `min-h-24` cell with three lines of truncated titles does not
+hold up on a phone — found from a real report, not a design review, and confirmed by the fact that
+nothing in the original component had ANY breakpoint logic at all. Below `md:` (`useIsDesktop`,
+the SAME 768px breakpoint the rest of this app already coordinates its own responsive layouts
+against — not a new number invented for this one view), the grid is replaced entirely by an
+`AgendaList`: one row per day that actually has a card, chronological, full untruncated titles,
+each card showing its reference alongside the title the way a list view already does. Days with
+nothing due are simply absent — the identical instinct mobile calendar apps already apply to an
+agenda view, and the one that actually answers "what's coming up" on a screen too narrow for a
+grid to mean anything. A month with zero cards gets one plain empty state rather than an agenda of
+nothing.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+run against**, the identical caveat this feature's own first section already states. Verified by
+what a sandbox without one can prove: `tsc`, `eslint`, both clean. A person should open a board,
+resize below 768px, and click a day's "+N more" before calling this done.
+
+**Deliberately not built in this pass: multi-select/bulk actions from the popover, drag-to-
+reschedule (unchanged from the original scope note above), and per-priority filtering inside the
+calendar itself** — the three additions above are what the report actually asked for; widening the
+surface further belongs in its own pass if wanted.
+
 ### Standup email subscriptions (SHIPPED) — the "later" Phase 15 §5 deferred
 
 `packages/db/migrations/0108_standup_subscriptions.*` · `platform.standup_subscriptions` ·
@@ -3829,6 +3942,50 @@ proving the property only real Postgres can: the JOIN's counterparty decryption 
 correctly, the `attachedCardIds` batch join is correct against a real `recording_cards` row, the
 `before` cursor genuinely excludes what came at or after it, and a Member — who holds no
 `recording:read` — is refused before any row is read.
+
+### Standup email digest — team roster vs. personal-only, decided per subscriber (SHIPPED)
+
+`apps/api/src/standup/standup-mail.ts`'s `StandupDigestScope` · `digest-sweep.ts`'s `scopeFor`.
+Prompted directly, as a real question rather than a bug report: "if we have a member or guest we
+cant and should not email him all others task but for admin or others we can... how can we decide
+this."
+
+**The interactive standup PAGE was never in question, and stays exactly as it was — every project
+Member can already open it and see the whole roster, and that is correct.** `standup.service.ts`'s
+own header states why: a standup answers "what is my team doing right now," a question every
+Member already needs the board for, so `query` floors on `project:read`, not `analytics:read`. The
+question this pass actually answers is a DIFFERENT one: a daily EMAIL pushed into an inbox is a
+different kind of exposure than a page someone chooses to open — mailing a Member or Guest the
+whole team's task list every morning is real, unsolicited noise about colleagues who are not that
+person's concern to track, even though nothing about the PAGE's own permission model calls that
+disclosure wrong.
+
+**`scopeFor` decides per SUBSCRIBER, reusing `analytics:read` rather than inventing a new
+permission or a role string comparison.** `can(actor.subject, 'analytics:read').allowed` is the
+identical Admin/Owner-only, "answers a management question" floor `apps/api/src/analytics` already
+uses — re-read here, not reinvented, and the one clean answer to "how do we decide": whoever
+already clears the bar for a management report gets the full team digest; everyone else (Member,
+Guest) gets a personal-only one. This also sidesteps guardrail 7 entirely — `role === 'admin'`
+outside `packages/policy` is a lint error, and routing the decision through `can()` is the
+sanctioned way to ask this kind of question rather than comparing `actor.subject.role` inline.
+
+**`sendStandupDigest` gained exactly one new required field, `scope`, plus `recipientUserId` to
+know which `StandupMember` is "you" — no new subsystem, no new table.** `scope: 'team'` is the
+UNCHANGED original rendering (headline, every member capped at `MAX_MEMBER_ROWS`). `scope:
+'personal'` filters `standup.members` down to the one row matching `recipientUserId`, drops the
+headline entirely (a team-wide aggregate has nothing to say about one person), and needs no member
+cap (there is only ever one row). A member the query returns nothing for — reachable only if the
+subscriber's own row is somehow absent from `queryStandup`'s result — gets "Nothing to report
+today." rather than an empty table, the same "say something, never render blank" instinct this
+codebase applies to every other digest.
+
+**The subscribe TOGGLE on the standup page now says which shape it will actually send, reusing the
+exact SAME capability field the server used to decide it.** `willGetTeamDigest` reads
+`orgDetailQuery`'s existing `capabilities.viewAnalytics` (already computed from `analytics:read`
+for the Analytics nav item) rather than a second client-side check — so the button's own tooltip
+text ("Email me the whole team's standup daily" vs. "Email me my own tasks from this standup
+daily") can never drift from what the sweep will actually mail, because both read the identical
+permission.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 

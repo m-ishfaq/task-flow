@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InvitationIdSchema, OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
-import { route, router, selfRoute } from '../trpc/builder.js';
+import { publicRoute, route, router, selfRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import type { Actor } from './org.service.js';
 import * as orgs from './org.service.js';
@@ -268,6 +268,22 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .mutation(({ input, ctx }) =>
           invitations.revokeInvitation(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
+
+      /**
+       * `publicRoute` — no session, the token itself is the proof, same
+       * trust model as `auth.verifyEmail`. Lets `/login`, `/register` and
+       * `/invite/accept` say "You're invited to join {orgName}" and
+       * pre-fill the invited address BEFORE anyone signs in, closing the
+       * onboarding gap for someone with no account yet: see
+       * `previewInvitation`'s own header.
+       */
+      preview: publicRoute({
+        publicReason:
+          "Read from the invite link itself, before any session exists — the token is the proof, the same reason auth.verifyEmail is public. Reveals only what the invited address's own inbox already received.",
+      })
+        .input(z.object({ token: z.string().min(1).max(200) }).strict())
+        .output(z.object({ orgName: z.string(), email: z.string(), role: z.string() }))
+        .query(({ input }) => invitations.previewInvitation(input)),
 
       /**
        * `selfRoute`, like `orgs.create`/`orgs.list` above and for the

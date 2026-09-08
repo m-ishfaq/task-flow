@@ -96,8 +96,18 @@ export function StandupPage() {
      `/assistant` wraps its whole route in. A member without either simply
      does not see the button, per Phase 15 §1's "hide entirely" rule; the
      server re-checks both regardless. */
-  const canUseAi = useQuery(orgDetailQuery(orgId)).data?.capabilities.useAi === true;
+  const orgDetail = useQuery(orgDetailQuery(orgId));
+  const canUseAi = orgDetail.data?.capabilities.useAi === true;
   const aiAssistantFlag = useFeatureGranted('aiAssistant');
+
+  /* The SAME `analytics:read`-shaped question `digest-sweep.ts`'s own
+     `scopeFor` decides the mailed digest with — read here purely to word
+     the toggle honestly, never to gate it (the toggle itself needs nothing
+     beyond `query`'s own `project:read`, see the comment on `subscription`
+     below). `viewAnalytics` is `orgDetailQuery`'s existing Admin/Owner
+     capability field; reusing it rather than a second computation is what
+     keeps this label unable to drift from what the sweep actually sends. */
+  const willGetTeamDigest = orgDetail.data?.capabilities.viewAnalytics === true;
 
   const narrate = useMutation({
     mutationFn: () => narrateStandup(projectId, sinceHours),
@@ -145,7 +155,9 @@ export function StandupPage() {
                 title={
                   subscription.data.subscribed
                     ? 'Stop emailing me this standup daily'
-                    : 'Email me this standup daily'
+                    : willGetTeamDigest
+                      ? "Email me the whole team's standup daily"
+                      : 'Email me my own tasks from this standup daily'
                 }
                 onClick={() => {
                   toggleSubscription.mutate();

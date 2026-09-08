@@ -209,6 +209,82 @@ export async function createInvitation(
   return { status: 'invited' as const };
 }
 
+export interface InvitationPreview {
+  readonly orgName: string;
+  readonly email: string;
+  readonly role: string;
+}
+
+/**
+ * What an invitation link SAYS before anyone is signed in — no session
+ * required, the token itself is the proof, the identical trust model
+ * `verifyEmail`/`resetPassword` already use for a mailed, single-use token.
+ *
+ * Exists for exactly one onboarding gap: someone with no TaskFlow account
+ * yet, landing on an invite link, used to be bounced straight to a bare
+ * `/login` with nothing to go on — no org name, no hint about which address
+ * to sign up with. `AcceptInvitePage`/`LoginPage`/`RegisterPage` call this to
+ * show "You're invited to join {orgName}" and pre-fill (and lock) the
+ * register form's email to the address the invitation actually names, so a
+ * new person cannot accidentally create an account under the wrong address
+ * and hit `acceptInvitation`'s email-mismatch refusal after already doing
+ * the work of registering and verifying.
+ *
+ * Revealing the invited email back to whoever holds the token is not a new
+ * disclosure: it is the address that already received this exact link in
+ * its own inbox. Same generic `errors.notFound()` as `acceptInvitation`
+ * itself for an invalid, revoked, or expired token — this cannot be used to
+ * probe which of those a given link is, or to enumerate valid tokens (the
+ * token is a high-entropy secret, not a guessable id).
+ */
+export async function previewInvitation(input: {
+  readonly token: string;
+}): Promise<InvitationPreview> {
+  const tokenHash = hashToken(input.token);
+  const orgId = await resolveOrgByInvitationToken(tokenHash);
+  if (orgId === undefined) throw errors.notFound('That invitation link is invalid or has expired.');
+
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({
+        email: schema.invitations.email,
+        role: schema.invitations.role,
+        expiresAt: schema.invitations.expiresAt,
+      })
+      .from(schema.invitations)
+      .where(
+        and(
+          eq(schema.invitations.orgId, orgId),
+          eq(schema.invitations.tokenHash, tokenHash),
+          eq(schema.invitations.status, 'pending'),
+        ),
+      )
+      .limit(1);
+
+    const invitation = rows[0];
+    if (!invitation) throw errors.notFound('That invitation link is invalid or has expired.');
+
+    /* Read-only — an expired row is left for `acceptInvitation` to flip to
+       `'expired'` when someone actually tries to redeem it. A page load
+       (or a mail-scanner prefetch) must not have a mutating side effect. */
+    if (invitation.expiresAt <= new Date()) {
+      throw errors.notFound('That invitation link is invalid or has expired.');
+    }
+
+    const org = await tx
+      .select({ name: schema.orgs.name })
+      .from(schema.orgs)
+      .where(eq(schema.orgs.id, orgId))
+      .limit(1);
+
+    return {
+      orgName: org[0]?.name ?? 'your organization',
+      email: invitation.email,
+      role: invitation.role,
+    };
+  });
+}
+
 export async function revokeInvitation(
   orgId: OrgId,
   input: { readonly invitationId: InvitationId },

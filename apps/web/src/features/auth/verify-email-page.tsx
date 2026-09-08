@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { Link, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { Button, Spinner } from '../../components/primitives.js';
 import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
+import { clearPendingNext, peekPendingNext } from '../../lib/pending-next.js';
 
 /**
  * The destination of the link in a verification email.
@@ -50,6 +52,19 @@ export function VerifyEmailPage() {
     mutationFn: (value: string) => api.auth.verifyEmail.mutate({ token: value }),
   });
 
+  /* A lazy initializer, not a bare call in the render body — see
+     `pending-next.ts`'s own header on why peeking and clearing are split
+     across an initializer and an effect. `RegisterPage` stashed this
+     BEFORE submitting, on the chance registration itself never completed
+     (a network failure, a closed tab) — so this may be stale or absent,
+     and that is fine: `PendingNextLink` below falls back to a plain
+     `/login` with no destination when it is null. */
+  const [pendingNext] = useState(() => peekPendingNext());
+
+  useEffect(() => {
+    if (verify.isSuccess) clearPendingNext();
+  }, [verify.isSuccess]);
+
   if (token === undefined) {
     return (
       <Frame>
@@ -68,7 +83,7 @@ export function VerifyEmailPage() {
     return (
       <Frame>
         <p className="text-sm text-ink">Your email address is confirmed. You can sign in now.</p>
-        <Link to="/login">
+        <Link to="/login" search={{ next: pendingNext ?? undefined }}>
           <Button variant="primary">Go to sign in</Button>
         </Link>
       </Frame>
@@ -117,10 +132,10 @@ export function VerifyEmailPage() {
 
       {verify.isError && (
         <div className="flex gap-2">
-          <Link to="/login">
+          <Link to="/login" search={{ next: pendingNext ?? undefined }}>
             <Button>Sign in</Button>
           </Link>
-          <Link to="/register">
+          <Link to="/register" search={{ next: pendingNext ?? undefined }}>
             <Button variant="ghost">Register again</Button>
           </Link>
         </div>

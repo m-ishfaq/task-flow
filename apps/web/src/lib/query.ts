@@ -121,6 +121,9 @@ export const keys = {
   /** Personal, not org-scoped — a passkey signs into the account, not one org. */
   passkeys: () => ['auth', 'passkeys'] as const,
 
+  /** Pre-auth — an invitation link's own preview, read before any session exists. */
+  invitationPreview: (token: string) => ['auth', 'invitationPreview', token] as const,
+
   /** Whether the caller's own account has a confirmed TOTP factor (Phase 12 Wave 2 §3.2). */
   totpStatus: () => ['auth', 'totp', 'status'] as const,
 

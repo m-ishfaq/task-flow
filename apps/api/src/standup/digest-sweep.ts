@@ -2,10 +2,15 @@ import { and, eq, schema, withAuditScope, withOrgScope } from '@taskflow/db';
 import { unsafeAsId, type OrgId, type ProjectId, type UserId } from '@taskflow/contracts';
 import type { Logger } from '@taskflow/observability';
 import { newId } from '@taskflow/security';
+import { can } from '@taskflow/policy';
 import { resolveOrgMembership } from '../tenancy/resolve.js';
 import type { WorkActor } from '../work/shared.js';
 import { queryStandup } from './standup.service.js';
-import { sendStandupDigest, type StandupMailDeps } from './standup-mail.js';
+import {
+  sendStandupDigest,
+  type StandupDigestScope,
+  type StandupMailDeps,
+} from './standup-mail.js';
 
 /**
  * Drives the standup-subscription digest on a daily timer — the same
@@ -49,7 +54,27 @@ import { sendStandupDigest, type StandupMailDeps } from './standup-mail.js';
  * left alone: this sweep only sends mail, it never deletes a subscription,
  * so a temporary access loss (a tuple edited back) resumes on its own the
  * next day with no re-subscribe needed.
+ *
+ * ## Team digest vs. personal digest
+ *
+ * `standup.service.ts`'s own `query` deliberately floors on `project:read`,
+ * not `analytics:read` — every project Member is meant to see the whole
+ * team's buckets ON THE PAGE, because a standup answers a question a plain
+ * Member needs the board for anyway. A daily EMAIL pushed into an inbox is
+ * a different kind of exposure than a page someone opens on their own, and
+ * mailing a Member or Guest the whole roster's tasks every morning is real
+ * noise about colleagues who are not that person's concern to track. So
+ * `scopeFor` decides per subscriber, not per project: anyone who clears
+ * `analytics:read` (Admin/Owner — the identical management-question floor
+ * `apps/api/src/analytics` already uses, re-read here rather than
+ * reinvented) gets the full `'team'` digest; everyone else gets `'personal'`
+ * — their own row alone. Nothing about `query`'s own floor changes; the
+ * page still shows the whole team to any Member who opens it.
  */
+
+function scopeFor(actor: WorkActor): StandupDigestScope {
+  return can(actor.subject, 'analytics:read').allowed ? 'team' : 'personal';
+}
 
 interface PendingSubscription {
   readonly orgId: string;
@@ -150,6 +175,8 @@ async function sendOneDigest(
       projectName: details.projectName,
       projectId: subscription.projectId,
       standup,
+      scope: scopeFor(actor),
+      recipientUserId: subscription.userId,
     });
   } catch (error) {
     // A suspended membership, a deleted project, or any other refusal —

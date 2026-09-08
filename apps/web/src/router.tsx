@@ -110,31 +110,44 @@ function requireOrg(pathname: string) {
   return useSession.getState().orgId === null ? redirect({ to: '/orgs' }) : undefined;
 }
 
+/**
+ * Where to return once authenticated — shared by `/login` and `/register`
+ * so a destination survives either path into a session (sign in directly,
+ * or create an account first). A PATH, never a URL:
+ * `next=https://evil.example` in a link would make the sign-in page a
+ * redirector to an attacker's site carrying our branding — the classic
+ * open-redirect phish. Anything not starting with a single `/` is
+ * discarded, and `//host` is rejected too because browsers read it as
+ * protocol-relative and follow it off-site.
+ */
+const NextSearch = z.object({
+  next: z
+    .string()
+    .refine((value) => value.startsWith('/') && !value.startsWith('//'))
+    .catch('/')
+    .optional(),
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  validateSearch: z.object({
-    /**
-     * Where to return after signing in.
-     *
-     * A PATH, never a URL. `next=https://evil.example` in a link would make the
-     * sign-in page a redirector to an attacker's site carrying our branding —
-     * the classic open-redirect phish. Anything not starting with a single `/`
-     * is discarded, and `//host` is rejected too because browsers read it as
-     * protocol-relative and follow it off-site.
-     */
-    next: z
-      .string()
-      .refine((value) => value.startsWith('/') && !value.startsWith('//'))
-      .catch('/')
-      .optional(),
-  }),
+  validateSearch: NextSearch,
   component: LoginPage,
 });
 
+/**
+ * `next` carries forward from `/login`'s own "Create one" link — see
+ * `pending-next.ts`'s own header for why registration cannot simply pass it
+ * straight through to a redirect: an account isn't usable until its email
+ * is verified, and that click happens from a SEPARATE mail-client
+ * navigation, often a new tab, with no `next` param of its own to read.
+ * `RegisterPage` stashes it in `localStorage` before submitting so it
+ * survives that hop.
+ */
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/register',
+  validateSearch: NextSearch,
   component: RegisterPage,
 });
 

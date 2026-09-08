@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorOf, errorCodeOf } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
 import { useBranding } from '../../lib/branding-context.js';
+import { inviteTokenFromNext } from '../../lib/pending-next.js';
+import { invitationPreviewQuery } from './invite-preview.js';
 import { Button, Field, Input } from '../../components/primitives.js';
 import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
@@ -63,6 +65,17 @@ export function LoginPage() {
 
   const { register, handleSubmit, formState } = useForm<FormValues>({
     defaultValues: { email: '', password: '' },
+  });
+
+  /* Reached via an invitation's own bounce — `/invite/accept`'s `beforeLoad`
+     lands an unauthenticated visitor here with the token preserved in
+     `next`. Previewed so someone with no account yet sees WHICH org and
+     address the link names before being asked to sign in or register,
+     rather than a bare form with no context. */
+  const inviteToken = inviteTokenFromNext(search.next);
+  const invitePreview = useQuery({
+    ...invitationPreviewQuery(inviteToken ?? ''),
+    enabled: inviteToken !== undefined,
   });
 
   const afterSignIn = async (session: SessionBody, email?: string) => {
@@ -143,6 +156,17 @@ export function LoginPage() {
             <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
           </div>
         </div>
+
+        {invitePreview.data !== undefined && (
+          <div className="rounded-md border border-accent/30 bg-accent/5 p-3 text-sm text-ink">
+            You&apos;ve been invited to join <strong>{invitePreview.data.orgName}</strong> as{' '}
+            {invitePreview.data.role}. Sign in with <strong>{invitePreview.data.email}</strong>, or{' '}
+            <Link to="/register" search={{ next: search.next }} className="text-accent underline">
+              create an account
+            </Link>{' '}
+            with that address to accept it.
+          </div>
+        )}
 
         <form
           className="space-y-4"
@@ -296,7 +320,7 @@ export function LoginPage() {
         <div className="flex justify-between text-sm text-ink-muted">
           <span>
             No account?{' '}
-            <Link to="/register" className="text-accent underline">
+            <Link to="/register" search={{ next: search.next }} className="text-accent underline">
               Create one
             </Link>
           </span>

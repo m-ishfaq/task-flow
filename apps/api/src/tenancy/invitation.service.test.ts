@@ -10,6 +10,7 @@ import {
   acceptInvitation,
   createInvitation,
   listInvitations,
+  previewInvitation,
   revokeInvitation,
 } from './invitation.service.js';
 import { invitationAccepted, invitationRevoked, invitationSent, memberAdded } from './events.js';
@@ -268,6 +269,81 @@ describe('revokeInvitation', () => {
         actorFor(OWNER),
       ),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('previewInvitation', () => {
+  it('returns the org, invited email, and role — no session needed', async () => {
+    const orgId = await newOrg('invite-preview');
+    const { mailer, queue } = fakeMail();
+    await createInvitation(
+      orgId,
+      { email: 'invitee@invite.test', role: 'admin' },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await queue.drain();
+    const token = tokenFromMail(mailer);
+
+    const preview = await previewInvitation({ token });
+    expect(preview).toMatchObject({ email: 'invitee@invite.test', role: 'admin' });
+    expect(preview.orgName.length).toBeGreaterThan(0);
+  });
+
+  it('refuses an unknown token, the same NOT_FOUND acceptInvitation uses', async () => {
+    await expect(previewInvitation({ token: 'tf_inv_doesnotexist' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('refuses a revoked invitation without mutating anything', async () => {
+    const orgId = await newOrg('invite-preview-revoked');
+    const { mailer, queue } = fakeMail();
+    await createInvitation(
+      orgId,
+      { email: 'invitee@invite.test', role: 'member' },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await queue.drain();
+    const token = tokenFromMail(mailer);
+
+    const pending = await listInvitations(orgId);
+    const invitationId = unsafeAsId<'InvitationId'>(pending[0]?.invitationId ?? '');
+    await revokeInvitation(orgId, { invitationId }, actorFor(OWNER));
+
+    await expect(previewInvitation({ token })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses an expired invitation WITHOUT flipping its status — a preview is read-only', async () => {
+    const orgId = await newOrg('invite-preview-expired');
+    const { mailer, queue } = fakeMail();
+    await createInvitation(
+      orgId,
+      { email: 'invitee@invite.test', role: 'member' },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await queue.drain();
+    const token = tokenFromMail(mailer);
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE identity.invitations SET expires_at = now() - interval '1 day' WHERE org_id = $1`,
+      [orgId],
+    );
+    await admin.setOrg(null);
+
+    await expect(previewInvitation({ token })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    // Still 'pending' — previewInvitation must not mutate status the way
+    // acceptInvitation does on discovering the same expiry.
+    await admin.setOrg(orgId);
+    const rows = await admin.query(`SELECT status FROM identity.invitations WHERE org_id = $1`, [
+      orgId,
+    ]);
+    await admin.setOrg(null);
+    expect(rows.rows[0]?.['status']).toBe('pending');
   });
 });
 
