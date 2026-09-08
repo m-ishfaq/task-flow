@@ -222,6 +222,10 @@ export const keys = {
   cardBranches: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'branches'] as const,
   githubRepos: (orgId: string) => ['org', orgId, 'githubRepos'] as const,
+  pullRequestStatus: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestStatus', providerScope, prNumber] as const,
+  pullRequestDiff: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestDiff', providerScope, prNumber] as const,
 
   labels: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'labels'] as const,

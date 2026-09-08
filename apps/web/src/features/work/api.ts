@@ -293,6 +293,37 @@ export function githubReposQuery(orgId: string) {
   });
 }
 
+/** Live GitHub state for one linked PR — state/merged/draft plus a rolled-
+    up CI status (`work.pullRequests.status`, `pr:view`-gated, unlike its
+    `list`/`link`/`unlink` siblings; see that route's own header). A caller
+    who can link a PR (`card:update`) but holds no `pr:view` grant gets a
+    FORBIDDEN here — `retry: false` so React Query does not hammer a
+    permission refusal, and callers render nothing on `isError` rather than
+    surfacing a toast, per Phase 15 §1's "hide, don't disable" rule applied
+    to a decorative status dot rather than an action control. */
+export function pullRequestStatusQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestStatus(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.status.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
+/** The PR's raw diff — `pr:view`-gated like `status` above. Callers pass
+    `enabled: dialogOpen`: a diff can run up to 20,000 characters
+    (`MAX_DIFF_CHARS`), real payload worth fetching only once someone
+    actually asks to see it, never eagerly for every linked PR a card
+    happens to show. */
+export function pullRequestDiffQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestDiff(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.diff.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
 /* -------------------------------------------------------------------------- *
  * Optimistic cache edits
  * -------------------------------------------------------------------------- */

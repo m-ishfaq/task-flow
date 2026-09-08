@@ -24,6 +24,7 @@ import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
 import { createBranchFromCard, type BranchWriteDeps } from '../automation/branch.service.js';
 import { connectedGithubRepos } from '../automation/integration.service.js';
+import { getPullRequestDiff, getPullRequestStatus } from '../automation/pr-read.service.js';
 
 /**
  * Card detail routes — labels, statuses, checklists, custom fields, comments
@@ -342,6 +343,66 @@ export function createCardDetailRouter(deps: { readonly branch: BranchWriteDeps 
         )
         .output(z.object({ unlinked: z.boolean() }))
         .mutation(({ input, ctx }) => pullRequests.unlinkCardPullRequest(actor(ctx), input)),
+
+      /**
+       * Live GitHub state for a linked PR — state/merged/draft plus a
+       * rolled-up CI status, for the card chip's color and dot. Gated on
+       * `pr:view`, UNLIKE `list`/`link`/`unlink` above: those three touch
+       * only the org's own link-table row and never call GitHub at all, the
+       * same reasoning `card-pull-request.service.ts`'s own header gives for
+       * not requiring `pr:view` there. This route DOES call GitHub — the
+       * same live data `pr-read.service.ts`'s AI tools already gate behind
+       * `pr:view` — so a caller who can link a PR (`card:update`) but holds
+       * no `pr:view` grant still sees the chip, just without a live status
+       * dot, per Phase 15 §1's "hide, not disable" rule. No `cardId`: unlike
+       * its siblings, this route names no card row at all — it asks GitHub
+       * about a repo+PR-number pair, nothing more, the identical scope
+       * `pr-read.service.ts`'s own functions already have.
+       */
+      status: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            number: z.number().int(),
+            state: z.enum(['open', 'closed']),
+            merged: z.boolean(),
+            isDraft: z.boolean(),
+            checksStatus: z.enum(['success', 'failure', 'pending', 'none']),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestStatus(actor(ctx), deps.branch, input)),
+
+      /**
+       * The PR's raw diff, for the "view diff" action on the card panel —
+       * the same `getPullRequestDiff` the AI assistant's `get_pr_diff` tool
+       * already calls, reached directly this time. `pr:view`-gated for the
+       * identical reason `status` above is: this route calls GitHub for
+       * live content, unlike `list`/`link`/`unlink`.
+       */
+      diff: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            prNumber: z.number().int(),
+            truncated: z.boolean(),
+            diff: z.string(),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestDiff(actor(ctx), deps.branch, input)),
     }),
 
     /**

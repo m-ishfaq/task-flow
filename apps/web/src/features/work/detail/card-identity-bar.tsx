@@ -4,6 +4,7 @@ import { Check, Copy, ExternalLink, GitBranch, GitPullRequest } from 'lucide-rea
 import type { CardId } from '@taskflow/contracts';
 import { cn } from '../../../lib/cn.js';
 import { cardBranchesQuery, cardPullRequestsQuery } from '../api.js';
+import { PrStatusBadge } from './pr-status-badge.js';
 
 /**
  * The card's identity line — reference, linked PRs, linked branches, all in
@@ -37,13 +38,18 @@ export function CardIdentityBar({
       <CopyableReference reference={reference} />
 
       {prs.data?.map((pr) => (
-        <IdentityChip
+        <span
           key={`pr-${pr.providerScope}#${String(pr.prNumber)}`}
-          href={`https://github.com/${pr.providerScope}/pull/${String(pr.prNumber)}`}
-          icon={<GitPullRequest aria-hidden="true" className="size-3" strokeWidth={2} />}
-          label={`#${String(pr.prNumber)}`}
-          title={`${pr.providerScope}#${String(pr.prNumber)} — open on GitHub`}
-        />
+          className="inline-flex shrink-0 items-center gap-1"
+        >
+          <IdentityChip
+            href={`https://github.com/${pr.providerScope}/pull/${String(pr.prNumber)}`}
+            icon={<GitPullRequest aria-hidden="true" className="size-3" strokeWidth={2} />}
+            label={`#${String(pr.prNumber)}`}
+            title={`${pr.providerScope}#${String(pr.prNumber)} — open on GitHub`}
+          />
+          <PrStatusBadge orgId={orgId} providerScope={pr.providerScope} prNumber={pr.prNumber} />
+        </span>
       ))}
 
       {branches.data?.map((branch) => (

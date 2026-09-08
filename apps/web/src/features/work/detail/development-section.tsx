@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GitBranch, GitPullRequest, Plus } from 'lucide-react';
+import { Check, Copy, GitBranch, GitPullRequest, Plus } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -15,6 +15,8 @@ import {
 import { ErrorText, ErrorView } from '../../../components/error-view.js';
 import { cardBranchesQuery, cardPullRequestsQuery, githubReposQuery } from '../api.js';
 import { defaultBranchName, normalizedBranchName } from './branch-name.js';
+import { PrStatusBadge } from './pr-status-badge.js';
+import { PrDiffButton } from './pr-diff-dialog.js';
 
 /**
  * PRs and branches linked to this card (ai/phase-15-ai-copilot-and-
@@ -223,6 +225,12 @@ function PullRequestSubsection({
               >
                 {pr.providerScope}#{pr.prNumber}
               </a>
+              <PrStatusBadge
+                orgId={orgId}
+                providerScope={pr.providerScope}
+                prNumber={pr.prNumber}
+              />
+              <PrDiffButton orgId={orgId} providerScope={pr.providerScope} prNumber={pr.prNumber} />
               <Button
                 size="sm"
                 variant="ghost"
@@ -384,6 +392,7 @@ function BranchSubsection({
               >
                 {branch.branchName}
               </a>
+              <CopyCheckoutButton branchName={branch.branchName} />
               <Button
                 size="sm"
                 variant="ghost"
@@ -461,5 +470,44 @@ function BranchSubsection({
       )}
       {create.isError && <ErrorText error={create.error} />}
     </div>
+  );
+}
+
+const COPY_FEEDBACK_MS = 1500;
+
+/** Copies the two commands a person actually types to start working on a
+    linked branch locally — the same click-to-copy shape
+    `card-identity-bar.tsx`'s `CopyableReference` already uses (a
+    `Check`/`Copy` icon swap, no toast, no tooltip primitive), reused here
+    rather than duplicated with a different feel for the identical
+    interaction. `git fetch origin <branch>` first: a branch this session
+    just created (or one a teammate pushed) is not necessarily in the local
+    clone's remote-tracking refs yet, and `checkout` alone would 404 on it. */
+function CopyCheckoutButton({ branchName }: { readonly branchName: string }) {
+  const [copied, setCopied] = useState(false);
+  const command = `git fetch origin ${branchName} && git checkout ${branchName}`;
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      title={command}
+      className="h-6 shrink-0 px-1.5 text-[11px]"
+      onClick={() => {
+        void navigator.clipboard.writeText(command).then(() => {
+          setCopied(true);
+          setTimeout(() => {
+            setCopied(false);
+          }, COPY_FEEDBACK_MS);
+        });
+      }}
+    >
+      {copied ? (
+        <Check aria-hidden="true" className="size-3 text-success" strokeWidth={2.5} />
+      ) : (
+        <Copy aria-hidden="true" className="size-3" strokeWidth={2} />
+      )}
+    </Button>
   );
 }

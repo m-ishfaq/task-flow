@@ -2785,6 +2785,93 @@ either — `pr-read.service.test.ts`/`pr-write.service.test.ts` assert error `co
 GitHub response at all. Inventing string-content assertions for one status code while every
 sibling hint stays untested would be inconsistent scope for what is, in every file it touches, a
 message-wording fix — not a behavior change to the error `code` a caller can already branch on.
+
+### Phase 15 §7.2 — card-panel PR polish: checkout copy, live state/CI dot, view diff (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` (`getPullRequestStatus`) ·
+`apps/api/src/work/detail.router.ts`'s `pullRequests.status`/`.diff` ·
+`apps/web/src/features/work/detail/{development-section,card-identity-bar,pr-status-badge,
+pr-diff-dialog}.tsx`. Prompted directly, from a list of options put to the project owner after the
+repo-picker fix — four picked ("UI polish first"): a copy-checkout-command action on branch chips,
+a colored PR-state icon plus a CI pass/fail dot, and a "view diff" button reachable from the card
+panel with no assistant detour. Deliberately not built in this pass: auto-move-on-merge,
+auto-link-by-branch-name, "create PR from card," and branch/PR cleanup on archive — bigger-scope
+items the project owner chose to defer, all still real, separate follow-up work.
+
+**Copy checkout command needed no backend at all — it composes
+`git fetch origin <branch> && git checkout <branch>` from data the branch row already has.**
+`CopyCheckoutButton` (`development-section.tsx`) reuses `card-identity-bar.tsx`'s own
+`CopyableReference` click-to-copy shape (a `Check`/`Copy` icon swap, 1.5s timeout, no toast, no
+tooltip primitive this app doesn't have) rather than inventing a second feel for the identical
+interaction. `git fetch` runs first, deliberately: a branch this session just created (or one a
+teammate pushed) is not necessarily in a local clone's remote-tracking refs yet, and a bare
+`checkout` would 404 on it.
+
+**Live PR state and a CI dot needed a genuinely new backend call — `getPullRequestStatus`
+combines two real GitHub calls into one (`GET .../pulls/{n}` for state/merged/draft plus the head
+sha, `GET .../commits/{sha}/check-runs` for the rollup), because the checks call needs a sha the
+PR call is the only source of.** `merged` is a THIRD fact layered on `state: 'closed'` (a merged
+PR is always closed, a closed PR is not always merged) — the card chip needs to color the two
+distinctly, so `PrStatus` keeps `merged` as its own boolean rather than widening `state` to a
+three-value enum. The checks rollup is computed server-side, deterministically, from the real
+`check_runs[]` array (`status`/`conclusion` pairs) — `'pending'` if anything is not `completed`,
+`'failure'` if anything completed with a conclusion in `FAILING_CONCLUSIONS`
+(`failure`/`timed_out`/`cancelled`/`action_required` — `neutral`/`skipped` deliberately excluded,
+matching GitHub's own PR-merge-check behavior of not blocking on either), `'none'` for zero check
+runs, `'success'` otherwise — the identical "classification stays deterministic" instinct this
+codebase applies everywhere a raw status could otherwise be guessed at by a caller. A failed checks
+call degrades to `'none'` rather than failing the whole request: the PR's own state/merged/draft
+facts are already in hand, and a repo with no Checks API access (an older integration scope, or
+GitHub itself degraded) should still show a colored state icon, just with no CI dot.
+
+**`work.pullRequests.status`/`.diff` are gated on `pr:view`, deliberately UNLIKE their
+`list`/`link`/`unlink` siblings on the same router.** Those three touch only the org's own
+link-table row and never call GitHub at all (`card-pull-request.service.ts`'s own header explains
+why `pr:view` is not required there); `status` and `diff` both call GitHub for live content — the
+identical data `pr-read.service.ts`'s AI tools already gate behind `pr:view` — so a caller who can
+link a PR (`card:update`) but holds no `pr:view` grant still sees the plain chip, just without the
+live decoration. `PrStatusBadge`/`PrDiffButton` render nothing at all on ANY query error, FORBIDDEN
+included — `retry: false` so React Query does not hammer a permission refusal — rather than
+plumbing a new `SettingsCapabilities` field through props to pre-check the grant: Phase 15 §1's
+"hide, don't disable" rule was written for ACTION controls (a button that would do something you
+can't do), and there is nothing to disable on a decorative status dot that either answers or
+silently doesn't.
+
+**`work.githubRepos.list`'s own precedent (this file's own §7.2 "repo picker" section) does NOT
+apply here, and the difference is worth naming: that route deliberately floors on the LOOSEST
+permission any of ITS callers need, because it touches no GitHub data of its own.** `status`/`diff`
+touch live GitHub content directly, the same shape `pr-read.service.ts`'s own functions already
+gate — reusing that precedent (gate on the loosest caller need) would mean gating live PR content
+on `card:update`, which is not what `pr:view` exists to control.
+
+**No `cardId` on either new route, unlike their siblings — a deliberate scope narrowing, not an
+oversight.** `list`/`link`/`unlink` all name a card because they read or write the card's own
+link-table row; `status`/`diff` ask GitHub about a `repoScope`+`prNumber` pair and nothing about
+the card at all, the identical scope `pr-read.service.ts`'s own functions already have. Both reuse
+`deps.branch` (`Pick<IntegrationDeps, 'keys' | 'fetchImpl'>`) — structurally identical to
+`PrReadDeps`, so no new dependency wiring was needed in `router.ts`'s composition root at all.
+
+**"View diff" reuses the exact `DiffView` component and `getPullRequestDiff` service function the
+AI assistant's `get_pr_diff` tool already calls — a new tRPC door to the same pipeline, not a
+second implementation.** `PrDiffButton`/`PrDiffDialogBody` (`pr-diff-dialog.tsx`) mount the dialog
+body ONLY while open, so the (up to 20,000-character, per `MAX_DIFF_CHARS`) diff query never runs
+until someone actually clicks the button — the same "fetch on demand, never eagerly for every
+linked PR a card happens to show" instinct `pullRequestDiffQuery`'s own header states. A trigger
+button plus its own small dialog, not a route: a diff is scratch viewing, not a destination worth
+its own URL. Every dialog in this codebase carries a `ModalDescription` (here `sr-only`, matching
+`card-detail-panel.tsx`'s own precedent) — Radix's `Dialog.Content` warns without one, and this is
+the first new dialog added since `modal.tsx`'s own audit standardized the pattern, so it follows
+that standard rather than reinventing it.
+
+**No dedicated `getPullRequestStatus` router-level test — service-level coverage only, matching
+this file's existing convention.** `detail.router.ts` has no dedicated test file at all; every
+route in it (including the `status`/`diff` additions) is a thin pass-through to a real,
+already-tested service function, and `pr-read.service.test.ts` gained five new cases for
+`getPullRequestStatus` directly: open/not-merged/not-draft with a successful checks rollup, merged
+as a fact distinct from closed, a still-running check rolling up to `'pending'` and a failed one to
+`'failure'`, the checks-endpoint-failure degrading to `'none'` without failing the call, and the
+`pr:view` refusal with zero network calls made — the same "refused before the network call"
+property every access gate in this codebase proves the same way.
 `apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every

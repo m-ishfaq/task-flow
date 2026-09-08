@@ -52,6 +52,15 @@ const DEFAULT_LIST_LIMIT = 10;
 const MAX_DIFF_CHARS = 20_000;
 const MAX_COMMENTS = 30;
 const MAX_FILES = 50;
+/* One page is enough for a rollup — a status DOT needs "did anything fail,
+   is anything still running," never the full per-check breakdown a person
+   would get by opening the PR on GitHub. */
+const MAX_CHECK_RUNS = 100;
+/** GitHub's own closed set of `conclusion` values that count as a real
+    failure for a pass/fail dot — `'neutral'` and `'skipped'` are
+    deliberately excluded, matching GitHub's own PR merge-check behavior of
+    not blocking on either. */
+const FAILING_CONCLUSIONS = new Set(['failure', 'timed_out', 'cancelled', 'action_required']);
 
 export interface PrSummary {
   readonly number: number;
@@ -78,6 +87,28 @@ export interface PrComment {
   readonly createdAt: string;
   readonly path: string | null;
   readonly url: string;
+}
+
+export interface PrStatus {
+  readonly number: number;
+  /** GitHub's own two values for a pull request — `merged` is a THIRD,
+      orthogonal fact layered on top of `closed` (a merged PR is always
+      `state: 'closed'`, but a closed PR is not always merged), never
+      folded into a wider enum: the card chips this feeds need to color
+      "merged" distinctly from "closed without merging." */
+  readonly state: 'open' | 'closed';
+  readonly merged: boolean;
+  readonly isDraft: boolean;
+  /** Rolled up server-side from the Checks API's real per-check-run
+      `status`/`conclusion` pairs — `'none'` means the head commit carries
+      no check runs at all (a repo with no CI configured, or one that has
+      not reported yet), never conflated with `'pending'` (checks exist and
+      at least one has not completed). Classification stays deterministic,
+      the same "compute it once, server-side" instinct this codebase
+      applies everywhere a raw status could otherwise be guessed at by a
+      caller (`standup.service.ts`'s bucketing, `card_move`'s rank
+      derivation). */
+  readonly checksStatus: 'success' | 'failure' | 'pending' | 'none';
 }
 
 export interface PrFile {
@@ -348,4 +379,73 @@ export async function getPullRequestFiles(
 
   const body = (await response.json()) as unknown[];
   return body.map(toFile).filter((file): file is PrFile => file !== null);
+}
+
+function rollupChecksStatus(raw: unknown): PrStatus['checksStatus'] {
+  if (!isRecord(raw) || !Array.isArray(raw['check_runs'])) return 'none';
+  const runs = raw['check_runs'].filter(isRecord);
+  if (runs.length === 0) return 'none';
+  if (runs.some((run) => run['status'] !== 'completed')) return 'pending';
+  if (runs.some((run) => FAILING_CONCLUSIONS.has(String(run['conclusion'])))) return 'failure';
+  return 'success';
+}
+
+/**
+ * State, merged-ness, draft-ness and a rolled-up CI status — what a card's
+ * PR chip needs to color itself, in one combined call rather than a
+ * per-fact route each: `merged` rides `state: 'closed'` as a THIRD fact
+ * (see `PrStatus`'s own doc comment), and the checks rollup needs the head
+ * commit sha this same `GET .../pulls/{number}` call already returns, so a
+ * second round trip for check runs is unavoidable but a THIRD (to learn the
+ * sha) is not.
+ */
+export async function getPullRequestStatus(
+  actor: AutomationActor,
+  deps: PrReadDeps,
+  input: { readonly prNumber: number; readonly repoScope?: string | undefined },
+): Promise<PrStatus> {
+  assertMayView(actor);
+  const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
+  const fetchFn = deps.fetchImpl ?? fetch;
+  const repo = repoPath(connector.providerScope);
+
+  const prResponse = await fetchFn(
+    `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}`,
+    {
+      headers: githubHeaders(connector.token),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
+  if (!prResponse.ok) throw githubReadError(prResponse.status);
+  const prBody: unknown = await prResponse.json();
+  if (!isRecord(prBody))
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+
+  const state = prBody['state'];
+  const head = prBody['head'];
+  if (
+    (state !== 'open' && state !== 'closed') ||
+    !isRecord(head) ||
+    typeof head['sha'] !== 'string'
+  ) {
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+  }
+
+  const checksResponse = await fetchFn(
+    `https://api.github.com/repos/${repo}/commits/${head['sha']}/check-runs?per_page=${String(MAX_CHECK_RUNS)}`,
+    { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
+  );
+  /* Best-effort, not fatal — the PR's own state/merged/draft facts are
+     already in hand, and a repo with no Checks API access (an older
+     integration scope, or GitHub itself degraded) should still show a
+     colored PR chip with no CI dot rather than fail the whole call. */
+  const checksStatus = checksResponse.ok ? rollupChecksStatus(await checksResponse.json()) : 'none';
+
+  return {
+    number: input.prNumber,
+    state,
+    merged: prBody['merged_at'] !== null && prBody['merged_at'] !== undefined,
+    isDraft: prBody['draft'] === true,
+    checksStatus,
+  };
 }

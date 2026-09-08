@@ -19,6 +19,7 @@ import {
   getPullRequestComments,
   getPullRequestDiff,
   getPullRequestFiles,
+  getPullRequestStatus,
   listConnectedRepos,
   listPullRequests,
 } from './pr-read.service.js';
@@ -526,5 +527,138 @@ describe('getPullRequestComments', () => {
     expect(result.map((c) => c.id)).toEqual([2, 1]);
     expect(result[0]).toMatchObject({ kind: 'review', path: 'src/index.ts', author: 'carol' });
     expect(result[1]).toMatchObject({ kind: 'general', path: null, author: 'bob' });
+  });
+});
+
+/** Both `getPullRequestStatus` calls (`/pulls/{n}` and `/commits/{sha}/check-runs`) hit URLs
+    `fakeGithub`'s own diff-text handler was never built for, so this wraps `fake.fetch`
+    exactly the way `getPullRequestFiles`'s own `files-ok` test does. */
+function fakeGithubWithStatus(options: {
+  readonly pr?: Record<string, unknown>;
+  readonly prStatus?: number;
+  readonly checkRuns?: readonly Record<string, unknown>[];
+  readonly checkRunsStatus?: number;
+}): { fetch: typeof fetch; calls: string[] } {
+  const fake = fakeGithub({});
+  const pr = options.pr ?? {
+    state: 'open',
+    draft: false,
+    merged_at: null,
+    head: { sha: 'abc123' },
+  };
+
+  const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes('/check-runs')) {
+      return new Response(JSON.stringify({ check_runs: options.checkRuns ?? [] }), {
+        status: options.checkRunsStatus ?? 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (/\/pulls\/\d+$/.test(url)) {
+      return new Response(JSON.stringify(pr), {
+        status: options.prStatus ?? 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return fake.fetch(input, init);
+  }) as typeof fetch;
+
+  return { fetch: fn, calls: fake.calls };
+}
+
+describe('getPullRequestStatus', () => {
+  it('reports open, not merged, not draft, with a successful checks rollup', async () => {
+    const { owner } = await scaffold('status-open');
+    const fake = fakeGithubWithStatus({
+      pr: { state: 'open', draft: false, merged_at: null, head: { sha: 'sha1' } },
+      checkRuns: [{ status: 'completed', conclusion: 'success' }],
+    });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestStatus(owner, deps, { prNumber: 7 });
+
+    expect(result).toEqual({
+      number: 7,
+      state: 'open',
+      merged: false,
+      isDraft: false,
+      checksStatus: 'success',
+    });
+  });
+
+  it('reports merged as a fact distinct from closed', async () => {
+    const { owner } = await scaffold('status-merged');
+    const fake = fakeGithubWithStatus({
+      pr: {
+        state: 'closed',
+        draft: false,
+        merged_at: '2026-01-01T00:00:00Z',
+        head: { sha: 'sha2' },
+      },
+      checkRuns: [],
+    });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestStatus(owner, deps, { prNumber: 8 });
+
+    expect(result.state).toBe('closed');
+    expect(result.merged).toBe(true);
+    expect(result.checksStatus).toBe('none');
+  });
+
+  it('rolls up a still-running check as pending, and a failed one as failure', async () => {
+    const { owner } = await scaffold('status-checks');
+    const pending = fakeGithubWithStatus({
+      checkRuns: [
+        { status: 'completed', conclusion: 'success' },
+        { status: 'in_progress', conclusion: null },
+      ],
+    });
+    const depsPending = depsFor(pending.fetch);
+    await connectedGithub(owner, depsPending);
+    expect((await getPullRequestStatus(owner, depsPending, { prNumber: 9 })).checksStatus).toBe(
+      'pending',
+    );
+
+    const { owner: owner2 } = await scaffold('status-checks-failed');
+    const failed = fakeGithubWithStatus({
+      checkRuns: [
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'failure' },
+      ],
+    });
+    const depsFailed = depsFor(failed.fetch);
+    await connectedGithub(owner2, depsFailed);
+    expect((await getPullRequestStatus(owner2, depsFailed, { prNumber: 9 })).checksStatus).toBe(
+      'failure',
+    );
+  });
+
+  it('degrades to checksStatus "none" when the checks endpoint fails, without failing the call', async () => {
+    const { owner } = await scaffold('status-checks-degraded');
+    const fake = fakeGithubWithStatus({ checkRunsStatus: 500 });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestStatus(owner, deps, { prNumber: 10 });
+
+    expect(result.checksStatus).toBe('none');
+  });
+
+  it('refuses a member with no pr:view grant, before any network call', async () => {
+    const { owner, member } = await scaffold('status-refused');
+    const fake = fakeGithubWithStatus({});
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(getPullRequestStatus(member, deps, { prNumber: 1 })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(fake.calls).toHaveLength(0);
   });
 });
