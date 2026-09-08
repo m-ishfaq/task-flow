@@ -856,12 +856,12 @@ async function exchangeSlackCode(
     ok?: unknown;
     error?: unknown;
     team_id?: unknown;
-    team_name?: unknown;
+    team?: unknown;
   };
   if (
     testBody.ok !== true ||
     typeof testBody.team_id !== 'string' ||
-    typeof testBody.team_name !== 'string'
+    typeof testBody.team !== 'string'
   ) {
     /* Slack's own error code is carried through, the `TwilioApiError` lesson
        (Phase 7): a generic "rejected" made five distinct causes —
@@ -874,7 +874,7 @@ async function exchangeSlackCode(
     throw errors.validation({ code: `Slack rejected the access token (${reason}).` });
   }
 
-  return { token: body.access_token, teamId: testBody.team_id, teamName: testBody.team_name };
+  return { token: body.access_token, teamId: testBody.team_id, teamName: testBody.team };
 }
 
 const GITHUB_HEADERS = { accept: 'application/vnd.github+json', 'user-agent': 'TaskFlow' };

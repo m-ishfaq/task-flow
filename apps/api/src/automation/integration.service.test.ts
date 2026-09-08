@@ -276,7 +276,7 @@ function fakeProvider(options: FakeProviderOptions = {}): {
           json({
             ok: true,
             team_id: options.teamId ?? 'T0001',
-            team_name: options.teamName ?? 'Acme Workspace',
+            team: options.teamName ?? 'Acme Workspace',
           }),
         );
       case 'https://github.com/login/oauth/access_token': {
