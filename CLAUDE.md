@@ -2954,6 +2954,47 @@ Verified instead by what a sandbox WITHOUT Docker can prove for certain: `tsc`, 
 confirm the actual rendering looks right before calling this done, per this file's own standing
 rule that a green non-visual check is not the same claim as "this works when you look at it."
 
+### Phase 15 §1 — the Individual permissions list, regrouped one row per person (SHIPPED)
+
+`apps/web/src/features/admin/settings-page.tsx`'s `PermissionsSection`/`PermissionGrantChip`.
+Prompted directly, from a screenshot: a member holding two grants (`call:place`, `sms:send`)
+showed as two separate, near-identical rows — same avatar, same name, same role, differing only
+in one `Badge` — and the request was one row per person with every permission they hold, the
+grant date visible rather than buried, and a less "generic" look than the flat list this section
+shipped with in §1's own original Wave 2 sweep.
+
+**The mutation and selection logic needed no change at all — only how `visibleGrants` is
+RENDERED.** `selectedGrants` is still a flat `Set<string>` keyed `${userId}:${permission}`, and
+`runGrantBatch`/`runRevokeBatch` still call the existing single-pair `memberGrants.grant`/`.revoke`
+routes once per pair in sequence, exactly as this section's own Wave 2 header already documents.
+Grouping is a pure display transform applied to the same filtered array the flat list already
+computed (`visibleGrants`), so a search still narrows at the GRANT level — a query matching one of
+someone's three permissions shows a person's row with just that one chip, not all three, since
+grouping happens strictly after filtering.
+
+**`Map<userId, group>` rather than an index-tracked array, so building the groups needs no
+indexed-access fallback under `noUncheckedIndexedAccess`.** Each grant in `visibleGrants` either
+finds its person's existing group object and pushes into its (mutable, unlike the rest of this
+codebase's usual `readonly`) `items` array, or creates one — no `array[index]!` non-null assertion
+anywhere, and `Map`'s own insertion-order iteration is exactly the order `visibleGrants` was
+already in, so `[...groupsByUserId.values()]` needs no separate order-tracking array either.
+
+**The per-person row's own checkbox is a real tri-state control, not a second, disconnected
+selection mechanism.** `allSelected`/`someSelected` are computed from the SAME `selectedGrants` set
+each permission chip's own checkbox already reads — checking the person-level box adds or removes
+every one of their grant keys at once, and the DOM's native `indeterminate` property (set via a ref
+callback; React has no declarative prop for it) shows the "some but not all selected" state a plain
+`checked` boolean cannot express on its own.
+
+**The grant date moved INTO the chip as visible text, not a `title` hover tooltip** — the literal
+ask ("the time as well but with better UI"), and consistent with this app having no `Tooltip`
+primitive to reach for anywhere else (`card-identity-bar.tsx`'s copy button, `development-section
+.tsx`'s checkout-copy button both already accept the same constraint). `PermissionGrantChip`'s own
+per-permission revoke stays a two-step confirm — the identical shape `ConfirmButton` already gives
+every other destructive-enough action in this codebase — built inline rather than by reusing
+`ConfirmButton` directly, since that component's `label` is sized for a whole button's text, not a
+compact pill that also has to hold a mono permission name and a date on one line.
+
 ### Phase 15 §7 — `get_pr_diff` could 500 the whole assistant turn on a real PR (FIXED)
 
 `apps/api/src/automation/pr-read.service.ts`. Found from a real report — "tell me the diff for pr

@@ -825,6 +825,39 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     return label.includes(grantNeedle) || entry.permission.toLowerCase().includes(grantNeedle);
   });
 
+  /**
+   * One row per PERSON, not per (member, permission) pair — the same grants
+   * `visibleGrants` already holds, regrouped for display. A search still
+   * narrows at the GRANT level (a query matching one of someone's three
+   * permissions shows only that one chip, not all three), since grouping
+   * happens after filtering, not before. `Map` rather than an index-tracked
+   * array: an object each entry can push into by reference needs no
+   * indexed-access fallback under `noUncheckedIndexedAccess`, and insertion
+   * order — the same order `visibleGrants` is already in — is exactly the
+   * iteration order a `Map` guarantees for free.
+   */
+  const groupsByUserId = new Map<
+    string,
+    {
+      readonly userId: string;
+      readonly member: (typeof members.data)[number] | undefined;
+      readonly items: { readonly permission: string; readonly grantedAt: string }[];
+    }
+  >();
+  for (const entry of visibleGrants) {
+    const existing = groupsByUserId.get(entry.userId);
+    if (existing !== undefined) {
+      existing.items.push({ permission: entry.permission, grantedAt: entry.grantedAt });
+    } else {
+      groupsByUserId.set(entry.userId, {
+        userId: entry.userId,
+        member: memberById.get(entry.userId),
+        items: [{ permission: entry.permission, grantedAt: entry.grantedAt }],
+      });
+    }
+  }
+  const groupedGrants = [...groupsByUserId.values()];
+
   return (
     <Section
       title="Individual permissions"
@@ -1076,45 +1109,71 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
             <Empty title="No grants match your search" />
           ) : (
             <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
-              {visibleGrants.map((entry) => {
-                const member = memberById.get(entry.userId);
-                const key = `${entry.userId}:${entry.permission}`;
+              {groupedGrants.map((group) => {
+                const label = group.member ? labelOf(group.member) : group.userId;
+                const keysForPerson = group.items.map(
+                  (item) => `${group.userId}:${item.permission}`,
+                );
+                const allSelected = keysForPerson.every((key) => selectedGrants.has(key));
+                const someSelected = keysForPerson.some((key) => selectedGrants.has(key));
+
                 return (
-                  <li key={key} className="flex items-center gap-3 px-3 py-2.5">
+                  <li key={group.userId} className="flex items-start gap-3 px-3 py-3">
                     {capabilities.manageMembers && (
                       <input
                         type="checkbox"
-                        aria-label={`Select ${member ? labelOf(member) : entry.userId} — ${entry.permission}`}
-                        checked={selectedGrants.has(key)}
-                        onChange={() => {
-                          toggleGrantSelection(key);
+                        aria-label={`Select all permissions for ${label}`}
+                        checked={allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !allSelected && someSelected;
                         }}
-                      />
-                    )}
-                    <Avatar userId={entry.userId} label={member ? labelOf(member) : entry.userId} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-ink">
-                        {member ? labelOf(member) : entry.userId}
-                      </div>
-                      <div className="text-xs text-ink-faint">
-                        {member?.role ?? 'former member'} · granted {formatDate(entry.grantedAt)}
-                      </div>
-                    </div>
-                    <Badge>{entry.permission}</Badge>
-                    {capabilities.manageMembers && (
-                      <ConfirmButton
-                        label="Revoke"
-                        confirmLabel="Revoke?"
-                        size="sm"
-                        disabled={revoke.isPending}
-                        onConfirm={() => {
-                          revoke.mutate({
-                            userId: entry.userId as UserId,
-                            permission: entry.permission,
+                        onChange={() => {
+                          setSelectedGrants((prev) => {
+                            const next = new Set(prev);
+                            for (const key of keysForPerson) {
+                              if (allSelected) next.delete(key);
+                              else next.add(key);
+                            }
+                            return next;
                           });
                         }}
+                        className="mt-1"
                       />
                     )}
+                    <Avatar userId={group.userId} label={label} className="mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-ink">{label}</span>
+                        <span className="text-xs text-ink-faint">
+                          {group.member?.role ?? 'former member'}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {group.items.map((item) => {
+                          const key = `${group.userId}:${item.permission}`;
+                          return (
+                            <PermissionGrantChip
+                              key={key}
+                              permission={item.permission}
+                              grantedAt={item.grantedAt}
+                              selectable={capabilities.manageMembers}
+                              selected={selectedGrants.has(key)}
+                              onToggleSelect={() => {
+                                toggleGrantSelection(key);
+                              }}
+                              revocable={capabilities.manageMembers}
+                              revokePending={revoke.isPending}
+                              onRevoke={() => {
+                                revoke.mutate({
+                                  userId: group.userId as UserId,
+                                  permission: item.permission,
+                                });
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
                   </li>
                 );
               })}
@@ -1127,6 +1186,98 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       {bulkRevoke.isError && <ErrorText error={bulkRevoke.error} />}
       {dialog}
     </Section>
+  );
+}
+
+/**
+ * One permission, as its own small pill inside a person's grouped row —
+ * the grant date sits IN the chip rather than behind a `title` hover, since
+ * a browser tooltip is easy to miss and the date was exactly what got asked
+ * for as visible, not merely discoverable. Revoking a single permission
+ * stays a two-step confirm, the same shape `ConfirmButton` gives every other
+ * irreversible-enough action in this app, just built inline here rather than
+ * with that component directly — `ConfirmButton`'s own `label` is a whole
+ * button's text, sized for a row, not a compact pill that also has to hold a
+ * permission name and a date on one line.
+ */
+function PermissionGrantChip({
+  permission,
+  grantedAt,
+  selectable,
+  selected,
+  onToggleSelect,
+  revocable,
+  revokePending,
+  onRevoke,
+}: {
+  readonly permission: string;
+  readonly grantedAt: string;
+  readonly selectable: boolean;
+  readonly selected: boolean;
+  readonly onToggleSelect: () => void;
+  readonly revocable: boolean;
+  readonly revokePending: boolean;
+  readonly onRevoke: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-2 pr-1.5 text-xs transition-colors',
+        selected ? 'border-accent/50 bg-accent/10' : 'border-line/50 bg-surface-sunken',
+      )}
+    >
+      {selectable && (
+        <input
+          type="checkbox"
+          aria-label={`Select ${permission}`}
+          checked={selected}
+          onChange={onToggleSelect}
+          className="size-3"
+        />
+      )}
+      <span className="font-mono font-medium text-ink">{permission}</span>
+      <span className="text-[10px] text-ink-faint">· {formatDate(grantedAt)}</span>
+      {revocable &&
+        (confirming ? (
+          <span className="flex items-center gap-1 border-l border-line/50 pl-1.5">
+            <button
+              type="button"
+              disabled={revokePending}
+              onClick={() => {
+                onRevoke();
+                setConfirming(false);
+              }}
+              className="text-[10px] font-medium text-danger hover:underline disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+              }}
+              className="text-[10px] text-ink-faint hover:text-ink"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={`Revoke ${permission}`}
+            title={`Revoke ${permission}`}
+            disabled={revokePending}
+            onClick={() => {
+              setConfirming(true);
+            }}
+            className="ml-0.5 rounded text-ink-faint hover:text-danger disabled:opacity-50"
+          >
+            ×
+          </button>
+        ))}
+    </span>
   );
 }
 
