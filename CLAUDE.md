@@ -3650,12 +3650,23 @@ an agent asked to find "what's next" confidently answered Phase 4 while Wave 3 w
 same staleness recurred at the end of 3.5. If you are reading this to decide what to build, open the
 newest `ai/phase-*.md` and read its header first.
 
-Deferred deliberately from Phase 3, and NOT bugs: passkey sign-in is wired on the API but the
-browser ceremony (`@simplewebauthn/browser`) is not in this build, so the login page says so
-rather than showing a button that does nothing. Calendar and timeline views are §10.4 surfaces
-the plan does not schedule until later. `packages/ui` is still unbuilt on purpose — §6 says
-extract a component only once the same pattern appears three times, and `components/primitives.tsx`
-is where that will be measured from.
+Deferred deliberately from Phase 3, and NOT bugs: Calendar and timeline views are §10.4 surfaces
+the plan does not schedule until later _(the calendar half has since shipped — see its own section
+further down)_. `packages/ui` is still unbuilt on purpose — §6 says extract a component only once
+the same pattern appears three times, and `components/primitives.tsx` is where that will be
+measured from.
+
+**The line that used to stand here — "passkey sign-in is wired on the API but the browser ceremony
+is not in this build" — was stale, not corrected in place until this pass found it by actually
+checking, the identical failure mode this file's own "a status marker is a claim, not a fact"
+discipline exists to catch.** `apps/web/src/features/auth/passkey.ts` (`signInWithPasskey`,
+`enrollPasskey`, both wrapping `@simplewebauthn/browser`'s `startAuthentication`/`startRegistration`
+with a closed `PasskeyCeremonyReason` set rather than surfacing the raw `WebAuthnError`) has been
+fully built and wired for some time: `login-page.tsx` renders a real "Sign in with a passkey"
+button behind a `browserSupportsWebAuthn()` check, and `account-page.tsx`'s `PasskeySection`
+(enroll-then-confirm, mirroring TOTP's own shape) is what actually lets someone add one. Both carry
+real test coverage (`login-page.test.tsx`, `passkey-section.test.tsx`). Nothing here needed
+building; the deferral note itself was the only thing behind.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
