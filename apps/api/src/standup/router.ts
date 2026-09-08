@@ -5,6 +5,7 @@ import { subjectOf } from '../trpc/context.js';
 import type { WorkActor } from '../work/shared.js';
 import { queryStandup } from './standup.service.js';
 import { narrateStandup } from './narrate.js';
+import { isSubscribed, subscribe, unsubscribe } from './subscription.service.js';
 
 /**
  * The standup view (ai/phase-15-ai-copilot-and-permissions.md §5).
@@ -120,5 +121,26 @@ export function createStandupRouter(deps: StandupRouterDeps) {
           standup,
         );
       }),
+
+    /**
+     * "Email me this project's standup" (migration 0108) — subscribing is
+     * `project:read`, the same floor `query` above already uses: it is a
+     * self-referential choice about one's own inbox, not a role-gated
+     * action, so it needs no permission `query` does not already require.
+     */
+    subscribe: route({ permission: 'project:read' })
+      .input(z.object({ projectId: ProjectIdSchema }).strict())
+      .output(z.object({ subscribed: z.literal(true) }))
+      .mutation(({ input, ctx }) => subscribe(actorOf(ctx), input)),
+
+    unsubscribe: route({ permission: 'project:read' })
+      .input(z.object({ projectId: ProjectIdSchema }).strict())
+      .output(z.object({ unsubscribed: z.boolean() }))
+      .mutation(({ input, ctx }) => unsubscribe(actorOf(ctx), input)),
+
+    subscription: route({ permission: 'project:read' })
+      .input(z.object({ projectId: ProjectIdSchema }).strict())
+      .output(z.object({ subscribed: z.boolean() }))
+      .query(({ input, ctx }) => isSubscribed(actorOf(ctx), input)),
   });
 }

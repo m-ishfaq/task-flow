@@ -48,3 +48,26 @@ export async function narrateStandup(
 ): Promise<StandupCallout> {
   return api.standup.narrate.mutate({ projectId, sinceHours });
 }
+
+/**
+ * "Email me this project's standup" (migration 0108). Same `project:read`
+ * floor as `standupQuery` above — reaching this page at all already proves
+ * that, so the toggle needs no extra capability check of its own.
+ */
+export function standupSubscriptionQuery(orgId: string, projectId: ProjectId) {
+  return queryOptions({
+    queryKey: keys.standupSubscription(orgId, projectId),
+    queryFn: async () => api.standup.subscription.query({ projectId }),
+    enabled: orgId !== '',
+  });
+}
+
+export async function subscribeToStandup(projectId: ProjectId): Promise<{ subscribed: true }> {
+  return api.standup.subscribe.mutate({ projectId });
+}
+
+export async function unsubscribeFromStandup(
+  projectId: ProjectId,
+): Promise<{ unsubscribed: boolean }> {
+  return api.standup.unsubscribe.mutate({ projectId });
+}

@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { orgs } from './tenancy.js';
 import { users } from './identity.js';
+import { projects } from './work.js';
 
 /**
  * Platform tables (migration 0006, PLAN.md §10.6).
@@ -941,3 +942,28 @@ export const aiOrgOverrides = platform.table('ai_org_overrides', {
     .references(() => users.id),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * "Email me this project's standup, daily" (migration 0108). One row per
+ * (org, project, member) — see `apps/api/src/standup/subscription.service.ts`.
+ */
+export const standupSubscriptions = platform.table(
+  'standup_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('standup_subscriptions_unique').on(table.orgId, table.projectId, table.userId),
+    index('standup_subscriptions_project_idx').on(table.orgId, table.projectId),
+  ],
+);

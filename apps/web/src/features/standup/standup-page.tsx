@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Flame,
+  Mail,
   PlayCircle,
   Sparkles,
 } from 'lucide-react';
@@ -23,11 +24,15 @@ import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
 import { cn } from '../../lib/cn.js';
 import {
   standupQuery,
+  standupSubscriptionQuery,
   narrateStandup,
+  subscribeToStandup,
+  unsubscribeFromStandup,
   type StandupCallout,
   type StandupCard,
   type StandupMember,
 } from './api.js';
+import { keys } from '../../lib/query.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 
 /**
@@ -101,6 +106,25 @@ export function StandupPage() {
     },
   });
 
+  /* "Email me this project's standup" (migration 0108). Needs no extra
+     capability check — `standupSubscriptionQuery`/`subscribe` share
+     `query`'s own `project:read` floor, so reaching this page at all
+     already proves it, the same reasoning `narrate`'s two-gate check does
+     NOT apply here. */
+  const subscription = useQuery(standupSubscriptionQuery(orgId, projectId));
+  const toggleSubscription = useMutation({
+    mutationFn: async () => {
+      if (subscription.data?.subscribed === true) {
+        await unsubscribeFromStandup(projectId);
+      } else {
+        await subscribeToStandup(projectId);
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.standupSubscription(orgId, projectId) });
+    },
+  });
+
   const project = (projects.data ?? []).find((entry) => entry.projectId === projectId);
 
   if (standup.isError)
@@ -112,20 +136,40 @@ export function StandupPage() {
         title="Standup"
         description={`${project?.name ?? 'This project'} — the last ${String(sinceHours)} hours, plus this sprint's urgent work.`}
         actions={
-          canUseAi &&
-          aiAssistantFlag === true && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={narrate.isPending || standup.isPending}
-              onClick={() => {
-                narrate.mutate();
-              }}
-            >
-              <Sparkles aria-hidden="true" className="size-3.5" />
-              {narrate.isPending ? 'Looking for patterns…' : 'Narrate'}
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            {subscription.data !== undefined && (
+              <Button
+                size="sm"
+                variant={subscription.data.subscribed ? 'primary' : 'ghost'}
+                disabled={toggleSubscription.isPending}
+                title={
+                  subscription.data.subscribed
+                    ? 'Stop emailing me this standup daily'
+                    : 'Email me this standup daily'
+                }
+                onClick={() => {
+                  toggleSubscription.mutate();
+                }}
+              >
+                <Mail aria-hidden="true" className="size-3.5" />
+                {subscription.data.subscribed ? 'Emailing me daily' : 'Email me daily'}
+              </Button>
+            )}
+
+            {canUseAi && aiAssistantFlag === true && (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={narrate.isPending || standup.isPending}
+                onClick={() => {
+                  narrate.mutate();
+                }}
+              >
+                <Sparkles aria-hidden="true" className="size-3.5" />
+                {narrate.isPending ? 'Looking for patterns…' : 'Narrate'}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -137,6 +181,10 @@ export function StandupPage() {
 
       {narrate.isError && (
         <ErrorView error={narrate.error} title="Could not summarize the standup" />
+      )}
+
+      {toggleSubscription.isError && (
+        <ErrorView error={toggleSubscription.error} title="Could not update your subscription" />
       )}
 
       {callout !== null && (

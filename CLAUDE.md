@@ -2029,10 +2029,11 @@ only to decide whether the button renders at all, per Phase 15 §1's "hide, don'
 Member without either simply does not see the button, and the server re-checks both regardless of
 what the client decided.
 
-**Deliberately not built: an emailed copy of the standup**, per §5's own text ("no email report
-as the primary surface... an optional emailed copy can reuse the existing notification-mail path
-later if wanted, but is not required for this wave") — a real, explicitly named deferral, not an
-oversight.
+**Deliberately not built at the time: an emailed copy of the standup**, per §5's own text ("no
+email report as the primary surface... an optional emailed copy can reuse the existing
+notification-mail path later if wanted, but is not required for this wave") — a real, explicitly
+named deferral, not an oversight. _(That "later" has since shipped — see "Standup email
+subscriptions" further down.)_
 
 **A FIXED `maxOutputTokens` broke against a real team, found from production logs rather than any
 test in this codebase's own (smaller) fixtures.** `narrateStandup` originally capped
@@ -3718,6 +3719,68 @@ name), drag-to-reschedule from the grid (rescheduling still goes through opening
 every other card-detail edit), and a My Tasks / cross-board calendar** — `home-page.tsx` has no
 view switcher at all today, board-scoped or otherwise, and adding a calendar there is a separate,
 real piece of work rather than a natural extension of this one.
+
+### Standup email subscriptions (SHIPPED) — the "later" Phase 15 §5 deferred
+
+`packages/db/migrations/0108_standup_subscriptions.*` · `platform.standup_subscriptions` ·
+`apps/api/src/standup/{subscription.service,standup-mail,digest-sweep,events}.ts` ·
+`standup.subscribe`/`.unsubscribe`/`.subscription` routes · `apps/web/src/features/standup/
+standup-page.tsx`'s "Email me daily" toggle. Closes the deferral Phase 15 §5's own section names
+explicitly: "an optional emailed copy can reuse the existing notification-mail path later if
+wanted, but is not required for this wave." This is that later.
+
+**Opt-in, per project, per person — never an org-wide default or an admin-set enrollment.** A
+subscription is a self-referential choice about one's own inbox, the same shape
+`identity.notification_prefs` already is: nobody can subscribe someone ELSE, and the toggle only
+appears where `query`'s own `project:read` floor already applies — `subscribe`/`unsubscribe`/
+`subscription` all reuse that identical permission, since reaching the standup page at all already
+proves it and there is no narrower thing "may receive this by email" could mean beyond "may see
+this screen."
+
+**A second cross-org sweep, deliberately NOT built on `platform/digest.ts`'s own machinery.** That
+sweep batches DELIVERY of `notification_deliveries` rows the projection already wrote — one row
+per event, marked `sent` once mailed. A standup subscription describes no event to batch; it is a
+standing preference, and what gets mailed each day is computed FRESH from `queryStandup`, never
+accumulated, so there is nothing to mark `sent` — the subscription row itself never changes on a
+successful send, the same way an alarm clock is not "consumed" by going off. `digest-sweep.ts`'s
+own header states this distinction plainly rather than forcing the new sweep to pretend it fits
+the old one's shape.
+
+**The identical cross-org-read-then-per-org-authorize split `platform/digest.ts` already uses.**
+`collectStandupSubscriptions` runs as `taskflow_audit` (migration 0108's own grant, mirroring
+0027's identical shape for `notification_deliveries` — a second permissive policy alongside the
+ordinary tenant-isolation one, read-only since `taskflow_audit` never writes a subscription) to see
+every org's subscriptions in one pass. Everything after that — `resolveOrgMembership`,
+`queryStandup` — runs as the ordinary `taskflow_app` role inside that ONE subscription's own org
+scope. `withGlobalScope` is never called from `apps/api/src/standup` at all; the cross-org read is
+entirely the audit role's job, exactly as designed, so guardrail 8's "`withGlobalScope` outside the
+identity module" check has nothing to catch here.
+
+**`resolveOrgMembership` re-resolves the subscriber's CURRENT role and access on every run** — the
+identical "a demotion takes effect immediately" property `apps/worker`'s automation executor
+already relies on for a rule's owner, reused here rather than trusting whatever access existed the
+day someone subscribed. A member removed from the org, or from the project's own tuple-granted
+access since subscribing, is silently skipped for that day — caught by a per-item `try`/`catch`
+around `sendOneDigest`, the same per-item resilience `sprint_add_cards`/`bulkReassignCards` already
+apply to a batch where one bad item must not sink the rest. The subscription row itself is left
+alone: this sweep only ever sends mail, never deletes a subscription, so a temporary access loss
+(a tuple edited back) resumes on its own the next day with no re-subscribe needed.
+
+**The digest is built entirely from the real `StandupResult`, never the AI narration.**
+`narrate.ts`'s `callout` is spend-gated (`ai:use` + `aiAssistant`) and a subscriber may hold
+neither — the emailed digest reuses exactly the deterministic Yesterday/Today/Overdue/Urgent data
+`query` already returns with no AI call, capped to the first 15 members in the email itself (an
+email is read scrolling, not scanning a UI grid) with an "...and N more" line rather than growing
+unboundedly for a large project.
+
+**An eighth `setInterval` sweep in `apps/api`, on purpose — not a reason to wait for
+`apps/worker`.** This file's own Layout section already accepts seven such timers as the standing
+placeholder until Phase 4's `apps/worker` migration happens for background jobs generally;
+`startStandupDigestSweep` follows the identical shape (daily, `unref()`'d, stopped alongside every
+other sweep on SIGTERM/SIGINT) rather than inventing a different pattern for one more one-a-day
+job. It reuses `main.ts`'s own `notificationMail.queue` — the same `MailQueue` instance the
+notification digest sweep and relay already send through — rather than opening a fourth queue in
+the process for no reason.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
