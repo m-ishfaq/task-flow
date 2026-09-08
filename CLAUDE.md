@@ -3987,6 +3987,52 @@ text ("Email me the whole team's standup daily" vs. "Email me my own tasks from 
 daily") can never drift from what the sweep will actually mail, because both read the identical
 permission.
 
+### Board page toolbar collapse on small screens (SHIPPED)
+
+`apps/web/src/features/work/board-page.tsx`. Prompted directly, from a screenshot of the board
+page at a phone-width viewport: the header (view tabs, saved views, filter/sprint, standup link,
+group-by/sort-by, presence, Archived/Share/Import-Export) is one `flex-wrap` row that reads fine
+at desktop width and, wrapped across five or six stacked lines below `md:`, pushed the actual
+board content off the first screenful entirely. Explicitly a pure UI change — no permission, data,
+or behavior differs from before it; every control inside the row is the exact same component with
+the exact same props.
+
+**Scoped to small screens only, via the same `useIsDesktop()` hook `calendar-view.tsx`'s own
+responsive swap already established this session — never a second breakpoint mechanism.**
+`useIsDesktop()` (`lib/use-media-query.ts`, Tailwind's `md:` 768px) gates the toggle's very
+existence: at desktop width `isDesktop` is `true`, the compact bar never renders, and the full
+toolbar row renders exactly as it did before this change, unconditionally — there is no way for a
+desktop viewer to see anything different, and no toggle exists for them to accidentally hit.
+
+**Below `md:`, a compact bar (the current view name plus a "Tools" toggle button) is what's
+always visible, and the full row — the same JSX, same components, same props, entirely
+unmodified — is what collapses.** `toolbarExpanded` is local, unpersisted `useState(false)`: the
+identical "no server representation" reasoning this same file's own `selection` state already
+gets, just for a UI disclosure instead of a bulk-action selection. Collapsed by default on a
+narrow viewport, since that is the actual complaint (too much chrome before any content); expanded
+reveals the identical row a desktop viewer always sees, with a `border-t` separating it from the
+compact bar above. The toggle button carries `aria-expanded` and a state-reflecting `aria-label`
+("Show board tools" / "Hide board tools"), and the chevron rotates via the same
+`transition-transform duration-[var(--motion-fast)]` timing token `card-identity-bar.tsx`'s own
+copy-button and `PermissionGrantChip`'s disclosure already use elsewhere in this codebase, rather
+than a hand-picked duration.
+
+**Not a `<details>`/`<summary>` disclosure, unlike `calls-panel.tsx`'s transcript expander or the
+AI assistant's "Everything it can do" panel — deliberately.** Both of those precedents are
+single-axis (open below a breakpoint, or always collapsible) with no third "never even offer this
+control" state to express. This needed exactly that third state at desktop width, which a bare
+`<details>` cannot express without either hiding the whole disclosure in CSS (leaving a dead,
+unstyled default triangle reachable via keyboard nav) or duplicating the toolbar's markup once per
+breakpoint. Gating on the JS-evaluated `isDesktop` boolean, the same mechanism the Calendar view
+fix already used to choose between `MonthGrid` and `AgendaList`, was the smaller, more consistent
+change.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+run against**, the identical caveat this session's Calendar-view work already states for the same
+reason. Verified by what a sandbox without one can prove: `tsc`, `eslint`, and the guardrail
+selftest, all clean. A person should open a board at a narrow viewport and click "Tools" before
+calling this done.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
