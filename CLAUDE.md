@@ -2995,6 +2995,68 @@ every other destructive-enough action in this codebase — built inline rather t
 `ConfirmButton` directly, since that component's `label` is sized for a whole button's text, not a
 compact pill that also has to hold a mono permission name and a date on one line.
 
+### Phase 15 §7 — a 406 hint, and `get_pr_file_content` (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` (`getPullRequestFileContent`,
+`fitFileContentToBudget`) · `apps/api/src/ai/tools/pr.ts`'s `get_pr_file_content` ·
+`apps/web/src/features/ai/tool-results.tsx`'s `renderGetPrFileContent`. Prompted directly, from a
+real transcript: `get_pr_diff` failing with a bare "GitHub answered 406", and — in the same
+exchange — "show me the content of apps/api/src/ai/complete.ts" getting a fabricated answer
+("this file wasn't part of the repository before this PR") instead of either real content or an
+honest refusal, because no tool in the registry could ever show a file's own text at all. The
+same message also asked, more broadly, for the assistant to do "whatever a team lead can do from
+GitHub by opening the PR" — a real, large ambition; this pass closes the two concrete gaps the
+transcript actually hit, not that whole surface at once.
+
+**406 is a real, distinct GitHub answer, not a variant of an existing hint.** `githubReadError`
+already distinguished 401 (dead token) from 403 (live token, lost scope) with different recovery
+advice; 406 means neither — GitHub refused to render the requested MEDIA TYPE for this specific
+resource, which happens on `get_pr_diff`'s own diff media type when a PR is too large to diff that
+way, and (once `get_pr_file_content` existed to hit it) on the raw content media type for a binary
+file. No reconnect or permission change fixes either case, so the hint names the real alternative
+— `get_pr_files`, or opening the PR/file on GitHub directly — instead of implying a retry would
+help.
+
+**`get_pr_file_content` needed a second round trip for the PR's own HEAD sha before it could ask
+for anything** — "the file at this PR" means the file on the PR's branch, not whatever the default
+branch currently holds, and GitHub's Contents API takes a `ref`. The same extra round trip
+`getPullRequestStatus` already pays for its own checks-rollup sha, for the identical reason.
+`application/vnd.github.raw` on the Contents API request is what returns the file's actual bytes
+directly as the response body, rather than a JSON envelope with the content base64-encoded inside
+it — the same "ask GitHub for the shape actually wanted" choice `get_pr_diff` already makes for
+`application/vnd.github.v3.diff`. A binary file (an image, a compiled asset) answers 406 under this
+media type, surfaced by the hint above rather than decoded into garbage text.
+
+**`fitFileContentToBudget` is `fitDiffToBudget`'s own binary-search shape, repeated rather than
+factored into one shared generic** — a second near-duplicate, matching how `githubReadError`
+itself already writes each status hint out per-case rather than building a lookup table for two.
+The property is identical either way: `JSON.stringify({..., content})` — the exact string
+`execute()` hands back as `ToolResult.content` — has to fit under `MAX_TOOL_RESULT_CONTENT_CHARS`,
+not just the raw content's own length, for the same JSON-escape-inflation reason the diff fix
+directly above this section documents finding on a real PR.
+
+**Each path segment is percent-encoded on its own, `/` separators preserved, before it ever
+reaches a GitHub URL** — a path containing `@`, `#`, or a literal `..` segment is neutralized the
+same way `encodeURIComponent` already neutralizes it everywhere else this codebase builds a URL
+from caller-shaped input; there is no local filesystem underneath this call for a `..` to
+traverse, only a GitHub API path, so no `repoPath`-style dedicated guard was needed on top of the
+encoding itself. `pr-read.service.test.ts` asserts the exact encoded URL directly rather than only
+that the call succeeds.
+
+**The frontend renderer is a scrollable code block with the path and a truncation flag in its own
+header row — the same "show real preformatted text, not a structured list" shape `renderGetPrDiff`'s
+own `<pre>` fallback already established, not a second implementation of it.** No "view on GitHub"
+link: unlike every other PR write-tool renderer, `PrFileContentResult` carries no `providerScope`
+(nothing needed one before this tool), and inventing one purely to build a link was out of scope
+for closing the immediate gap.
+
+**Deliberately not attempted in this pass: the broader "do whatever a team lead can do from
+GitHub" ambition the same message named.** Browsing the repository tree beyond one PR's changed
+files, viewing commit history, or anything resembling edit-and-push access are each real, separate
+features with their own authorization questions — `get_pr_file_content` closes the one concrete
+"show me this file" gap the transcript actually hit, not the whole surface a person browsing
+GitHub directly would have.
+
 ### Phase 15 §7 — `get_pr_diff` could 500 the whole assistant turn on a real PR (FIXED)
 
 `apps/api/src/automation/pr-read.service.ts`. Found from a real report — "tell me the diff for pr

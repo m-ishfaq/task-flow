@@ -980,6 +980,43 @@ function renderGetPrFiles(result: ToolResultMessage): ReactNode | null {
   );
 }
 
+/**
+ * A single file's content, at the PR's own branch — a scrollable code
+ * block, the identical "show real preformatted text, not a structured
+ * list" shape `renderGetPrDiff`'s own `<pre>` fallback already established
+ * for content that has no natural row-per-item form. Path and a truncation
+ * note sit in the header rather than inline with the code, so a long first
+ * line of real content is never confused with metadata about the file.
+ */
+function renderGetPrFileContent(result: ToolResultMessage): ReactNode | null {
+  if (result.isError === true) return <ErrorNote message={result.content} />;
+  const parsed = parseJson(result.content);
+  if (!isRecord(parsed)) return null;
+  const path = stringField(parsed, 'path');
+  const content = stringField(parsed, 'content');
+  if (path === null || content === null) return null;
+  const truncated = parsed['truncated'] === true;
+
+  return (
+    <ResultPanel>
+      <div className="overflow-hidden rounded-md border border-line/60">
+        <div className="flex items-center gap-2 border-b border-line/60 bg-surface-sunken/60 px-2 py-1">
+          <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{path}</span>
+          {truncated && (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-warning">
+              Truncated
+            </span>
+          )}
+        </div>
+        <pre className="max-h-80 overflow-auto whitespace-pre px-2 py-1.5 font-mono text-[11px] leading-relaxed text-ink">
+          {content}
+        </pre>
+      </div>
+    </ResultPanel>
+  );
+}
+
 function renderListRepos(result: ToolResultMessage): ReactNode | null {
   if (result.isError === true) return <ErrorNote message={result.content} />;
   const parsed = parseJson(result.content);
@@ -1228,6 +1265,7 @@ const RENDERERS: Readonly<
   list_prs: (result) => renderListPrs(result),
   get_pr_diff: (result) => renderGetPrDiff(result),
   get_pr_files: (result) => renderGetPrFiles(result),
+  get_pr_file_content: (result) => renderGetPrFileContent(result),
   get_pr_comments: (result) => renderGetPrComments(result),
   pr_post_comment: (result, call) => renderPrPostComment(result, call),
   pr_request_changes: (result, call) => renderPrRequestChanges(result, call),

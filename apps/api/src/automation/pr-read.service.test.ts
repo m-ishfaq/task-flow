@@ -18,6 +18,7 @@ import {
 import {
   getPullRequestComments,
   getPullRequestDiff,
+  getPullRequestFileContent,
   getPullRequestFiles,
   getPullRequestStatus,
   listConnectedRepos,
@@ -684,6 +685,133 @@ describe('getPullRequestStatus', () => {
     await expect(getPullRequestStatus(member, deps, { prNumber: 1 })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+    expect(fake.calls).toHaveLength(0);
+  });
+});
+
+/** `getPullRequestFileContent` needs the same `/pulls/{n}` JSON body
+    `fakeGithubWithStatus` already builds (for the head sha) plus a
+    `/contents/{path}` handler `fakeGithub`'s own diff-text route was never
+    built for — a third small composition over the shared base, matching
+    that file's own precedent rather than teaching one fake every shape. */
+function fakeGithubWithFileContent(options: {
+  readonly pr?: Record<string, unknown>;
+  readonly prStatus?: number;
+  readonly content?: string;
+  readonly contentStatus?: number;
+}): { fetch: typeof fetch; calls: string[] } {
+  const fake = fakeGithub({});
+  const pr = options.pr ?? {
+    state: 'open',
+    draft: false,
+    merged_at: null,
+    head: { sha: 'abc123' },
+  };
+
+  const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes('/contents/')) {
+      /* Pushed here, unlike `/pulls/\d+$/` and `/check-runs` below (matching
+         `fakeGithubWithStatus`'s own precedent of not recording those) —
+         this is the one call a real test below needs to inspect directly
+         (the percent-encoded path), and it never falls through to
+         `fake.fetch`, so there is no risk of the double-count that pushing
+         BEFORE the fallthrough would create for every other URL. */
+      fake.calls.push(url);
+      return new Response(options.content ?? 'export const x = 1;\n', {
+        status: options.contentStatus ?? 200,
+        headers: { 'content-type': 'text/plain' },
+      });
+    }
+    if (/\/pulls\/\d+$/.test(url)) {
+      return new Response(JSON.stringify(pr), {
+        status: options.prStatus ?? 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return fake.fetch(input, init);
+  }) as typeof fetch;
+
+  return { fetch: fn, calls: fake.calls };
+}
+
+describe('getPullRequestFileContent', () => {
+  it('returns the real file content, at the PR head', async () => {
+    const { owner } = await scaffold('file-content-ok');
+    const fake = fakeGithubWithFileContent({ content: 'export const x = 1;\n' });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileContent(owner, deps, {
+      prNumber: 1,
+      path: 'src/index.ts',
+    });
+
+    expect(result).toEqual({
+      prNumber: 1,
+      path: 'src/index.ts',
+      truncated: false,
+      content: 'export const x = 1;\n',
+    });
+  });
+
+  it('percent-encodes each path segment, preserving slashes, without touching the PR head sha', async () => {
+    const { owner } = await scaffold('file-content-encode');
+    const fake = fakeGithubWithFileContent({
+      pr: { state: 'open', draft: false, merged_at: null, head: { sha: 'deadbeef' } },
+    });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await getPullRequestFileContent(owner, deps, {
+      prNumber: 1,
+      path: 'src/a b/@weird#file.ts',
+    });
+
+    const contentsCall = fake.calls.find((call) => call.includes('/contents/'));
+    expect(contentsCall).toBe(
+      'https://api.github.com/repos/acme/todo/contents/src/a%20b/%40weird%23file.ts?ref=deadbeef',
+    );
+  });
+
+  it('keeps the serialized result under the tool-result content budget for a large file', async () => {
+    const { owner } = await scaffold('file-content-truncated');
+    const fake = fakeGithubWithFileContent({ content: 'x'.repeat(25_000) });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    const result = await getPullRequestFileContent(owner, deps, {
+      prNumber: 1,
+      path: 'big.txt',
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.content).toContain('file truncated at');
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(20_000);
+  });
+
+  it("surfaces GitHub's 406 (a binary file, or one too large to render this way) with a real hint", async () => {
+    const { owner } = await scaffold('file-content-406');
+    const fake = fakeGithubWithFileContent({ contentStatus: 406 });
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+
+    await expect(
+      getPullRequestFileContent(owner, deps, { prNumber: 1, path: 'logo.png' }),
+    ).rejects.toThrow(/could not render this in the requested format/);
+  });
+
+  it('refuses a member with no pr:view grant, before any network call', async () => {
+    const { owner, member } = await scaffold('file-content-refused');
+    const fake = fakeGithubWithFileContent({});
+    const deps = depsFor(fake.fetch);
+    await connectedGithub(owner, deps);
+    fake.calls.length = 0;
+
+    await expect(
+      getPullRequestFileContent(member, deps, { prNumber: 1, path: 'src/index.ts' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(fake.calls).toHaveLength(0);
   });
 });

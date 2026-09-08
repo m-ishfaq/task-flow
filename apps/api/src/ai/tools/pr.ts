@@ -5,6 +5,7 @@ import { connectedGithubRepo } from '../../automation/integration.service.js';
 import {
   getPullRequestComments,
   getPullRequestDiff,
+  getPullRequestFileContent,
   getPullRequestFiles,
   listConnectedRepos,
   listPullRequests,
@@ -182,6 +183,45 @@ export function createGetPrFilesTool(deps: PrReadDeps): ToolDefinition {
       const files = await getPullRequestFiles(actorOf(ctx), deps, input);
       if (files.length === 0) return { content: 'This pull request changes no files.' };
       return { content: JSON.stringify(files) };
+    },
+  });
+}
+
+const GetFileContentInput = z
+  .object({
+    prNumber: z.number().int().positive(),
+    path: z.string().min(1).max(1024),
+    ...RepoScopeField,
+  })
+  .strict();
+
+export function createGetPrFileContentTool(deps: PrReadDeps): ToolDefinition {
+  return defineTool({
+    name: 'get_pr_file_content',
+    description:
+      "Fetches a single file's full current content, at the pull request's own branch (not the " +
+      'default branch) — for a real question like "show me the content of X", not a diff. ' +
+      'Get the exact `path` from `get_pr_files` first if you do not already have it verbatim. ' +
+      "Long files are truncated — check the result's `truncated` field. Refuses on a binary " +
+      'file (an image, a compiled asset) rather than returning garbage.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        prNumber: { type: 'integer', description: 'The pull request number.' },
+        path: {
+          type: 'string',
+          description: 'The file path within the repository, exactly as get_pr_files reports it.',
+        },
+        ...RepoScopeProperty,
+      },
+      required: ['prNumber', 'path'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: false,
+    inputSchema: GetFileContentInput,
+    async execute(ctx, input) {
+      const result = await getPullRequestFileContent(actorOf(ctx), deps, input);
+      return { content: JSON.stringify(result) };
     },
   });
 }

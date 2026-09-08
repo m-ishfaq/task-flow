@@ -155,14 +155,26 @@ function githubReadError(status: number): Error {
   }
   /* 401 means the token itself is dead — revoked, or the OAuth App's own
      secret rotated — never something a retry recovers from, unlike 403
-     (a live token that merely lost scope, or transient rate limiting). */
+     (a live token that merely lost scope, or transient rate limiting). 406
+     is neither: it means GitHub refused to render the requested MEDIA TYPE
+     for this specific resource — found from a real report, `get_pr_diff`
+     answering "GitHub answered 406" on a real PR. GitHub's diff/patch media
+     types (`application/vnd.github.v3.diff`, and the raw content media type
+     `get_pr_file_content` requests) both refuse this way when the target is
+     too large to render in that format, or — for a file — when it is
+     binary. Naming the real alternative matters here specifically because,
+     unlike 401/403, no reconnect or permission change fixes it: the same
+     request will keep failing until a smaller-shaped one is asked instead. */
   const hint =
     status === 401
       ? ' — the connector token is invalid or was revoked; reconnect the repository ' +
         '(Settings → Automation)'
       : status === 403
         ? ' — the connector token no longer has access, or GitHub is rate limiting'
-        : '';
+        : status === 406
+          ? ' — GitHub could not render this in the requested format, most likely because it is ' +
+            'too large or binary; try get_pr_files for the file list, or view it directly on GitHub'
+          : '';
   return errors.serviceUnavailable(`GitHub answered ${String(status)}${hint}.`);
 }
 
@@ -497,4 +509,129 @@ export async function getPullRequestStatus(
     isDraft: prBody['draft'] === true,
     checksStatus,
   };
+}
+
+export interface PrFileContentResult {
+  readonly prNumber: number;
+  readonly path: string;
+  readonly truncated: boolean;
+  readonly content: string;
+}
+
+function fileContentTruncationNote(shown: number, total: number): string {
+  return `\n\n… [file truncated at ${String(shown)} characters; ${String(total - shown)} more characters omitted — open it on GitHub to see the rest]`;
+}
+
+/**
+ * `fitDiffToBudget`'s own binary-search shape, repeated here rather than
+ * factored into one shared generic — a second near-duplicate matches this
+ * file's own precedent (`githubReadError`'s 401/403/406 hints, each written
+ * out per status rather than a shared table) more closely than inventing an
+ * abstraction neither of these two truncators would meaningfully simplify.
+ * The property is identical either way: `JSON.stringify({..., content})` —
+ * the exact string `execute()` hands back as `ToolResult.content` — must fit
+ * under `MAX_TOOL_RESULT_CONTENT_CHARS`, not just `content.length` on its
+ * own, for the same JSON-escape-inflation reason `fitDiffToBudget`'s own
+ * header documents (a source file is not as newline-dense as a diff, but a
+ * minified file or one full of string literals can still escape far enough
+ * to matter).
+ */
+function fitFileContentToBudget(prNumber: number, path: string, raw: string): PrFileContentResult {
+  const whole: PrFileContentResult = { prNumber, path, truncated: false, content: raw };
+  if (JSON.stringify(whole).length <= MAX_TOOL_RESULT_CONTENT_CHARS) return whole;
+
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    const candidate = raw.slice(0, mid) + fileContentTruncationNote(mid, raw.length);
+    const size = JSON.stringify({ prNumber, path, truncated: true, content: candidate }).length;
+    if (size <= MAX_TOOL_RESULT_CONTENT_CHARS) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return {
+    prNumber,
+    path,
+    truncated: true,
+    content: raw.slice(0, lo) + fileContentTruncationNote(lo, raw.length),
+  };
+}
+
+/**
+ * A file's own content, at the PR's HEAD commit — the gap a real transcript
+ * found: `get_pr_diff`/`get_pr_files` can say WHAT changed, but nothing in
+ * this registry could ever show the file's actual current text, so "show me
+ * apps/api/src/ai/complete.ts" had no tool to reach for and the model
+ * fabricated an answer instead ("this file wasn't part of the repository
+ * before this PR") from data it never actually had — `get_pr_diff` had
+ * failed with a 406 the very same turn, so nothing about the file's history
+ * was known at all.
+ *
+ * Needs the PR's head SHA first (an extra round trip `getPullRequestStatus`
+ * already pays for the identical reason — the checks call needs it too),
+ * because "the file at this PR" means the file on the PR's own branch, not
+ * whatever the default branch happens to hold right now.
+ *
+ * `application/vnd.github.raw` — not the default `application/vnd.github+json`
+ * — is what makes GitHub's Contents API return the file's actual bytes as
+ * the response body rather than a JSON envelope with the content base64
+ * -encoded inside it; the same "ask GitHub for the shape we actually want,
+ * rather than post-processing its default shape" choice `getPullRequestDiff`
+ * already makes for `application/vnd.github.v3.diff`. A binary file (an
+ * image, a compiled asset) answers 406 under this media type — surfaced by
+ * `githubReadError`'s own 406 hint, not silently decoded into garbage text.
+ */
+export async function getPullRequestFileContent(
+  actor: AutomationActor,
+  deps: PrReadDeps,
+  input: {
+    readonly prNumber: number;
+    readonly path: string;
+    readonly repoScope?: string | undefined;
+  },
+): Promise<PrFileContentResult> {
+  assertMayView(actor);
+  const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
+  const fetchFn = deps.fetchImpl ?? fetch;
+  const repo = repoPath(connector.providerScope);
+
+  const prResponse = await fetchFn(
+    `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}`,
+    { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
+  );
+  if (!prResponse.ok) throw githubReadError(prResponse.status);
+  const prBody: unknown = await prResponse.json();
+  if (!isRecord(prBody))
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+  const head = prBody['head'];
+  if (!isRecord(head) || typeof head['sha'] !== 'string') {
+    throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
+  }
+
+  /* Each path segment percent-encoded on its own, `/` separators preserved —
+     a path containing `@`, `#`, or a literal `..` segment is neutralized the
+     same way `encodeURIComponent` already neutralizes it anywhere else in
+     this codebase's URL-building; there is no filesystem underneath this
+     call for a `..` to traverse, only a GitHub API path, so no `repoPath`
+     -style dedicated guard is needed on top of the encoding itself. */
+  const encodedPath = input.path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+
+  const contentResponse = await fetchFn(
+    `https://api.github.com/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(head['sha'])}`,
+    {
+      headers: { ...githubHeaders(connector.token), accept: 'application/vnd.github.raw' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
+  if (!contentResponse.ok) throw githubReadError(contentResponse.status);
+
+  const raw = await contentResponse.text();
+  return fitFileContentToBudget(input.prNumber, input.path, raw);
 }

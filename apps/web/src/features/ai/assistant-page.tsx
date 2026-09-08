@@ -169,7 +169,8 @@ const CAPABILITIES: readonly {
     icon: <GitPullRequest aria-hidden="true" className="size-3.5" />,
     items: [
       'List pull requests — open, closed, or all — on the connected repo',
-      'Read a PR’s diff or its comments (conversation and inline review)',
+      'Read a PR’s diff, its comments (conversation and inline review), or a specific file’s ' +
+        'full content',
       'Post a comment, or request changes, on a PR',
       'Merge or close a PR',
       'Link a card to the PR that implements it, and see what’s already linked',

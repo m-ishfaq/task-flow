@@ -29,6 +29,7 @@ import {
   createCreateBranchFromCardTool,
   createGetPrCommentsTool,
   createGetPrDiffTool,
+  createGetPrFileContentTool,
   createGetPrFilesTool,
   createListCardPrsTool,
   createListPrsTool,
@@ -171,6 +172,18 @@ export interface ToolRegistryDeps {
  * card" — see `branch.service.ts`'s own header for the deterministic
  * `<reference>-<slug>` naming and why an existing branch is reported back
  * rather than treated as a failure.
+ *
+ * `get_pr_file_content` closes the gap directly behind `get_pr_diff`/
+ * `get_pr_files`: both can say WHAT changed, neither could ever show a
+ * file's actual current text — found from a real transcript where "show me
+ * the content of X" had nothing to call, and the model fabricated an answer
+ * from data it never had rather than saying so. Fetches at the PR's own
+ * HEAD commit via GitHub's raw content media type, truncated the same
+ * `fitDiffToBudget`-shaped way `get_pr_diff` already is (see
+ * `pr-read.service.ts`'s `fitFileContentToBudget`) — a second near-duplicate
+ * rather than a shared generic, matching this file's own
+ * `githubReadError` precedent of writing each status hint out rather than
+ * building a table for two.
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
@@ -201,6 +214,7 @@ export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefiniti
     createListPrsTool(deps.prReadDeps),
     createGetPrDiffTool(deps.prReadDeps),
     createGetPrFilesTool(deps.prReadDeps),
+    createGetPrFileContentTool(deps.prReadDeps),
     createGetPrCommentsTool(deps.prReadDeps),
     createPrPostCommentTool(deps.prReadDeps),
     createPrRequestChangesTool(deps.prReadDeps),

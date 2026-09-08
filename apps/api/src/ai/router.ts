@@ -214,8 +214,8 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'date, never a pre-computed relative answer. ' +
                 'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
                 'list_labels, list_members, list_sprints, list_statuses, list_channels, ' +
-                'list_repos, list_prs, get_pr_diff, get_pr_files, get_pr_comments, ' +
-                'list_card_prs, and ' +
+                'list_repos, list_prs, get_pr_diff, get_pr_files, get_pr_file_content, ' +
+                'get_pr_comments, list_card_prs, and ' +
                 "every write tool's own result — " +
                 'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
                 'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
@@ -232,11 +232,20 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'its reference (e.g. "WEB-142"), call `find_card` to resolve it — `search` does ' +
                 'not index card references, only their content, so it will not find one. For ' +
                 'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
-                '`get_pr_files`/`get_pr_comments` — there is no other tool that can see GitHub, ' +
+                '`get_pr_files`/`get_pr_file_content`/`get_pr_comments` — there is no other tool ' +
+                'that can see GitHub, ' +
                 'and a PR number (e.g. "PR #42") is not a cardId or any other kind of id in this ' +
                 'app. Use `get_pr_files` for "what files does this PR touch" — cheaper than ' +
                 '`get_pr_diff` and never truncated; reach for `get_pr_diff` only when the actual ' +
-                'line-by-line content matters. ' +
+                "line-by-line content matters; when the user asks to SEE or SHOW a file's " +
+                'content (not what changed, but the whole current file), use ' +
+                '`get_pr_file_content` with the exact path — get it from `get_pr_files` first if ' +
+                'you do not already have it verbatim from earlier in the conversation. If ' +
+                '`get_pr_file_content` or any other GitHub tool fails or refuses, say plainly ' +
+                'that the tool failed and why (using the error message you were given) — never ' +
+                'invent a claim about the file or the PR (e.g. whether a file is new, what it ' +
+                'contains, when it was added) to paper over a failed call; you only know what a ' +
+                'successful tool result actually told you. ' +
                 '`list_prs` defaults to OPEN pull requests only — if the user asks for closed, ' +
                 'merged, or "all" pull requests, you MUST pass `state: "closed"` or ' +
                 '`state: "all"` explicitly; do not assume the default list already covers what ' +
