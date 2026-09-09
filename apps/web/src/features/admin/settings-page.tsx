@@ -95,10 +95,16 @@ export function SettingsPage() {
 
       <OrgSection orgId={orgId} />
       {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
-      <MemberSection orgId={orgId} />
+      {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
+          role except Guest. Before these fields existed, both sections
+          rendered unconditionally and fired their own roster queries
+          regardless of who was looking, so a Guest reaching `/settings` (the
+          top-bar "Settings" link has no gate of its own — every role can open
+          this page) hit a raw FORBIDDEN `ErrorView` for each. */}
+      {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
       {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
       {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
-      <TeamSection orgId={orgId} />
+      {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
     </div>
   );
 }
@@ -196,8 +202,10 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     updateOrg: false,
     inviteMember: false,
     manageMembers: false,
+    viewDirectory: false,
     removeMembers: false,
     manageTeams: false,
+    viewTeams: false,
     createProject: false,
     viewAnalytics: false,
     viewAuditLog: false,
@@ -736,8 +744,10 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     updateOrg: false,
     inviteMember: false,
     manageMembers: false,
+    viewDirectory: false,
     removeMembers: false,
     manageTeams: false,
+    viewTeams: false,
     createProject: false,
     viewAnalytics: false,
     viewAuditLog: false,
@@ -1390,8 +1400,10 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
     updateOrg: false,
     inviteMember: false,
     manageMembers: false,
+    viewDirectory: false,
     removeMembers: false,
     manageTeams: false,
+    viewTeams: false,
     createProject: false,
     viewAnalytics: false,
     viewAuditLog: false,

@@ -27,19 +27,35 @@ import {
   type Member,
   type Team,
 } from '../../src/lib/org-settings.js';
+import { CapabilityGate } from '../../src/lib/capability-gate.js';
 
 /**
  * Organization settings — the org itself, its members, and its teams,
  * ported from `apps/web/src/features/admin/settings-page.tsx`. Same
  * routes, same capability-gated shape: the member and team ROSTERS are
- * `member:read`/`team:read` (every role sees them, matching
- * `channel-details/[channelId].tsx`'s own precedent of showing a full
- * roster and gating only the ACTIONS on top of it), while inviting,
+ * `member:read`/`team:read` — every role EXCEPT Guest sees them by role
+ * alone (`packages/policy/src/roles.ts`'s empty `GUEST` list; this header
+ * used to say "every role," which was wrong the moment a Guest could reach
+ * this screen at all), matching `channel-details/[channelId].tsx`'s own
+ * precedent of showing a full roster and gating only the ACTIONS on top of
+ * it, for every role that CAN see the roster in the first place. Inviting,
  * changing a role, removing, transferring ownership, creating a team, and
  * managing its members each check their own `capabilities` flag from
  * `tenancy.orgs.get` — never a role comparison here (CLAUDE.md rule 2;
  * `role === 'admin'` outside `packages/policy` is a lint error this file
  * never triggers).
+ *
+ * The default export wraps the real screen in
+ * `CapabilityGate capability="viewDirectory"` — found from a real report: a
+ * Guest reaches this screen via `account.tsx`'s "Manage organization" link,
+ * which is deliberately always shown (nothing on THIS screen needs gating
+ * at the link level, since every non-Guest role sees at least the org's own
+ * name), and every non-Guest role has always been able to see a member
+ * roster here. `viewDirectory` is exactly the boolean that already answers
+ * "can this caller reach `tenancy.members.list`/`tenancy.orgs.get`'s member
+ * data at all" — reusing it here is the identical fix `people.tsx` already
+ * makes for the org directory, applied to the second place a Guest could
+ * reach the same raw FORBIDDEN.
  *
  * Reached from `account.tsx`'s "Manage organization" link (that screen
  * itself now a pushed sibling of this one under `(app)/`, not a tab — see
@@ -80,7 +96,15 @@ import {
  * more once Wave 2 made the automation permissions individually grantable
  * too and an org running mobile-only had no way to hand one out.
  */
-export default function OrgSettingsScreen() {
+export default function OrgSettingsScreen(): React.JSX.Element {
+  return (
+    <CapabilityGate capability="viewDirectory">
+      <OrgSettingsScreenContent />
+    </CapabilityGate>
+  );
+}
+
+function OrgSettingsScreenContent() {
   const paddingTop = useTopInset();
   const queryClient = useQueryClient();
   const currentUserId = useSession((state) => state.userId);

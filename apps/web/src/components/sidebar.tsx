@@ -166,7 +166,7 @@ const PRIMARY_SECTIONS: readonly {
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
       },
-      { to: '/people', label: 'People', icon: Users },
+      { to: '/people', label: 'People', icon: Users, capability: 'viewDirectory' },
       {
         to: '/analytics',
         label: 'Analytics',

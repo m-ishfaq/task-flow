@@ -7,6 +7,7 @@ import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { Avatar } from '../../src/lib/avatar.js';
+import { CapabilityGate } from '../../src/lib/capability-gate.js';
 import {
   DIRECTORY_QUERY_KEY,
   directoryLabel,
@@ -40,11 +41,28 @@ import {
  * `onEndReached`, matching web's own choice not to spend network on a
  * scroll nobody asked for.
  *
- * Nothing here re-derives authorization (CLAUDE.md §8.2): `member:read`
- * decides who sees rows, and a caller without it gets an empty first page,
- * never an error card.
+ * `member:read` is `ORG_LEVEL_PERMISSIONS` (`packages/policy/src/
+ * permissions.ts`) — a Guest's tuples can never satisfy it, so the route
+ * floor refuses with a plain role-only FORBIDDEN rather than the caller
+ * simply seeing an empty page. This header used to claim the opposite; that
+ * was wrong (found from a real report: a Guest tapping "People" saw a raw
+ * backend error, not an empty directory). The default export below wraps
+ * the real screen in `CapabilityGate capability="viewDirectory"` — the
+ * identical route-level fix `insights.tsx`/`billing.tsx` already apply —
+ * so a deep link or a stale link lands on a plain "not for your role"
+ * screen instead of this component loading and surfacing a raw FORBIDDEN.
+ * Still cosmetic only: `people.directory.list`/`.get` enforce `member:read`
+ * themselves regardless of what this renders.
  */
-export default function PeopleScreen() {
+export default function PeopleScreen(): React.JSX.Element {
+  return (
+    <CapabilityGate capability="viewDirectory">
+      <PeopleScreenContent />
+    </CapabilityGate>
+  );
+}
+
+function PeopleScreenContent() {
   const paddingTop = useTopInset();
 
   const directory = useInfiniteQuery({

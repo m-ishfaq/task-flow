@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, schema, withOrgScope } from '@taskflow/db';
 import type { ProjectId } from '@taskflow/contracts';
+import { isGuestRole } from '@taskflow/policy';
 import { requireProject } from '../work/project.service.js';
 import { orgOf, type WorkActor } from '../work/shared.js';
 
@@ -41,6 +42,27 @@ import { orgOf, type WorkActor } from '../work/shared.js';
  * headings would read as double-counting on a screen whose whole point is a
  * fast scan. `today` is independent of both — an active card can be
  * overdue, urgent, both, or neither, and still shows in `today` regardless.
+ *
+ * ## A guest sees only their own row — a real, reported gap, not a design change
+ *
+ * The "every project member should reach it" reasoning above is deliberately
+ * unchanged for `member`/`admin`/`owner` — this is still not `analytics:read`,
+ * and a Member still sees the whole roster. A GUEST is a different actor: per
+ * this codebase's own guest-access design, a guest's entire access is a
+ * relationship tuple on the one project they were invited to (Phase 15's
+ * "Guest access into Work"), and this query was the one place that tuple's
+ * narrow scope did not actually narrow anything — a viewer-relation guest who
+ * can read the project's cards could also read every OTHER member's personal
+ * Yesterday/Today/Overdue/Urgent breakdown, which is colleague-identifying
+ * data an external party has no reason to see. `members` is filtered to the
+ * guest's own row (via `isGuestRole`, `@taskflow/policy`'s sanctioned way to
+ * ask this — guardrail 7 bans `role === 'guest'` inline) after the roster is
+ * built, mirroring `standup-mail.ts`'s own team/personal split for the
+ * EMAILED digest, extended here to the live page for the one actor that
+ * split never covered. `urgentSprintCards`/`sprint` are untouched: neither
+ * names a member, and a viewer-relation guest already sees every card's
+ * title/priority/due date on the board itself, so there is nothing new to
+ * disclose there.
  */
 
 export interface StandupCard {
@@ -204,7 +226,7 @@ export async function queryStandup(
     const names =
       memberIds.length === 0 ? new Map<string, string | null>() : await nameLookup(tx, memberIds);
 
-    const members: StandupMember[] = memberIds
+    const allMembers: StandupMember[] = memberIds
       .map((userId) => {
         const bucket = byMember.get(userId);
         if (bucket === undefined) throw new Error('unreachable: bucket built from its own keys');
@@ -216,6 +238,12 @@ export async function queryStandup(
       })
       .sort((a, b) => (a.name ?? a.userId).localeCompare(b.name ?? b.userId));
 
+    /* A guest's own row only — see this file's own header. Every other role
+       keeps the full roster, unchanged. */
+    const members = isGuestRole(actor.subject.role)
+      ? allMembers.filter((member) => member.userId === actor.subject.userId)
+      : allMembers;
+
     return {
       sprint:
         sprint === undefined
@@ -223,7 +251,9 @@ export async function queryStandup(
           : { sprintId: sprint.id, name: sprint.name, endsOn: sprint.endsOn },
       urgentSprintCards,
       members,
-      headline: headlineFor(members, urgentSprintCards),
+      headline: isGuestRole(actor.subject.role)
+        ? 'Showing only your own tasks — other members are not shown to guests.'
+        : headlineFor(members, urgentSprintCards),
     };
   });
 }

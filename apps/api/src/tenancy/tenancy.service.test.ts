@@ -199,8 +199,10 @@ describe('settings capabilities', () => {
       updateOrg: true,
       inviteMember: true,
       manageMembers: true,
+      viewDirectory: true,
       removeMembers: true,
       manageTeams: true,
+      viewTeams: true,
       createProject: true,
       viewAnalytics: true,
       viewAuditLog: true,
@@ -229,13 +231,20 @@ describe('settings capabilities', () => {
     // audit administration at all, and (Phase 15 §1) the telephony five and
     // (Wave 2) the five automation permissions are no longer role defaults
     // either: this Member has no `authz.member_grants` row, so all ten read
-    // false too.
+    // false too. `viewDirectory`/`viewTeams` are the two exceptions: a
+    // Member holds `member:read`/`team:read` directly by role
+    // (`packages/policy/src/roles.ts`'s `MEMBER` array), the same
+    // permissions that gate `/people` and the Settings page's members/team
+    // lists — only Guest, whose role grants nothing at all, reads either
+    // one false too.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
       manageMembers: false,
+      viewDirectory: true,
       removeMembers: false,
       manageTeams: false,
+      viewTeams: true,
       createProject: false,
       viewAnalytics: false,
       viewAuditLog: false,
@@ -282,8 +291,10 @@ describe('settings capabilities', () => {
       updateOrg: false,
       inviteMember: true,
       manageMembers: false,
+      viewDirectory: true,
       removeMembers: false,
       manageTeams: true,
+      viewTeams: true,
       createProject: true,
       viewAnalytics: true,
       viewAuditLog: true,

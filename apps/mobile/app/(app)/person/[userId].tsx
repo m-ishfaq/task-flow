@@ -32,6 +32,7 @@ import {
 } from '../../../src/lib/people.js';
 import { PHONE_CONTACTS_QUERY_KEY } from '../../../src/lib/telephony.js';
 import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
+import { CapabilityGate } from '../../../src/lib/capability-gate.js';
 
 /**
  * One person in the org — `apps/web/src/features/people/person-page.tsx`'s
@@ -60,6 +61,12 @@ import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
  * and rely on the server to answer FORBIDDEN when a plain Member touched
  * Save (Phase 15 §1's sweep missed this screen the first time through).
  * Gated the same way `settings-page.tsx`'s own `PermissionsSection` is.
+ *
+ * Also wrapped in `CapabilityGate capability="viewDirectory"`, matching
+ * `people.tsx`'s own fix — `people.directory.get` floors on the identical
+ * `member:read`, and a deep link (or a Guest tapping through an org-chart
+ * card before that fix existed) reached this screen the same way `people
+ * .tsx` did, with the same raw-FORBIDDEN result.
  */
 export default function PersonScreen() {
   const params = useLocalSearchParams<{ userId: string }>();
@@ -74,7 +81,11 @@ export default function PersonScreen() {
     );
   }
 
-  return <PersonContent userId={parsedUserId.data} />;
+  return (
+    <CapabilityGate capability="viewDirectory">
+      <PersonContent userId={parsedUserId.data} />
+    </CapabilityGate>
+  );
 }
 
 function PersonContent({ userId }: { readonly userId: string }) {

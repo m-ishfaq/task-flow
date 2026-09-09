@@ -135,16 +135,25 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Manage organization</Text>
         </Pressable>
-        {/* Same "always shown, floored on the server" reasoning — `member
-            :read` decides who sees rows once there, not a check here. */}
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={() => {
-            router.push('/people');
-          }}
-        >
-          <Text style={styles.secondaryButtonText}>People</Text>
-        </Pressable>
+        {/* `member:read` is `ORG_LEVEL_PERMISSIONS` (packages/policy/src/
+            permissions.ts) — a Guest's tuples can never satisfy it, so the
+            route floor refuses with a plain role-only FORBIDDEN before the
+            handler runs. This comment used to claim the opposite ("floored
+            on the server, not a check here" — an empty list for a caller
+            who cannot read it) and that was wrong: a Guest tapping this link
+            landed on a raw error screen, not an empty directory. Gated the
+            identical way Automations/Insights already are below, rather
+            than leaving the one remaining ungated entry point. */}
+        {capabilities?.viewDirectory === true && (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              router.push('/people');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>People</Text>
+          </Pressable>
+        )}
         {/* `automation:manage` — Admin/Owner by role, or an individual
             grant (Wave 2). This hides entirely for anyone with neither,
             rather than showing a link that always lands on FORBIDDEN

@@ -276,10 +276,41 @@ export interface SettingsCapabilities {
   readonly inviteMember: boolean;
   /** Change a member's role; transfer ownership (both are `member:manage`). */
   readonly manageMembers: boolean;
+  /**
+   * May open `/people` (the org directory) at all, AND may see the member
+   * roster on the Settings page's own `MemberSection` — `member:read`, an
+   * `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly (see
+   * `packages/policy/src/roles.ts`'s empty `GUEST` list). The sidebar reads
+   * this the identical way it already reads `viewAnalytics`/`viewAuditLog`
+   * to hide the "People" nav item entirely, rather than showing it and
+   * letting `people-page.tsx`/`person-page.tsx` answer FORBIDDEN — before
+   * this field existed, `/people` had NO capability gate at all (the one
+   * item in `sidebar.tsx` with none), so a Guest saw the nav item, clicked
+   * it, and landed on a plain error card. There is no plan or grant that
+   * turns `member:read` on for a Guest, so a locked icon would be wrong
+   * here too — hidden entirely is the only honest state, same reasoning as
+   * `viewAnalytics`'s own comment.
+   *
+   * `MemberSection`'s own roster query was the second, larger instance of
+   * the identical gap: unconditionally rendered on `/settings`, which is
+   * reachable from the persistent top-bar nav for every role including
+   * Guest — so a Guest reaching Settings hit the same raw FORBIDDEN one
+   * level up from `/people`, on a page most people reach far more often.
+   */
+  readonly viewDirectory: boolean;
   /** Remove a member from the organization. */
   readonly removeMembers: boolean;
   /** Create a team; add or remove a team's members. */
   readonly manageTeams: boolean;
+  /**
+   * May see the team roster at all — `team:read`, another
+   * `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly. The
+   * same shape as `viewDirectory` immediately above, for the Settings
+   * page's `TeamSection`: unconditionally rendered before this field
+   * existed, so a Guest reaching `/settings` hit a second raw FORBIDDEN
+   * right below the first.
+   */
+  readonly viewTeams: boolean;
   /**
    * Create a project, or duplicate an existing one (`work/project.service.ts`
    * — `duplicate` is floored on the identical `project:create`). Not one of
@@ -456,8 +487,10 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       updateOrg: can(subject, 'org:update').allowed,
       inviteMember: can(subject, 'member:invite').allowed,
       manageMembers: can(subject, 'member:manage').allowed,
+      viewDirectory: can(subject, 'member:read').allowed,
       removeMembers: can(subject, 'member:remove').allowed,
       manageTeams: can(subject, 'team:manage').allowed,
+      viewTeams: can(subject, 'team:read').allowed,
       createProject: can(subject, 'project:create').allowed,
       /* Nav-visibility capabilities, not settings-page ones — the sidebar
          reads these too (see sidebar.tsx). Analytics and the audit log are

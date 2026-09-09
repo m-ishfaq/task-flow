@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InvitationIdSchema, OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
-import { publicRoute, route, router, selfRoute } from '../trpc/builder.js';
+import { memberRoute, publicRoute, route, router, selfRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import type { Actor } from './org.service.js';
 import * as orgs from './org.service.js';
@@ -92,7 +92,35 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         )
         .query(({ ctx }) => orgs.listMyOrgs(ctx.principal.userId)),
 
-      get: route({ permission: 'org:read' })
+      /* `memberRoute`, not `route({ permission: 'org:read' })` — found from a
+         real report: `org:read` is `ORG_LEVEL_PERMISSIONS`, and `GUEST`
+         holds nothing by role at all (`packages/policy/src/roles.ts`'s own
+         empty list, and the matrix test's explicit "gives the guest nothing
+         from the role alone" — everything a Guest can do must arrive as a
+         tuple). An org-level permission has no per-resource layer for a
+         tuple to satisfy, so a Guest could never call this route, ever,
+         under any grant — and `sidebar.tsx`, `capability-gate.tsx`, and
+         every settings section on both platforms call this route to learn
+         which UI to show, so a Guest's session left it permanently erroring
+         in the background the moment the org shell rendered.
+
+         This is the identical shape `memberRoute`'s own doc comment already
+         names for `platform.notifications`: the data is genuinely per-org,
+         but no single `Permission` describes "read your own org's name and
+         your own resolved capabilities" — every role, Guest included, needs
+         this to render correctly, the same way every role needs to read its
+         own notifications regardless of which product they came from.
+         `getOrg()` itself never checked `can(subject, 'org:read')`
+         internally — the route's `couldGrant` floor was the ONLY thing this
+         permission ever gated, and every `capabilities` field is still
+         computed through its own real `can()` check per permission, so
+         nothing about what a Guest may actually DO changed — only whether
+         they can learn their own answers to "may I do X" without a request
+         that always failed first. */
+      get: memberRoute({
+        memberReason:
+          "Reading your own org's name/slug and your own resolved capabilities — every role, Guest included, needs this to render its own UI correctly.",
+      })
         .output(
           z.object({
             orgId: z.string(),
@@ -107,8 +135,10 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 updateOrg: z.boolean(),
                 inviteMember: z.boolean(),
                 manageMembers: z.boolean(),
+                viewDirectory: z.boolean(),
                 removeMembers: z.boolean(),
                 manageTeams: z.boolean(),
+                viewTeams: z.boolean(),
                 createProject: z.boolean(),
                 viewAnalytics: z.boolean(),
                 viewAuditLog: z.boolean(),

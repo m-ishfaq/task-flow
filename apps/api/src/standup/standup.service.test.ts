@@ -22,6 +22,7 @@ import * as lists from './../work/list.service.js';
 import * as cards from './../work/card.service.js';
 import * as statuses from './../work/status.service.js';
 import * as sprints from './../work/sprint.service.js';
+import * as guestAccess from './../work/guest-access.service.js';
 import type { WorkActor } from './../work/shared.js';
 import { queryStandup } from './standup.service.js';
 
@@ -385,5 +386,46 @@ describe('queryStandup', () => {
     await expect(queryStandup(guest, { projectId: fixture.projectId })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+
+  it('shows a project-invited guest only their own row, never a colleague’s', async () => {
+    /* A viewer-relation guest CAN read the project (unlike the bare-guest
+       case above), so the roster-wide leak this test guards is real: before
+       this fix, `queryStandup` returned every assignee's own
+       Yesterday/Today/Overdue/Urgent breakdown to anyone who could read the
+       project at all, guest included. */
+    const fixture = await scaffold('standup-guest-own-row');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'guest@standup.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await guestAccess.inviteGuestToProject(fixture.owner, {
+      projectId: fixture.projectId,
+      userId: GUEST,
+      relation: 'viewer',
+      expiresAt: null,
+    });
+
+    /* Assigning a card is enough to put its assignee in `byMember` —
+       `queryStandup` builds the roster from anyone with an assigned,
+       non-archived card, regardless of which bucket (if any) it lands in. */
+    const memberCard = await makeCard(fixture.owner, fixture, 'Member work');
+    await cards.assignCard(fixture.owner, { cardId: memberCard.cardId, assigneeIds: [MEMBER] });
+
+    const guestCard = await makeCard(fixture.owner, fixture, 'Guest work');
+    await cards.assignCard(fixture.owner, { cardId: guestCard.cardId, assigneeIds: [GUEST] });
+
+    const guest = await actorFor(fixture.orgId, GUEST, 'guest');
+    const result = await queryStandup(guest, { projectId: fixture.projectId });
+
+    expect(result.members.map((member) => member.userId)).toEqual([GUEST]);
+    expect(result.headline).toContain('only your own tasks');
+
+    /* The same project, read by the owner, still shows both rows — this is
+       a guest-only restriction, not a change to the deliberate "every
+       member sees the whole roster" design for everyone else. */
+    const asOwner = await queryStandup(fixture.owner, { projectId: fixture.projectId });
+    expect(asOwner.members.map((member) => member.userId).sort()).toEqual([GUEST, MEMBER].sort());
   });
 });

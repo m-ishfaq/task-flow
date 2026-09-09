@@ -357,12 +357,26 @@ const boardRoute = createRoute({
  * `requireOrg` — both pages are org surfaces: the directory is `member:read`
  * and the detail page's admin affordances are `member:manage`, neither of
  * which means anything without a membership to scope them.
+ *
+ * Wrapped in `CapabilityGate capability="viewDirectory"` — `member:read` is
+ * an `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly
+ * (`packages/policy/src/roles.ts`'s empty `GUEST` list), so a Guest reaching
+ * either page hit the route's own FORBIDDEN with no capability check ever
+ * having run — `sidebar.tsx`'s `/people` item hides the nav link for the
+ * identical reason, but hiding the link alone left a direct URL or the back
+ * button landing a Guest on a raw error card, the exact "backend message on
+ * the frontend" this codebase's own `CapabilityGate` doc comment already
+ * argues against for `/analytics`.
  */
 const peopleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/people',
   beforeLoad: () => requireOrg('/people'),
-  component: PeoplePage,
+  component: () => (
+    <CapabilityGate capability="viewDirectory">
+      <PeoplePage />
+    </CapabilityGate>
+  ),
 });
 
 const personRoute = createRoute({
@@ -373,7 +387,11 @@ const personRoute = createRoute({
   beforeLoad: () => requireOrg('/people'),
   component: function PersonRoute() {
     const { userId } = personRoute.useParams();
-    return <PersonPage userId={userId} />;
+    return (
+      <CapabilityGate capability="viewDirectory">
+        <PersonPage userId={userId} />
+      </CapabilityGate>
+    );
   },
 });
 

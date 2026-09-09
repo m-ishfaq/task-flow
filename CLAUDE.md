@@ -4992,6 +4992,135 @@ the card will not appear instantly — every calendar app polls a subscription U
 schedule, typically hours, not seconds, which a person watching for it to show up immediately
 would otherwise read as broken.
 
+### Guest access into Work — a Guest's own standup row, and the structural gap behind every "backend error" a Guest hit (SHIPPED)
+
+`apps/api/src/standup/standup.service.ts` · `apps/api/src/tenancy/{org.service,router}.ts`'s
+`viewDirectory`/`viewTeams` · `apps/api/src/trpc/builder.ts`'s `memberRoute` (reused, not new) ·
+`apps/web/src/{router,components/sidebar,components/capability-gate,features/admin/settings-page}
+.tsx` · `apps/mobile/app/(app)/{account,people,org-settings,person/[userId]}.tsx`. Prompted
+directly, in three parts, from a real report: "why he can see standup where he can see other
+members data we should restrict it to that as well, he must not share the project, and on people
+he see error thats from backend... this is must have rule we cant show backend msg to someone on
+frontend where we need to restrict them or they cant perform that action."
+
+**Part 1 — the standup leak.** `queryStandup` builds and returns the FULL project roster to any
+caller holding `project:read` on the target project — the deliberate, unchanged design for every
+non-guest role (`standup.service.ts`'s own header: "a standup answers 'what is my team doing right
+now', which every Member holding `project:read` by role already needs"). That design became a real
+leak the moment "Guest access into Work" (this file's own earlier sections) made a project-level
+Guest tuple possible: a Guest with `viewer` on one project could open its standup and see every
+OTHER member's Yesterday/Today/Overdue/Urgent buckets, not just their own. `isGuestRole` (already
+exported from `@taskflow/policy`) is the fix — `queryStandup` filters `members` down to the
+caller's own `userId` when `isGuestRole(actor.subject.role)`, with a computed `headline` string
+("Showing only your own tasks — other members are not shown to guests.") replacing the real
+aggregate for that one case, since an aggregate over a roster the caller cannot see the rest of
+would itself leak a shape of the hidden data. Every other role's own behavior is byte-for-byte
+unchanged — this is a Guest-specific narrowing, not a redesign of `queryStandup`'s own floor.
+`standup-page.tsx` needed no change at all: it already handles a one-row (or zero-row) `members`
+array correctly.
+
+**Part 2 — the People page's "backend error," traced to its real, structural cause, not
+patched at the symptom.** The wording itself was not the problem — `messageFor`'s `FRIENDLY` table
+already maps `FORBIDDEN` to "You do not have permission to do that," so nothing here was literal
+backend text. The actual bug was presentational AND structural: `sidebar.tsx`'s `/people` entry was
+the one nav item in the whole file with no `capability` field at all (every sibling —
+`/analytics`, `/calls`, `/automations` — has one), so a Guest saw the link, clicked it, and landed
+on `people-page.tsx`/`person-page.tsx`'s generic `ErrorView` — a red alert box — for what is really
+an access boundary. Fixed with the pattern this codebase already built for exactly this shape
+(`CapabilityGate`, `apps/web/src/components/capability-gate.tsx`, and its mobile counterpart
+`apps/mobile/src/lib/capability-gate.tsx`) rather than inventing a new one: a new
+`viewDirectory: boolean` field on `SettingsCapabilities` (`member:read`, computed via `can()`
+exactly like `viewAnalytics`/`viewAuditLog`), read by `sidebar.tsx` to hide the "People" nav item
+entirely, and by a NEW route-level wrap — `peopleRoute`/`personRoute` in `router.tsx` now render
+inside `<CapabilityGate capability="viewDirectory">`, matching `/analytics`'s own two-layer
+precedent (hide the link, AND wrap the route, since a direct URL/bookmark/back-button reaches the
+page regardless of what the nav hides). `apps/mobile` got the identical two-layer fix:
+`account.tsx`'s "People" link (previously unconditional, with a comment claiming — wrongly — "the
+roster itself is `member:read` (every role)") is now gated on `capabilities?.viewDirectory`, and
+both `people.tsx` and `person/[userId].tsx` wrap their real content in
+`CapabilityGate capability="viewDirectory"`, the exact `insights.tsx`/`billing.tsx` shape this
+codebase already established for "a deep link must not reach a raw FORBIDDEN."
+
+**The root cause behind Part 2 turned out to be one level deeper than the People page itself, and
+fixing only `/people` would have left it live everywhere else `tenancy.orgs.get` is called.**
+`org:read` is an `ORG_LEVEL_PERMISSIONS` entry (`packages/policy/src/permissions.ts`), and
+`GUEST`'s role list is empty (`packages/policy/src/roles.ts` — `const GUEST: readonly Permission[]
+= []`, proven by the matrix test's own "gives the guest nothing from the role alone"). An
+org-level permission has no per-resource layer for a tuple to narrow back down — `couldGrant`
+refuses it outright for any subject whose role alone doesn't already hold it — so a Guest could
+NEVER call `tenancy.orgs.get` at all, under any grant, full stop. That route is not a niche one:
+`sidebar.tsx`, `CapabilityGate` itself, and every settings section on both platforms call it to
+learn which UI to show — so a Guest's session had this query erroring in the background from the
+moment the app shell first rendered, long before anyone opened Standup or People specifically.
+`getOrg()` (the service function) never checked `org:read` internally — every `capabilities` field
+is computed through its own real, specific `can()` call — so the ONLY thing `org:read` ever gated
+here was the route's own `couldGrant` floor, and removing it changes nothing about what a Guest may
+actually DO, only whether they can learn their own answers to "may I do X." Fixed by swapping
+`route({ permission: 'org:read' })` for `memberRoute({ memberReason: ... })` — a primitive this
+codebase already built for exactly this shape (`platform.notifications`' own routes: "no single
+Permission describes this, and every role needs it"), membership-only, no permission floor at all.
+
+**A second, larger instance of the identical symptom was found by re-deriving the People fix's
+logic rather than by another report — checked directly, not assumed.** `/settings`'s own
+`MemberSection` unconditionally fires `tenancy.members.list` (`member:read`) and `TeamSection`
+fires `tenancy.teams.list` (`team:read`, also `ORG_LEVEL_PERMISSIONS`, also empty for Guest), both
+rendered unconditionally on a page reached from the top-bar's persistent, ungated "Settings"
+NavLink — present on every page, for every role. A Guest visiting Settings hit TWO raw
+`ErrorView`s, one below the other, on the page this whole app's shell makes hardest to avoid,
+not the page the original report happened to name. Closed with the identical `capability` pattern:
+a new `viewTeams: boolean` field (`team:read`) alongside `viewDirectory`, and `SettingsPage` now
+renders `MemberSection`/`TeamSection` only when `capabilities.viewDirectory`/`viewTeams` are true —
+the same conditional-render shape `BillingSection`/`PermissionsSection` already use on the same
+page. `apps/mobile`'s `org-settings.tsx` — a single ~1000-line screen combining org rename,
+members, and teams, reached from `account.tsx`'s always-shown "Manage organization" link — gets no
+usable content for a Guest at all (every action on it needs at least `viewDirectory`), so its
+default export now wraps the whole screen in `CapabilityGate capability="viewDirectory"` rather
+than gating individual sub-sections, the smaller, more consistent change for a screen with no
+Guest-usable content left once the roster and every action on it are excluded.
+
+**The standing rule the report closed with — "we cant show backend msg to someone on frontend
+where we need to restrict them... instead use UI we have for this purpose or create one" — did
+not need a new component.** `CapabilityGate` (web) and its mobile counterpart already exist,
+already documented, already used by `/analytics`/`/automations`/`insights.tsx`/`billing.tsx` for
+precisely this shape ("hide, don't disable," Phase 15 §1's own rule, extended to the route level so
+a direct URL gets the same treatment as a hidden nav link). Every fix in this section reuses that
+existing mechanism rather than inventing a parallel one — the gap was that `/people` and
+`/settings` had never been wired into it, not that the mechanism was missing.
+
+**Test coverage split across the two things this session actually changed.** `standup.service
+.test.ts` gained a case granting a real project-level `viewer` tuple to a Guest (via
+`guestAccess.inviteGuestToProject`, the exact mechanism "Guest access into Work" itself shipped)
+and asserting `queryStandup`'s result contains only that Guest's own `userId`, with the owner's own
+call to the identical project still seeing both members — proving the narrowing is Guest-specific,
+not a regression for anyone else. A new `apps/api/src/tenancy/router.test.ts` — this router had no
+dedicated test file before — proves the `memberRoute` swap through the REAL route rather than the
+bare service function (which was never broken): a Guest with no tuples at all now gets a real
+answer from `tenancy.orgs.get`, capabilities correctly all `false`, where the route used to answer
+FORBIDDEN before `getOrg` ever ran; a second case proves an Owner's answer is unchanged. Every
+existing `toEqual` capability-object assertion in `tenancy.service.test.ts` (three of them, one per
+role already covered there) was updated with the two new fields — `viewDirectory`/`viewTeams` true
+for Owner and Admin (both hold `member:read`/`team:read` by role), and, notably, `viewDirectory:
+true`/`viewTeams: true` for a plain MEMBER too, since `MEMBER`'s own role list already includes
+both permissions directly — only Guest reads either one `false`.
+
+**Deliberately not touched: `GUEST`'s empty role list itself, and the matrix test that pins it at
+zero.** Adding `org:read` (or anything else) to `GUEST` directly was considered and rejected —
+`matrix.test.ts`'s own dedicated case, "gives the guest nothing from the role alone," is not
+incidental coverage, it is the stated design invariant this whole role exists to prove: "everything
+a guest can do must arrive as a tuple." `memberRoute` respects that invariant exactly — it grants
+no PERMISSION at all, only confirms membership, the same category `tenancy.orgs.list` (a
+`selfRoute`) already sits in for the identical "spans/precedes any org-scoped permission" reason.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app or the
+new backend tests to run against**, the identical standing caveat every UI/backend pass in this
+session states. Verified by what a sandbox without one can prove: `tsc`, `eslint`, `prettier`, the
+guardrail selftest, `pnpm check:encoding`, and a real `vitest run` of `packages/policy`'s full
+330-case suite (unaffected, confirming the `memberRoute` swap touches no role×permission decision
+at all — only which route KIND a caller must pass through to reach a query that was never itself
+permission-gated). A person should invite a Guest to one project, open Standup as that Guest, open
+`/people` and `/settings` as that Guest, and confirm each renders correctly (a single own-row
+standup, a hidden People link, an empty-but-not-erroring Settings page) before calling this done.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
