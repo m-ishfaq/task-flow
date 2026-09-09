@@ -125,6 +125,11 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   // Phase 12 Wave 2 §3.4 — same shape as its two siblings above: the fact
   // names the account that just signed in, which is already in `actor_id`.
   'session.impossible_travel_detected',
+  // Per-card calendar sync (migration 0110/0111). Same shape as the
+  // passkey/totp/oauth pairs above: the fact names the account that minted
+  // (or rotated) its own feed token, already in `actor_id`, and a bearer
+  // token has no resource type of its own for `resource_id` to name instead.
+  'user.calendar_feed_token_minted',
   // Work (Phase 3 / 3.5)
   'attachment.presigned',
   'attachment.uploaded',

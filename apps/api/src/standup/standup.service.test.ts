@@ -397,6 +397,11 @@ describe('queryStandup', () => {
     const fixture = await scaffold('standup-guest-own-row');
     await members.addMember(
       fixture.orgId,
+      { email: 'member@standup.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    await members.addMember(
+      fixture.orgId,
       { email: 'guest@standup.test', role: 'guest' },
       { userId: OWNER, requestId },
     );

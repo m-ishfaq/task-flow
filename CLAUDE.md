@@ -5263,6 +5263,67 @@ packages, `pnpm prettier --check .`, the guardrail selftest, and `pnpm check:enc
 clean — not just the two files each error named.** The `docs.test.ts`/`card-patch.test.ts` suites
 themselves also ran directly (`vitest run`, no database needed for either) and pass in full.
 
+### Four unrelated `@taskflow/api#test` failures, all real, all pre-existing (FIXED)
+
+`apps/api/src/tenancy/audit.projection.test.ts` · `apps/api/src/trpc/guardrails.test.ts` ·
+`apps/api/src/automation/pr-write.service.test.ts` · `apps/api/src/standup/standup.service.test.ts`.
+Found from the very next CI run — the one triggered by the seed/mobile compile-error fix two
+sections up — on `@taskflow/api#test`, the one Turbo task those two prior fixes never touched (both
+were pure compile errors; this run was the first time this session's own commits let the real,
+DB-backed API suite actually run to completion). All four are genuine, pre-existing gaps this PR's
+own earlier commits did not introduce — none touches `pr-read.service.ts`, `packages/seed`, or
+`apps/mobile` — fixed together per this PR's standing "never end a CI-red wake without a pushed fix
+or a documented reason" rule, since leaving any one of the four red would still fail the whole task.
+
+**Two are the identical "shipped code, no updated ledger entry" gap this file already documents
+twice for `aiAssistant`/`analytics` — surfacing here for the calendar-feed feature's own two new
+`selfRoute`s and its one new domain event, none of which had ever actually been run through this
+suite before this session's fixes let it reach that far.** `audit.projection.test.ts`'s own
+"accounts for every registered event" test failed with `expected ['user.calendar_feed_token_minted']
+to deeply equal []` — the event (`identity/events.ts`) was registered and already emitted by
+`calendar-feed.service.ts`, but the test's own `UNMAPPED` ledger, which every registered event must
+appear in exactly one of (`RESOURCE_OF`/`NEVER_AUDITED`/`UNMAPPED`), had never been told about it.
+Added alongside its closest siblings — `user.passkey_registered`/`user.totp_enrolled`/
+`user.oauth_linked` — with the identical reasoning: the fact names the account that minted its own
+token, already in `actor_id`, and a bearer token has no resource type of its own for `resource_id`
+to name instead. Separately, `guardrails.test.ts`'s "keeps passkey enrollment and management behind
+authentication" test — the one that pins the exact sorted list of every `selfRoute` path, so a route
+moving off `selfRoute` is a visible diff here rather than a silent widening — was missing
+`auth.calendarFeed.mint`/`auth.calendarFeed.status` entirely; added in their correct sorted position
+with the same step-up-vs-cheap-probe reasoning `identity/router.ts`'s own comment on those two
+routes already states.
+
+**A third is a genuine test-fixture bug in `pr-write.service.test.ts`'s `fakeGithub` helper, present
+since the commit that added `pr_comment_on_file` (`948533e`) — `bodies.push` tried to
+`JSON.parse` the request body of every fetch call unconditionally, including the OAuth code-exchange
+call `connectedGithub` runs first in every test to set up a connected repo.** That one call
+(`exchangeGithubCode` in `integration.service.ts`) sends `application/x-www-form-urlencoded` via
+`URLSearchParams` — GitHub's own token-endpoint contract, not JSON — so `JSON.parse('code=c&cli...')`
+threw `SyntaxError: Unexpected token 'c'...` on the very first line of every test that calls
+`connectedGithub`, which is nearly all of them. This had no chance to surface before this session:
+`bodies` was added in the same commit as the bug, and nothing in this PR's own commits had
+previously gotten far enough into a real `@taskflow/api#test` run to hit it. Fixed with a small
+`parseJsonBody` helper that returns `undefined` for a body that isn't valid JSON — the identical
+"record something at this index rather than crash" treatment the array already gives a bodyless
+`GET` — rather than skipping the push (which would desync `bodies`' parallel indexing against
+`calls`, silently breaking every existing assertion that reads `fake.bodies[postIndex]`).
+
+**The fourth is a real test-authoring gap in the newest case added to `standup.service.test.ts`
+("shows a project-invited guest only their own row, never a colleague's") — it assigns a card to
+`MEMBER` without ever adding `MEMBER` to the org first, unlike every earlier test in the same file
+that assigns a card to that same constant.** `cards.assignCard` refused with
+`VALIDATION_FAILED: assigneeIds — Not a member of this organization`, correctly — `MEMBER` really
+was not a member of that test's freshly-scaffolded org, since the test's own `members.addMember`
+call only ever added `GUEST`. Fixed by adding the identical `members.addMember(..., { role:
+'member' })` call every other test in this file already makes before assigning a card to `MEMBER`,
+placed before the existing guest-invite call so both members exist before either is used.
+
+**Verified with a full `pnpm turbo run typecheck` and `pnpm turbo run lint` across all 24 packages,
+`pnpm prettier --check .`, the guardrail selftest, and `pnpm check:encoding`, all clean.** The four
+DB-backed/fixture-dependent test files themselves could not be run locally in this sandbox (no
+Docker/Postgres here, the same standing limitation every DB-backed suite in this session states) —
+CI is the real signal, as with every other DB-backed fix in this session.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

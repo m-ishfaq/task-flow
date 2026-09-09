@@ -398,6 +398,13 @@ describe('the real application router', () => {
       .sort();
 
     expect(paths).toEqual([
+      /* Per-card calendar sync (product brainstorm) — a personal, long-lived
+         feed URL. `mint` (creates or rotates the URL) is `stepUp: true`, the
+         same "credential-adjacent change" standard the TOTP routes below
+         already apply; `status` is a cheap probe with no such gate, the
+         identical reasoning `auth.totp.status` itself already states. */
+      'auth.calendarFeed.mint',
+      'auth.calendarFeed.status',
       'auth.logoutEverywhere',
       /* The one account-level read that answers with no org selected
          (`ai/account-page.md`). Self-scoped for the same reason the retired

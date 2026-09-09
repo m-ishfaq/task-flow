@@ -186,6 +186,22 @@ interface FakeWriteOptions {
   readonly fileCommentStatus?: number;
 }
 
+/** Every real GitHub write in this file sends a JSON body — except the OAuth
+    code exchange `connectedGithub` runs first to set up each test, which
+    sends `application/x-www-form-urlencoded` (`exchangeGithubCode`'s own
+    `URLSearchParams`, per GitHub's own token-endpoint contract). A bare
+    `JSON.parse` on every string body crashes on that one call with
+    `Unexpected token 'c', "code=c&cli"...` — this tolerates a body that
+    isn't JSON by recording `undefined` for it, the same as a bodyless GET. */
+function parseJsonBody(body: unknown): unknown {
+  if (typeof body !== 'string') return undefined;
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /** `bodies` is parallel to `calls` (same index for the same request) — a
     `GET` carries no body, so that slot is `undefined` — added specifically
     for `postPrFileComment`'s own tests, which need to prove `subject_type`/
@@ -204,7 +220,7 @@ function fakeGithub(options: FakeWriteOptions = {}): {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     calls.push(url);
-    bodies.push(typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined);
+    bodies.push(parseJsonBody(init?.body));
 
     if (url === 'https://github.com/login/oauth/access_token') {
       return Promise.resolve(json({ access_token: 'gho_test_token' }));
