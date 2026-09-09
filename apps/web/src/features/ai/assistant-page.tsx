@@ -357,9 +357,7 @@ export function AssistantPage() {
     // Re-derive the same desktop-vs-mobile default the initialiser uses:
     // wide screens open the panel on a fresh conversation, narrow ones
     // keep it collapsed so the toggle button is the entry point.
-    setShowCapabilities(
-      typeof window !== 'undefined' && window.innerWidth >= 1024,
-    );
+    setShowCapabilities(typeof window !== 'undefined' && window.innerWidth >= 1024);
     // `turn`'s own error/data from the PREVIOUS conversation otherwise
     // survives the reset — `useMutation` keeps its last result until a new
     // mutation runs or `reset()` is called, so without this a fresh, empty

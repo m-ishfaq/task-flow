@@ -4664,7 +4664,7 @@ reimplementing `can()` produces two models that drift.**
   already answers all three for every guest relation — no role/tuple combination in this codebase
   splits them, so no fourth/fifth field was added for a distinction that cannot currently occur.
 - `archive` (`card:delete`) — deliberately its OWN field, not folded into `update`. `RELATION_
-  GRANTS.editor.actions` is `['read', 'download', 'create', 'update', 'move']` — `delete` is not in
+GRANTS.editor.actions` is `['read', 'download', 'create', 'update', 'move']` — `delete` is not in
   it, for any guest relation. Gating Archive on `update` would have shown it to an editor-relation
   guest whose click the server would still refuse.
 - `comment` (`comment:create`) — gates the comment composer, Reply, and (alongside the existing
@@ -4869,7 +4869,7 @@ token in this codebase already uses — the first real caller of `TOKEN_PREFIX.s
 in `packages/security/src/tokens.ts` since that table was written), at most one active token per
 user (a partial unique index, `WHERE revoked_at IS NULL`), and every resolution re-checks
 `card:read` per card at request time (see below) rather than trusting the opt-in row alone — so a
-leaked URL discloses only due dates and titles for cards the token's owner can *currently* read,
+leaked URL discloses only due dates and titles for cards the token's owner can _currently_ read,
 never a static snapshot immune to a later permission change.
 
 **"Mint" and "rotate" are the same operation, not two — `mintFeedUrl` always issues a fresh token
@@ -4982,9 +4982,9 @@ inside each one, and a real report confirmed that was the actual gap** — "i ca
 in calendar to add url i got from account screen." `calendar-feed-section.tsx`'s minted-URL panel
 gained a "Where do I paste this?" `<details open>` block (the identical native, JS-free
 disclosure `calls-panel.tsx`'s own transcript expander already established in this codebase) with
-concrete navigation for the three named apps: Google Calendar's sidebar `+` → *From URL*,
-Outlook's *Add calendar* → *Subscribe from web*, and Apple Calendar's *File* → *New Calendar
-Subscription…* on Mac plus the *Settings → Calendar → Accounts* path on iOS — each ending in the
+concrete navigation for the three named apps: Google Calendar's sidebar `+` → _From URL_,
+Outlook's _Add calendar_ → _Subscribe from web_, and Apple Calendar's _File_ → _New Calendar
+Subscription…_ on Mac plus the _Settings → Calendar → Accounts_ path on iOS — each ending in the
 literal button/menu label a person is looking for, not a generic "subscribe by URL" phrase that
 assumes they already know where that control is. Open by default, not collapsed: this is exactly
 the information needed the moment the link is on screen. A closing line sets the expectation that
