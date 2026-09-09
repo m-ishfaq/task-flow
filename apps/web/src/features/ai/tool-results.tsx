@@ -130,11 +130,44 @@ function ResultPanel({ children }: { readonly children: ReactNode }) {
   );
 }
 
+/**
+ * Every GitHub 401 hint in `apps/api/src/automation` — `pr-read`/`pr-write`/
+ * `branch`/`integration-action`.service.ts, all four independently, per
+ * CLAUDE.md's own "a missing 401 hint" section — carries this exact
+ * substring. It is the one GitHub failure this codebase already knows is
+ * unrecoverable without a real reconnect (a dead token, never something a
+ * retry or a background refresh can fix — see `connectorFor`'s own "migration
+ * 0109" doc comment for why: refresh only ever applies to a token GitHub
+ * itself marked as expiring, and a token GitHub does not track that way
+ * answers 401 only once it has actually been revoked). Matched on the
+ * message TEXT rather than a structured error code because every tool error
+ * in this registry is a plain string by design (`defineTool`'s own
+ * `{ content, isError: true }` shape) — there is no error taxonomy to
+ * switch on instead, and this substring is stable across every call site
+ * that can produce it.
+ */
+const DEAD_GITHUB_TOKEN_MARKER = 'the connector token is invalid or was revoked';
+
 function ErrorNote({ message }: { readonly message: string }) {
+  const isDeadGithubToken = message.includes(DEAD_GITHUB_TOKEN_MARKER);
   return (
     <div className="flex items-start gap-1.5 rounded-lg border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger">
       <XCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-      <span>{message}</span>
+      <span className="flex-1">
+        {message}
+        {isDeadGithubToken && (
+          <>
+            {' '}
+            <Link
+              to="/automations"
+              search={{ tab: 'integrations' }}
+              className="font-medium underline underline-offset-2 hover:no-underline"
+            >
+              Reconnect the repository
+            </Link>
+          </>
+        )}
+      </span>
     </div>
   );
 }

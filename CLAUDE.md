@@ -5121,6 +5121,55 @@ permission-gated). A person should invite a Guest to one project, open Standup a
 `/people` and `/settings` as that Guest, and confirm each renders correctly (a single own-row
 standup, a hidden People link, an empty-but-not-erroring Settings page) before calling this done.
 
+### A clickable "Reconnect" link on a dead-GitHub-token tool error (SHIPPED)
+
+`apps/web/src/features/ai/tool-results.tsx`'s `ErrorNote`/`DEAD_GITHUB_TOKEN_MARKER`. Prompted
+directly, from a live 401 hitting every PR tool in a real assistant transcript
+(`list_prs`/`get_pr_diff` all failing with "the connector token is invalid or was revoked").
+Investigating it found no code bug — `connectorFor`'s transparent refresh (migration 0109, this
+file's own section above) only ever applies to a token GitHub itself tracks an expiry for, and
+this deployment's connected OAuth App has no such tracking, so a token GitHub actually revoked
+answers 401 with no way for this codebase to see it coming or recover without a real reconnect.
+That diagnosis was given directly rather than assumed away — this file's own "verify before you
+claim a fix" habit applied to an incident report, not just to code — and the one real, actionable
+gap it left was UI: the error text already named the fix ("reconnect the repository (Settings →
+Automation)"), but as plain, unclickable text a person had to act on by memory and navigation.
+
+**Matched on the error MESSAGE text, not a structured error code, because every tool failure in
+this registry already IS a plain string by design.** `defineTool`'s own wrapper turns a thrown
+error into `{ content, isError: true }` — there is no error taxonomy for `ErrorNote` to switch on
+instead. `DEAD_GITHUB_TOKEN_MARKER` ('the connector token is invalid or was revoked') is the exact
+substring `pr-read.service.ts`/`pr-write.service.ts`/`branch.service.ts`/
+`integration-action.service.ts` all independently emit for a 401 — CLAUDE.md's own "a missing 401
+hint" section already establishes these four are worded identically on purpose, which is what
+makes one substring check reliable across every GitHub tool in the registry rather than needing a
+per-tool special case.
+
+**One change, one call site — `ErrorNote` is the function every renderer in this file already
+calls FIRST on `result.isError === true` (this file's own header: "every renderer below checks it
+FIRST"), so this reaches `list_prs`, `get_pr_diff`, `get_pr_files`, `get_pr_comments`,
+`get_pr_file_content`, `get_pr_file_diff`, `pr_post_comment`/`pr_request_changes`/`pr_merge`/
+`pr_close`/`pr_approve` (`prWriteRenderer`), `pr_comment_on_file`, `list_repos`,
+`create_branch_from_card`, and `card_link_pr`/`list_card_prs` without touching any of their own
+~20 call sites.** The link reuses `integrations-callback-page.tsx`'s own exact
+`<Link to="/automations" search={{ tab: 'integrations' }}>` shape — the real route the
+"Integrations" tab's Connect/reconnect flow already lives on, not a new page.
+
+**No dedicated test file, matching this file's own established gap for `tool-results.tsx`** — no
+renderer in this file has component-level coverage today (this file's own precedent, cited
+verbatim in an earlier section: "component-level tests only for files with no comparable precedent
+already accepting the same gap"). Verified with `tsc`, `eslint`, and `prettier`, all clean; a
+person should trigger a real GitHub 401 (or temporarily edit `DEAD_GITHUB_TOKEN_MARKER`'s check to
+force it) and confirm the "Reconnect the repository" link opens `/automations?tab=integrations`
+before calling this done.
+
+**Explicitly not attempted: making a dead OAuth-App token self-heal.** A personal (non-org-owned)
+GitHub OAuth App has no token-expiration setting exposed anywhere, on GitHub's own side, for this
+codebase's transparent-refresh mechanism to ever have something to refresh — that is a real,
+external limit stated directly to the person reporting this rather than papered over with a false
+promise of an automatic fix. This change closes the discoverability gap in RECOVERING from that
+limit, not the limit itself.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
