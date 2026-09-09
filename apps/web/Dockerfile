@@ -18,6 +18,7 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/client/package.json packages/client/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/ai/package.json packages/ai/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/events/package.json packages/events/package.json
 COPY packages/feature-flags/package.json packages/feature-flags/package.json
