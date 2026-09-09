@@ -25,6 +25,14 @@ import { cardFieldsQuery, fieldsQuery, invalidateCard } from '../api.js';
  * before anyone tries to add an edit control: there is no honest migration from
  * `select` to `number`. Every stored value would have to become something, and
  * every choice — drop, coerce, keep — silently rewrites data a person entered.
+ *
+ * `canEdit` (`card:update`, from `getCard`) gates SETTING a value here;
+ * `canManageVocabulary` (`project:update`, checked against the project
+ * directly) gates `AddFieldForm` below. Kept as two booleans, not one — a
+ * plain Member holds the first by role and not the second, so folding them
+ * together would either hide a fill-in a Member can genuinely do or offer a
+ * define-a-field form whose submit the server would refuse. See
+ * `label-section.tsx`'s header for the identical split and why.
  */
 
 export interface CustomFieldSectionProps {
@@ -32,9 +40,18 @@ export interface CustomFieldSectionProps {
   readonly boardId: BoardId;
   readonly cardId: CardId;
   readonly projectId: ProjectId;
+  readonly canEdit: boolean;
+  readonly canManageVocabulary: boolean;
 }
 
-export function CustomFieldSection({ orgId, boardId, cardId, projectId }: CustomFieldSectionProps) {
+export function CustomFieldSection({
+  orgId,
+  boardId,
+  cardId,
+  projectId,
+  canEdit,
+  canManageVocabulary,
+}: CustomFieldSectionProps) {
   const queryClient = useQueryClient();
   const definitions = useQuery(fieldsQuery(orgId, projectId));
   const values = useQuery(cardFieldsQuery(orgId, cardId));
@@ -78,6 +95,7 @@ export function CustomFieldSection({ orgId, boardId, cardId, projectId }: Custom
                 type={field.type}
                 options={field.options}
                 value={byField.get(field.fieldId) ?? null}
+                disabled={!canEdit}
                 onCommit={(value) => {
                   set.mutate({ fieldId: field.fieldId as CustomFieldId, value });
                 }}
@@ -87,7 +105,7 @@ export function CustomFieldSection({ orgId, boardId, cardId, projectId }: Custom
         ))}
       </dl>
 
-      <AddFieldForm orgId={orgId} projectId={projectId} />
+      {canManageVocabulary && <AddFieldForm orgId={orgId} projectId={projectId} />}
 
       {set.isError && <ErrorText error={set.error} />}
     </section>
@@ -253,24 +271,28 @@ function FieldInput({
   type,
   options,
   value,
+  disabled,
   onCommit,
 }: {
   readonly type: string;
   readonly options: unknown;
   readonly value: unknown;
+  readonly disabled: boolean;
   readonly onCommit: (value: unknown) => void;
 }) {
-  const control = 'h-7 w-full rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink';
+  const control =
+    'h-7 w-full rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink disabled:opacity-50';
 
   if (type === 'checkbox') {
     return (
       <input
         type="checkbox"
         checked={value === true}
+        disabled={disabled}
         onChange={(event) => {
           onCommit(event.target.checked);
         }}
-        className="size-4 accent-[var(--color-accent)]"
+        className="size-4 accent-[var(--color-accent)] disabled:opacity-60"
       />
     );
   }
@@ -282,6 +304,7 @@ function FieldInput({
       <select
         className={control}
         value={typeof value === 'string' ? value : ''}
+        disabled={disabled}
         onChange={(event) => {
           onCommit(event.target.value === '' ? null : event.target.value);
         }}
@@ -312,10 +335,11 @@ function FieldInput({
               key={choice}
               type="button"
               aria-pressed={on}
+              disabled={disabled}
               onClick={() => {
                 onCommit(on ? selected.filter((entry) => entry !== choice) : [...selected, choice]);
               }}
-              className={`rounded px-1.5 py-0.5 text-[11px] ${
+              className={`rounded px-1.5 py-0.5 text-[11px] disabled:opacity-60 ${
                 on ? 'bg-accent text-accent-ink' : 'bg-surface-hover text-ink-muted'
               }`}
             >
@@ -333,6 +357,7 @@ function FieldInput({
         type="number"
         className="h-7 text-xs"
         defaultValue={typeof value === 'number' ? String(value) : ''}
+        disabled={disabled}
         onBlur={(event) => {
           const raw = event.target.value;
           if (raw === '') {
@@ -352,6 +377,7 @@ function FieldInput({
         type="date"
         className={control}
         value={typeof value === 'string' ? value.slice(0, 10) : ''}
+        disabled={disabled}
         onChange={(event) => {
           const day = event.target.value;
           onCommit(day === '' ? null : new Date(`${day}T00:00:00`).toISOString());
@@ -364,6 +390,7 @@ function FieldInput({
     <Input
       className="h-7 text-xs"
       defaultValue={typeof value === 'string' ? value : ''}
+      disabled={disabled}
       /* On blur, not on every keystroke. Each commit is a mutation that emits a
          domain event and an audit entry — one per character would make the audit
          log unreadable and the outbox the busiest table in the system. */

@@ -4629,6 +4629,99 @@ guardrail selftest, `pnpm check:encoding`, and `scripts/check-migration-rls.mjs`
 DB-backed suites could not be run locally in this sandbox (no Docker/Postgres here) — CI is the
 real signal.
 
+### Guest access into Work — hide edit/comment controls a relation can't use (SHIPPED)
+
+`apps/api/src/work/card.service.ts`'s `getCard`/`CardDetail.capabilities` ·
+`apps/api/src/work/router.ts`'s `cards.get` output schema ·
+`apps/web/src/features/work/detail/{card-detail-panel,label-section,location-section,
+checklist-section,attachment-section,status-priority-section,sprint-section,assignee-section,
+custom-field-section,comment-section,development-section}.tsx`. Prompted directly, right behind
+the "one door, not two" fix above: "since i have shared access with person as viewer they should
+not be able to see options to edit or comment like why show them anything when they cant do it
+for the whole project they are being invited to same goes to if we gave them editor or comment
+access."
+
+**A real instance of the exact bug class Phase 15 §1's own "full sweep" already found and fixed
+across a dozen other surfaces — found here a second time, for the one surface that sweep never
+reached: the Work card detail panel.** `cards.get` carried exactly one capability,
+`moderateComments`, and every other control in `card-detail-panel.tsx` — the title input, the
+description editor, dates, priority, status, sprint, assignee picker, label toggles, custom field
+inputs, checklist checkboxes, attachment upload, the PR/branch Link and Unlink buttons, and the
+comment composer — rendered unconditionally for anyone who could open the panel at all.
+`label-section.tsx`'s own header used to say so in plain words: "The UI shows both controls to
+everyone and lets the server answer." That was tolerable while every role that could reach the
+panel also held `card:update` by role; it stopped being tolerable the moment a project-level guest
+tuple (viewer/commenter/editor) made those permissions genuinely resource-scoped and, for a
+viewer or commenter, false.
+
+**`getCard`'s `capabilities` grew four fields, each a direct `can()` call against the card's own
+target — never re-derived by the client, per this codebase's own standing rule that a UI
+reimplementing `can()` produces two models that drift.**
+
+- `update` (`card:update`) — gates every field-editing control this panel has, including
+  `card:move` (Location) and `attachment:upload` (the file input): `RELATION_GRANTS` puts both of
+  those on `editor` alongside `update` and on neither `viewer` nor `commenter`, so one boolean
+  already answers all three for every guest relation — no role/tuple combination in this codebase
+  splits them, so no fourth/fifth field was added for a distinction that cannot currently occur.
+- `archive` (`card:delete`) — deliberately its OWN field, not folded into `update`. `RELATION_
+  GRANTS.editor.actions` is `['read', 'download', 'create', 'update', 'move']` — `delete` is not in
+  it, for any guest relation. Gating Archive on `update` would have shown it to an editor-relation
+  guest whose click the server would still refuse.
+- `comment` (`comment:create`) — gates the comment composer, Reply, and (alongside the existing
+  author check) Edit; reading comments stays open to anyone with `card:read`, unchanged.
+- `manageProjectVocabulary` (`project:update`, checked against the PROJECT directly, distance 0 —
+  not inherited through `card:update`) — gates the create-a-new-label and define-a-custom-field
+  forms, which are `project:update` on the server, not `card:update`. This is the one capability
+  that is NOT simply `update` reused: `roles.ts`'s `MEMBER` role holds `card:update` by role and
+  has NO `project:update` at all, so a plain Member reusing `update` here would have been shown a
+  create-label form whose submit comes back FORBIDDEN — the identical bug this whole capability
+  set exists to close, just for a different actor than the guest the report named. An
+  editor-relation guest DOES reach `manageProjectVocabulary: true` too, and that is deliberate, not
+  a leak: `decide.ts`'s `relationGrants` matches an action by SUFFIX regardless of which resource
+  type the tuple sits on, so a project-scoped `editor` tuple grants `project:update` on that exact
+  project the same way it grants `card:update` beneath it — consistent with this codebase's own
+  stated design that an org may hand a guest up to full `editor` access with "no default relation
+  restriction."
+
+**Every section component either hides its mutating controls entirely or disables them, and which
+of the two depends on whether the control is ALSO the read display.** A toggleable label chip, an
+assignee avatar with a remove-on-click, the "New label"/"Add field" forms, the checklist's Delete
+and Add-item controls, the attachment upload input, and the PR/branch Link/Unlink buttons are all
+HIDDEN outright — Phase 15 §1's "hide, don't disable" rule, since a control with no legitimate
+outcome should not announce it exists. The Status/Priority/Sprint SELECTS and the Start/Due date
+inputs are DISABLED, not hidden — each one is simultaneously the read display of the card's
+current value, so removing it would also remove information a viewer-relation guest is entitled
+to see; `disabled:opacity-50` is the same visual language `location-section.tsx`'s own board
+select already used for its own busy state. `LocationSection` (the board/list move controls) is
+the one section hidden ENTIRELY rather than disabled — no guest relation ever grants `card:move`,
+and a person who opened this card already knows which board/list they browsed to reach it, so
+there is nothing a disabled pair of selects would add.
+
+**`TitleAndDescription` renders a plain `<h2>` and a `RichTextView` instead of the `Input`/
+`RichTextEditor`/Save row when `!canEdit`** — reusing `RichTextView`, the same read-only renderer
+`comment-section.tsx` already uses for a comment's body, rather than a third way to render a
+TipTap document as read-only text.
+
+**The Archive button moved from the header's own unconditional render into a check against
+`card.data?.capabilities.archive`**, guarded on the query having resolved rather than assuming a
+loading state means "no permission" for any other reason — there is simply nothing to archive yet
+either way while the card is still loading.
+
+**Backend test coverage (`detail.service.test.ts`) proves the three real guest-relation shapes
+directly against a real database, not a stand-in:** a viewer-relation guest gets every capability
+`false`; a commenter-relation guest gets `comment: true` and everything else `false`; an
+editor-relation guest gets `update`/`comment`/`manageProjectVocabulary` all `true` and `archive`
+still `false` — the one case that would have silently passed if `archive` had been folded into
+`update`. A fourth case proves the reverse gap this pass also closed: a plain Member holds
+`update` but not `manageProjectVocabulary`, the exact combination a shared boolean would have
+gotten wrong. A fifth confirms the Owner holds every capability, as a sanity baseline.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app or the
+new backend test to run against**, the identical standing caveat every UI-only pass in this
+session states. Verified by what a sandbox without one can prove: `tsc`, `eslint`, `prettier`, and
+the guardrail selftest, all clean. A person should share a project with a guest at each of the
+three relations and open a card as that guest before calling this done.
+
 ### Combined spend view for an org owner (SHIPPED) — AI spend, previously operator-only
 
 `apps/api/src/billing/org-billing.service.ts`'s `getOverview` · `apps/api/src/billing/router.ts` ·

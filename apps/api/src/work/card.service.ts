@@ -291,18 +291,71 @@ export interface CardDetail extends CardSummary {
   readonly createdAt: Date;
   readonly updatedAt: Date;
   /**
-   * What the client may show on THIS card that a plain commenter cannot do
-   * by default. `comment:delete` is resource-scoped, not a flat org-wide
-   * role check — a Member with no org-wide grant can still hold it via a
-   * tuple on this card's board or project (the same reasoning
-   * `manageCapabilitiesFor`'s own doc comment gives for `project:update`/
-   * `board:update`), so this has to be computed per-card, here, rather than
-   * folded into `SettingsCapabilities`. `comment-section.tsx` used to show
-   * "Delete" on every comment/reply regardless of author or role and let a
-   * Member's click come back FORBIDDEN (Phase 15 §1's sweep) — this is what
-   * it reads instead.
+   * What the client may show on THIS card — computed per-card, here, rather
+   * than folded into `SettingsCapabilities`, because a project-level guest
+   * tuple (viewer/commenter/editor, Phase 15's "Guest access into Work")
+   * makes `card:update`/`comment:create` resource-scoped facts, not flat
+   * role checks: a `member` role grants both by default, but a `viewer`
+   * relation tuple RESTRICTS the ceiling below whatever the role would
+   * otherwise allow (`RELATION_GRANTS`'s own `restrictive: true`), and a
+   * `commenter` tuple sits between the two. `card-detail-panel.tsx` used to
+   * render every edit control — title, description, dates, assignee,
+   * labels, custom fields, checklist, attachments — and the comment
+   * composer unconditionally for anyone who could open the panel at all,
+   * the identical "shown to everyone, let the server answer" gap Phase 15
+   * §1's sweep already found and fixed once for comment moderation
+   * (`moderateComments`, below) and repeated across a dozen other surfaces —
+   * found here a second time, this time from a real report: a
+   * project shared at `viewer` still saw every edit control, each of which
+   * the server would have refused.
+   *
+   *   `update`  — `card:update`. Gates every field-editing control: title,
+   *               description, dates, priority, status, sprint, assignee,
+   *               labels, custom fields, checklist, attachments, location —
+   *               `card:move` and `attachment:upload` are separate
+   *               permissions in the catalog, but `RELATION_GRANTS` grants
+   *               both to `editor` alongside `update` and to neither
+   *               `viewer` nor `commenter`, so for every guest relation this
+   *               one boolean already answers all three; a role/tuple
+   *               combination that split them would need its own field, and
+   *               none exists in this codebase today.
+   *   `archive` — `card:delete`, deliberately its own field rather than
+   *               reusing `update`: `RELATION_GRANTS`'s `editor` entry grants
+   *               `update`/`move`/`create` but never `delete` — no guest
+   *               relation can ever archive a card, so gating the Archive
+   *               button on `update` would wrongly show it to an editor.
+   *   `comment` — `comment:create`. Gates the comment composer alone —
+   *               reading comments stays open to anyone holding `card:read`,
+   *               same as it always has.
+   *   `manageProjectVocabulary` — `project:update`, checked against the
+   *               PROJECT directly (distance 0, not inherited), because
+   *               `card:update` is the wrong proxy for it: a plain Member
+   *               holds `card:update` by role but not `project:update` (see
+   *               `roles.ts`'s `MEMBER` list), so a create-label/create-field
+   *               form gated on `update` above would show it to a Member
+   *               whose click the server would then refuse — the identical
+   *               bug this capability set exists to close, just for a
+   *               different actor. `label-section.tsx`'s own header used to
+   *               say plainly "shows both controls to everyone and lets the
+   *               server answer" — this is what closes that, for real, on
+   *               both the tagging AND the vocabulary-definition half.
+   *               `editor` (never `viewer`/`commenter`) DOES reach this too:
+   *               `relationGrants` matches an action by SUFFIX, and
+   *               `RELATION_GRANTS.editor.actions` includes `update`, so a
+   *               project-scoped `editor` guest tuple grants `project:update`
+   *               on that exact project the same way it grants `card:update`
+   *               beneath it — deliberate, matching this codebase's own
+   *               stated design that an org may hand a guest up to full
+   *               `editor` access with "no default relation restriction."
+   *   `moderateComments` — `comment:delete`, unchanged from before this
+   *               capability set grew four more fields; see the sibling
+   *               comment this one used to carry alone.
    */
   readonly capabilities: {
+    readonly update: boolean;
+    readonly archive: boolean;
+    readonly comment: boolean;
+    readonly manageProjectVocabulary: boolean;
     readonly moderateComments: boolean;
   };
 }
@@ -348,18 +401,26 @@ export async function getCard(
 
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
-    const moderateComments = can(actor.subject, 'comment:delete', {
+    const cardTarget = {
       orgId: card.orgId as OrgId,
       resource: { type: 'card', id: input.cardId },
       ancestors: ancestorsOfCard(card),
+    } as const;
+    const update = can(actor.subject, 'card:update', cardTarget).allowed;
+    const archive = can(actor.subject, 'card:delete', cardTarget).allowed;
+    const comment = can(actor.subject, 'comment:create', cardTarget).allowed;
+    const manageProjectVocabulary = can(actor.subject, 'project:update', {
+      orgId: card.orgId as OrgId,
+      resource: { type: 'project', id: card.projectId },
     }).allowed;
+    const moderateComments = can(actor.subject, 'comment:delete', cardTarget).allowed;
 
     const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,
       reference: referenceOf(projectKey, number),
-      capabilities: { moderateComments },
+      capabilities: { update, archive, comment, manageProjectVocabulary, moderateComments },
     };
   });
 }

@@ -33,9 +33,11 @@ export interface ChecklistSectionProps {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly cardId: CardId;
+  /** `card:update` — a viewer/commenter-relation guest sees checked items, never a checkbox to click. */
+  readonly canEdit: boolean;
 }
 
-export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionProps) {
+export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistSectionProps) {
   const queryClient = useQueryClient();
   const optimistic = useOptimistic();
   const toast = useToast();
@@ -188,16 +190,18 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
               <span className="text-[11px] text-ink-faint">
                 {done}/{checklist.items.length}
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="ml-auto h-5 px-1 text-[11px]"
-                onClick={() => {
-                  removeList.mutate(checklist.checklistId as ChecklistId);
-                }}
-              >
-                Delete
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto h-5 px-1 text-[11px]"
+                  onClick={() => {
+                    removeList.mutate(checklist.checklistId as ChecklistId);
+                  }}
+                >
+                  Delete
+                </Button>
+              )}
             </div>
 
             <ul className="space-y-0.5">
@@ -205,6 +209,7 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
                 <li key={item.itemId} className="group flex items-center gap-2">
                   <Checkbox.Root
                     checked={item.done}
+                    disabled={!canEdit}
                     onCheckedChange={(checked) => {
                       toggleItem.mutate({
                         itemId: item.itemId as ChecklistItemId,
@@ -214,7 +219,7 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
                         done: checked === true,
                       });
                     }}
-                    className="flex size-4 shrink-0 items-center justify-center rounded border border-line bg-surface-sunken data-[state=checked]:bg-accent"
+                    className="flex size-4 shrink-0 items-center justify-center rounded border border-line bg-surface-sunken data-[state=checked]:bg-accent disabled:opacity-60"
                   >
                     <Checkbox.Indicator className="text-[10px] text-accent-ink">
                       ✓
@@ -227,50 +232,56 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
                     {item.text}
                   </span>
 
-                  <button
-                    type="button"
-                    aria-label={`Delete "${item.text}"`}
-                    onClick={() => {
-                      removeItem.mutate(item.itemId as ChecklistItemId);
-                    }}
-                    className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
-                  >
-                    ✕
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label={`Delete "${item.text}"`}
+                      onClick={() => {
+                        removeItem.mutate(item.itemId as ChecklistItemId);
+                      }}
+                      className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
 
-            <AddItemForm
-              onAdd={(text) => {
-                addItem.mutate({ checklistId: checklist.checklistId as ChecklistId, text });
-              }}
-            />
+            {canEdit && (
+              <AddItemForm
+                onAdd={(text) => {
+                  addItem.mutate({ checklistId: checklist.checklistId as ChecklistId, text });
+                }}
+              />
+            )}
           </div>
         );
       })}
 
-      <form
-        className="flex gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const value = name.trim();
-          if (value !== '') createList.mutate(value);
-        }}
-      >
-        <Input
-          aria-label="New checklist name"
-          placeholder="New checklist"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
+      {canEdit && (
+        <form
+          className="flex gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = name.trim();
+            if (value !== '') createList.mutate(value);
           }}
-          className="h-7 text-xs"
-        />
-        <Button type="submit" size="sm" disabled={createList.isPending || name.trim() === ''}>
-          Add
-        </Button>
-      </form>
+        >
+          <Input
+            aria-label="New checklist name"
+            placeholder="New checklist"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+            className="h-7 text-xs"
+          />
+          <Button type="submit" size="sm" disabled={createList.isPending || name.trim() === ''}>
+            Add
+          </Button>
+        </form>
+      )}
 
       {/* No inline error rows. Every mutation here reports through a toast, which
           also survives the panel being closed by the failure it is reporting. */}

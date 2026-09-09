@@ -31,15 +31,16 @@ import { PrDiffButton } from './pr-diff-dialog.js';
  * actually managed — linking a PR, creating or unlinking a branch — and
  * where each action's own confirmation/error surface lives.
  *
- * `card:read`/`card:update` gate the PR half server-side, the same as every
- * sibling section here — no client-side capability check, since neither
- * permission is individually grantable or role-restricted the way
- * `recording:read` is. Creating a branch is different: `repo:connect` IS
- * individually grantable (Phase 15 §1), so the "Create branch" button is
- * gated on `canCreateBranches` (`SettingsCapabilities.createBranches`,
- * computed by the caller) — hidden, not disabled, per that phase's own
- * "hide entirely" rule. Reading the branch list needs no such gate: seeing
- * what already exists is `card:read`, the identical split
+ * `card:read`/`card:update` gate the PR half server-side; `canEdit`
+ * (`cards.get`'s `capabilities.update`) is what hides Link/Unlink on the
+ * client to match — a viewer/commenter-relation guest sees the linked PR and
+ * branch lists (read data, `card:read`) but never the Link form or an Unlink
+ * button, whose submit `card:update` would refuse. Creating a branch is
+ * gated SEPARATELY, on `canCreateBranches` (`repo:connect`,
+ * `SettingsCapabilities.createBranches`) — individually grantable (Phase 15
+ * §1) and a bigger blast radius than linking an already-known PR number, so
+ * it is not implied by `canEdit` alone. Reading the branch list needs no
+ * such gate: seeing what already exists is `card:read`, the identical split
  * `readPhoneNumbers` draws against `placeCalls` elsewhere in this app.
  *
  * ## The repo picker, and the shared "remembered" choice
@@ -64,12 +65,14 @@ export function DevelopmentSection({
   cardId,
   reference,
   title,
+  canEdit,
   canCreateBranches,
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
   readonly reference: string;
   readonly title: string;
+  readonly canEdit: boolean;
   readonly canCreateBranches: boolean;
 }) {
   const repos = useQuery(githubReposQuery(orgId));
@@ -81,6 +84,7 @@ export function DevelopmentSection({
         <PullRequestSubsection
           orgId={orgId}
           cardId={cardId}
+          canEdit={canEdit}
           repos={repos.data ?? []}
           reposLoaded={repos.isSuccess}
           selectedRepoScope={selectedRepoScope}
@@ -91,6 +95,7 @@ export function DevelopmentSection({
           cardId={cardId}
           reference={reference}
           title={title}
+          canUnlink={canEdit}
           canCreate={canCreateBranches}
           repos={repos.data ?? []}
           reposLoaded={repos.isSuccess}
@@ -155,6 +160,7 @@ function effectiveRepoScope(
 function PullRequestSubsection({
   orgId,
   cardId,
+  canEdit,
   repos,
   reposLoaded,
   selectedRepoScope,
@@ -162,6 +168,7 @@ function PullRequestSubsection({
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
+  readonly canEdit: boolean;
   readonly repos: readonly { readonly providerScope: string }[];
   readonly reposLoaded: boolean;
   readonly selectedRepoScope: string | null;
@@ -231,24 +238,26 @@ function PullRequestSubsection({
                 prNumber={pr.prNumber}
               />
               <PrDiffButton orgId={orgId} providerScope={pr.providerScope} prNumber={pr.prNumber} />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-1.5 text-[11px]"
-                disabled={unlink.isPending}
-                onClick={() => {
-                  unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber });
-                }}
-              >
-                Unlink
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  disabled={unlink.isPending}
+                  onClick={() => {
+                    unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber });
+                  }}
+                >
+                  Unlink
+                </Button>
+              )}
             </li>
           ))}
         </ul>
       )}
       {unlink.isError && <ErrorText error={unlink.error} />}
 
-      {reposLoaded && repos.length === 0 ? (
+      {!canEdit ? null : reposLoaded && repos.length === 0 ? (
         <p className="text-[11px] text-ink-faint">
           Connect a GitHub repository (Settings → Automation) to link pull requests.
         </p>
@@ -300,6 +309,7 @@ function BranchSubsection({
   cardId,
   reference,
   title,
+  canUnlink,
   canCreate,
   repos,
   reposLoaded,
@@ -310,6 +320,7 @@ function BranchSubsection({
   readonly cardId: CardId;
   readonly reference: string;
   readonly title: string;
+  readonly canUnlink: boolean;
   readonly canCreate: boolean;
   readonly repos: readonly { readonly providerScope: string }[];
   readonly reposLoaded: boolean;
@@ -393,20 +404,22 @@ function BranchSubsection({
                 {branch.branchName}
               </a>
               <CopyCheckoutButton branchName={branch.branchName} />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-1.5 text-[11px]"
-                disabled={unlink.isPending}
-                onClick={() => {
-                  unlink.mutate({
-                    providerScope: branch.providerScope,
-                    branchName: branch.branchName,
-                  });
-                }}
-              >
-                Unlink
-              </Button>
+              {canUnlink && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  disabled={unlink.isPending}
+                  onClick={() => {
+                    unlink.mutate({
+                      providerScope: branch.providerScope,
+                      branchName: branch.branchName,
+                    });
+                  }}
+                >
+                  Unlink
+                </Button>
+              )}
             </li>
           ))}
         </ul>

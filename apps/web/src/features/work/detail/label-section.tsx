@@ -21,9 +21,20 @@ import { cardLabelsQuery, labelsQuery, patchCardLabels } from '../api.js';
  *   project, so it belongs with the people who own the project's vocabulary.
  *
  * Collapsing them would either stop members tagging their own work or let them
- * rewrite the project's labels from a card panel. The UI shows both controls to
- * everyone and lets the server answer; see the note in projects-page.tsx about
- * not reimplementing `can()` in the browser.
+ * rewrite the project's labels from a card panel.
+ *
+ * TWO capabilities from `getCard`, matching that split exactly: `canTag`
+ * (`card:update`) gates toggling a chip on this card; `canManageVocabulary`
+ * (`project:update`) gates the create-a-new-label form below it. A plain
+ * Member holds the first by role and not the second (`roles.ts`'s `MEMBER`
+ * list has no `project:update`), so folding both under one boolean would
+ * either hide tagging a Member genuinely can do, or show a create-label form
+ * whose submit the server would refuse — the exact "shown to everyone, let
+ * the server answer" bug this whole capability set exists to close. A
+ * viewer/commenter-relation guest holds neither; an editor-relation guest
+ * holds both, because `RELATION_GRANTS` matches an action by suffix and
+ * `editor`'s own list includes `update` regardless of which resource the
+ * tuple sits on (`decide.ts`'s `relationGrants`).
  */
 
 export interface LabelSectionProps {
@@ -31,9 +42,18 @@ export interface LabelSectionProps {
   readonly boardId: BoardId;
   readonly cardId: CardId;
   readonly projectId: ProjectId;
+  readonly canTag: boolean;
+  readonly canManageVocabulary: boolean;
 }
 
-export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSectionProps) {
+export function LabelSection({
+  orgId,
+  boardId,
+  cardId,
+  projectId,
+  canTag,
+  canManageVocabulary,
+}: LabelSectionProps) {
   const queryClient = useQueryClient();
   const optimistic = useOptimistic();
   const toast = useToast();
@@ -106,7 +126,28 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
         Labels
       </h3>
 
-      {all.data === undefined ? null : all.data.length === 0 ? (
+      {!canTag ? (
+        /* Read-only: a viewer/commenter-relation guest can see which labels
+           are on the card, never toggle one — `all.data` (every label in the
+           project) is never fetched into view for someone who cannot pick
+           from it either. */
+        <ul className="flex flex-wrap gap-1">
+          {(onCard.data ?? []).length === 0 ? (
+            <p className="text-xs text-ink-faint">No labels.</p>
+          ) : (
+            (onCard.data ?? []).map((label) => (
+              <li key={label.labelId}>
+                <span
+                  className="rounded px-1.5 py-0.5 text-[11px] text-white"
+                  style={{ backgroundColor: label.color }}
+                >
+                  {label.name}
+                </span>
+              </li>
+            ))
+          )}
+        </ul>
+      ) : all.data === undefined ? null : all.data.length === 0 ? (
         <p className="text-xs text-ink-faint">This project has no labels yet.</p>
       ) : (
         <ul className="flex flex-wrap gap-1">
@@ -118,10 +159,10 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
                   type="button"
                   aria-pressed={on}
                   /* Not disabled while pending. Tagging a card is usually two or
-                     three labels in a row, and a control that goes dead between
-                     each one turns one gesture into three waits. Every click
-                     sends the full set built from the already-patched cache, so
-                     they compose rather than race. */
+                       three labels in a row, and a control that goes dead between
+                       each one turns one gesture into three waits. Every click
+                       sends the full set built from the already-patched cache, so
+                       they compose rather than race. */
                   onClick={() => {
                     toggle(label.labelId);
                   }}
@@ -139,27 +180,29 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
         </ul>
       )}
 
-      <form
-        className="flex gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const name = creating.trim();
-          if (name !== '') create.mutate(name);
-        }}
-      >
-        <Input
-          aria-label="New label name"
-          placeholder="New label"
-          value={creating}
-          onChange={(event) => {
-            setCreating(event.target.value);
+      {canManageVocabulary && (
+        <form
+          className="flex gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = creating.trim();
+            if (name !== '') create.mutate(name);
           }}
-          className="h-7 text-xs"
-        />
-        <Button type="submit" size="sm" disabled={create.isPending || creating.trim() === ''}>
-          Add
-        </Button>
-      </form>
+        >
+          <Input
+            aria-label="New label name"
+            placeholder="New label"
+            value={creating}
+            onChange={(event) => {
+              setCreating(event.target.value);
+            }}
+            className="h-7 text-xs"
+          />
+          <Button type="submit" size="sm" disabled={create.isPending || creating.trim() === ''}>
+            Add
+          </Button>
+        </form>
+      )}
 
       {/* No inline error rows — both mutations report through a toast, which
           outlives the panel being closed by the failure it is reporting. */}

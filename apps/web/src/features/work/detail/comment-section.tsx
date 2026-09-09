@@ -200,9 +200,24 @@ export interface CommentSectionProps {
   readonly cardId: CardId;
   /** `cards.get`'s `capabilities.moderateComments` — see the header note. */
   readonly canModerate: boolean;
+  /**
+   * `cards.get`'s `capabilities.comment` (`comment:create`) — gates the
+   * top-level composer, Reply, and (alongside the author check already here)
+   * Edit: all three routes floor on `comment:create`, so a viewer-relation
+   * guest — who holds none of it — never sees a box or button whose submit
+   * the server would refuse. Reading comments stays open regardless; only
+   * writing one is gated.
+   */
+  readonly canComment: boolean;
 }
 
-export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentSectionProps) {
+export function CommentSection({
+  orgId,
+  boardId,
+  cardId,
+  canModerate,
+  canComment,
+}: CommentSectionProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const comments = useQuery(commentsQuery(orgId, cardId));
@@ -288,6 +303,7 @@ export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentS
               comment={comment}
               viewerId={viewerId}
               canModerate={canModerate}
+              canComment={canComment}
               personOf={personOf}
               isEditing={editing === comment.commentId}
               onStartEdit={() => {
@@ -304,7 +320,7 @@ export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentS
                 remove.mutate(comment.commentId as CommentId);
               }}
               onReply={
-                isPending(comment.commentId)
+                !canComment || isPending(comment.commentId)
                   ? undefined
                   : () => {
                       setReplyingTo((current) =>
@@ -322,6 +338,7 @@ export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentS
                       comment={reply}
                       viewerId={viewerId}
                       canModerate={canModerate}
+                      canComment={canComment}
                       personOf={personOf}
                       isEditing={editing === reply.commentId}
                       onStartEdit={() => {
@@ -361,26 +378,28 @@ export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentS
         ))}
       </ul>
 
-      <RichTextEditor
-        value={composer.draft}
-        placeholder="Write a comment… (@ to mention someone)"
-        onChange={composer.setDraft}
-        footer={
-          /* Not disabled while pending, and the editor clears on SUBMIT rather
-             than on success — a thread is written in a burst, and putting a
-             round trip between two replies is what makes people stop using it.
-             The comment is already visible in the list above by the time this
-             runs. */
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={isEmptyDocument(composer.draft)}
-            onClick={composer.submit}
-          >
-            Comment
-          </Button>
-        }
-      />
+      {canComment && (
+        <RichTextEditor
+          value={composer.draft}
+          placeholder="Write a comment… (@ to mention someone)"
+          onChange={composer.setDraft}
+          footer={
+            /* Not disabled while pending, and the editor clears on SUBMIT rather
+               than on success — a thread is written in a burst, and putting a
+               round trip between two replies is what makes people stop using it.
+               The comment is already visible in the list above by the time this
+               runs. */
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={isEmptyDocument(composer.draft)}
+              onClick={composer.submit}
+            >
+              Comment
+            </Button>
+          }
+        />
+      )}
 
       {/* No inline error rows — every mutation here reports through a toast. */}
       {viewerId === null && <p className="text-[11px] text-ink-faint">Not signed in.</p>}
@@ -442,6 +461,7 @@ function CommentRow({
   comment,
   viewerId,
   canModerate,
+  canComment,
   personOf,
   isEditing,
   onStartEdit,
@@ -454,6 +474,7 @@ function CommentRow({
   readonly comment: Comment;
   readonly viewerId: string | null;
   readonly canModerate: boolean;
+  readonly canComment: boolean;
   readonly personOf: (userId: string) => Person;
   readonly isEditing: boolean;
   readonly onStartEdit: () => void;
@@ -512,12 +533,16 @@ function CommentRow({
           <div className="flex gap-1">
             {/* Edit is hidden for anyone but the author — there is no
                 override, ever (updateComment), so showing it to someone else
-                could only ever end in a FORBIDDEN toast. Delete is shown to
+                could only ever end in a FORBIDDEN toast. It is also hidden
+                without `canComment`: `comments.update` floors on the same
+                `comment:create` permission as posting, so an author whose
+                access has since been downgraded to `viewer` would otherwise
+                see a Save button the server refuses. Delete is shown to
                 the author (needs only `comment:create`, same as the
                 service) OR a caller `canModerate` — `comment:delete` is
                 Admin-and-Owner only, so a plain Member viewing someone
                 else's comment sees neither control at all. */}
-            {comment.authorId !== null && comment.authorId === viewerId && (
+            {canComment && comment.authorId !== null && comment.authorId === viewerId && (
               <Button
                 size="sm"
                 variant="ghost"

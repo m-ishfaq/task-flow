@@ -815,11 +815,20 @@ export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: Branc
             version: z.number().int().positive(),
             createdAt: z.date(),
             updatedAt: z.date(),
-            /* Read by `comment-section.tsx` to hide "Delete" on a comment
-               the caller cannot moderate — see `CardDetail`'s own comment
-               for why this is computed per-card rather than folded into
-               the org-level `SettingsCapabilities`. */
-            capabilities: z.object({ moderateComments: z.boolean() }).strict(),
+            /* Read by `card-detail-panel.tsx`/`comment-section.tsx` to hide
+               (not disable) every edit/comment control a viewer- or
+               commenter-relation guest cannot use — see `CardDetail`'s own
+               comment for why this is computed per-card rather than folded
+               into the org-level `SettingsCapabilities`. */
+            capabilities: z
+              .object({
+                update: z.boolean(),
+                archive: z.boolean(),
+                comment: z.boolean(),
+                manageProjectVocabulary: z.boolean(),
+                moderateComments: z.boolean(),
+              })
+              .strict(),
           }),
         )
         .query(({ input, ctx }) => cards.getCard(actorOf(ctx), input)),
