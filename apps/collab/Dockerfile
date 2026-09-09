@@ -23,6 +23,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/realtime/package.json apps/realtime/package.json
 COPY apps/collab/package.json apps/collab/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/ai/package.json packages/ai/package.json
 COPY packages/client/package.json packages/client/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
