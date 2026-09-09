@@ -4605,6 +4605,47 @@ wrong implementation" standard every other spend-boundary test in this codebase 
 **`apps/mobile`'s billing screen: out of scope for this pass**, matching Feature 1's own deferral —
 a real, separate follow-up rather than an oversight.
 
+### Duplicate-card detection at creation time (SHIPPED) — entirely client-side
+
+`apps/web/src/features/work/duplicate-detect.ts` · `apps/web/src/features/work/list-column.tsx`'s
+`AddCard`. Prompted directly, from the same product brainstorm: `search.query` already indexes
+every card with trigram-backed `ILIKE` substring matching, and nothing surfaced "this might already
+exist" at the moment a title is typed — a real source of the sprawl teams complain about in
+Jira/Asana.
+
+**No backend changes at all — the entire feature is a debounce, a client-side TQL query, and a
+dropdown wired onto `AddCard`'s existing title input.** `search.query` already indexes cards,
+already enforces `search:query` (a permission every Member holds), and already does its own
+per-hit `can()` filtering server-side — reusing it exactly as `search-page.tsx` calls it, rather
+than inventing a second search path, means this feature inherits that authorization for free and
+can never show a title the caller could not otherwise see.
+
+**`buildDuplicateQuery` is the one pure function, exported and tested directly** — the "test the
+pure half" split this codebase already holds `neighbours.ts`/`markdown-lite.tsx` to, since the
+component itself is mostly wiring around this one decision. Fires at 3+ characters (`type:card
+<trimmed title>`, bare text desugaring to `text contains <term>` automatically — no manual
+escaping or AST-building), below which a partial title matches too broadly to be useful.
+
+**Gated on the client's own `parse()` check before firing, mirroring `search-page.tsx`'s own
+`sendable` gate exactly** — a title whose literal text happens to break TQL syntax (an unbalanced
+quote, a bare `AND`) simply shows no dropdown rather than sending a query the server would refuse
+with a validation error the person never asked for.
+
+**Purely advisory, matching this codebase's own stated WIP-limit philosophy applied to the
+identical shape of problem: "blocking someone from recording work already in progress makes people
+stop using the board, not stop the work."** The dropdown never blocks or intercepts submission —
+clicking a match opens the real `CardQuickView` (the same "load a card with no board in hand"
+mechanism the standup view and the assistant's `my_cards` renderer already established) in front of
+the form, and the person still decides whether to create a new card regardless. Dismissed
+synchronously on submit (both `title` and the debounced copy are cleared together, not left to
+drift apart for the length of one debounce window) or once the title is edited below the 3-character
+floor.
+
+**Reuses `searchResultsQuery`/`keys.search` verbatim** — the exact query function and cache key the
+search page itself uses, so a duplicate check and an open search page never disagree about what a
+title currently matches, and there is no second search implementation to keep in sync with the
+first.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
