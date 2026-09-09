@@ -5170,6 +5170,60 @@ external limit stated directly to the person reporting this rather than papered 
 promise of an automatic fix. This change closes the discoverability gap in RECOVERING from that
 limit, not the limit itself.
 
+### Phase 15 §7 — a caught GitHub fetch timeout, not Node's raw exception text (FIXED)
+
+`apps/api/src/automation/pr-read.service.ts`'s `githubFetch`. Found from a real transcript on this
+PR's own repo: `get_pr_diff` refused correctly with its 406 hint ("try get_pr_files for the file
+list"), the model followed that advice, and `get_pr_files` itself then failed with a bare
+`The operation was aborted due to timeout` — Node's own internal `DOMException` message, not
+anything this codebase wrote — leaving the model with nothing actionable to relay and no path
+left to try.
+
+**Every fetch in this file already had explicit, hint-bearing handling for every STATUS GitHub
+can answer with (`githubReadError`'s 401/403/404/406 hints) — and NONE of them ever caught a
+THROWN fetch error, only an unsuccessful RESPONSE.** `AbortSignal.timeout(TIMEOUT_MS)` firing is
+exactly a thrown error, not a response, so it skipped every hint this file had ever built and
+reached the model as raw Node/undici exception text — the identical class of gap this file's own
+"missing 401 hint" section already closed once for a different failure shape (a status code with
+no hint), just one layer earlier: a request that never got a response at all.
+
+**`githubFetch` is one small wrapper, used at all ten fetch call sites in this file, catching a
+thrown error and giving it the same actionable treatment `githubReadError` already gives every
+non-2xx status.** A `TimeoutError`-named `DOMException` — what `AbortSignal.timeout()` produces
+per the WHATWG spec Node's own `fetch` implements — gets its own specific hint ("this can happen
+on a large pull request... try again, or view it directly on GitHub"); any other thrown error
+(DNS failure, connection reset) gets a generic "could not reach GitHub" rather than whatever raw
+message the underlying transport happened to produce.
+
+**`TIMEOUT_MS` doubled from 10s to 20s in the same pass, not a separate decision — the same
+reasoning `packages/ai/src/timeout.ts`'s own 90-second `COMPLETION_TIMEOUT_MS` already states for
+a much larger number: a much tighter bound risks misclassifying a legitimately slow-but-working
+GitHub response (computing per-file stats across many changed files, on a genuinely large PR) as
+wedged.** This does not make the timeout unreachable — it makes it less likely to fire on exactly
+the case this report was about, while still bounding every call to something well short of the
+model's own 90-second per-completion budget it is nested inside.
+
+**`getPullRequestStatus`'s own "best-effort, not fatal" checks-rollup call is unaffected by this
+fix in the one way that matters: a thrown error on that call still aborts the whole status fetch,
+exactly as it did before.** Only a non-2xx RESPONSE degraded gracefully to `checksStatus: 'none'`
+before this change; a THROWN error on that same call was never caught either, so `githubFetch`
+changes what the resulting error SAYS, not whether the call still throws.
+
+**Regression-tested directly against the real failure shape, not a stand-in**:
+`pr-read.service.test.ts`'s new `getPullRequestFiles` case supplies a `fetchImpl` that throws the
+exact `DOMException('The operation was aborted due to timeout', 'TimeoutError')` a real
+`AbortSignal.timeout()` firing produces, and asserts the resulting error is `SERVICE_UNAVAILABLE`
+with a message naming the real recovery path — not the bare internal text the original report
+pasted verbatim.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`,
+all clean; the new DB-backed test case could not be run locally in this sandbox (no Docker/
+Postgres here, the same standing limitation every DB-backed suite in this session states) — CI is
+the real signal.** Scoped to `pr-read.service.ts` only, where the report happened — `pr-write.
+service.ts`, `branch.service.ts`, and `integration-action.service.ts` share the identical
+uncaught-thrown-fetch-error gap and are real, deliberately deferred follow-up work, not something
+this pass silently assumed fixed everywhere.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

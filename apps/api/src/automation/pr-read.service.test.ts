@@ -454,6 +454,31 @@ describe('getPullRequestFiles', () => {
     });
     expect(fake.calls).toHaveLength(0);
   });
+
+  it("surfaces a thrown fetch timeout as an actionable message, not Node's raw internal text", async () => {
+    // Regression for a real report: on a large PR, GitHub's own response can
+    // outlast the AbortSignal, and the resulting thrown error used to reach
+    // the model verbatim as "The operation was aborted due to timeout" —
+    // every non-2xx RESPONSE already had a hint (`githubReadError`), but
+    // nothing ever caught a THROWN fetch error.
+    const { owner } = await scaffold('files-timeout');
+    const timingOut = (() => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as typeof fetch;
+    const deps = depsFor(timingOut);
+    await connectedGithub(owner, depsFor(fakeGithub({}).fetch));
+
+    let caught: unknown;
+    try {
+      await getPullRequestFiles(owner, deps, { prNumber: 4 });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain('did not respond in time');
+  });
 });
 
 describe('getPullRequestDiff', () => {

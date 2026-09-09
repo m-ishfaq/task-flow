@@ -43,7 +43,16 @@ import type { AutomationActor } from './automation.service.js';
    deployment's OAuth App. */
 export type PrReadDeps = Pick<IntegrationDeps, 'keys' | 'fetchImpl' | 'providers'>;
 
-const TIMEOUT_MS = 10_000;
+/* Doubled from the original 10s after a real report: `get_pr_files` failing
+   with a bare "The operation was aborted due to timeout" on a PR large
+   enough that GitHub's own response — computing per-file stats across many
+   changed files — took longer than that to arrive. Still well short of
+   `packages/ai/src/timeout.ts`'s 90s `COMPLETION_TIMEOUT_MS` for the whole
+   model call this is nested inside; a much tighter bound here would
+   misclassify a legitimately slow-but-working GitHub response as wedged,
+   the identical reasoning that constant's own header already gives for its
+   own, much larger number. */
+const TIMEOUT_MS = 20_000;
 const MAX_LIST_LIMIT = 20;
 const DEFAULT_LIST_LIMIT = 10;
 /**
@@ -191,6 +200,38 @@ function githubReadError(status: number): Error {
   return errors.serviceUnavailable(`GitHub answered ${String(status)}${hint}.`);
 }
 
+/**
+ * Every fetch in this file already has explicit, hint-bearing handling for
+ * every STATUS GitHub can answer with (`githubReadError`). This is the
+ * identical treatment for the one failure mode with no status at all — the
+ * request never got a response — found from a real report: `get_pr_files`
+ * surfacing Node's own internal exception text verbatim ("The operation was
+ * aborted due to timeout") with no indication of what happened or what to
+ * do about it, because nothing in this file ever caught a THROWN fetch
+ * error, only an unsuccessful RESPONSE. `AbortSignal.timeout()` firing is
+ * the overwhelmingly likely case (a `DOMException` named `'TimeoutError'`,
+ * per the WHATWG spec Node's own `fetch` implements) — worth its own,
+ * more specific hint over a bare network failure (DNS, connection reset),
+ * which gets a generic one instead.
+ */
+async function githubFetch(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetchFn(url, init);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw errors.serviceUnavailable(
+        'GitHub did not respond in time — this can happen on a large pull request. ' +
+          'Try again, or view it directly on GitHub.',
+      );
+    }
+    throw errors.serviceUnavailable('Could not reach GitHub. Try again shortly.');
+  }
+}
+
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
@@ -277,7 +318,8 @@ export async function listPullRequests(
   const state = input.state ?? 'open';
   const limit = Math.min(input.limit ?? DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
 
-  const response = await fetchFn(
+  const response = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repoPath(connector.providerScope)}/pulls` +
       `?state=${state}&per_page=${String(limit)}&sort=created&direction=desc`,
     { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
@@ -340,7 +382,8 @@ export async function getPullRequestDiff(
   const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
-  const response = await fetchFn(
+  const response = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repoPath(connector.providerScope)}/pulls/${String(input.prNumber)}`,
     {
       headers: { ...githubHeaders(connector.token), accept: 'application/vnd.github.v3.diff' },
@@ -365,11 +408,13 @@ export async function getPullRequestComments(
   const headers = githubHeaders(connector.token);
 
   const [issueRes, reviewRes] = await Promise.all([
-    fetchFn(
+    githubFetch(
+      fetchFn,
       `https://api.github.com/repos/${repo}/issues/${String(input.prNumber)}/comments?per_page=${String(MAX_COMMENTS)}`,
       { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
     ),
-    fetchFn(
+    githubFetch(
+      fetchFn,
       `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}/comments?per_page=${String(MAX_COMMENTS)}`,
       { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
     ),
@@ -445,7 +490,8 @@ export async function getPullRequestFiles(
   const connector = await connectedGithubRepo(actor.subject.orgId, deps, input.repoScope);
   const fetchFn = deps.fetchImpl ?? fetch;
 
-  const response = await fetchFn(
+  const response = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repoPath(connector.providerScope)}/pulls/${String(input.prNumber)}/files?per_page=${String(MAX_FILES)}`,
     { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
   );
@@ -549,7 +595,8 @@ export async function getPullRequestFileDiff(
 
   let match: Record<string, unknown> | undefined;
   for (let page = 1; page <= MAX_FILE_DIFF_LOOKUP_PAGES; page += 1) {
-    const response = await fetchFn(
+    const response = await githubFetch(
+      fetchFn,
       `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}/files?per_page=100&page=${String(page)}`,
       { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
     );
@@ -611,7 +658,8 @@ export async function getPullRequestStatus(
   const fetchFn = deps.fetchImpl ?? fetch;
   const repo = repoPath(connector.providerScope);
 
-  const prResponse = await fetchFn(
+  const prResponse = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}`,
     {
       headers: githubHeaders(connector.token),
@@ -633,7 +681,8 @@ export async function getPullRequestStatus(
     throw errors.serviceUnavailable('GitHub returned an unrecognized PR shape.');
   }
 
-  const checksResponse = await fetchFn(
+  const checksResponse = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repo}/commits/${head['sha']}/check-runs?per_page=${String(MAX_CHECK_RUNS)}`,
     { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
   );
@@ -740,7 +789,8 @@ export async function getPullRequestFileContent(
   const fetchFn = deps.fetchImpl ?? fetch;
   const repo = repoPath(connector.providerScope);
 
-  const prResponse = await fetchFn(
+  const prResponse = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repo}/pulls/${String(input.prNumber)}`,
     { headers: githubHeaders(connector.token), signal: AbortSignal.timeout(TIMEOUT_MS) },
   );
@@ -764,7 +814,8 @@ export async function getPullRequestFileContent(
     .map((segment) => encodeURIComponent(segment))
     .join('/');
 
-  const contentResponse = await fetchFn(
+  const contentResponse = await githubFetch(
+    fetchFn,
     `https://api.github.com/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(head['sha'])}`,
     {
       headers: { ...githubHeaders(connector.token), accept: 'application/vnd.github.raw' },
