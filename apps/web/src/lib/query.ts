@@ -200,6 +200,9 @@ export const keys = {
     ['org', orgId, 'projects', includeArchived ? 'all' : 'live'] as const,
   boards: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'boards'] as const,
+  /** Guest-invite roster for one project (`work.guests.list`). */
+  projectGuests: (orgId: string, projectId: string) =>
+    ['org', orgId, 'projects', projectId, 'guests'] as const,
 
   lists: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'lists'] as const,
   views: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'views'] as const,

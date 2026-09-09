@@ -4432,6 +4432,130 @@ lookup refusing before any comment POST is attempted. Tool-wrapper tests cover
 `requiresConfirmation`, the guest-refusal sweep, and the success-path JSON shape the frontend
 renderer expects.
 
+### Guest access into Work (SHIPPED) — a dedicated invite flow, and a real listing leak it closes
+
+`apps/api/src/work/guest-access.service.ts` · `apps/api/src/work/project.service.ts`'s `listProjects`
+· `packages/policy/src/assignment.ts`'s `isGuestRole` · `apps/api/src/tenancy/grant.service.ts`'s
+`isGuest` field · `apps/web/src/features/work/guest-access-section.tsx`. Prompted directly, from a
+product brainstorm naming a real gap against traditional PM tools: Guest access existed for Chat
+(`chat/compliance.service.ts`'s `setGuestAccess`) with no Work equivalent — a contractor or external
+stakeholder could not be looped into a single project without promoting them to Member, which hands
+them the whole org.
+
+**A guest is a tuple, not a role — the identical design chat's own guest access already
+established, one level up.** `GUEST` grants nothing from the role alone
+(`packages/policy/src/roles.ts` has it as an empty list, by design). Guest access to a project IS a
+`viewer`/`commenter`/`editor` relationship tuple naming that project, marked `is_guest` only for
+review — `authz.relationship_tuples.is_guest` has existed since the schema shipped and chat was its
+only writer until now. There is no `if (isGuest)` branch anywhere in `guest-access.service.ts`, the
+same absence `chat/guest.test.ts` already proves for channels.
+
+**A dedicated flow, chosen explicitly over extending the generic Share dialog, after the tradeoff
+was put to the project owner directly.** `share-board.tsx` already calls the generic
+`tenancy.grants.grant`/`.revoke`/`.list` (gated `member:manage` + step-up) for sharing a board with
+ANY member. Two real differences justify a second, narrower door rather than reusing that one:
+inviting an external guest is conceptually a different action than sharing with a colleague, and —
+the one the project owner picked when asked — guest grants here are refused for anyone whose
+membership role is not already `'guest'`, a restriction the generic dialog has no reason to carry
+(it can share with anyone). `work.guests.{list,invite,revoke}` is `project:update`-gated, no
+step-up — the same floor every other project-vocabulary route on this page already uses, since
+inviting a guest changes who can reach the project exactly like renaming it or editing its labels
+does.
+
+**The prerequisite fix this feature needed, found by re-deriving `docs/space.service.ts`'s own
+`listSpaces` bug for Work: `listProjects` returned every row in the org, unfiltered.** It computed
+per-row `capabilities` via `manageCapabilitiesFor` but never called `can()`/`allowed()` to decide
+whether a row belonged in the result set at all — harmless only because every non-guest role holds
+`project:read` flatly by role. `route({ permission: 'project:read' })`'s floor is `couldGrant`,
+which passes on a relationship tuple as well as on a role, and `member`'s grant set covers every
+`:read` permission by action-suffix match — so the moment a Guest holds a real project-level tuple
+(which this feature is the first thing to ever grant), that same Guest would have received every
+OTHER project's name and key in the org too, having no Work relationship to them at all. Fixed
+identically to `listSpaces`: a bounded `.filter()` calling `can(actor.subject, 'project:read', ...)`
+per row, not a join — projects are org furniture, tens of them, not thousands.
+`guest-access.service.test.ts`'s `sees only the invited project in listProjects` is the regression
+test that would have failed against the pre-fix code.
+
+**`listBoards` needed no equivalent fix — checked, not assumed, and the reason is the scope
+decision below, not an oversight.** It already calls `requireProject(tx, actor, input.projectId,
+'project:read')` as a hard precondition, and its query is already scoped to that one `projectId` —
+so nothing about the row it returns could ever leak a SIBLING project's boards; a caller must
+already hold `project:read` on the exact project named. Project-scoped-only guest grants are what
+make this argument airtight rather than merely convenient (see below).
+
+**Guest grants are project-scoped only, deliberately, not per-board.** A tuple at the project level
+already flows down to every board and card beneath it via `ancestorsOfBoard`/`ancestorsOfCard` — one
+grant gives a guest everything under the project, which is the actual use case ("loop in a
+contractor on this project"). This also sidesteps a real asymmetry a per-board grant would hit: a
+board-only guest (no project-level access) could open a board via a direct link but never discover
+it through `boards.list`, since that route requires `project:read` as a precondition before
+returning anything at all. Per-board guest grants are real, deliberately deferred follow-up work,
+not a gap this pass closes.
+
+**`grant()`/`revoke()` in `tenancy/grant.service.ts` are reused, not duplicated — the identical
+idempotency, subject-validation and event-emission logic chat's own `setGuestAccess` would otherwise
+drift from.** `GrantInput` gained one new optional field, `isGuest` (default `false`), threaded into
+the insert and into `grantCreated`'s Zod schema — every existing caller is unaffected. This is the
+first production caller of `grant()`/`revoke()` from OUTSIDE `tenancy/`; the precedent for a small,
+generic tenancy service being called cross-module already existed for `resolveOrgMembership`
+(`identity/api-token-auth.ts`, `standup/digest-sweep.ts`), just not for this one specifically.
+
+**Two transactions, not one nested inside the other — a real mistake caught before it shipped, not
+a theoretical concern.** The first draft of `inviteGuestToProject`/`revokeGuestAccess` called
+`grant()`/`revoke()` from INSIDE an already-open `withOrgScope` block. Both functions open their own
+`withOrgScope`, which calls `requireDb().transaction()` on the top-level pool client — nesting that
+inside an already-open transaction grabs a second, independent connection rather than a savepoint
+within the first, which is not the atomic-transaction shape guardrail 6 assumes. Fixed by splitting
+each function into a read-and-validate transaction (project reachability, target's membership role,
+any existing guest tuple to replace) followed by sequential top-level calls to the already-idempotent
+`grant()`/`revoke()` — the identical "chain several real service calls, each under its own `can()`
+check, at the orchestration layer rather than nested inside one transaction" shape this file's own
+Phase 15 `card_create` section already established for composing several service calls behind one
+confirmation.
+
+**Re-inviting at a different relation replaces the old grant rather than adding a second — a project
+holds at most one active guest relation per person at a time.** `inviteGuestToProject` revokes any
+existing `is_guest` tuple this user holds on this project before granting the new one, so "change
+this guest's access" is simply inviting them again; there is no separate update method.
+
+**`target.role !== 'guest'` tripped guardrail 7's `roleMember` rule — the identical name-not-
+authorization collision this file documents elsewhere for `AiMessage.role`/`ChatMessageWire`'s
+`role`, except this one genuinely IS an org role, just not an authorization decision about the
+ACTOR.** The check is a business rule about who this flow is FOR (refusing to grant a redundant
+tuple to a Member through the wrong door), not a `can()` decision — but the lint rule is correctly
+blunt about the shape regardless of intent, and CLAUDE.md's own account of `packages/policy/src/
+assignment.ts` (`isIndispensableRole`/`isDirectlyAssignable`/`sameRole`) already states the answer:
+move the comparison where the matrix test can see it, never disable the rule. `isGuestRole(role:
+string): boolean` joins that file for the identical reason, taking a plain `string` rather than the
+branded `Role` (unlike its siblings) because its one caller reads `role` straight off a
+`memberships` row, which Drizzle types as `text`, with nothing to validate-and-narrow first.
+
+**The frontend candidate list filters to Guest-role members client-side, using the same
+`isGuestRole` the server enforces — real precedent for importing a `@taskflow/policy` helper into
+`apps/web` already exists (`settings-page.tsx`, `share-board.tsx`).** This is purely so a caller
+never sees an option the server would refuse; the real check still happens server-side regardless of
+what the client filtered. `GuestAccessSection` (`apps/web/src/features/work/guest-access-section.tsx`)
+mirrors `channel-details.tsx`'s own `GuestAccessSection` shape (search-to-invite, a relation picker,
+a revoke button per row) and is gated on `project.capabilities.update` in `project-settings-page.tsx`
+— hidden entirely rather than disabled, Phase 15 §1's "hide, don't disable" rule, since a caller who
+cannot manage the project has no use for a control the server would just refuse.
+
+**`apps/mobile`: out of scope for this pass**, matching this codebase's own repeated precedent of
+shipping a new Work-module surface web-first (email invitations' own mobile scope note is the
+closest one) — a mobile "Invite guest" screen is real, separate, deliberately deferred work, not an
+oversight.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`, all
+clean; the new DB-backed test suite (`guest-access.service.test.ts`) could not be run locally in
+this sandbox (no Docker/Postgres here, the same standing limitation this file states for every
+DB-backed suite written in this session) — CI is the real signal.** Covers: an unfiltered guest
+sees an empty project list and cannot reach a project directly; an invited guest sees only that
+project in `listProjects` (the regression test for the leak fix above) and can read its boards;
+containment against a sibling project holding no tuple; access lost immediately on revoke; the
+`is_guest` marker on the tuple, for review; re-inviting at a different relation replacing rather than
+duplicating the grant; relation validation rejecting anything outside viewer/commenter/editor; and
+refusing a target whose membership role is not Guest.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

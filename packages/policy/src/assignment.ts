@@ -59,3 +59,24 @@ export const DIRECTLY_ASSIGNABLE_ROLES: readonly Role[] = ROLES.filter(isDirectl
 export function sameRole(left: Role, right: Role): boolean {
   return left === right;
 }
+
+/**
+ * Whether a role is the Guest role — same trivial shape as `sameRole`, for
+ * the same reason.
+ *
+ * Takes a plain `string`, unlike `sameRole`/`isIndispensableRole` — its one
+ * caller (`work/guest-access.service.ts`) reads `role` straight off a
+ * `memberships` row, which Drizzle types as `text` rather than the branded
+ * `Role`, and there is nothing to validate-and-narrow first: an unrecognized
+ * value here just isn't Guest, the same answer `false` already gives.
+ *
+ * Used outside `can()` entirely: Work's guest-invite flow refuses to grant a
+ * project-level tuple to anyone whose MEMBERSHIP role is not already Guest,
+ * which is a business rule about who this flow is FOR, not an authorization
+ * decision — but the comparison itself is still `role === 'guest'` in shape,
+ * so it belongs here rather than as an inline check the lint rule cannot
+ * distinguish from a real, drifting authorization shortcut.
+ */
+export function isGuestRole(role: string): boolean {
+  return role === 'guest';
+}

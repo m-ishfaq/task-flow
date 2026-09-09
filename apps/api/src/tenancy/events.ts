@@ -154,6 +154,8 @@ export const grantCreated = defineEvent(
       objectType: z.string(),
       objectId: z.string(),
       expiresAt: z.string().nullable(),
+      /** Mirrors `relationship_tuples.is_guest` — an audit marker only. */
+      isGuest: z.boolean(),
     })
     .strict(),
 );

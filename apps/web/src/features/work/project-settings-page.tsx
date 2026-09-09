@@ -25,6 +25,7 @@ import {
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { boardsQuery, labelsQuery, projectsQuery, statusesQuery } from './api.js';
+import { GuestAccessSection } from './guest-access-section.js';
 
 /**
  * Everything about a project that is not a card.
@@ -100,6 +101,12 @@ export function ProjectSettingsPage() {
       <LabelSettings orgId={orgId} projectId={projectId} />
       <StatusSettings orgId={orgId} projectId={projectId} />
       <FieldSettings orgId={orgId} projectId={projectId} />
+      {/* Hidden entirely rather than disabled — Phase 15 §1's "hide, don't
+          disable" rule: `work.guests.*` routes are `project:update`-gated the
+          same as everything else on this page, and a viewer who cannot
+          manage the project has no use for a control that would just be
+          refused. */}
+      {project.capabilities.update && <GuestAccessSection orgId={orgId} projectId={projectId} />}
     </div>
   );
 }

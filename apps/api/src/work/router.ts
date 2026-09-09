@@ -23,6 +23,7 @@ import * as views from './view.service.js';
 import * as sprints from './sprint.service.js';
 import * as importExport from './import-export.service.js';
 import * as duplicate from './duplicate.service.js';
+import * as guestAccess from './guest-access.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
@@ -340,6 +341,54 @@ export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: Branc
         .input(z.object({ projectId: ProjectIdSchema, archived: z.boolean() }).strict())
         .output(z.object({ archived: z.boolean() }))
         .mutation(({ input, ctx }) => projects.archiveProject(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Guest access into Work (`guest-access.service.ts`) — a dedicated,
+     * project-scoped invite flow separate from the generic Share dialog
+     * (`tenancy.grants.*`, still used by `share-board.tsx` for sharing a
+     * board with an existing member). `project:update`, same floor as
+     * every other project-vocabulary route above — inviting a guest
+     * changes who can reach the project, the identical class of change as
+     * renaming it or editing its labels.
+     */
+    guests: router({
+      list: route({ permission: 'project:update' })
+        .input(z.object({ projectId: ProjectIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                tupleId: z.string(),
+                userId: z.string(),
+                email: z.string(),
+                displayName: z.string().nullable(),
+                relation: z.string(),
+                expiresAt: z.date().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => guestAccess.listProjectGuests(actorOf(ctx), input)),
+
+      invite: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              userId: UserIdSchema,
+              relation: z.enum(['viewer', 'commenter', 'editor']),
+              expiresAt: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ tupleId: z.string() }))
+        .mutation(({ input, ctx }) => guestAccess.inviteGuestToProject(actorOf(ctx), input)),
+
+      revoke: route({ permission: 'project:update' })
+        .input(z.object({ projectId: ProjectIdSchema, userId: UserIdSchema }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) => guestAccess.revokeGuestAccess(actorOf(ctx), input)),
     }),
 
     /**

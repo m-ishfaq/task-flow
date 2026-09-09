@@ -35,6 +35,7 @@ export {
   isIndispensableRole,
   isDirectlyAssignable,
   sameRole,
+  isGuestRole,
   DIRECTLY_ASSIGNABLE_ROLES,
 } from './assignment.js';
 

@@ -87,6 +87,13 @@ export function boardsQuery(orgId: string, projectId: ProjectId) {
   });
 }
 
+export function projectGuestsQuery(orgId: string, projectId: ProjectId) {
+  return queryOptions({
+    queryKey: keys.projectGuests(orgId, projectId),
+    queryFn: async () => wire(await api.work.guests.list.query({ projectId })),
+  });
+}
+
 export function listsQuery(orgId: string, boardId: BoardId) {
   return queryOptions({
     queryKey: keys.lists(orgId, boardId),
