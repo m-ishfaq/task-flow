@@ -365,6 +365,41 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
             </div>
           )}
 
+          {/* AI assistant spend, alongside telephony's — previously visible
+              only to a platform operator (the AI Models console tab's own
+              cross-org report), never to the org that actually pays for it.
+              Same "only where there is a ceiling" rule as telephony's own
+              panel above. */}
+          {data.usage.aiCapCents !== null && (
+            <div className="rounded-xl border border-line/50 p-4">
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="font-semibold text-ink">AI assistant, this month</span>
+                <span className="text-ink-muted">
+                  {money(data.usage.aiSpentCents)} of {money(data.usage.aiCapCents)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-sunken">
+                <div
+                  className={
+                    data.usage.aiSpentCents >= data.usage.aiCapCents
+                      ? 'h-full bg-danger'
+                      : 'h-full bg-accent'
+                  }
+                  style={{
+                    width: `${String(
+                      Math.min(
+                        100,
+                        data.usage.aiCapCents === 0
+                          ? 100
+                          : Math.round((data.usage.aiSpentCents / data.usage.aiCapCents) * 100),
+                      ),
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <InvoiceHistory orgId={orgId} />
 
           <div className="rounded-xl border border-line/50 p-4">

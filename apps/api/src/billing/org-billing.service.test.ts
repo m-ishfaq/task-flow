@@ -264,6 +264,39 @@ describe('createCheckoutSession', () => {
   });
 });
 
+describe('getOverview', () => {
+  /**
+   * A raw insert rather than `ai/spend-gate.ts`'s own `recordAiUsage` — that
+   * function needs an open `withOrgScope` transaction and an envelope this
+   * test has no other reason to construct; a direct row is simpler and this
+   * file already establishes the "read/write around RLS directly as the
+   * migrator" pattern (`readOrgStripeCustomerId`) for exactly this kind of
+   * fixture setup.
+   */
+  async function insertAiUsage(orgId: OrgId, costCents: number): Promise<void> {
+    await admin.setOrg(orgId);
+    await admin.query(
+      `INSERT INTO ai.usage_ledger (id, org_id, feature, provider, model, input_tokens, output_tokens, cost_cents)
+       VALUES (gen_random_uuid(), $1, 'chat', 'anthropic', 'test-model', 10, 10, $2)`,
+      [orgId, costCents],
+    );
+    await admin.setOrg(null);
+  }
+
+  it('reflects real AI spend for the caller’s own org, and not a sibling org’s', async () => {
+    const orgId = await newOrg('billing-ai-spend');
+    const otherOrgId = await newOrg('billing-ai-spend-other');
+
+    await insertAiUsage(orgId, 250);
+    await insertAiUsage(orgId, 150);
+    await insertAiUsage(otherOrgId, 9_000);
+
+    const overview = await billing.getOverview(orgId);
+
+    expect(overview.usage.aiSpentCents).toBe(400);
+  });
+});
+
 describe('createPortalSession', () => {
   it('returns a URL carrying the org’s Stripe customer id', async () => {
     const orgId = await newOrg('billing-portal');

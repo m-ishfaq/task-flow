@@ -5,6 +5,7 @@ import {
   gte,
   outboxWriter,
   schema,
+  sumColumn,
   sumWithFallback,
   withOrgScope,
 } from '@taskflow/db';
@@ -60,6 +61,19 @@ export interface BillingOverview extends BillingStatusView {
     readonly telephonySpentCents: number;
     readonly telephonyCapCents: number | null;
     readonly telephonyIncludedCents: number;
+    /**
+     * The AI assistant's own spend, alongside telephony's — closing a real
+     * gap: `ai/spend-gate.ts`'s own budget report was platform-operator-only
+     * (`aiSpendReport`, gated `withPlatformAdminScope`) until now, so an org
+     * owner could see what their org spends on TELEPHONY but not on the
+     * assistant, even though both are real third-party spend this org pays
+     * for. Calendar-month, matching `readAiSpendState`'s own window — the
+     * budget's name (`aiTokenBudgetMonthlyCents`) is the contract, unlike
+     * telephony's rolling 30-day window.
+     */
+    readonly aiSpentCents: number;
+    /** null = unlimited (Phase 12 Wave 4's entitlement convention). */
+    readonly aiCapCents: number | null;
   };
   /**
    * Who can actually change any of this.
@@ -170,6 +184,12 @@ function resolveDeadline(row: {
 
 const SPEND_WINDOW_DAYS = 30;
 
+/** UTC calendar-month boundary — `aiTokenBudgetMonthlyCents`'s own name is the contract. */
+function startOfCurrentMonth(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 export async function getOverview(orgId: OrgId): Promise<BillingOverview> {
   const [status, entitlements, flags] = await Promise.all([
     getStatus(orgId),
@@ -209,6 +229,22 @@ export async function getOverview(orgId: OrgId): Promise<BillingOverview> {
       .from(schema.spendLedger)
       .where(and(eq(schema.spendLedger.orgId, orgId), gte(schema.spendLedger.occurredAt, since)));
 
+    /* AI spend, over the calendar month `aiTokenBudgetMonthlyCents` bills
+       against — not `ai/spend-gate.ts`'s own `readAiSpendState`, which would
+       pull `apps/api/src/ai` into `apps/api/src/billing` and back again
+       (`spend-gate.ts` already imports `getEntitlements` from THIS module),
+       a real import cycle rather than a hypothetical one. A small, deliberate
+       duplicate of the same calendar-month arithmetic, matching this
+       codebase's own accepted precedent for a duplicate this small
+       (`apps/mobile`'s own `slugify`, cited for the identical reason). */
+    const aiSince = startOfCurrentMonth();
+    const aiSpendRows = await tx
+      .select({ total: sumColumn(schema.aiUsageLedger.costCents) })
+      .from(schema.aiUsageLedger)
+      .where(
+        and(eq(schema.aiUsageLedger.orgId, orgId), gte(schema.aiUsageLedger.occurredAt, aiSince)),
+      );
+
     /* The owner, for "who do I ask". LEFT join on profiles — a profile row is
        lazily created, and an inner join would hide the owner's ADDRESS from
        anyone whose owner has never opened the account page. */
@@ -239,6 +275,12 @@ export async function getOverview(orgId: OrgId): Promise<BillingOverview> {
         telephonySpentCents: Number(spendRows[0]?.total ?? 0),
         telephonyCapCents: entitlements.limits.telephonyCapCents ?? null,
         telephonyIncludedCents: entitlements.limits.telephonyIncludedCents ?? 0,
+        /* Postgres SUM over bigint arrives as a STRING through the driver,
+           and `Number(undefined)` is NaN, which compares false against every
+           threshold — the identical trap `readAiSpendState` guards against,
+           parsed explicitly and floored at 0 here for the same reason. */
+        aiSpentCents: Math.max(0, Number.parseInt(aiSpendRows[0]?.total ?? '0', 10) || 0),
+        aiCapCents: entitlements.limits.aiTokenBudgetMonthlyCents ?? null,
       },
       billingContact: owner === undefined ? null : { email: owner.email, name: owner.name },
       currentPriceCents: extra?.currentPriceCents ?? null,

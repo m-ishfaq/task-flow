@@ -4556,6 +4556,55 @@ containment against a sibling project holding no tuple; access lost immediately 
 duplicating the grant; relation validation rejecting anything outside viewer/commenter/editor; and
 refusing a target whose membership role is not Guest.
 
+### Combined spend view for an org owner (SHIPPED) — AI spend, previously operator-only
+
+`apps/api/src/billing/org-billing.service.ts`'s `getOverview` · `apps/api/src/billing/router.ts` ·
+`apps/web/src/features/admin/billing-section.tsx`. Prompted directly, from the same product
+brainstorm as guest access: telephony spend, AI spend, and billing each lived on a different
+screen/permission — AI spend specifically was **platform-operator-only**
+(`apps/api/src/ai/provider-config.service.ts`'s `aiSpendReport`, gated `withPlatformAdminScope`), so
+an org owner could see what their org spends on telephony but had no way to see what it spends on
+the AI assistant at all.
+
+**Extends the existing owner-facing billing overview rather than building a new page or route.**
+`org:billing` (Owner-only, ORG_LEVEL, no tuple can ever satisfy it) already gates the one screen an
+owner reads to answer "what does my org pay" — `getOverview`'s `usage` object already answered this
+for telephony, so AI spend is two more fields on the same object (`aiSpentCents`/`aiCapCents`),
+not a second capability or a second query the client has to remember to call.
+
+**AI cap resolves through the SAME four-tier entitlement chain the budget gate itself uses
+(`getEntitlements(orgId).limits.aiTokenBudgetMonthlyCents`), reused for DISPLAY rather than
+enforcement — the identical relationship `telephonyCapCents` already has to `checkOutboundAllowed`.**
+No new resolution logic, no risk of the displayed cap ever disagreeing with the one actually
+enforced.
+
+**AI spend is a small, DELIBERATE duplicate of `ai/spend-gate.ts`'s own `readAiSpendState` query,
+not a cross-module import of it — importing would create a real cycle, not a hypothetical one.**
+`spend-gate.ts` already imports `getEntitlements` FROM `billing/entitlement-resolver.ts`; having
+`org-billing.service.ts` import back from `apps/api/src/ai` would close that loop. The duplicated
+piece is small on purpose (a `SUM(cost_cents)` over the current UTC calendar month, with the
+identical `Number.parseInt(... ?? '0', 10) || 0` guard against Postgres's bigint-as-string and the
+`Number(undefined) === NaN` trap `readAiSpendState`'s own header already documents) — the same
+"a duplicate this small is the accepted trade" precedent `apps/mobile`'s own `slugify` already sets
+for not sharing code across a boundary that would otherwise cost more than the duplication.
+Calendar-month, not telephony's rolling 30-day window — `aiTokenBudgetMonthlyCents`'s own name is
+the contract, matching `readAiSpendState`'s own reasoning for the same choice.
+
+**The frontend panel mirrors telephony's own spend-bar block verbatim rather than being extracted
+into a shared component — two occurrences, and this file's own §6 rule ("extract a component only
+once the same pattern appears three times") says not yet.** Same "only shown where there is a
+ceiling to compare against" rule telephony's own panel already follows — `null` is unlimited, and
+"spent $12 of unlimited" is noise. No "included in your plan" sub-line, unlike telephony's: AI has
+no overage-billing concept to explain, it is a hard monthly ceiling the spend gate itself enforces.
+
+**`org-billing.service.test.ts` gained a case proving the RLS boundary directly** — real
+`ai.usage_ledger` rows inserted for two different orgs, asserting `getOverview`'s `aiSpentCents`
+sums only the caller's own org's rows, the same "real Postgres, not a mock that could agree with a
+wrong implementation" standard every other spend-boundary test in this codebase is held to.
+
+**`apps/mobile`'s billing screen: out of scope for this pass**, matching Feature 1's own deferral —
+a real, separate follow-up rather than an oversight.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

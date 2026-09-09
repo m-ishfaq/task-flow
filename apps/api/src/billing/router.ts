@@ -52,6 +52,8 @@ export function createBillingRouter(deps: BillingDeps) {
                 telephonySpentCents: z.number().int().nonnegative(),
                 telephonyCapCents: z.number().int().nullable(),
                 telephonyIncludedCents: z.number().int().nonnegative(),
+                aiSpentCents: z.number().int().nonnegative(),
+                aiCapCents: z.number().int().nullable(),
               })
               .strict(),
             billingContact: z
