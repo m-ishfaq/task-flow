@@ -29,6 +29,7 @@ import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
 import type { BranchWriteDeps } from '../automation/branch.service.js';
+import type { InvitationServiceDeps } from '../tenancy/invitation.service.js';
 
 /**
  * Work routes (PLAN.md §13 phase 3).
@@ -241,6 +242,13 @@ const CardSummaryOutput = z
  */
 export interface WorkRouterDeps {
   readonly attachments: AttachmentDeps;
+  /**
+   * `guests.inviteByEmail`'s own dependency, reused verbatim from
+   * `tenancy.invitations.send` (`invitation.service.ts`'s `createInvitation`)
+   * rather than a second `MailQueue` wiring path — see the composition root
+   * in `apps/api/src/router.ts`.
+   */
+  readonly invitationMail?: InvitationServiceDeps['mail'];
 }
 
 export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: BranchWriteDeps }) {
@@ -385,6 +393,31 @@ export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: Branc
         )
         .output(z.object({ tupleId: z.string() }))
         .mutation(({ input, ctx }) => guestAccess.inviteGuestToProject(actorOf(ctx), input)),
+
+      /**
+       * The one door the guest-access section actually calls now — see
+       * `guest-access.service.ts`'s "One door, not two" header. Grants
+       * instantly for an existing Guest-role member of this org; otherwise
+       * sends a real, mailed org invitation carrying a pending grant for
+       * this exact project, applied automatically on acceptance.
+       */
+      inviteByEmail: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              email: z.string().trim().email().max(254),
+              relation: z.enum(['viewer', 'commenter', 'editor']),
+              expiresAt: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ status: z.enum(['granted', 'invited']) }))
+        .mutation(({ input, ctx }) =>
+          guestAccess.inviteGuestByEmail(actorOf(ctx), input, {
+            invitations: { mail: deps.invitationMail },
+          }),
+        ),
 
       revoke: route({ permission: 'project:update' })
         .input(z.object({ projectId: ProjectIdSchema, userId: UserIdSchema }).strict())

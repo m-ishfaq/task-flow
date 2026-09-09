@@ -8,10 +8,12 @@ import {
 } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
+import { MailQueue, MemoryMailer } from '@taskflow/mail';
 import type { Subject } from '@taskflow/policy';
 import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
+import { acceptInvitation } from '../tenancy/invitation.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
 import * as projects from './project.service.js';
 import * as boards from './board.service.js';
@@ -45,14 +47,33 @@ import type { WorkActor } from './shared.js';
 const OWNER = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000001');
 const GUEST = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000002');
 const MEMBER = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000003');
+/** Has an account, but never joined ANY of these test orgs — the "send a real invitation" case. */
+const NEW_GUEST = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000004');
 
 const USERS: readonly [UserId, string][] = [
   [OWNER, 'owner@guest-work.test'],
   [GUEST, 'guest@guest-work.test'],
   [MEMBER, 'member@guest-work.test'],
+  [NEW_GUEST, 'new-guest@guest-work.test'],
 ];
 
 const requestId = unsafeAsId<'RequestId'>('0195ee10-0000-7000-8000-0000000000ff');
+
+/** A real MailQueue over an in-memory mailer, mirroring `invitation.service.test.ts`'s own helper. */
+function fakeMail(): { mailer: MemoryMailer; queue: MailQueue } {
+  const mailer = new MemoryMailer();
+  const queue = new MailQueue({ mailer, sleep: () => Promise.resolve() });
+  return { mailer, queue };
+}
+
+/** Pulls the raw token back out of the accept link — the ONE place it exists outside storage. */
+function tokenFromMail(mailer: MemoryMailer): string {
+  const message = mailer.sent.at(-1);
+  if (!message) throw new Error('no mail was sent');
+  const match = /token=([^&\s"]+)/.exec(message.text);
+  if (!match?.[1]) throw new Error('no token found in the sent mail');
+  return decodeURIComponent(match[1]);
+}
 
 let admin: AdminConnection;
 const created: OrgId[] = [];
@@ -82,6 +103,12 @@ async function removeOrg(orgId: string): Promise<void> {
     'work.boards',
     'work.projects',
     'authz.relationship_tuples',
+    // Children before parents: pending grants and the lookup before the
+    // invitation row itself, mirroring `invitation.service.test.ts`'s own
+    // `removeOrg` teardown order.
+    'identity.invitation_pending_grants',
+    'identity.invitation_lookup',
+    'identity.invitations',
     'identity.memberships',
   ]) {
     await admin.query(`DELETE FROM ${table} WHERE org_id = $1`, [orgId]);
@@ -353,5 +380,83 @@ describe('listProjectGuests — the invite panel roster', () => {
     await guestAccess.revokeGuestAccess(await refreshOwner(), { projectId, userId: GUEST });
 
     expect(await guestAccess.listProjectGuests(await refreshOwner(), { projectId })).toEqual([]);
+  });
+});
+
+describe('inviteGuestByEmail — the one door', () => {
+  it('grants immediately for an address already holding the Guest role in this org', async () => {
+    const { refreshOwner, projectId } = await scaffold('by-email-instant');
+
+    const result = await guestAccess.inviteGuestByEmail(
+      await refreshOwner(),
+      { projectId, email: 'guest@guest-work.test', relation: 'commenter', expiresAt: null },
+      { invitations: {} },
+    );
+
+    expect(result).toEqual({ status: 'granted' });
+    const rows = await guestAccess.listProjectGuests(await refreshOwner(), { projectId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.userId).toBe(GUEST);
+    expect(rows[0]?.relation).toBe('commenter');
+  });
+
+  it('refuses an address belonging to a member with a non-Guest role', async () => {
+    const { refreshOwner, projectId } = await scaffold('by-email-non-guest');
+
+    expect(
+      await rejectionCode(async () =>
+        guestAccess.inviteGuestByEmail(
+          await refreshOwner(),
+          { projectId, email: 'member@guest-work.test', relation: 'viewer', expiresAt: null },
+          { invitations: {} },
+        ),
+      ),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('refuses a relation outside viewer/commenter/editor', async () => {
+    const { refreshOwner, projectId } = await scaffold('by-email-bad-relation');
+
+    expect(
+      await rejectionCode(async () =>
+        guestAccess.inviteGuestByEmail(
+          await refreshOwner(),
+          { projectId, email: 'guest@guest-work.test', relation: 'owner', expiresAt: null },
+          { invitations: {} },
+        ),
+      ),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('sends a real invitation for an address with no membership in this org, and grants project access the instant it is accepted', async () => {
+    const { orgId, refreshOwner, projectId } = await scaffold('by-email-invite');
+    const { mailer, queue } = fakeMail();
+
+    const result = await guestAccess.inviteGuestByEmail(
+      await refreshOwner(),
+      {
+        projectId,
+        email: 'new-guest@guest-work.test',
+        relation: 'editor',
+        expiresAt: null,
+      },
+      { invitations: { mail: { queue, webOrigin: 'https://app.test' } } },
+    );
+    expect(result).toEqual({ status: 'invited' });
+    await queue.drain();
+
+    // Nothing granted yet — the whole point of "invited" rather than
+    // "granted" is that access has not started.
+    expect(await guestAccess.listProjectGuests(await refreshOwner(), { projectId })).toEqual([]);
+
+    const token = tokenFromMail(mailer);
+    const accepted = await acceptInvitation({ userId: NEW_GUEST, requestId }, { token });
+    expect(accepted).toMatchObject({ orgId, role: 'guest', alreadyMember: false });
+
+    // The pending grant applied itself — no second admin step.
+    const rows = await guestAccess.listProjectGuests(await refreshOwner(), { projectId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.userId).toBe(NEW_GUEST);
+    expect(rows[0]?.relation).toBe('editor');
   });
 });

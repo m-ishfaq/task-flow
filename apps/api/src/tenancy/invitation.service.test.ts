@@ -451,3 +451,129 @@ describe('acceptInvitation', () => {
     expect(events.filter((event) => event.name === invitationAccepted.name)).toHaveLength(1);
   });
 });
+
+/**
+ * `pendingGrant` (migration 0111) — Work's `guest-access.service.ts`'s own
+ * `inviteGuestByEmail` is what actually populates this in production, and
+ * that file's own test suite proves the end-to-end property against real
+ * project access. This suite proves the mechanism ITSELF, one layer down,
+ * with no dependency on Work at all: `objectType: 'project'` here names no
+ * real project row — `grant()`'s own `assertSubjectBelongsHere` only checks
+ * the SUBJECT's membership, never that the object exists, so a plain
+ * relationship tuple is enough to prove the write/apply/delete cycle.
+ */
+describe('createInvitation / acceptInvitation — the pending grant', () => {
+  // No real project row — see this block's own header on why grant()'s
+  // `assertSubjectBelongsHere` never needs one.
+  const projectId = '0195f200-0000-7000-8000-0000000009aa';
+
+  it('writes a pending grant row alongside the invitation', async () => {
+    const orgId = await newOrg('pending-grant-write');
+    const { queue } = fakeMail();
+
+    await createInvitation(
+      orgId,
+      {
+        email: 'invitee@invite.test',
+        role: 'guest',
+        pendingGrant: { objectType: 'project', objectId: projectId, relation: 'viewer' },
+      },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+
+    await admin.setOrg(orgId);
+    const rows = await admin.query(
+      `SELECT object_type, object_id, relation, is_guest
+       FROM identity.invitation_pending_grants
+       WHERE org_id = $1`,
+      [orgId],
+    );
+    await admin.setOrg(null);
+
+    expect(rows.rows).toEqual([
+      { object_type: 'project', object_id: projectId, relation: 'viewer', is_guest: false },
+    ]);
+  });
+
+  it('applies the pending grant on acceptance and consumes the row', async () => {
+    const orgId = await newOrg('pending-grant-apply');
+    const { mailer, queue } = fakeMail();
+
+    await createInvitation(
+      orgId,
+      {
+        email: 'invitee@invite.test',
+        role: 'guest',
+        pendingGrant: {
+          objectType: 'project',
+          objectId: projectId,
+          relation: 'editor',
+          isGuest: true,
+        },
+      },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await queue.drain();
+    const token = tokenFromMail(mailer);
+
+    await acceptInvitation(actorFor(INVITEE), { token });
+
+    await admin.setOrg(orgId);
+    const pending = await admin.query(
+      `SELECT 1 FROM identity.invitation_pending_grants WHERE org_id = $1`,
+      [orgId],
+    );
+    const tuple = await admin.query(
+      `SELECT relation, is_guest FROM authz.relationship_tuples
+       WHERE org_id = $1 AND subject_id = $2 AND object_type = 'project' AND object_id = $3`,
+      [orgId, INVITEE, projectId],
+    );
+    await admin.setOrg(null);
+
+    // Consumed — one-shot, never left behind for a second accept to reapply.
+    expect(pending.rows).toHaveLength(0);
+    expect(tuple.rows).toEqual([{ relation: 'editor', is_guest: true }]);
+  });
+
+  it('resending an invitation replaces the pending grant, not adds a second', async () => {
+    const orgId = await newOrg('pending-grant-resend');
+    const { mailer, queue } = fakeMail();
+
+    await createInvitation(
+      orgId,
+      {
+        email: 'invitee@invite.test',
+        role: 'guest',
+        pendingGrant: { objectType: 'project', objectId: projectId, relation: 'viewer' },
+      },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await createInvitation(
+      orgId,
+      {
+        email: 'invitee@invite.test',
+        role: 'guest',
+        pendingGrant: { objectType: 'project', objectId: projectId, relation: 'editor' },
+      },
+      actorFor(OWNER),
+      { mail: { queue, webOrigin: 'https://app.test' } },
+    );
+    await queue.drain();
+    const token = tokenFromMail(mailer);
+
+    await acceptInvitation(actorFor(INVITEE), { token });
+
+    await admin.setOrg(orgId);
+    const tuple = await admin.query(
+      `SELECT relation FROM authz.relationship_tuples
+       WHERE org_id = $1 AND subject_id = $2 AND object_type = 'project' AND object_id = $3`,
+      [orgId, INVITEE, projectId],
+    );
+    await admin.setOrg(null);
+
+    expect(tuple.rows).toEqual([{ relation: 'editor' }]);
+  });
+});

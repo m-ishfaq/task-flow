@@ -1,36 +1,34 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ProjectId, UserId } from '@taskflow/contracts';
-import { isGuestRole } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { formatDate } from '../../lib/format.js';
 import { Button, Empty, Field, Input, Section, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { useToast } from '../../lib/toast-context.js';
-import { membersQuery } from '../org/api.js';
 import { projectGuestsQuery } from './api.js';
 
 /**
- * Guest access into Work — a dedicated invite flow, separate from
- * `share-board.tsx`'s generic Share dialog, mirroring `channel-details.tsx`'s
- * `GuestAccessSection` for chat channels one level up (a project rather than
- * a channel).
+ * Guest access into Work — one door, not two.
  *
- * ## Restricted to members already holding the Guest role
- *
- * `share-board.tsx` can share a board with ANY member; this can only invite
- * someone whose org-level role is already Guest — `work.guests.invite`
- * refuses anyone else with a validation error naming the Share dialog
- * instead. So the candidate list below is filtered client-side to the same
- * standard the server enforces, purely so a caller never sees an option that
- * would just be refused: the real check still happens on the server.
+ * Originally required an admin to add someone as a Guest-role member of the
+ * ORG first (via the generic Members section), then come back HERE to grant
+ * project access — a real, reported gap for anyone with no TaskFlow account
+ * yet, who had no path through this at all. `work.guests.inviteByEmail` (see
+ * `apps/api/src/work/guest-access.service.ts`'s "One door, not two" header)
+ * collapsed that into one email box: the server decides whether to grant
+ * immediately (an existing Guest-role member of this org) or send a real,
+ * mailed invitation that grants itself automatically the instant it is
+ * accepted — either way, this form only ever asks for an email and a
+ * relation.
  */
 
 /**
- * Narrower than `@taskflow/policy`'s `Relation` — `work.guests.invite`'s own
- * Zod schema is `z.enum(['viewer', 'commenter', 'editor'])`, never `owner`
- * or `member`, so the picker offers only what the server will accept.
+ * Narrower than `@taskflow/policy`'s `Relation` — `work.guests.inviteByEmail`'s
+ * own Zod schema is `z.enum(['viewer', 'commenter', 'editor'])`, never
+ * `owner` or `member`, so the picker offers only what the server will
+ * accept.
  */
 type GuestRelation = 'viewer' | 'commenter' | 'editor';
 
@@ -45,19 +43,23 @@ export function GuestAccessSection({
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const members = useQuery(membersQuery(orgId));
   const guests = useQuery(projectGuestsQuery(orgId, projectId));
-  const [query, setQuery] = useState('');
+  const [email, setEmail] = useState('');
   const [relation, setRelation] = useState<GuestRelation>('viewer');
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: keys.projectGuests(orgId, projectId) });
 
   const invite = useMutation({
-    mutationFn: (userId: UserId) =>
-      api.work.guests.invite.mutate({ projectId, userId, relation, expiresAt: null }),
-    onSuccess: () => {
-      setQuery('');
+    mutationFn: () =>
+      api.work.guests.inviteByEmail.mutate({ projectId, email, relation, expiresAt: null }),
+    onSuccess: (result) => {
+      setEmail('');
+      if (result.status === 'granted') {
+        toast.show('Access granted — they can already see this project.');
+      } else {
+        toast.show(`Invitation sent to ${email} — access starts the moment they accept.`);
+      }
       return refresh();
     },
     onError: (error) => {
@@ -73,19 +75,11 @@ export function GuestAccessSection({
     },
   });
 
-  const guestIds = new Set((guests.data ?? []).map((row) => row.userId));
-  const needle = query.trim().toLowerCase();
-  const candidates = (members.data ?? [])
-    .filter((member) => isGuestRole(member.role))
-    .filter((member) => !guestIds.has(member.userId))
-    .filter((member) => needle === '' || member.email.toLowerCase().includes(needle))
-    .slice(0, 8);
-
   return (
     <Section
       title="Guest access"
       count={guests.data?.length}
-      description="Loop in an external collaborator on this project alone, without giving them the rest of the organization. Only members with the Guest role can be invited here — add them as a Guest from the Members section first."
+      description="Loop in an external collaborator on this project alone, without giving them the rest of the organization. Type their email below — if they already have an account, access starts right away; if not, they'll get an invitation, and access begins the moment they accept it."
     >
       {guests.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
@@ -121,14 +115,22 @@ export function GuestAccessSection({
         </ul>
       )}
 
-      <div className="mt-3 flex flex-wrap items-end gap-2">
+      <form
+        className="mt-3 flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (email.trim() === '') return;
+          invite.mutate();
+        }}
+      >
         <Field label="Invite a guest by email" htmlFor={`project-guest-invite-${projectId}`}>
           <Input
             id={`project-guest-invite-${projectId}`}
-            value={query}
+            type="email"
+            value={email}
             placeholder="name@example.com"
             onChange={(event) => {
-              setQuery(event.target.value);
+              setEmail(event.target.value);
             }}
           />
         </Field>
@@ -147,32 +149,11 @@ export function GuestAccessSection({
             </option>
           ))}
         </select>
-      </div>
 
-      {needle !== '' &&
-        (candidates.length === 0 ? (
-          <p className="mt-2 text-xs text-ink-faint">
-            No Guest-role member matches. Add them as a Guest from the Members section first.
-          </p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1">
-            {candidates.map((member) => (
-              <li key={member.userId}>
-                <button
-                  type="button"
-                  disabled={invite.isPending}
-                  onClick={() => {
-                    invite.mutate(member.userId as UserId);
-                  }}
-                  className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-surface-hover disabled:opacity-50"
-                >
-                  <span className="truncate text-ink">{member.displayName ?? member.email}</span>
-                  <span className="shrink-0 text-ink-faint">Invite as {relation}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ))}
+        <Button type="submit" size="sm" disabled={invite.isPending || email.trim() === ''}>
+          {invite.isPending ? 'Inviting…' : 'Invite'}
+        </Button>
+      </form>
 
       {invite.isError && <ErrorText error={invite.error} />}
       {revoke.isError && <ErrorText error={revoke.error} />}

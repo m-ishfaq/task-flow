@@ -217,3 +217,27 @@ export const invitationLookup = identity.table('invitation_lookup', {
     .notNull()
     .references(() => orgs.id, { onDelete: 'cascade' }),
 });
+
+/**
+ * One relationship grant attached to an invitation (migration 0111) — applied
+ * automatically the instant the invitee accepts. Generic
+ * `objectType`/`objectId`/`relation`, the same shape `authz.relationship
+ * Tuples` itself already uses, rather than a `projectId` naming Work
+ * specifically: grants are already a cross-module primitive, and this table
+ * stays in identity's own schema regardless of who populates it. See
+ * `apps/api/src/work/guest-access.service.ts`'s `inviteGuestByEmail`, its
+ * first and only caller today.
+ */
+export const invitationPendingGrants = identity.table('invitation_pending_grants', {
+  invitationId: uuid('invitation_id')
+    .primaryKey()
+    .references(() => invitations.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+  objectType: text('object_type').notNull(),
+  objectId: uuid('object_id').notNull(),
+  relation: text('relation').notNull(),
+  isGuest: boolean('is_guest').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

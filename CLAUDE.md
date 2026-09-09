@@ -4561,6 +4561,74 @@ containment against a sibling project holding no tuple; access lost immediately 
 duplicating the grant; relation validation rejecting anything outside viewer/commenter/editor; and
 refusing a target whose membership role is not Guest.
 
+### Guest access into Work — one door, not two (SHIPPED)
+
+`packages/db/migrations/0111_invitation_pending_grants.*` ·
+`identity.invitation_pending_grants` · `apps/api/src/tenancy/invitation.service.ts`'s
+`pendingGrant` · `apps/api/src/work/guest-access.service.ts`'s `inviteGuestByEmail` ·
+`apps/web/src/features/work/guest-access-section.tsx`. Prompted directly, from a screenshot and
+a real question: "do we need to add them in org first as guest and then they can join the
+project? ... can we create a simple flow for guests if possible." The honest answer, before this
+pass, was yes — a genuinely two-step admin flow this section itself never disclosed as two steps,
+and someone with no TaskFlow account at all had no path through it from the project side at all.
+
+**One email box, one button — the server decides which of the two real cases applies, not the
+admin.** `GuestAccessSection`'s "Invite a guest by email" label used to be misleading: it was a
+client-side FILTER against members who already held the Guest role, never an actual invite-by-
+email action, which is exactly why "No Guest-role member matches" was the only thing anyone
+typing a fresh email ever saw. The rewritten section calls one route,
+`work.guests.inviteByEmail`, unconditionally — no more "find them in a list first."
+
+**`inviteGuestByEmail` (`guest-access.service.ts`) resolves the two cases server-side:** an
+address already belonging to a Guest-role member of THIS org grants immediately, exactly as
+`inviteGuestToProject` always did; anything else — no account yet, or an account that has simply
+never joined this particular org — sends a real, mailed org invitation with `role: 'guest'`
+through the existing `tenancy/invitation.service.ts`'s `createInvitation`, carrying a
+`pendingGrant` for this exact project. An address belonging to an existing member with a role
+OTHER than Guest still refuses, naming the Share dialog — this door was never, and still is not,
+a way to hand a Member or Admin project access.
+
+**The pending grant is what collapses the two admin steps into one — applied automatically the
+instant the invitee accepts, not on a second visit to this page.** `identity
+.invitation_pending_grants` (migration 0111) is deliberately generic — `objectType`/`objectId`/
+`relation`, the same shape `authz.relationship_tuples` itself already uses — rather than a
+`projectId` column naming Work specifically: grants are already a cross-module primitive
+(`tenancy/grant.service.ts`'s `grant()` is called from Work, Chat and Docs alike), so the table
+stays inside identity's own schema and needs no FK into a resource table it does not own. Work's
+`guest-access.service.ts` is simply the first caller to populate it, with `objectType: 'project'`.
+
+**`acceptInvitation` reads and deletes the pending row inside its OWN membership-creating
+transaction — consumed once, whether or not the follow-up grant ever succeeds — then calls the
+real `grant()` AFTER that transaction commits, the identical "two transactions, not one nested
+inside the other" discipline `guest-access.service.ts`'s own header already documents for
+`inviteGuestToProject`/`revokeGuestAccess`.** `grant()` opens its own `withOrgScope`; nesting it
+inside the accept transaction would grab a second, independent connection rather than a
+savepoint within the first. The post-commit `grant()` call is wrapped in a `try`/`catch` with no
+rethrow: by that point the person has already, successfully, become a member, and a secondary
+effect failing (the target project was deleted in the meantime, say) must not turn a successful
+accept into an error the caller has no way to recover from.
+
+**Email verification is not skippable, and was never the actual gap — the report's other half
+("so need to verify their email and all") answers itself once the flow is seen end to end.** A
+brand-new address still goes through the exact account-creation path every invitation does
+(register, verify, then accept) — this feature does not, and should not, create an unverified
+account on someone's behalf. What it removes is the SEPARATE admin step that used to sit after
+that: accepting the invite now grants project access in the same motion, rather than leaving the
+new guest in the org with nothing to see until an admin came back to this section a second time.
+
+**Tested at two layers, mirroring this codebase's own precedent for a mechanism used by more than
+one caller: `invitation.service.test.ts` proves the pending-grant WRITE/APPLY/rotate cycle
+directly, with no dependency on Work at all (`objectType: 'project'` names no real project row —
+`grant()`'s own `assertSubjectBelongsHere` only checks the SUBJECT's membership, never that the
+object exists); `guest-access.service.test.ts` proves the end-to-end property against a real
+project — instant grant for an existing Guest-role member, refusal for a non-Guest member, and a
+full invite-then-accept round trip (via a real `MailQueue`/`MemoryMailer`, the same
+`tokenFromMail` pattern `invitation.service.test.ts` already established) landing the invitee in
+`listProjectGuests` with no second call.** Verified with `tsc`, `eslint`, `prettier`, the
+guardrail selftest, `pnpm check:encoding`, and `scripts/check-migration-rls.mjs`, all clean; both
+DB-backed suites could not be run locally in this sandbox (no Docker/Postgres here) — CI is the
+real signal.
+
 ### Combined spend view for an org owner (SHIPPED) — AI spend, previously operator-only
 
 `apps/api/src/billing/org-billing.service.ts`'s `getOverview` · `apps/api/src/billing/router.ts` ·
@@ -4650,6 +4718,15 @@ floor.
 search page itself uses, so a duplicate check and an open search page never disagree about what a
 title currently matches, and there is no second search implementation to keep in sync with the
 first.
+
+**The dropdown opens UPWARD, not downward — a one-line fix, found from a screenshot.** `AddCard`
+sits at the very BOTTOM of the list, so the original `top-full` positioning floated the match
+list into the empty space below the column (or past its bottom edge entirely), disconnected from
+the cards it was actually claiming to match — "disturbs the UI of the workflow," as reported.
+`bottom-full`/`mb-1` overlays it on the cards already in view immediately above the input
+instead, the same direction a chat composer's mention picker opens for the identical "anchored
+near the bottom edge of its container" reason. No other behavior changed — still purely advisory,
+still dismissed on submit or once the title drops below the 3-character floor.
 
 ### Per-card calendar sync (SHIPPED) — a live ICS feed, opt-in per card
 

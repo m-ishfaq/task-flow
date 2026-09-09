@@ -1,7 +1,8 @@
 import { and, eq, schema, withOrgScope } from '@taskflow/db';
-import { errors, type ProjectId, type UserId } from '@taskflow/contracts';
+import { errors, unsafeAsId, type ProjectId, type UserId } from '@taskflow/contracts';
 import { isGuestRole, type Relation } from '@taskflow/policy';
 import { grant, revoke, type GrantInput } from '../tenancy/grant.service.js';
+import { createInvitation, type InvitationServiceDeps } from '../tenancy/invitation.service.js';
 import type { Actor } from '../tenancy/org.service.js';
 import { requireProject } from './project.service.js';
 import { orgOf, userOf, type WorkActor } from './shared.js';
@@ -70,6 +71,31 @@ import { orgOf, userOf, type WorkActor } from './shared.js';
  * `can()` check" composition at the tool-execute layer, per
  * `ai/tools/card.ts`), then call `grant()`/`revoke()` — already
  * idempotent, already emitting their own events — sequentially afterward.
+ *
+ * ## One door, not two — `inviteGuestByEmail`
+ *
+ * The original shape of this feature required an admin to do two separate
+ * things: add someone as a Guest-role member of the ORG first (via the
+ * generic Members section — itself needing an existing account or a
+ * separate mailed invitation), then come back HERE to grant project access.
+ * Someone with no TaskFlow account at all had no path through this from the
+ * project side. Found from a direct report, not assumed — the fix is one
+ * email box: `inviteGuestByEmail` decides, server-side, which of the two
+ * real cases applies —
+ *
+ *   - The address already belongs to a Guest-role member of THIS org: grants
+ *     immediately, calling `inviteGuestToProject` exactly as before.
+ *   - Anything else (no account yet, an account that has never joined this
+ *     org, ...): sends a real org invitation with `role: 'guest'` via
+ *     `tenancy/invitation.service.ts`'s `createInvitation`, carrying a
+ *     `pendingGrant` for this exact project — see that file's own header
+ *     for how the grant applies itself the instant the invite is accepted,
+ *     with no second admin step.
+ *
+ * An address belonging to an existing member with a role OTHER than Guest
+ * still refuses, naming the Share dialog — this door has never been, and
+ * still is not, a way to hand a Member or Admin project access; it exists
+ * only to loop in someone external.
  */
 
 const GUEST_RELATIONS: readonly Relation[] = ['viewer', 'commenter', 'editor'];
@@ -205,6 +231,94 @@ export async function inviteGuestToProject(
   };
 
   return grant(orgId, grantInput, actorOf(actor));
+}
+
+/**
+ * The one door this feature offers a project admin — see this file's own
+ * "One door, not two" header. Grants immediately for an address that is
+ * already a Guest-role member of this org; otherwise sends a real mailed
+ * invitation carrying a pending grant for this exact project, applied the
+ * instant it is accepted.
+ */
+export async function inviteGuestByEmail(
+  actor: WorkActor,
+  input: {
+    readonly projectId: ProjectId;
+    readonly email: string;
+    readonly relation: string;
+    /** ISO timestamp, or null for a grant that does not lapse. */
+    readonly expiresAt: string | null;
+  },
+  deps: { readonly invitations: InvitationServiceDeps },
+): Promise<{ readonly status: 'granted' | 'invited' }> {
+  if (!isGuestRelation(input.relation)) {
+    throw errors.validation({
+      relation: 'Guest access is limited to viewer, commenter, or editor.',
+    });
+  }
+
+  const orgId = orgOf(actor);
+  const normalized = input.email.trim().toLowerCase();
+
+  const existingGuestUserId = await withOrgScope(orgId, async (tx) => {
+    await requireProject(tx, actor, input.projectId, 'project:update');
+
+    // identity.users carries no RLS — readable from any scope, the same
+    // reasoning `invitation.service.ts`'s own lookup gives.
+    const user = await tx
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.emailNormalized, normalized))
+      .limit(1);
+    if (!user[0]) return undefined;
+
+    const membership = await tx
+      .select({ role: schema.memberships.role })
+      .from(schema.memberships)
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, user[0].id)))
+      .limit(1);
+    // No membership in THIS org yet — even if the address has an account
+    // elsewhere, this is the "send an invitation" case, not the "grant now"
+    // one, so fall through to the invite path below.
+    if (!membership[0]) return undefined;
+
+    if (!isGuestRole(membership[0].role)) {
+      throw errors.validation({
+        email:
+          'This person is already a member with a non-Guest role. Use the Share dialog to give them access.',
+      });
+    }
+
+    return user[0].id;
+  });
+
+  if (existingGuestUserId !== undefined) {
+    await inviteGuestToProject(actor, {
+      projectId: input.projectId,
+      userId: unsafeAsId<'UserId'>(existingGuestUserId),
+      relation: input.relation,
+      expiresAt: input.expiresAt,
+    });
+    return { status: 'granted' as const };
+  }
+
+  await createInvitation(
+    orgId,
+    {
+      email: normalized,
+      role: 'guest',
+      pendingGrant: {
+        objectType: 'project',
+        objectId: input.projectId,
+        relation: input.relation,
+        isGuest: true,
+      },
+    },
+    actorOf(actor),
+    deps.invitations,
+  );
+
+  return { status: 'invited' as const };
 }
 
 /** Revokes every guest tuple this user holds on this project. */

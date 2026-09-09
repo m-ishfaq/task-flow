@@ -459,7 +459,14 @@ function AddCard({
       </form>
 
       {matches.length > 0 && (
-        <ul className="absolute inset-x-2 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
+        // Opens UPWARD, not downward — `AddCard` sits at the BOTTOM of the
+        // list, so a dropdown anchored `top-full` floats into the empty
+        // space below the column (or gets clipped by it), disconnected from
+        // the cards it's actually claiming to match. `bottom-full` overlays
+        // it on the cards already in view above the input instead, the same
+        // direction a chat composer's mention picker opens for the identical
+        // reason.
+        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
           <li className="px-2 py-1 text-[10px] font-medium text-ink-faint">Might already exist</li>
           {matches.map((hit) => (
             <li key={hit.entityId}>

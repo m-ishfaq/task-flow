@@ -158,6 +158,10 @@ export function createAppRouter(deps: AppRouterDeps) {
          needs to renew a near-expiry GitHub token, the same reasoning
          `BranchWriteDeps`'s own comment gives. */
       branch: { keys: deps.automation.keys, providers: deps.automation.integration.providers },
+      /* `guests.inviteByEmail`'s own dependency — the SAME mail deps
+         `tenancy.invitations.send` already uses, above, not a second
+         `MailQueue` wiring path for one more mail class. */
+      invitationMail: deps.billing.mail,
     }),
 
     /**

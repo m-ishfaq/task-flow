@@ -7,12 +7,19 @@ import {
   outboxWriter,
   resolveOrgByInvitationToken,
 } from '@taskflow/db';
-import { errors, type InvitationId, type OrgId, type UserId } from '@taskflow/contracts';
+import {
+  errors,
+  unsafeAsId,
+  type InvitationId,
+  type OrgId,
+  type UserId,
+} from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { hashToken, issueToken, newId } from '@taskflow/security';
 import { isDirectlyAssignable, isRole, type Role } from '@taskflow/policy';
 import { invitationAccepted, invitationRevoked, invitationSent, memberAdded } from './events.js';
 import { sendInvitationMail, type InvitationMailDeps } from './invitation-mail.js';
+import { grant } from './grant.service.js';
 import type { Actor } from './org.service.js';
 
 /**
@@ -47,6 +54,24 @@ import type { Actor } from './org.service.js';
  * unique index) could not allow it anyway. It ROTATES the existing row's
  * token, so a stale earlier email's link stops working the moment a newer
  * one is sent, and the pending list never shows the same person twice.
+ *
+ * ## An optional pending grant, applied automatically on acceptance
+ *
+ * `createInvitation` can carry one `pendingGrant` (migration 0111,
+ * `identity.invitation_pending_grants`) — a relationship grant to apply the
+ * INSTANT the invitee accepts, before either of them has to take a second
+ * step. `apps/api/src/work/guest-access.service.ts`'s `inviteGuestByEmail`
+ * is the first caller: inviting someone into a single project used to be
+ * two separate admin actions (add them as a Guest-role org member, THEN
+ * grant project access) — this collapses it into one. `acceptInvitation`
+ * reads and deletes the pending row inside its own transaction, then calls
+ * the real `grant()` — which opens its OWN `withOrgScope` — AFTER that
+ * transaction commits, the identical "two transactions, not one nested
+ * inside the other" discipline `guest-access.service.ts`'s own header
+ * documents. A failure there is caught, not rethrown: the person has
+ * already, successfully, become a member by that point, and a benign
+ * secondary effect failing (the target project was deleted in the
+ * meantime, say) must not turn a successful accept into a 500.
  */
 
 /** How long an invitation stays acceptable before `status` reads `pending` but the link no longer works. */
@@ -82,9 +107,18 @@ export async function listInvitations(orgId: OrgId): Promise<readonly PendingInv
   );
 }
 
+export interface PendingGrantInput {
+  readonly objectType: string;
+  readonly objectId: string;
+  readonly relation: string;
+  readonly isGuest?: boolean;
+}
+
 export interface CreateInvitationInput {
   readonly email: string;
   readonly role: Role;
+  /** Applied automatically on acceptance — see this file's own header. */
+  readonly pendingGrant?: PendingGrantInput;
 }
 
 /**
@@ -184,6 +218,29 @@ export async function createInvitation(
     }
 
     await tx.insert(schema.invitationLookup).values({ tokenHash: issued.hash, orgId });
+
+    if (input.pendingGrant !== undefined) {
+      const pendingGrant = input.pendingGrant;
+      await tx
+        .insert(schema.invitationPendingGrants)
+        .values({
+          invitationId,
+          orgId,
+          objectType: pendingGrant.objectType,
+          objectId: pendingGrant.objectId,
+          relation: pendingGrant.relation,
+          isGuest: pendingGrant.isGuest ?? false,
+        })
+        .onConflictDoUpdate({
+          target: schema.invitationPendingGrants.invitationId,
+          set: {
+            objectType: pendingGrant.objectType,
+            objectId: pendingGrant.objectId,
+            relation: pendingGrant.relation,
+            isGuest: pendingGrant.isGuest ?? false,
+          },
+        });
+    }
 
     await outboxWriter.append(tx, [
       createEvent(
@@ -412,7 +469,7 @@ export async function acceptInvitation(
 
   if (!invitation) throw errors.notFound('That invitation link is invalid or has expired.');
 
-  return withOrgScope(orgId, async (tx) => {
+  const result = await withOrgScope(orgId, async (tx) => {
     const now = new Date();
 
     // identity.users carries no RLS — readable from any scope, the same
@@ -495,8 +552,66 @@ export async function acceptInvitation(
       .delete(schema.invitationLookup)
       .where(eq(schema.invitationLookup.tokenHash, tokenHash));
 
+    // Consumed here, inside the SAME transaction that creates the
+    // membership — one-shot, whether or not a grant() call for it ever
+    // succeeds (see below).
+    const pendingGrantRows = await tx
+      .delete(schema.invitationPendingGrants)
+      .where(eq(schema.invitationPendingGrants.invitationId, invitation.id))
+      .returning({
+        objectType: schema.invitationPendingGrants.objectType,
+        objectId: schema.invitationPendingGrants.objectId,
+        relation: schema.invitationPendingGrants.relation,
+        isGuest: schema.invitationPendingGrants.isGuest,
+      });
+
     await outboxWriter.append(tx, events);
 
-    return { orgId, orgName, role: invitation.role, alreadyMember };
+    return {
+      orgId,
+      orgName,
+      role: invitation.role,
+      alreadyMember,
+      pendingGrant: pendingGrantRows[0],
+    };
   });
+
+  /* `grant()` opens its OWN `withOrgScope` — calling it from inside the
+     transaction above would nest a second, independent transaction inside
+     the first rather than a savepoint within it, the identical trap
+     `guest-access.service.ts`'s own header documents avoiding. So this runs
+     AFTER that transaction has committed, and its failure is swallowed
+     rather than rethrown: the person has, by this point, already and
+     successfully become a member — a secondary effect failing (the target
+     project was deleted in the meantime, say) must not turn a successful
+     accept into an error the caller has no way to recover from. */
+  if (result.pendingGrant !== undefined) {
+    const pendingGrant = result.pendingGrant;
+    try {
+      await grant(
+        orgId,
+        {
+          subjectType: 'user',
+          subjectId: actor.userId,
+          relation: pendingGrant.relation,
+          objectType: pendingGrant.objectType,
+          objectId: pendingGrant.objectId,
+          expiresAt: null,
+          isGuest: pendingGrant.isGuest,
+        },
+        {
+          userId:
+            invitation.invitedBy === null
+              ? actor.userId
+              : unsafeAsId<'UserId'>(invitation.invitedBy),
+          requestId: actor.requestId,
+        },
+      );
+    } catch {
+      // Swallowed — see the comment above.
+    }
+  }
+
+  const { pendingGrant: _pendingGrant, ...accepted } = result;
+  return accepted;
 }
