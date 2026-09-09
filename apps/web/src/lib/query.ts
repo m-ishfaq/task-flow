@@ -126,6 +126,7 @@ export const keys = {
 
   /** Whether the caller's own account has a confirmed TOTP factor (Phase 12 Wave 2 §3.2). */
   totpStatus: () => ['auth', 'totp', 'status'] as const,
+  calendarFeedStatus: () => ['auth', 'calendarFeed', 'status'] as const,
 
   /** Which OAuth providers this server has credentials for (Phase 12 Wave 2 §3.3). */
   oauthProviders: () => ['auth', 'oauth', 'providers'] as const,
@@ -227,6 +228,8 @@ export const keys = {
     ['org', orgId, 'card', cardId, 'pullRequests'] as const,
   cardBranches: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'branches'] as const,
+  cardCalendarSync: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'calendarSync'] as const,
   githubRepos: (orgId: string) => ['org', orgId, 'githubRepos'] as const,
   pullRequestStatus: (orgId: string, providerScope: string, prNumber: number) =>
     ['org', orgId, 'pullRequestStatus', providerScope, prNumber] as const,

@@ -977,3 +977,30 @@ export const standupSubscriptions = platform.table(
     index('standup_subscriptions_project_idx').on(table.orgId, table.projectId),
   ],
 );
+
+/**
+ * "Put this card on my calendar" (migration 0110) — one row per (org, card,
+ * person). `cardId` carries no `.references()` here; the real constraint is
+ * the COMPOSITE `(org_id, card_id) -> work.cards(org_id, id)` foreign key in
+ * the migration, which Drizzle's single-column `references()` cannot
+ * express — the identical shape `cardPullRequests`/`cardBranches` already
+ * use in `work.ts` for the same reason.
+ */
+export const cardCalendarSubscriptions = platform.table(
+  'card_calendar_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    cardId: uuid('card_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('card_calendar_subscriptions_unique').on(table.orgId, table.cardId, table.userId),
+    index('card_calendar_subscriptions_user_idx').on(table.orgId, table.userId),
+  ],
+);

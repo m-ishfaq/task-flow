@@ -1,9 +1,19 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, GitBranch, GitPullRequest } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Calendar,
+  CalendarCheck,
+  Check,
+  Copy,
+  ExternalLink,
+  GitBranch,
+  GitPullRequest,
+} from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
+import { api } from '../../../lib/trpc.js';
+import { keys } from '../../../lib/query.js';
 import { cn } from '../../../lib/cn.js';
-import { cardBranchesQuery, cardPullRequestsQuery } from '../api.js';
+import { cardBranchesQuery, cardCalendarSyncQuery, cardPullRequestsQuery } from '../api.js';
 import { PrStatusBadge } from './pr-status-badge.js';
 
 /**
@@ -62,7 +72,60 @@ export function CardIdentityBar({
           truncate
         />
       ))}
+
+      <CalendarSyncToggle orgId={orgId} cardId={cardId} />
     </div>
+  );
+}
+
+/**
+ * The opt-in-per-event calendar icon (product brainstorm: "no external
+ * calendar sync" — fixed as a simple per-card toggle, per the project
+ * owner's own explicit choice, never a default "assigned to me" scope).
+ * `work.cards.calendarSync.status`/`.toggle` are `card:read`-gated and
+ * self-referential — this is the CURRENT viewer's own subscription, not a
+ * setting anyone else can see or change from here.
+ */
+function CalendarSyncToggle({
+  orgId,
+  cardId,
+}: {
+  readonly orgId: string;
+  readonly cardId: CardId;
+}) {
+  const queryClient = useQueryClient();
+  const status = useQuery(cardCalendarSyncQuery(orgId, cardId));
+
+  const toggle = useMutation({
+    mutationFn: (synced: boolean) => api.work.cards.calendarSync.toggle.mutate({ cardId, synced }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: keys.cardCalendarSync(orgId, cardId) }),
+  });
+
+  const synced = status.data?.synced ?? false;
+
+  return (
+    <button
+      type="button"
+      disabled={toggle.isPending}
+      title={synced ? 'Remove from your calendar' : 'Add to your calendar'}
+      aria-pressed={synced}
+      onClick={() => {
+        toggle.mutate(!synced);
+      }}
+      className={cn(
+        'press inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
+        synced
+          ? 'border-accent/30 bg-accent/10 text-accent hover:border-accent/50'
+          : 'border-line/30 bg-surface-hover/80 text-ink-muted hover:border-line-strong hover:text-ink',
+      )}
+    >
+      {synced ? (
+        <CalendarCheck aria-hidden="true" className="size-3" strokeWidth={2} />
+      ) : (
+        <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
+      )}
+    </button>
   );
 }
 

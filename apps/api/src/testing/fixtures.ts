@@ -182,6 +182,7 @@ export function testAppRouter(
     router: createAppRouter({
       identity: deps,
       identityDataKey: TEST_IDENTITY_DATA_KEY,
+      webOrigin: TEST_ENV.WEB_ORIGIN,
       passkeys,
       automation: {
         keys: automationKeys,

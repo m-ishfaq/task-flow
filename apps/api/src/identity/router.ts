@@ -18,6 +18,7 @@ import type { TotpDeps } from './totp.service.js';
 import * as oauth from './oauth.service.js';
 import type { OAuthDeps } from './oauth.service.js';
 import * as sessions from './sessions.service.js';
+import * as calendarFeed from './calendar-feed.service.js';
 import * as people from '../people/profile.service.js';
 
 const OAuthProviderSchema = z.enum(['google', 'github']);
@@ -47,6 +48,8 @@ export interface IdentityRouterDeps {
   readonly identityDataKey: Uint8Array;
   /** OAuth sign-in (Phase 12 Wave 2 §3.3) — everything `OAuthDeps` needs except `identity`, supplied below. */
   readonly oauth: Omit<OAuthDeps, 'identity'>;
+  /** Builds a calendar feed URL (`auth.calendarFeed.mint`) — nothing else in this router needs it. */
+  readonly webOrigin: string;
 }
 
 export function createIdentityRouter(deps: IdentityRouterDeps) {
@@ -697,6 +700,37 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           );
           return handOff(ctx, pair);
         }),
+    }),
+
+    /**
+     * The personal calendar feed URL (product brainstorm — per-card
+     * calendar sync). `mint` is `stepUp: true`: minting a URL is creating a
+     * new, long-lived bearer credential, the same "credential-adjacent
+     * change" standard the TOTP routes above already apply. `status` is
+     * not — a cheap probe the Settings page needs on every load just to
+     * decide which button to render, the identical reasoning `totp.status`
+     * itself already states.
+     */
+    calendarFeed: router({
+      status: selfRoute({
+        selfReason: 'Whether your own account already has an active calendar feed.',
+      })
+        .output(z.object({ active: z.boolean() }))
+        .query(async ({ ctx }) => ({
+          active: await calendarFeed.hasActiveFeedToken(ctx.principal.userId),
+        })),
+
+      mint: selfRoute({
+        selfReason: 'Minting a personal calendar feed URL for your own account.',
+        stepUp: true,
+      })
+        .output(z.object({ url: z.string() }))
+        .mutation(({ ctx }) =>
+          calendarFeed.mintFeedUrl(
+            { events: deps.identity.events, webOrigin: deps.webOrigin },
+            ctx.principal.userId,
+          ),
+        ),
     }),
 
     /**

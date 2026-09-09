@@ -71,6 +71,11 @@ tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`ro
 `apps/api/src/platform-admin` (Phase 12 Wave 1 — the org-directory console that runs as
 `taskflow_platform_admin`, the one role that can change another org's status, plus the
 `withGlobalScope` carve-out that admits it in `packages/config/eslint/security.js`) ·
+`apps/api/src/identity/calendar-feed.service.ts`, `calendar-feed-tokens.ts` and
+`calendar-feed-route.ts` (the personal calendar feed's own long-lived bearer token and the public,
+no-session `/calendar/:token.ics` route that redeems it — a genuinely new security-surface class
+for this codebase, a deliberate, documented exception to the "re-validate against RLS, never a
+bearer capability" stance every other public read here otherwise holds) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -4645,6 +4650,162 @@ floor.
 search page itself uses, so a duplicate check and an open search page never disagree about what a
 title currently matches, and there is no second search implementation to keep in sync with the
 first.
+
+### Per-card calendar sync (SHIPPED) — a live ICS feed, opt-in per card
+
+`packages/db/migrations/0110_card_calendar_sync.*` · `platform.card_calendar_subscriptions` ·
+`identity.calendar_feed_tokens` · `apps/api/src/work/card-calendar.service.ts` ·
+`apps/api/src/identity/calendar-feed.service.ts` · `apps/api/src/identity/calendar-feed-tokens.ts`
+· `apps/api/src/work/calendar-feed.service.ts` · `apps/api/src/work/ics.ts` ·
+`apps/api/src/identity/calendar-feed-route.ts` · `apps/web/src/features/work/detail/
+card-identity-bar.tsx`'s `CalendarSyncToggle` · `apps/web/src/features/auth/
+calendar-feed-section.tsx`. Prompted directly, from the same product brainstorm as the other three
+features in this pass: due dates never show up where people actually look for their day, and
+nothing in this codebase synced one anywhere external. ⚠ Human-review surface — see below.
+
+**Opt-in per card, never a blanket "everything assigned to me" sync — the shape confirmed with the
+project owner directly before writing any code, over the alternative (a default scope with
+exclusions).** A small calendar icon on the card's own identity bar
+(`CalendarSyncToggle`, next to the PR/branch chips) is the entire interaction: click it once to add
+that one card's due date to your personal feed, click again to remove it.
+`work.cards.calendarSync.{status,toggle}` are `card:read`-gated, not `card:update` — the identical
+"the read permission you already need already answers this" reasoning
+`standup/subscription.service.ts` established for its own per-project email opt-in: deciding to put
+a card you can already see onto your own calendar needs no extra permission beyond that.
+Self-referential by construction — nobody can opt someone else's calendar into anything from this
+route, since `userId` is always read off `ctx.principal`, never accepted as input.
+
+**`platform.card_calendar_subscriptions` follows `work.card_pull_requests`/`work.card_branches`'s
+own composite-FK shape exactly** — `(org_id, card_id)` referencing `work.cards (org_id, id)`, so a
+subscription row can never point at another tenant's card even if application code got it wrong.
+Unlike those two, it is `UNIQUE (org_id, card_id, user_id)`, not many-to-many on the card side: one
+person subscribes to one card at most once, toggled off by deleting the row rather than by a
+status flag — there is no history worth keeping for "I used to have this on my calendar."
+`toggleCalendarSync` (`card-calendar.service.ts`) is a plain insert-or-delete under
+`onConflictDoNothing`, idempotent either direction, emitting `card.calendar_sync_toggled` per
+guardrail 6.
+
+**The feed itself needed a genuinely new kind of credential this codebase has never issued
+before — a long-lived, no-session bearer token — and that is the one deliberate, disclosed
+exception in this whole feature.** `docs.public.getPage`'s own design (Phase 6 Wave 4) argues
+explicitly against exactly this shape for a public read: it re-checks `published_version_id IS NOT
+NULL` on every request rather than trusting a separate opaque capability, because a bearer token
+has no way to observe a later revocation. A calendar app's own "subscribe by URL" mechanism gives
+this feature no other option — Google/Outlook/Apple all poll a plain URL on their own schedule,
+with no room for this deployment's session cookies, refresh rotation, or step-up flow to
+participate. The trade is accepted and bounded rather than ignored: `identity.calendar_feed_tokens`
+holds only a hash (`issueToken('shareLink')`/`hashToken`, the exact primitives every other bearer
+token in this codebase already uses — the first real caller of `TOKEN_PREFIX.shareLink`, reserved
+in `packages/security/src/tokens.ts` since that table was written), at most one active token per
+user (a partial unique index, `WHERE revoked_at IS NULL`), and every resolution re-checks
+`card:read` per card at request time (see below) rather than trusting the opt-in row alone — so a
+leaked URL discloses only due dates and titles for cards the token's owner can *currently* read,
+never a static snapshot immune to a later permission change.
+
+**"Mint" and "rotate" are the same operation, not two — `mintFeedUrl` always issues a fresh token
+and revokes whatever was active before, in one transaction.** The plan's original two-function
+design (`getOrCreateFeedToken`/`rotateFeedToken`) collapsed once it became clear a second "get my
+existing token back" function has nothing honest to return: the raw token is never stored, only its
+hash, so there is no "existing URL" to hand back a second time — only ever a new one. `auth.
+calendarFeed.mint` is `selfRoute` with `stepUp: true` (mirrors TOTP enroll/disable — minting a
+long-lived bearer credential is credential-adjacent by the same reasoning); `auth.calendarFeed.
+status` is `selfRoute` with no step-up, the identical "cheap probe" precedent `auth.totp.status`
+already sets for "is this already turned on."
+
+**`resolveUserByFeedToken`'s own `last_used_at` bump lives in a SEPARATE file from `mintFeedUrl`,
+`calendar-feed-tokens.ts` rather than `calendar-feed.service.ts` — not a style choice, a guardrail-11
+escape hatch used correctly.** Minting a token is a real, security-relevant, audit-worthy mutation
+(a new bearer credential exists) and keeps its own domain event, `user.calendar_feed_token_minted`.
+Bumping `last_used_at` on an anonymous calendar app's routine poll is not — the identical "housekeeping,
+not a decision" reasoning `identity/repository.ts`'s own session `lastSeenAt` bump already
+establishes for the same guardrail-11 exemption. Since the custom ESLint rule scopes to files whose
+name or path signals a service (a suffix and a directory pattern, not literally the two characters
+this sentence is avoiding writing out consecutively inside a comment — that exact sequence closes a
+block comment early, a real parse error hit and fixed while writing this file's own header), moving
+the housekeeping-only function to a plain, non-service-named sibling file is the sanctioned fix,
+matching `token-refresh.ts`/`repository.ts`/`rebalance.ts`/`counters.ts`'s own precedent — never a
+`// eslint-disable`.
+
+**The public route is a raw Fastify route, not a tRPC one — deliberately, because none of the five
+existing tRPC route kinds are shaped for "zero session, by design."** `GET /calendar/:tokenFile`,
+registered in `server.ts` alongside the webhook/health routes, before the tRPC plugin. No
+distinguishing 404: an unknown token and a revoked one answer identically, so a probing request
+learns nothing about which is which — matching every other unauthenticated-lookup route in this
+codebase's own stated discipline.
+
+**`buildCalendarFeed` re-derives cross-org membership from `tenancy/org.service.ts`'s existing
+`listMyOrgs`, not a new `withGlobalScope` query — avoiding a real import cycle, not a hypothetical
+one.** The natural reuse candidate, `ai/spend-gate.ts`'s own cross-module pattern, was considered
+and rejected for the identical reason `org-billing.service.ts`'s own AI-spend duplication (this
+file's "Combined spend view" section, above) already gives: `spend-gate.ts` imports FROM
+`billing/entitlement-resolver.ts`, so importing back from `apps/api/src/work` would close the loop.
+`listMyOrgs` already answers exactly "which orgs does this user belong to, and is each membership
+and org still active" — reused as-is, with both `membershipStatus`/`orgStatus` checked `=== 'active'`
+before a single org is trusted, the identical discipline this file's own Phase 3 section documents
+finding necessary the hard way for the org switcher.
+
+**Every card in the feed is re-checked against `can()` at REQUEST time, per row, never trusted
+from the opt-in row alone — the same discipline `listMyCards` already applies for the identical
+reason, restated here because a bearer token makes it load-bearing rather than merely careful.** A
+subscription row only proves someone opted in once; it says nothing about whether they can still
+read the card today. `loadTuples(orgId, userId)` is re-loaded fresh per org, per feed request — an
+access grant revoked since the opt-in still silently drops that card from the very next feed
+refresh, with the subscription row itself left alone (matching `standup` digest subscriptions' own
+"a temporary access loss resumes on its own, no re-subscribe needed" precedent). Cards with no due
+date are skipped entirely — nothing to put on a calendar.
+
+**The ICS body is deliberately minimal — no `DESCRIPTION`, ever.** `formatIcsFeed` (`ics.ts`, a
+pure function, tested directly with 7 cases covering escaping, all-day `DTSTART`, and multi-card
+ordering — the "test the pure half" split this file already holds `neighbours.ts`/`markdown-lite
+.tsx` to) emits only `SUMMARY` (reference + title) and a `URL` deep link back into the app. This
+URL sits in infrastructure this deployment does not control — Google's, Outlook's, or Apple's own
+calendar-subscription storage — so the same reasoning that keeps a search result's transcript title
+blank (this file's own account of the search index's `recording:read` handling) applies here: keep
+what a third party stores to the minimum that is actually useful.
+
+**The plan's own suggested `OPERATION_RULES` rate-limit entry does not fit this route, and the
+route's own header comment says so rather than silently deviating.** `OPERATION_RULES` is keyed by
+tRPC procedure name and wired into the tRPC adapter's own middleware — structurally inapplicable to
+a raw Fastify route with no procedure name at all. The real defense is what already exists: the
+GLOBAL per-IP volumetric limiter (300/min, applies to every request including raw routes) plus the
+token's own 256 bits of entropy from `issueToken`, the identical strength every other bearer token
+in this codebase already relies on.
+
+**The UI is split across two places on purpose, matching the two different questions it
+answers.** "Which cards are on MY calendar" is answered per-card, from the card's own identity bar
+— genuinely new UI with no existing per-viewer icon-toggle precedent in this codebase to copy
+structurally, styled only to match the surrounding hover-icon-button visual language. "What is MY
+feed URL, and how do I get it into my calendar app" is answered once, in Settings
+(`CalendarFeedSection`), mirroring `TotpSection`/`PasskeySection`'s enroll-and-show-once shape
+exactly: the raw URL is shown exactly once right after minting, then masked forever — the same
+"shown once, never again" contract TOTP recovery codes and the GitHub connector's verify secret
+already use in this codebase, extended here to a URL rather than a code.
+
+**Detail-panel-only, not a per-tile icon on the board — a deliberate scope narrowing from the
+plan's literal text, matching the existing PR/branch-chip precedent.** `cardPullRequestsQuery`/
+`cardBranchesQuery` are already fetched only when a card is opened, never per-tile on the board, to
+avoid an N+1 batch-loading query for every card a board renders at once; `cardCalendarSyncQuery`
+follows the identical rule for the identical reason, rather than inventing a new batch-fetch
+mechanism a board tile has never needed before.
+
+**`apps/mobile`: out of scope for this pass**, matching every other feature in this brainstorm's
+own mobile deferral (guest access, the combined spend view) and this codebase's repeated precedent
+of shipping a new surface web-first.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, `pnpm check:encoding`, and
+`scripts/check-migration-rls.mjs`, all clean; the pure `ics.test.ts` suite (7 cases) runs and passes
+locally with no database.** The three DB-backed suites — `card-calendar.service.test.ts`,
+`calendar-feed.service.test.ts`, and `identity/calendar-feed.service.test.ts` — could not be run
+locally in this sandbox (no Docker/Postgres here, the same standing limitation this file states for
+every DB-backed suite written in this session); CI is the real signal. Coverage: toggling sync is
+idempotent and self-only (one row, one event, regardless of how many times the same viewer toggles
+it on); the feed includes only synced, due-dated, currently-readable cards and excludes a synced
+card with no due date; per-viewer isolation (one person's opt-in never appears in another's feed
+even when both can read the card); a card whose `card:read` access was revoked after opting in
+drops out of the very next feed build; minting a token resolves the raw URL back to the minting
+user and emits `user.calendar_feed_token_minted`; an unknown or revoked token resolves to
+`undefined`; and minting again revokes the previous token outright (the old URL stops resolving,
+the new one works) rather than leaving two active at once.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 

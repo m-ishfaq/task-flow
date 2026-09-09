@@ -192,6 +192,7 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      `card.pull_request_linked` comment already names. */
   'card.branch_linked': { type: 'card', key: 'cardId' },
   'card.branch_unlinked': { type: 'card', key: 'cardId' },
+  'card.calendar_sync_toggled': { type: 'card', key: 'cardId' },
   /* "Email me this project's standup" (migration 0108) — the resource is
      the PROJECT the subscription names, not the member who made it (that is
      already the actor). Added in the same change that registers the event,

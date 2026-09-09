@@ -288,6 +288,14 @@ export function cardBranchesQuery(orgId: string, cardId: CardId) {
   });
 }
 
+/** Whether the CURRENT viewer has this card on their own calendar feed. */
+export function cardCalendarSyncQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardCalendarSync(orgId, cardId),
+    queryFn: async () => wire(await api.work.cards.calendarSync.status.query({ cardId })),
+  });
+}
+
 /** The org's connected GitHub repositories — `providerScope` only
     (`work.githubRepos.list`, `card:read`-gated; see that route's own header
     for why this is NOT `automation.integration.list`, which needs

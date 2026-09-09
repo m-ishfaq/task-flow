@@ -462,6 +462,25 @@ export const cardBranchUnlinked = defineEvent(
     .strict(),
 );
 
+/**
+ * A member opted a card into (or out of) their own personal calendar feed
+ * (migration 0110, `card-calendar.service.ts`). Self-referential — `userId`
+ * is always the actor, never someone else's — so it carries no separate
+ * "who did this" beyond the envelope's own `actorId`, and `synced` is the
+ * one fact worth recording: which direction the toggle went.
+ */
+export const cardCalendarSyncToggled = defineEvent(
+  'card.calendar_sync_toggled',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      userId: z.string(),
+      synced: z.boolean(),
+    })
+    .strict(),
+);
+
 export const checklistItemCreated = defineEvent(
   'checklist_item.created',
   z

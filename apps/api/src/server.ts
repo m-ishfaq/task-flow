@@ -19,6 +19,7 @@ import { buildBillingDeps } from './billing/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
 import { registerBillingWebhooks } from './billing/webhook.routes.js';
 import { registerIntegrationWebhooks } from './automation/integration-webhooks.js';
+import { registerCalendarFeedRoute } from './identity/calendar-feed-route.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -138,6 +139,9 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   const appRouter = createAppRouter({
     identity: identityDeps,
     identityDataKey,
+    /* `auth.calendarFeed.mint`'s own use — nowhere else in the identity
+       router builds a URL. */
+    webOrigin: options.env.WEB_ORIGIN,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
     /* §9 decision 3 — whether the cost-bearing telephony actions exist in the
        rule builder. OFF by default; see config/env.ts. The connectors (Wave 4
@@ -291,6 +295,14 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     keys: automationKeys,
     slackSigningSecret: options.env.SLACK_SIGNING_SECRET,
   });
+
+  /* The calendar feed (§4 of the product-brainstorm build) — a plain
+     Fastify route for the identical "no session, no tRPC route kind fits"
+     reason the webhooks above are plain routes, registered unconditionally
+     like billing's: there is no "not configured" shape, an unknown token
+     just answers 404. ⚠ human-review surface — see
+     `identity/calendar-feed-route.ts`'s own header. */
+  registerCalendarFeedRoute(app, { webOrigin: options.env.WEB_ORIGIN });
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',

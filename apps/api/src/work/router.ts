@@ -24,6 +24,7 @@ import * as sprints from './sprint.service.js';
 import * as importExport from './import-export.service.js';
 import * as duplicate from './duplicate.service.js';
 import * as guestAccess from './guest-access.service.js';
+import * as calendarSync from './card-calendar.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
@@ -894,6 +895,28 @@ export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: Branc
         .input(z.object({ cardId: CardIdSchema }).strict())
         .output(z.object({ sprintId: z.string().nullable() }))
         .mutation(({ input, ctx }) => sprints.releaseSprint(actorOf(ctx), input)),
+
+      /**
+       * Per-card calendar sync (product brainstorm: opt-in per event, never
+       * a default "assigned to me" scope). `card:read`, not `card:update` —
+       * deciding to put a card you can already see on your OWN calendar
+       * needs no extra permission; see `card-calendar.service.ts`'s own
+       * header. Self-referential only: there is no `userId` field, ever —
+       * the caller can only toggle their own subscription.
+       */
+      calendarSync: router({
+        status: route({ permission: 'card:read' })
+          .input(z.object({ cardId: CardIdSchema }).strict())
+          .output(z.object({ synced: z.boolean() }))
+          .query(async ({ input, ctx }) => ({
+            synced: await calendarSync.isCalendarSynced(actorOf(ctx), input),
+          })),
+
+        toggle: route({ permission: 'card:read' })
+          .input(z.object({ cardId: CardIdSchema, synced: z.boolean() }).strict())
+          .output(z.object({ synced: z.boolean() }))
+          .mutation(({ input, ctx }) => calendarSync.toggleCalendarSync(actorOf(ctx), input)),
+      }),
 
       /**
        * Export a project's cards as CSV or JSON (§7.7).
