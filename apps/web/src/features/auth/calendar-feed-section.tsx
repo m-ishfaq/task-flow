@@ -122,6 +122,45 @@ export function CalendarFeedSection() {
               Done
             </Button>
           </div>
+
+          {/* "Subscribe by URL" is not a control most people have used before,
+              and naming the destination calendar apps without saying where
+              the option lives inside each one left a real gap — a person
+              copies the link and then has nowhere obvious to paste it. Open
+              by default: this is exactly the information needed the moment
+              the link is on screen, not something to go looking for. */}
+          <details open className="mt-3 border-t border-line pt-3">
+            <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
+              Where do I paste this?
+            </summary>
+            <ul className="mt-2 space-y-2 text-[11px] text-ink-faint">
+              <li>
+                <span className="font-medium text-ink-muted">Google Calendar (web):</span> in the
+                left sidebar, next to &ldquo;Other calendars&rdquo;, click <strong>+</strong> →{' '}
+                <strong>From URL</strong>, paste the link, then <strong>Add calendar</strong>.
+              </li>
+              <li>
+                <span className="font-medium text-ink-muted">Outlook (web):</span>{' '}
+                <strong>Add calendar</strong> → <strong>Subscribe from web</strong>, paste the link,
+                then <strong>Import</strong>.
+              </li>
+              <li>
+                <span className="font-medium text-ink-muted">Apple Calendar (Mac):</span>{' '}
+                <strong>File</strong> → <strong>New Calendar Subscription…</strong>, paste the link,
+                then <strong>Subscribe</strong>.
+              </li>
+              <li>
+                <span className="font-medium text-ink-muted">Apple Calendar (iPhone/iPad):</span>{' '}
+                <strong>Settings</strong> → <strong>Calendar</strong> → <strong>Accounts</strong> →{' '}
+                <strong>Add Account</strong> → <strong>Other</strong> →{' '}
+                <strong>Add Subscribed Calendar</strong>, then paste the link.
+              </li>
+            </ul>
+            <p className="mt-2 text-[11px] text-ink-faint">
+              Every calendar app polls this link on its own schedule — a card you sync will usually
+              appear within a few hours, not instantly.
+            </p>
+          </details>
         </AddPanel>
       )}
 

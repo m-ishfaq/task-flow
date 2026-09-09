@@ -4977,6 +4977,21 @@ user and emits `user.calendar_feed_token_minted`; an unknown or revoked token re
 `undefined`; and minting again revokes the previous token outright (the old URL stops resolving,
 the new one works) rather than leaving two active at once.
 
+**Follow-up (SHIPPED): the panel named the destination apps but never said where the option lives
+inside each one, and a real report confirmed that was the actual gap** — "i cant see the option
+in calendar to add url i got from account screen." `calendar-feed-section.tsx`'s minted-URL panel
+gained a "Where do I paste this?" `<details open>` block (the identical native, JS-free
+disclosure `calls-panel.tsx`'s own transcript expander already established in this codebase) with
+concrete navigation for the three named apps: Google Calendar's sidebar `+` → *From URL*,
+Outlook's *Add calendar* → *Subscribe from web*, and Apple Calendar's *File* → *New Calendar
+Subscription…* on Mac plus the *Settings → Calendar → Accounts* path on iOS — each ending in the
+literal button/menu label a person is looking for, not a generic "subscribe by URL" phrase that
+assumes they already know where that control is. Open by default, not collapsed: this is exactly
+the information needed the moment the link is on screen. A closing line sets the expectation that
+the card will not appear instantly — every calendar app polls a subscription URL on its own
+schedule, typically hours, not seconds, which a person watching for it to show up immediately
+would otherwise read as broken.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
