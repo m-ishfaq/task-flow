@@ -1,4 +1,4 @@
-import { and, eq, schema, withOrgScope } from '@taskflow/db';
+import { and, eq, isNotNull, schema, withOrgScope } from '@taskflow/db';
 import type { DataKey, OrgId } from '@taskflow/contracts';
 import { encryptString } from '@taskflow/security';
 import { integrationTokenAad } from './connector-aad.js';
@@ -111,10 +111,22 @@ export async function refreshGithubToken(
 /**
  * Re-encrypts a refreshed access/refresh token pair under the SAME data key
  * the row already uses (no re-wrap needed — a data key is not being
- * rotated, only the plaintext it protects) and writes it back. Guarded on
- * `status = 'connected'`: a disconnect that raced this refresh must win
- * outright, not be silently undone by a refresh that read the row before
- * the disconnect committed.
+ * rotated, only the plaintext it protects) and writes it back.
+ *
+ * Guarded on `token_wrapped IS NOT NULL`, not `status = 'connected'` — the
+ * first version used the latter and, found from a real CI run (not a
+ * hypothesis), silently discarded every refresh triggered during the
+ * 'pending_repo' picker phase: `selectRepo`'s and `listReposForIntegration`'s
+ * own `tokenForRow` calls read a row that is still `status = 'disconnected'`
+ * (awaiting a repo choice, credentials very much present) right up until
+ * `selectRepo`'s own later UPDATE flips it — so a refresh triggered by
+ * either of those reads matched zero rows here, the API call to GitHub
+ * happened for nothing, and the very next read saw the same stale expiry
+ * and refreshed AGAIN. `disconnectIntegration`'s wipe is what the guard is
+ * actually protecting against: it NULLs every credential column in the same
+ * UPDATE that flips `status`, so checking that the credential is still
+ * present is the same race protection the status check was trying to
+ * express, without also refusing the picker-phase case that never disconnected.
  */
 export async function persistRefreshedGithubToken(
   orgId: OrgId,
@@ -153,7 +165,7 @@ export async function persistRefreshedGithubToken(
             }),
       })
       .where(
-        and(eq(schema.integrations.id, integrationId), eq(schema.integrations.status, 'connected')),
+        and(eq(schema.integrations.id, integrationId), isNotNull(schema.integrations.tokenWrapped)),
       );
   });
 }

@@ -861,7 +861,13 @@ describe('the GitHub route — pull_request derivatives', () => {
     expect(response.statusCode).toBe(204);
     const events = await allEvents(orgId);
     expect(events.filter((event) => event.name === 'card.pull_request_merged')).toHaveLength(0);
-    expect(events.map((event) => event.name)).toEqual(['integration.github_event']);
+    /* `triggerEvents`, not `allEvents` — the fixture setup above (`cardFixture`,
+       `linkCardPullRequest`) emits its own real events (`project.created`,
+       `card.pull_request_linked`, ...) that `allEvents`' unfiltered query would
+       include here, and this assertion only cares about the connector-trigger
+       namespace the webhook itself writes to. */
+    const triggered = await triggerEvents(orgId);
+    expect(triggered.map((event) => event.name)).toEqual(['integration.github_event']);
   });
 
   it('an opened PR auto-links the card its branch name references', async () => {

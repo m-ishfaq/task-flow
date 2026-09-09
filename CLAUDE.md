@@ -2963,8 +2963,23 @@ does not control... an event claiming an effect that GitHub actually refused wou
 entry."** `loadConnector` reads and decrypts inside its own transaction and returns; the network
 call to GitHub happens with no transaction open at all; `persistRefreshedGithubToken` (in the new
 `token-refresh.ts`) opens a fresh, short `withOrgScope` only once the new token is already in hand,
-guarded on `status = 'connected'` so a disconnect that raced the refresh wins outright rather than
-being silently undone by a refresh that read the row before the disconnect committed.
+guarded on the row still holding a credential (`token_wrapped IS NOT NULL`) so a disconnect that
+raced the refresh wins outright rather than being silently undone by a refresh that read the row
+before the disconnect committed.
+
+**Corrected after shipping, found from a real CI run rather than a hypothesis: the guard was
+originally `status = 'connected'`, and that silently discarded every refresh triggered during the
+'pending_repo' picker phase.** `selectRepo`'s and `listReposForIntegration`'s own `tokenForRow`
+calls read a row that is still `status = 'disconnected'` — awaiting a repo choice, credentials very
+much present — right up until `selectRepo`'s own later UPDATE flips it. A refresh triggered by
+either of those reads matched zero rows under the old guard, so the API call to GitHub happened for
+nothing and the very next read saw the same stale expiry and refreshed again — `integration.service
+.test.ts`'s own "transparent refresh" cases caught this the first time they actually ran against
+real Postgres, each expecting exactly one refresh call and observing two or three.
+`disconnectIntegration`'s wipe (which NULLs every credential column in the same UPDATE that flips
+`status`) is what the guard was actually protecting against, so checking that the credential is
+still present (`isNotNull(schema.integrations.tokenWrapped)`) expresses the identical race
+protection without also refusing the picker-phase case that never disconnected at all.
 
 **A failed refresh — network error, a dead refresh token, GitHub down — never throws a new error
 class. It falls back silently to the stale token already in hand**, and the REAL caller's own

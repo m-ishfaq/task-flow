@@ -1293,19 +1293,28 @@ describe('transparent refresh (migration 0109)', () => {
       requestId,
     );
     if (pending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    const before = await credentialColumns(owner.subject.orgId, pending.integrationId);
+
+    /* `selectRepo` reads this SAME near-expiry row to list repos for the
+       picker — the earliest real caller a fresh code exchange has, and the
+       one that actually triggers this whole test's one-and-only refresh.
+       (`persistRefreshedGithubToken`'s guard used to silently discard
+       exactly this refresh, since the row is still `status = 'disconnected'`
+       — pending a repo choice — right up until the status-flipping UPDATE
+       below runs; see `token-refresh.ts`'s own header.) */
     const connected = await selectRepo(owner, deps, {
       integrationId: pending.integrationId,
       fullName: 'acme/todo',
     });
+    expect(refreshCalls).toBe(1);
 
-    const before = await credentialColumns(owner.subject.orgId, connected.integrationId);
-
+    /* Persisted: neither of these explicit reads, against the far-future
+       expiry the refresh above already wrote, may refresh a second time. */
     const first = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
     expect(first.token).toBe('gho_refreshed');
     expect(refreshCalls).toBe(1);
 
-    /* Persisted: a second call, now against the far-future expiry the
-       refresh just wrote, must not refresh a second time. */
     const second = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
     expect(second.token).toBe('gho_refreshed');
     expect(refreshCalls).toBe(1);
@@ -1338,6 +1347,11 @@ describe('transparent refresh (migration 0109)', () => {
       integrationId: pending.integrationId,
       fullName: 'acme/todo',
     });
+    /* `selectRepo`'s own token read already attempted (and failed) a refresh
+       against this same near-expiry row — a network failure never persists,
+       so the row stays exactly as due for refresh as it started. Reset here
+       to isolate the ONE attempt this test is actually about. */
+    refreshCalls = 0;
 
     /* THE assertion: no throw, and the caller gets back exactly the token it
        already had — the real caller's own GitHub request is what surfaces
@@ -1377,6 +1391,9 @@ describe('transparent refresh (migration 0109)', () => {
       integrationId: pending.integrationId,
       fullName: 'acme/todo',
     });
+    /* Same setup noise as the network-failure case above: selectRepo's own
+       read already attempted (and failed) once against this row. */
+    refreshCalls = 0;
 
     const result = await connectorFor(owner.subject.orgId, deps, connected.integrationId, 'github');
     expect(result.token).toBe('gho_stale_2');
@@ -1421,10 +1438,13 @@ describe('transparent refresh (migration 0109)', () => {
     /* The revive path (selectRepo's `reviveRetiredRepo`) decrypts a pending
        row's credentials under ITS OWN AAD and re-encrypts them under the
        retired row's — this proves the refresh token makes that same trip,
-       not just the access token, by refreshing through the REVIVED row's id
-       afterward. A refresh that only worked because it was silently reading
-       the pending row's own (already-superseded) credentials would still
-       pass a test that never re-decrypts through the survivor's id. */
+       not just the access token, by reading through the REVIVED row's id
+       afterward and getting back the ALREADY-refreshed token with no error
+       and no further refresh needed. A revive that only worked because it
+       was silently reading the pending row's own (already-superseded)
+       credentials would still pass a test that never re-decrypts through
+       the survivor's id — this one does, via the final `connectorFor` call
+       below. */
     const { owner } = await scaffold('refresh-revive');
     let refreshCalls = 0;
     const fake = fakeProvider({
@@ -1448,10 +1468,13 @@ describe('transparent refresh (migration 0109)', () => {
       requestId,
     );
     if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    /* Row A's own near-expiry read, same shape as the standalone connect
+       test above — the FIRST of this test's two real refreshes. */
     const connected = await selectRepo(owner, deps, {
       integrationId: firstPending.integrationId,
       fullName: 'acme/todo',
     });
+    expect(refreshCalls).toBe(1);
     await disconnectIntegration(owner, { integrationId: connected.integrationId });
 
     /* A fresh code exchange — the same fake, so the same expiry/refresh
@@ -1465,14 +1488,23 @@ describe('transparent refresh (migration 0109)', () => {
     );
     if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
 
+    /* Row B's own near-expiry read, inside THIS `selectRepo` call, is the
+       SECOND real refresh — it happens, and persists, before
+       `reviveRetiredRepo` (inside this same call) reads row B's now-fresh
+       expiry and carries it across to row A. */
     const revived = await selectRepo(owner, deps, {
       integrationId: secondPending.integrationId,
       fullName: 'acme/todo',
     });
     expect(revived.integrationId).toBe(connected.integrationId);
+    expect(refreshCalls).toBe(2);
 
+    /* The real proof: reading through the REVIVED row's id decrypts
+       correctly and returns the token the SECOND refresh actually produced
+       — with no third refresh, since the carried-over expiry is already
+       far in the future. */
     const result = await connectorFor(owner.subject.orgId, deps, revived.integrationId, 'github');
     expect(result.token).toBe('gho_refreshed_after_revive');
-    expect(refreshCalls).toBe(1);
+    expect(refreshCalls).toBe(2);
   });
 });
