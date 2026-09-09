@@ -229,7 +229,15 @@ export function AssistantPage() {
   // needs to see what the assistant can do — and toggled from the header
   // afterward via the same button.
   const [showCapabilities, setShowCapabilities] = useState(
-    () => (useAssistantSeedStore.getState().seed ?? []).length === 0,
+    () =>
+      (useAssistantSeedStore.getState().seed ?? []).length === 0 &&
+      // On small screens the sidebar is hidden and the inline panel is
+      // toggled by the "What can I do?" button — open by default only on
+      // wide screens where the sidebar is always visible.  The 1024px
+      // threshold matches the `lg:` Tailwind breakpoint the sidebar's
+      // `hidden lg:block` / `lg:hidden` classes use.
+      typeof window !== 'undefined' &&
+      window.innerWidth >= 1024,
   );
   const orgId = useSession((state) => state.orgId) ?? '';
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
@@ -346,7 +354,12 @@ export function AssistantPage() {
   const resetConversation = () => {
     setMessages([]);
     setPendingToolCalls([]);
-    setShowCapabilities(true);
+    // Re-derive the same desktop-vs-mobile default the initialiser uses:
+    // wide screens open the panel on a fresh conversation, narrow ones
+    // keep it collapsed so the toggle button is the entry point.
+    setShowCapabilities(
+      typeof window !== 'undefined' && window.innerWidth >= 1024,
+    );
     // `turn`'s own error/data from the PREVIOUS conversation otherwise
     // survives the reset — `useMutation` keeps its last result until a new
     // mutation runs or `reset()` is called, so without this a fresh, empty
