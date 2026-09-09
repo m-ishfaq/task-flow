@@ -81,7 +81,7 @@
   "devDependencies": {
     "@expo/ngrok": "^4.1.0",
     "@taskflow/config": "workspace:*",
-    "@types/node": "^22.10.2",
+    "@types/node": "^26.4.1",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.8",
     "eslint": "^9.17.0",
