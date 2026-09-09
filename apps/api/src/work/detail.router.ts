@@ -18,8 +18,18 @@ import type { WorkActor } from './shared.js';
 import * as labels from './label.service.js';
 import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
+import * as pullRequests from './card-pull-request.service.js';
+import * as cardBranches from './card-branch.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
+import { createBranchFromCard, type BranchWriteDeps } from '../automation/branch.service.js';
+import { connectedGithubRepos } from '../automation/integration.service.js';
+import {
+  getPullRequestDiff,
+  getPullRequestFileDiff,
+  getPullRequestFiles,
+  getPullRequestStatus,
+} from '../automation/pr-read.service.js';
 
 /**
  * Card detail routes — labels, statuses, checklists, custom fields, comments
@@ -52,7 +62,7 @@ const Color = z
   .transform((value) => value.toLowerCase())
   .pipe(z.string().regex(/^#[0-9a-f]{6}$/, 'Use a hex colour like #4f46e5.'));
 
-export function createCardDetailRouter() {
+export function createCardDetailRouter(deps: { readonly branch: BranchWriteDeps }) {
   /* The same construction as the Work router's. Built here rather than passed
      in, because threading it through would need a parameter type naming the
      tRPC context, and that is exactly the coupling `subjectOf` exists to
@@ -260,6 +270,262 @@ export function createCardDetailRouter() {
         .input(z.object({ itemId: ChecklistItemIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => checklists.deleteItem(actor(ctx), input)),
+    }),
+
+    /**
+     * The org's connected GitHub repositories — `providerScope` only, no
+     * token, the identical shape `apps/api/src/ai/tools/pr.ts`'s `list_repos`
+     * tool already exposes to the assistant (`connectedGithubRepos`, no
+     * GitHub call — reads `platform.integrations` directly).
+     *
+     * Deliberately floored on `card:read`, NOT `integration:manage` (the
+     * floor `automation.integration.list` uses) and NOT `pr:view` (the floor
+     * the assistant's own `list_repos` tool uses): the only two callers are
+     * the PR-link form (needs `card:update` to actually link) and the
+     * branch-create form (needs `repo:connect` to actually create) below,
+     * both reachable only from an already-open card, and repo NAMES are not
+     * sensitive the way a connector's token is — the identical reasoning
+     * `list_repos`'s own tool description gives. Gating this on
+     * `integration:manage` instead — the mistake this route replaces — meant
+     * a Member holding `card:update` or `repo:connect` but not
+     * `integration:manage` got a bare FORBIDDEN just from OPENING the
+     * link/create form, before ever reaching the permission the action
+     * itself actually needs.
+     */
+    githubRepos: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({}).strict())
+        .output(z.array(z.object({ providerScope: z.string() })).readonly())
+        .query(({ ctx }) => connectedGithubRepos(actor(ctx).subject.orgId)),
+    }),
+
+    /**
+     * GitHub PR links (ai/phase-15-ai-copilot-and-permissions.md §7.2). Every
+     * route here is `card:read`/`card:update`, the identical shape checklists
+     * use — a link is part of its card, not a resource anyone grants access
+     * to separately. See `card-pull-request.service.ts`'s own header for why
+     * this is NOT also gated on `pr:view`.
+     */
+    pullRequests: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({ cardId: CardIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                providerScope: z.string(),
+                prNumber: z.number().int(),
+                linkedBy: z.string().nullable(),
+                linkedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => pullRequests.listCardPullRequests(actor(ctx), input)),
+
+      link: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              prNumber: z.number().int().positive(),
+            })
+            .strict(),
+        )
+        .output(z.object({ linked: z.literal(true) }))
+        .mutation(({ input, ctx }) => pullRequests.linkCardPullRequest(actor(ctx), input)),
+
+      unlink: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              prNumber: z.number().int().positive(),
+            })
+            .strict(),
+        )
+        .output(z.object({ unlinked: z.boolean() }))
+        .mutation(({ input, ctx }) => pullRequests.unlinkCardPullRequest(actor(ctx), input)),
+
+      /**
+       * Live GitHub state for a linked PR — state/merged/draft plus a
+       * rolled-up CI status, for the card chip's color and dot. Gated on
+       * `pr:view`, UNLIKE `list`/`link`/`unlink` above: those three touch
+       * only the org's own link-table row and never call GitHub at all, the
+       * same reasoning `card-pull-request.service.ts`'s own header gives for
+       * not requiring `pr:view` there. This route DOES call GitHub — the
+       * same live data `pr-read.service.ts`'s AI tools already gate behind
+       * `pr:view` — so a caller who can link a PR (`card:update`) but holds
+       * no `pr:view` grant still sees the chip, just without a live status
+       * dot, per Phase 15 §1's "hide, not disable" rule. No `cardId`: unlike
+       * its siblings, this route names no card row at all — it asks GitHub
+       * about a repo+PR-number pair, nothing more, the identical scope
+       * `pr-read.service.ts`'s own functions already have.
+       */
+      status: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            number: z.number().int(),
+            state: z.enum(['open', 'closed']),
+            merged: z.boolean(),
+            isDraft: z.boolean(),
+            checksStatus: z.enum(['success', 'failure', 'pending', 'none']),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestStatus(actor(ctx), deps.branch, input)),
+
+      /**
+       * The PR's raw diff, for the "view diff" action on the card panel —
+       * the same `getPullRequestDiff` the AI assistant's `get_pr_diff` tool
+       * already calls, reached directly this time. `pr:view`-gated for the
+       * identical reason `status` above is: this route calls GitHub for
+       * live content, unlike `list`/`link`/`unlink`.
+       */
+      diff: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            prNumber: z.number().int(),
+            truncated: z.boolean(),
+            diff: z.string(),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestDiff(actor(ctx), deps.branch, input)),
+
+      /**
+       * The files a PR touches, and (below) one file's own diff — the fix
+       * for a diff too large to fetch whole at all (a genuinely large PR's
+       * `diff` route above answering 406, or `truncated: true`), the same
+       * gap `get_pr_file_diff`'s own header documents closing for the AI
+       * assistant. Both `pr:view`-gated like `status`/`diff` above, for the
+       * identical reason: live GitHub content, not the card's own link-table
+       * row `list`/`link`/`unlink` touch.
+       */
+      files: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                path: z.string(),
+                status: z.string(),
+                additions: z.number().int(),
+                deletions: z.number().int(),
+                previousPath: z.string().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => getPullRequestFiles(actor(ctx), deps.branch, input)),
+
+      fileDiff: route({ permission: 'pr:view' })
+        .input(
+          z
+            .object({
+              prNumber: z.number().int().positive(),
+              path: z.string().min(1).max(1024),
+              repoScope: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            prNumber: z.number().int(),
+            path: z.string(),
+            truncated: z.boolean(),
+            patch: z.string(),
+          }),
+        )
+        .query(({ input, ctx }) => getPullRequestFileDiff(actor(ctx), deps.branch, input)),
+    }),
+
+    /**
+     * Git branches created from a card (ai/phase-15-ai-copilot-and-
+     * permissions.md §7.2 — previously assistant-only via `create_branch_
+     * from_card`; this is the direct, no-chat path). `list`/`unlink` are
+     * `card:read`/`card:update`, the identical shape `pullRequests` above
+     * uses — see `card-branch.service.ts`'s own header. `create`'s OUTER
+     * floor is `repo:connect` instead: unlike linking an already-known PR
+     * number, creating a branch is a real write against the connected repo
+     * itself (a fresh ref, visible to the whole GitHub org), so the coarser
+     * org-level permission that action needs is what a route with no
+     * resource context can meaningfully check — `createBranchFromCard`
+     * itself re-checks the resource-aware `card:update` internally before
+     * ever reaching GitHub (see that file's own header for why).
+     */
+    branches: router({
+      list: route({ permission: 'card:read' })
+        .input(z.object({ cardId: CardIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                providerScope: z.string(),
+                branchName: z.string(),
+                linkedBy: z.string().nullable(),
+                linkedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => cardBranches.listCardBranches(actor(ctx), input)),
+
+      create: route({ permission: 'repo:connect' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              repoScope: z.string().trim().min(1).max(200).optional(),
+              branchName: z.string().trim().min(1).max(200).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            branchName: z.string(),
+            alreadyExisted: z.boolean(),
+            url: z.string(),
+            providerScope: z.string(),
+          }),
+        )
+        .mutation(({ input, ctx }) => createBranchFromCard(actor(ctx), deps.branch, input)),
+
+      unlink: route({ permission: 'card:update' })
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              providerScope: z.string().trim().min(1).max(200),
+              branchName: z.string().trim().min(1).max(200),
+            })
+            .strict(),
+        )
+        .output(z.object({ unlinked: z.boolean() }))
+        .mutation(({ input, ctx }) => cardBranches.unlinkCardBranch(actor(ctx), input)),
     }),
 
     fields: router({

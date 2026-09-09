@@ -42,6 +42,7 @@ export type UserId = Brand<string, 'UserId'>;
 export type MembershipId = Brand<string, 'MembershipId'>;
 export type TeamId = Brand<string, 'TeamId'>;
 export type SessionId = Brand<string, 'SessionId'>;
+export type InvitationId = Brand<string, 'InvitationId'>;
 
 export type ProjectId = Brand<string, 'ProjectId'>;
 export type BoardId = Brand<string, 'BoardId'>;
@@ -101,6 +102,7 @@ export const UserIdSchema = idSchema('UserId');
 export const MembershipIdSchema = idSchema('MembershipId');
 export const TeamIdSchema = idSchema('TeamId');
 export const SessionIdSchema = idSchema('SessionId');
+export const InvitationIdSchema = idSchema('InvitationId');
 
 export const ProjectIdSchema = idSchema('ProjectId');
 export const BoardIdSchema = idSchema('BoardId');

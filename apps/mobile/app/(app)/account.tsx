@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { useSession } from '../../src/lib/use-session.js';
@@ -15,6 +16,7 @@ import { NotificationPreferencesSection } from '../../src/lib/notification-prefs
 import { PushNotificationsSection } from '../../src/lib/push-notifications-section.js';
 import { RingtoneSection } from '../../src/lib/ringtone-section.js';
 import { ExportDataSection } from '../../src/lib/export-data-section.js';
+import { ORG_DETAIL_QUERY_KEY } from '../../src/lib/org-settings.js';
 
 /**
  * Account — the one place `apps/web`'s sidebar footer (`OrgSwitcher` + the
@@ -65,6 +67,25 @@ export default function Account() {
   const currentOrg = orgs.data?.find((org) => org.orgId === orgId);
   const paddingTop = useTopInset();
 
+  /* Gates the Automations and Insights links below — `automation:manage`/
+     `analytics:read` — the same `capabilities` object `org-settings.tsx`
+     already reads from this identical route (Phase 15 §1's sweep:
+     Automations rendered with NO gate at all, and Insights used a
+     hardcoded `role === 'owner' || role === 'admin'` string comparison —
+     the exact inline-role-comparison pattern `packages/policy/src/roles.ts`'s
+     own header calls out as a lint error everywhere outside
+     `packages/policy`, just not caught here because nothing in this app
+     lints for it). `analytics:read` is still Admin-and-Owner-only by role
+     alone; `automation:manage` joined `GRANTABLE_PERMISSIONS` in Wave 2, but
+     this screen only ever needed the ONE permission that gates the rules
+     screen it links to (`automations.tsx` has no webhook/integration/API
+     token UI — that is web-only) — `manageAutomations` specifically, not an
+     "any of" the four automation permissions the web sidebar now checks. */
+  const capabilities = useQuery({
+    queryKey: ORG_DETAIL_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+  }).data?.capabilities;
+
   return (
     <ScrollView style={[styles.container, { paddingTop }]} contentContainerStyle={styles.content}>
       <Pressable
@@ -114,32 +135,42 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Manage organization</Text>
         </Pressable>
-        {/* Same "always shown, floored on the server" reasoning — `member
-            :read` decides who sees rows once there, not a check here. */}
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={() => {
-            router.push('/people');
-          }}
-        >
-          <Text style={styles.secondaryButtonText}>People</Text>
-        </Pressable>
-        {/* Same reasoning again — `automation:manage` decides who can act
-            once there, not a check here (§8.2). */}
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={() => {
-            router.push('/automations');
-          }}
-        >
-          <Text style={styles.secondaryButtonText}>Automations</Text>
-        </Pressable>
-        {/* Insights is analytics:read (admin+owner only). The server
-            enforces the permission; this hides the link for non-admins as
-            a UX convenience — the same §8.2 reasoning: an unauthorized
-            caller who reaches the screen directly sees a proper error, not
-            a broken experience. */}
-        {(currentOrg?.role === 'owner' || currentOrg?.role === 'admin') && (
+        {/* `member:read` is `ORG_LEVEL_PERMISSIONS` (packages/policy/src/
+            permissions.ts) — a Guest's tuples can never satisfy it, so the
+            route floor refuses with a plain role-only FORBIDDEN before the
+            handler runs. This comment used to claim the opposite ("floored
+            on the server, not a check here" — an empty list for a caller
+            who cannot read it) and that was wrong: a Guest tapping this link
+            landed on a raw error screen, not an empty directory. Gated the
+            identical way Automations/Insights already are below, rather
+            than leaving the one remaining ungated entry point. */}
+        {capabilities?.viewDirectory === true && (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              router.push('/people');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>People</Text>
+          </Pressable>
+        )}
+        {/* `automation:manage` — Admin/Owner by role, or an individual
+            grant (Wave 2). This hides entirely for anyone with neither,
+            rather than showing a link that always lands on FORBIDDEN
+            (Phase 15 §1's sweep). */}
+        {capabilities?.manageAutomations === true && (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              router.push('/automations');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Automations</Text>
+          </Pressable>
+        )}
+        {/* `analytics:read`, same shape as Automations above. Reads the
+            real capability now rather than a hardcoded role string. */}
+        {capabilities?.viewAnalytics === true && (
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {

@@ -79,9 +79,22 @@ export interface ImportExportDialogProps {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly projectId: ProjectId;
+  /**
+   * `projects.list`'s per-project `capabilities.update` — importing is
+   * `project:update` (creating labels, per the Import tab's own comment
+   * above), Export is `project:read` and stays open to everyone. The Import
+   * tab used to render for every viewer and let a Member's attempt come
+   * back FORBIDDEN (Phase 15 §1's sweep).
+   */
+  readonly canManageProject: boolean;
 }
 
-export function ImportExportDialog({ orgId, boardId, projectId }: ImportExportDialogProps) {
+export function ImportExportDialog({
+  orgId,
+  boardId,
+  projectId,
+  canManageProject,
+}: ImportExportDialogProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'export' | 'import'>('export');
 
@@ -102,24 +115,26 @@ export function ImportExportDialog({ orgId, boardId, projectId }: ImportExportDi
           role="tablist"
           aria-label="Import or export"
         >
-          {(['export', 'import'] as const).map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              role="tab"
-              aria-selected={tab === entry}
-              onClick={() => {
-                setTab(entry);
-              }}
-              className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-                tab === entry
-                  ? 'bg-accent text-accent-ink'
-                  : 'text-ink-muted hover:bg-surface-hover'
-              }`}
-            >
-              {entry}
-            </button>
-          ))}
+          {(['export', 'import'] as const)
+            .filter((entry) => entry === 'export' || canManageProject)
+            .map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                role="tab"
+                aria-selected={tab === entry}
+                onClick={() => {
+                  setTab(entry);
+                }}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                  tab === entry
+                    ? 'bg-accent text-accent-ink'
+                    : 'text-ink-muted hover:bg-surface-hover'
+                }`}
+              >
+                {entry}
+              </button>
+            ))}
         </div>
 
         {tab === 'export' ? (

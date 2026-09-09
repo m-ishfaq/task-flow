@@ -16,6 +16,7 @@ import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
+import { CapabilityGate } from '../../src/lib/capability-gate.js';
 import {
   AUTOMATIONS_QUERY_KEY,
   actionOutcomeOf,
@@ -33,11 +34,24 @@ import {
 /**
  * Automation rules — read, toggle, delete, and run history, reached from
  * `account.tsx`'s "Automations" link (a sibling of "Manage organization":
- * both are org-level configuration links shown unconditionally per §8.2,
- * not tab-bar destinations someone browses between other work — the same
- * reasoning that moved Account itself out of the tab bar applies to this
- * screen from the start rather than needing a later move).
+ * both are org-level configuration links, not tab-bar destinations someone
+ * browses between other work — the same reasoning that moved Account
+ * itself out of the tab bar applies to this screen from the start rather
+ * than needing a later move).
  *
+ * `automation:manage` is Admin-and-Owner by role, or an individual grant
+ * (Wave 2, ai/phase-15-ai-copilot-and-permissions.md §1) — `account.tsx`
+ * hides the link for anyone with neither (Phase 15 §1's sweep fixed a real
+ * gap here: it previously rendered unconditionally with no gate at all,
+ * unlike "Insights" two links below it), and this default export
+ * additionally wraps the screen in `CapabilityGate capability=
+ * "manageAutomations"` so a deep link lands on a plain "not for your role"
+ * screen rather than loading straight into a raw FORBIDDEN. Not an "any
+ * of" the four automation permissions the web sidebar now checks — this
+ * screen is Rules only, so `manageAutomations` alone is the correct floor;
+ * someone granted only `webhook:manage` has no mobile UI to reach at all.
+ *
+
  * **Creating and editing a rule now ship too — `automation-editor.tsx`,
  * pushed from the "+ New rule" button below and from a `RuleRow`'s own
  * "Edit" action.** `automation.ts`'s own header has the full account of
@@ -50,7 +64,15 @@ import {
  * to web" rather than a form that would silently drop what it cannot
  * show.
  */
-export default function AutomationsScreen() {
+export default function AutomationsScreen(): React.JSX.Element | null {
+  return (
+    <CapabilityGate capability="manageAutomations">
+      <AutomationsScreenContent />
+    </CapabilityGate>
+  );
+}
+
+function AutomationsScreenContent() {
   const paddingTop = useTopInset();
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);

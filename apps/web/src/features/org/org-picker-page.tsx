@@ -117,34 +117,66 @@ export function OrgPickerPage() {
 
       {!isEmpty && (
         <ul className="space-y-2">
-          {orgs.data.map((org) => (
-            <li key={org.orgId}>
-              <button
-                type="button"
-                onClick={() => {
-                  choose(org.orgId as OrgId);
-                }}
-                className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
+          {orgs.data.map((org) =>
+            org.orgStatus === 'active' && org.membershipStatus === 'active' ? (
+              <li key={org.orgId}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    choose(org.orgId as OrgId);
+                  }}
+                  className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                >
+                  <OrgMark name={org.name} />
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-ink">{org.name}</span>
+                    <span className="block truncate font-mono text-[11px] text-ink-faint">
+                      {org.slug}
+                    </span>
+                  </span>
+
+                  <Badge>{org.role}</Badge>
+                  <span
+                    aria-hidden="true"
+                    className="text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-ink-muted"
+                  >
+                    &rarr;
+                  </span>
+                </button>
+              </li>
+            ) : (
+              // Shown, not omitted — the identical fix `OrgGate`'s own header
+              // documents for the currently-selected case, applied here so a
+              // suspended membership never simply vanishes from this list the
+              // way it used to (indistinguishable from an org this account was
+              // never part of at all). Not a `<button>`: there is nothing to
+              // do here besides know why it's not clickable.
+              //
+              // Org status is checked FIRST — the same "the bigger fact wins"
+              // rule OrgGate applies — since a suspended ORG (Phase 12 Wave
+              // 1's platform console) used to show here as an ordinary,
+              // clickable row: `membershipStatus` alone said nothing about
+              // it, and clicking through only failed on the NEXT screen.
+              <li
+                key={org.orgId}
+                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-line/60 bg-surface-sunken/40 p-3 opacity-70"
               >
                 <OrgMark name={org.name} />
 
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-ink">{org.name}</span>
-                  <span className="block truncate font-mono text-[11px] text-ink-faint">
-                    {org.slug}
+                  <span className="block truncate text-sm font-medium text-ink-muted">
+                    {org.name}
+                  </span>
+                  <span className="block truncate text-[11px] text-ink-faint">
+                    {org.orgStatus !== 'active'
+                      ? 'This organization has been suspended'
+                      : 'Your membership is suspended'}
                   </span>
                 </span>
-
-                <Badge>{org.role}</Badge>
-                <span
-                  aria-hidden="true"
-                  className="text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-ink-muted"
-                >
-                  &rarr;
-                </span>
-              </button>
-            </li>
-          ))}
+              </li>
+            ),
+          )}
         </ul>
       )}
     </div>
@@ -222,6 +254,10 @@ function CreateOrgForm({
   const create = useMutation({
     mutationFn: (values: CreateValues) => api.tenancy.orgs.create.mutate(values),
     onSuccess: async (result) => {
+      /* The §6 bootstrap offer (ai/phase-15-ai-copilot-and-permissions.md §6)
+         needs no trigger set here any more — `setup-dialog.tsx`'s own header
+         explains why: it now gates on whether `docs.spaces.list` is empty,
+         which a freshly created org obviously satisfies with no flag at all. */
       await queryClient.invalidateQueries({ queryKey: keys.orgs() });
       onCreated(result.orgId as OrgId);
     },

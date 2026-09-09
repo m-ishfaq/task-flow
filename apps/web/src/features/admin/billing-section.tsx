@@ -14,11 +14,18 @@ import { useBranding } from '../../lib/branding-context.js';
  * Org billing (Phase 12 Wave 3 §3.1, §5; rebuilt in Wave 4) — the
  * owner-facing half.
  *
- * `billing.*` is `org:billing`, Owner-only. Rendered unconditionally, like
- * every other section on this page (§8.2 — the UI never re-derives
- * authorization): a non-owner sees the same honest FORBIDDEN card `ErrorView`
- * renders for any other section they lack the permission for, not a hidden
- * panel.
+ * `billing.*` is `org:billing`, Owner-only, and nothing ever turns it on
+ * for anyone else — no tuple, no plan upgrade, no member grant
+ * (`org:billing` is not in `GRANTABLE_PERMISSIONS`). `settings-page.tsx`
+ * only mounts this component when `capabilities.viewBilling` is true
+ * (Phase 15 §1's audit of the old "render unconditionally, let it 403"
+ * doctrine — showing a non-owner a live Billing section that always
+ * answers FORBIDDEN is not "the UI re-deriving authorization" §8.2 warns
+ * against, it is exposing another person's payment configuration to
+ * someone who was never going to be allowed to see it). This component
+ * itself still does not re-check anything — it trusts the mount decision
+ * and would render correctly even if reached directly, since every route it
+ * calls still enforces `org:billing` server-side regardless.
  *
  * Checkout and the customer portal are both processor-hosted redirects — this
  * component never collects a card number, and never will, for any processor
@@ -355,6 +362,41 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                   that is billed with your next invoice.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* AI assistant spend, alongside telephony's — previously visible
+              only to a platform operator (the AI Models console tab's own
+              cross-org report), never to the org that actually pays for it.
+              Same "only where there is a ceiling" rule as telephony's own
+              panel above. */}
+          {data.usage.aiCapCents !== null && (
+            <div className="rounded-xl border border-line/50 p-4">
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="font-semibold text-ink">AI assistant, this month</span>
+                <span className="text-ink-muted">
+                  {money(data.usage.aiSpentCents)} of {money(data.usage.aiCapCents)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-sunken">
+                <div
+                  className={
+                    data.usage.aiSpentCents >= data.usage.aiCapCents
+                      ? 'h-full bg-danger'
+                      : 'h-full bg-accent'
+                  }
+                  style={{
+                    width: `${String(
+                      Math.min(
+                        100,
+                        data.usage.aiCapCents === 0
+                          ? 100
+                          : Math.round((data.usage.aiSpentCents / data.usage.aiCapCents) * 100),
+                      ),
+                    )}%`,
+                  }}
+                />
+              </div>
             </div>
           )}
 

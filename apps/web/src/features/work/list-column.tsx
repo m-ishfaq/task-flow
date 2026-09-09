@@ -1,8 +1,9 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
-import type { BoardId, ListId } from '@taskflow/contracts';
+import { parse } from '@taskflow/filter';
+import { unsafeAsId, type BoardId, type CardId, type ListId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
@@ -10,7 +11,10 @@ import { useToast } from '../../lib/toast-context.js';
 import { cn } from '../../lib/cn.js';
 import { Button, Input } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
+import { searchResultsQuery } from '../search/api.js';
 import { patchLists, type ListSummary } from './api.js';
+import { CardQuickView } from './card-quick-view.js';
+import { buildDuplicateQuery, DUPLICATE_MATCH_LIMIT } from './duplicate-detect.js';
 
 /**
  * One column of the board.
@@ -33,9 +37,26 @@ export interface ListColumnProps {
   /** Every column, in rank order — the menu needs neighbours to reorder. */
   readonly siblings: readonly ListSummary[];
   readonly children: ReactNode;
+  /**
+   * `boards.list`'s per-board `capabilities.update` — `lists.update`/
+   * `.reorder`/`.archive` are all `board:update`, so `ListMenu` (rename,
+   * WIP limit, reorder, archive) is hidden entirely for a caller who lacks
+   * it, rather than rendered and left to answer FORBIDDEN (Phase 15 §1's
+   * sweep). `AddCard` below is unaffected — creating a card is
+   * `card:create`, which a plain Member holds.
+   */
+  readonly canManage: boolean;
 }
 
-export function ListColumn({ orgId, boardId, list, count, siblings, children }: ListColumnProps) {
+export function ListColumn({
+  orgId,
+  boardId,
+  list,
+  count,
+  siblings,
+  canManage,
+  children,
+}: ListColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: list.listId });
   const overLimit = list.wipLimit !== null && count > list.wipLimit;
 
@@ -64,7 +85,7 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
           {count}
           {list.wipLimit !== null && `/${String(list.wipLimit)}`}
         </span>
-        <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />
+        {canManage && <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />}
       </header>
 
       <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">
@@ -318,6 +339,17 @@ function ListMenu({
  * else here is optimistic; the identifier is the one thing a client cannot
  * honestly guess.
  */
+/**
+ * Duplicate-card detection, layered onto the same input.
+ *
+ * Purely advisory — the dropdown never blocks or intercepts submission, the
+ * same WIP-limit philosophy this file's own header states for the count
+ * going red: "blocking someone from recording work already in progress
+ * makes people stop using the board, not stop the work," applied to the
+ * identical shape of problem for a possible duplicate. Reuses
+ * `search.query` exactly as the search page itself calls it — no new
+ * backend route, no new permission.
+ */
 function AddCard({
   orgId,
   boardId,
@@ -330,7 +362,33 @@ function AddCard({
   const queryClient = useQueryClient();
   const toast = useToast();
   const [title, setTitle] = useState('');
+  const [debouncedTitle, setDebouncedTitle] = useState('');
+  const [openMatch, setOpenMatch] = useState<CardId | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedTitle(title);
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [title]);
+
+  const duplicateQuery = buildDuplicateQuery(debouncedTitle);
+  /* Gated on the client's own parse, mirroring `search-page.tsx`'s `sendable`
+     check — a title whose literal text breaks TQL syntax (an unbalanced
+     quote, a bare "AND") simply shows no dropdown rather than sending a
+     query the server would refuse. */
+  const duplicateQueryValid = duplicateQuery !== null && parse(duplicateQuery).ok;
+
+  const duplicates = useQuery({
+    ...searchResultsQuery(orgId, duplicateQuery ?? ''),
+    enabled: duplicateQueryValid && orgId !== '',
+  });
+  const matches = duplicateQueryValid
+    ? (duplicates.data ?? []).slice(0, DUPLICATE_MATCH_LIMIT)
+    : [];
 
   const create = useMutation({
     mutationFn: (value: string) =>
@@ -354,6 +412,9 @@ function AddCard({
     if (value === '') return;
 
     setTitle('');
+    // Dismissed synchronously rather than waiting out the 250ms debounce, so
+    // a submitted title's own matches do not flash on screen for a beat.
+    setDebouncedTitle('');
     /* Focus is not automatic here. The input is never unmounted, so it KEEPS
        focus through a submit — but only while the button is not the thing that
        was clicked. Calling it explicitly covers both paths with one line. */
@@ -362,37 +423,76 @@ function AddCard({
   };
 
   return (
-    <form
-      className="flex gap-1.5 px-2 pb-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <Input
-        ref={inputRef}
-        aria-label="New card title"
-        placeholder="Add a card"
-        value={title}
-        onChange={(event) => {
-          setTitle(event.target.value);
+    <div className="relative px-2 pb-2">
+      <form
+        className="flex gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
         }}
-        onKeyDown={(event) => {
-          // Escape abandons the draft and gets out of the way, which is the only
-          // way to leave this field without either saving or clearing it by hand.
-          if (event.key === 'Escape') {
-            setTitle('');
-            event.currentTarget.blur();
-          }
-        }}
-        className="h-7 text-xs"
-      />
-      {/* Not disabled while pending — the whole point is that the next title can
-          be typed and submitted before the previous one has landed. */}
-      <Button type="submit" size="sm" disabled={title.trim() === ''}>
-        <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
-        Add
-      </Button>
-    </form>
+      >
+        <Input
+          ref={inputRef}
+          aria-label="New card title"
+          placeholder="Add a card"
+          value={title}
+          onChange={(event) => {
+            setTitle(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            // Escape abandons the draft and gets out of the way, which is the only
+            // way to leave this field without either saving or clearing it by hand.
+            if (event.key === 'Escape') {
+              setTitle('');
+              setDebouncedTitle('');
+              event.currentTarget.blur();
+            }
+          }}
+          className="h-7 text-xs"
+        />
+        {/* Not disabled while pending — the whole point is that the next title can
+            be typed and submitted before the previous one has landed. */}
+        <Button type="submit" size="sm" disabled={title.trim() === ''}>
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
+          Add
+        </Button>
+      </form>
+
+      {matches.length > 0 && (
+        // Opens UPWARD, not downward — `AddCard` sits at the BOTTOM of the
+        // list, so a dropdown anchored `top-full` floats into the empty
+        // space below the column (or gets clipped by it), disconnected from
+        // the cards it's actually claiming to match. `bottom-full` overlays
+        // it on the cards already in view above the input instead, the same
+        // direction a chat composer's mention picker opens for the identical
+        // reason.
+        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
+          <li className="px-2 py-1 text-[10px] font-medium text-ink-faint">Might already exist</li>
+          {matches.map((hit) => (
+            <li key={hit.entityId}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMatch(unsafeAsId<'CardId'>(hit.entityId));
+                }}
+                className="block w-full truncate px-2 py-1 text-left text-xs text-ink hover:bg-surface-hover"
+              >
+                {hit.title ?? '(untitled card)'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {openMatch !== null && (
+        <CardQuickView
+          orgId={orgId}
+          cardId={openMatch}
+          onClose={() => {
+            setOpenMatch(null);
+          }}
+        />
+      )}
+    </div>
   );
 }

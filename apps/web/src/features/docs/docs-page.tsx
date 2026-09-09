@@ -25,6 +25,7 @@ import {
   Skeleton,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { orgDetailQuery } from '../org/api.js';
 import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
 import { PublishPanel } from './publish-panel.js';
 import { VersionHistoryPanel } from './version-history.js';
@@ -56,11 +57,17 @@ import {
  * identical reason `chat`'s `channel` does — deep-linkable, back-button
  * correct, and the tree stays mounted across switches.
  *
- * Nothing here re-derives authorization (CLAUDE.md §8.2, mirrored from
- * `projects-page.tsx`): `spaces.list`/`pages.list` already omit anything the
- * caller cannot read, every button is shown unconditionally, and a caller
- * who cannot act gets the server's own FORBIDDEN rather than a hidden
- * control.
+ * Nothing here re-derives authorization (CLAUDE.md §8.2): `spaces.list`/
+ * `pages.list` already omit anything the caller cannot read. Most controls
+ * are still shown unconditionally and let the server answer FORBIDDEN — but
+ * `space:create`/`space:manage` are Admin-and-Owner only by role (with
+ * `space:manage` also grantable per-space via a tuple), so "+ Space" and a
+ * space's own archive/restore are gated on real capabilities instead
+ * (`SettingsCapabilities.createSpace` org-wide; `spaces.list`'s own
+ * per-space `capabilities.manage`) — reading a boolean the server already
+ * computed, not a second authorization decision (Phase 15 §1's sweep;
+ * these two used to render for every viewer and let a Member's click come
+ * back FORBIDDEN).
  *
  * The live editor (`DocsEditor`) goes through `apps/collab`'s Hocuspocus
  * gateway, a different protocol entirely from the tRPC calls this file
@@ -144,6 +151,9 @@ function SpaceTreePanel({
   readonly hideWhenPageOpen: boolean;
 }) {
   const spaces = useQuery({ ...spacesQuery(orgId), enabled: orgId !== '' });
+  const canCreateSpace =
+    useQuery({ ...orgDetailQuery(orgId), enabled: orgId !== '' }).data?.capabilities.createSpace ===
+    true;
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -176,7 +186,7 @@ function SpaceTreePanel({
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line/50 px-2">
         {spacesOpen && <h2 className="truncate px-1 text-sm font-semibold text-ink">Spaces</h2>}
         <div className={cn('flex items-center gap-1', spacesOpen ? 'ml-auto' : 'mx-auto')}>
-          {spacesOpen && (
+          {spacesOpen && canCreateSpace && (
             <Button
               variant="ghost"
               size="sm"
@@ -385,15 +395,17 @@ function SpaceNode({
         {isArchived && <Badge className="mr-1 text-warning">archived</Badge>}
 
         {isArchived ? (
-          <button
-            type="button"
-            onClick={() => {
-              restore.mutate();
-            }}
-            className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
-          >
-            Restore
-          </button>
+          space.capabilities.manage && (
+            <button
+              type="button"
+              onClick={() => {
+                restore.mutate();
+              }}
+              className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+            >
+              Restore
+            </button>
+          )
         ) : (
           <button
             type="button"
@@ -854,22 +866,29 @@ function PagePanel({
               >
                 Rename
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  // `restore: true` means "un-archive" — when the page is
-                  // NOT currently archived, this button archives it, so the
-                  // mutation's `restore` argument is `isArchived` itself,
-                  // not its negation. (Caught by an end-to-end smoke test:
-                  // the flipped version silently no-oped on every click,
-                  // since "restore" on a live page has nothing to undo.)
-                  archive.mutate(isArchived);
-                }}
-                disabled={archive.isPending}
-              >
-                {isArchived ? 'Restore' : 'Archive'}
-              </Button>
+              {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
+                  per page — `page.capabilities.archive` is the server's own
+                  answer, not a rule re-derived here. Hidden entirely for a
+                  Member with no grant, rather than shown and left to answer
+                  FORBIDDEN (Phase 15 §1's sweep). */}
+              {page.capabilities.archive && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // `restore: true` means "un-archive" — when the page is
+                    // NOT currently archived, this button archives it, so the
+                    // mutation's `restore` argument is `isArchived` itself,
+                    // not its negation. (Caught by an end-to-end smoke test:
+                    // the flipped version silently no-oped on every click,
+                    // since "restore" on a live page has nothing to undo.)
+                    archive.mutate(isArchived);
+                  }}
+                  disabled={archive.isPending}
+                >
+                  {isArchived ? 'Restore' : 'Archive'}
+                </Button>
+              )}
             </div>
           </>
         )}

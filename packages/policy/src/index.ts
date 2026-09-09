@@ -13,8 +13,10 @@
 export {
   PERMISSIONS,
   RESOURCE_TYPES,
+  GRANTABLE_PERMISSIONS,
   isPermission,
   isReadOnly,
+  isGrantable,
   resourceOf,
   type Permission,
   type ResourceType,
@@ -33,6 +35,7 @@ export {
   isIndispensableRole,
   isDirectlyAssignable,
   sameRole,
+  isGuestRole,
   DIRECTLY_ASSIGNABLE_ROLES,
 } from './assignment.js';
 

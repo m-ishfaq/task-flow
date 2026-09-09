@@ -25,6 +25,13 @@ const card: CardDetail = {
   version: 3,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+  capabilities: {
+    moderateComments: false,
+    comment: true,
+    update: true,
+    archive: true,
+    manageProjectVocabulary: true,
+  },
 };
 
 describe('asRichText', () => {

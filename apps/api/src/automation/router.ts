@@ -158,6 +158,39 @@ export function buildAutomationActionSchema(telephonyActionsEnabled: boolean) {
         body: z.string().trim().max(10_000),
       })
       .strict(),
+    /* §8 — onboarding/offboarding automation. Unconditional, like the
+       connector pair above: none of these reach a network the org does not
+       control or cost anything to run, so there is no deployment flag to
+       hide them behind. All six act on the member the TRIGGER named
+       (`member.added` / `member.offboarding_started`'s own `userId`) — none
+       carries a `userId` field, which is what keeps a rule from reaching
+       past the person it fired for. */
+    z.object({ type: z.literal('channel.add_member'), channelId: z.string().uuid() }).strict(),
+    z.object({ type: z.literal('channel.remove_member'), channelId: z.string().uuid() }).strict(),
+    /* Fixed at 'viewer' by the executor, not a field here — see
+       `apps/worker`'s own AutomationAction comment on why an unattended rule
+       should never be able to hand out 'editor' or 'owner'. */
+    z.object({ type: z.literal('docs.grant_space_access'), spaceId: z.string().uuid() }).strict(),
+    z.object({ type: z.literal('identity.revoke_sessions') }).strict(),
+    z.object({ type: z.literal('member_grant.revoke_all') }).strict(),
+    /* The one action in this group that names a SECOND person — the
+       replacement assignee — because "reassign to someone" has no other
+       way to say who. */
+    z.object({ type: z.literal('cards.bulk_reassign'), toUserId: z.string().uuid() }).strict(),
+    /* §8 checklist item 1 (onboarding starter cards). No description field —
+       see the worker's own `AutomationAction` union for why a plain title is
+       enough. `title` bounded the same way `card.add_comment`'s body is. */
+    z
+      .object({
+        type: z.literal('card.create'),
+        listId: z.string().uuid(),
+        title: z.string().trim().min(1).max(2_000),
+      })
+      .strict(),
+    /* §8 checklist item 3 — no arguments; see the worker's own
+       `AutomationAction` union for why (always the target's CURRENT role,
+       re-resolved at execution, never a role a rule author could type in). */
+    z.object({ type: z.literal('member_grant.apply_role_defaults') }).strict(),
     ...(telephonyActionsEnabled
       ? [
           z

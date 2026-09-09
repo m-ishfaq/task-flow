@@ -175,6 +175,25 @@ export const FLAGS = {
     defaultValue: false,
     perOrg: true,
   },
+
+  /* --- Phase 15 --------------------------------------------------------- */
+  aiAssistant: {
+    /* "Does this org's plan include AI at all" (§2.4) — the product-surface
+       half of the two-gate split; `ai:use` (packages/policy) is the other
+       half, answering which specific members may open it. `in-progress`,
+       matching this flag's own state: §2 (the AiProvider abstraction) and §3
+       (the budget gate and usage ledger) exist; nothing a user would call a
+       feature is behind this flag yet — the identical build order Phase 7
+       Wave 1 and Phase 13 Wave 1 both used (ship the gate before the thing
+       it gates). No route checks this flag today; it is registered ahead of
+       its first caller so the plan catalog (Phase 12 Wave 4) has a name to
+       grant the day §4 ships one. */
+    description: 'AI Copilot: the tool-calling assistant, standups, PR review',
+    phase: 15,
+    stage: 'in-progress',
+    defaultValue: false,
+    perOrg: true,
+  },
 } as const satisfies Record<string, FlagDefinition>;
 
 export type FlagName = keyof typeof FLAGS;

@@ -27,6 +27,7 @@ interface SpaceListItem {
   spaceId: string;
   name: string;
   archivedAt: string | null;
+  capabilities: { manage: boolean };
 }
 
 interface PageListItem {
@@ -36,6 +37,7 @@ interface PageListItem {
   rank: string;
   archivedAt: string | null;
   publishedAt: string | null;
+  capabilities: { archive: boolean };
 }
 
 const listSpaces = vi.fn<() => Promise<SpaceListItem[]>>();
@@ -111,10 +113,28 @@ vi.mock('../../lib/trpc.js', () => ({
     /* `comments-suggestions.tsx` and `version-history.tsx` both resolve
        author ids through `useMembers()`, which reads `tenancy.members.list`
        — nothing to do with Docs, but still a real call this mock must
-       answer or the same panels crash on mount. */
+       answer or the same panels crash on mount. `orgs.get` is the same
+       kind of unrelated-but-required stub: `SpaceTreePanel`'s "+ Space"
+       button and `templates-panel.tsx`'s save/delete both read
+       `capabilities.createSpace`/a space's own `capabilities.manage` off
+       it (Phase 15 §1's sweep) — answered here as an Owner so this suite's
+       existing assertions (which predate that gating) keep seeing every
+       control it already exercises. */
     tenancy: {
       members: {
         list: { query: () => Promise.resolve([]) },
+      },
+      orgs: {
+        get: {
+          query: () =>
+            Promise.resolve({
+              orgId: ORG_ID,
+              name: 'Org',
+              slug: 'org',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              capabilities: { createSpace: true },
+            }),
+        },
       },
     },
   },
@@ -170,7 +190,9 @@ beforeEach(() => {
     email: null,
   });
 
-  listSpaces.mockResolvedValue([{ spaceId: SPACE_ID, name: 'Handbook', archivedAt: null }]);
+  listSpaces.mockResolvedValue([
+    { spaceId: SPACE_ID, name: 'Handbook', archivedAt: null, capabilities: { manage: true } },
+  ]);
   listPages.mockResolvedValue([
     {
       pageId: ROOT_PAGE_ID,
@@ -179,6 +201,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      capabilities: { archive: true },
     },
     {
       pageId: CHILD_PAGE_ID,
@@ -187,6 +210,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      capabilities: { archive: true },
     },
   ]);
 });
@@ -246,6 +270,7 @@ describe('the tree', () => {
         rank: 'a0',
         archivedAt: null,
         publishedAt: null,
+        capabilities: { archive: true },
       });
       parent = pageId;
     }
@@ -321,6 +346,7 @@ describe('archiving and restoring a page', () => {
         rank: 'a0',
         archivedAt: '2026-08-01T00:00:00.000Z',
         publishedAt: null,
+        capabilities: { archive: true },
       },
     ]);
     const user = userEvent.setup();
@@ -338,5 +364,30 @@ describe('archiving and restoring a page', () => {
     await waitFor(() => {
       expect(archivePageMutate).toHaveBeenCalledWith({ pageId: ROOT_PAGE_ID, restore: true });
     });
+  });
+
+  it('hides the Archive control for a page the caller has no page:delete grant on', async () => {
+    search = { space: SPACE_ID, page: ROOT_PAGE_ID };
+    listPages.mockResolvedValue([
+      {
+        pageId: ROOT_PAGE_ID,
+        parentPageId: null,
+        title: 'Getting Started',
+        rank: 'a0',
+        archivedAt: null,
+        publishedAt: null,
+        capabilities: { archive: false },
+      },
+    ]);
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Getting Started' })).toBeInTheDocument();
+    });
+    // Rename stays visible — `page:update` is a plain-Member role permission —
+    // only the archive/restore control, gated on the tuple-shareable
+    // `page:delete`, is withheld.
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
   });
 });

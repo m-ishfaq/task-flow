@@ -77,7 +77,15 @@ export function createDocsRouter() {
         .output(
           z
             .array(
-              z.object({ spaceId: z.string(), name: z.string(), archivedAt: z.date().nullable() }),
+              z.object({
+                spaceId: z.string(),
+                name: z.string(),
+                archivedAt: z.date().nullable(),
+                /* Read by the client to hide the "+ Space"/archive/restore
+                   controls and page-template management a viewer cannot
+                   use — see `listSpaces`'s own comment. */
+                capabilities: z.object({ manage: z.boolean() }).strict(),
+              }),
             )
             .readonly(),
         )
@@ -107,6 +115,10 @@ export function createDocsRouter() {
                 rank: z.string(),
                 archivedAt: z.date().nullable(),
                 publishedAt: z.date().nullable(),
+                /* Read by the client to hide the page-level Archive/Restore
+                   control from a viewer who cannot use it — see
+                   `listPages`'s own comment. */
+                capabilities: z.object({ archive: z.boolean() }).strict(),
               }),
             )
             .readonly(),

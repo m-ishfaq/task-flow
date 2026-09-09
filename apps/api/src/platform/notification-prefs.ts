@@ -51,6 +51,10 @@ const CATEGORY_OF_KIND: Readonly<Record<string, NotificationCategory>> = {
      "about YOU, not ambient activity" reasoning as member.role_changed, and
      a day-late digest is the wrong latency for an announcement. */
   operator_broadcast: 'direct',
+  /* Phase 15 §8 checklist item 2 (migration 0102) — a manager learning who
+     just joined their own team, the identical "about YOU (your team), not
+     ambient org activity" reasoning as the other member.* kinds above. */
+  'member.report_joined': 'direct',
 };
 
 export function categoryOfKind(kind: string): NotificationCategory {

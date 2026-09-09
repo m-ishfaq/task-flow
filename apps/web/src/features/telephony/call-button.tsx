@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Button } from '../../components/primitives.js';
+import { orgDetailQuery } from '../org/api.js';
 import { invalidateAfterSpend, phoneNumbersQuery } from './api.js';
 
 /**
@@ -9,20 +10,29 @@ import { invalidateAfterSpend, phoneNumbersQuery } from './api.js';
  *
  * PLAN.md §3.4 specifies click-to-call "from any card/contact/chat thread", and
  * Wave 5 shipped only the dialler on `/calls`. This is the one component every
- * other surface reuses, so the four call sites cannot drift into four slightly
- * different ideas of what placing a call means — the same argument
- * `checkOutboundAllowed` makes on the server, applied to the button.
+ * other surface reuses (`person-page.tsx`, `channel-details.tsx`, and both
+ * telephony panels), so the call sites cannot drift into slightly different
+ * ideas of what placing a call means — the same argument `checkOutboundAllowed`
+ * makes on the server, applied to the button.
  *
- * ## It re-derives no authorization
+ * ## It hides itself, and that is new (Phase 15 §1)
  *
- * The button renders for everyone and the server answers. §8.2 is explicit that
- * a UI reimplementing `can()` produces two models that drift, and the one users
- * see is the one nothing tests — so a member without `call:place` gets an
- * honest FORBIDDEN in a toast rather than a control that silently is not there.
+ * `call:place` used to be a Member role default, so "render for everyone and
+ * let the server answer" was the right call — nobody would ever actually be
+ * refused. It is now an individually granted permission
+ * (`authz.member_grants`), so a Member who does not hold it would otherwise
+ * click a live, unlabelled "Call" button on FOUR different pages and get a
+ * FORBIDDEN toast every time — the same "gate somebody can never open" the
+ * capability gates elsewhere already avoid, just reached from reusable
+ * components those gates don't wrap. `capabilities.placeCalls` is the same
+ * server-computed boolean `telephony-page.tsx` reads (`tenancy.orgs.get`),
+ * so this is still not re-deriving `can()` — it renders one decision the
+ * server already made, not a second copy of the decision itself. Renders
+ * nothing while that capability is loading, same as `CapabilityGate`.
  *
- * The ONE thing it does check locally is whether the org owns a number at all,
- * because that is not a permission — it is a precondition with a specific
- * remedy ("buy one"), and a FORBIDDEN-shaped error would describe it wrongly.
+ * The number-ownership check below is unrelated and unchanged: it is not a
+ * permission, it is a precondition with a specific remedy ("buy one"), and a
+ * FORBIDDEN-shaped error would describe it wrongly.
  */
 export function CallButton({
   orgId,
@@ -42,7 +52,11 @@ export function CallButton({
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const numbers = useQuery(phoneNumbersQuery(orgId));
+  const org = useQuery(orgDetailQuery(orgId));
+  const numbers = useQuery({
+    ...phoneNumbersQuery(orgId),
+    enabled: org.data?.capabilities.placeCalls === true,
+  });
 
   const from = numbers.data?.[0]?.phoneNumberId ?? '';
 
@@ -68,6 +82,10 @@ export function CallButton({
   });
 
   const noNumber = !numbers.isPending && from === '';
+
+  // Renders nothing until the capability is known, and nothing at all for a
+  // caller who does not hold `call:place` — see the doc comment above.
+  if (org.data?.capabilities.placeCalls !== true) return null;
 
   return (
     <Button

@@ -228,14 +228,16 @@ function ProviderRow({
             >
               <div className="min-w-0 flex-1 basis-48">
                 <p className="flex items-center gap-1.5">
-                  <span
+                  <a
+                    href={`https://github.com/${row.providerScope}`}
+                    target="_blank"
                     className={`truncate font-mono text-[12px] ${
                       row.status === 'connected' ? 'text-ink' : 'text-ink-faint line-through'
                     }`}
                     title={row.providerScope}
                   >
                     {row.providerScope}
-                  </span>
+                  </a>
                   {row.status === 'disconnected' && (
                     <span className="shrink-0 rounded bg-surface-raised px-1 py-0.5 text-[10px] text-ink-faint">
                       Disconnected

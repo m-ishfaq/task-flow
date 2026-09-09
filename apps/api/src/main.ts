@@ -20,6 +20,7 @@ import { startRetentionSweep } from './chat/retention.scheduler.js';
 import { startBacklinksRelay } from './docs/backlinks.relay.js';
 import { createNotificationMailDelivery } from './platform/notification-mail.js';
 import { startDigestSweep } from './platform/digest.js';
+import { startStandupDigestSweep } from './standup/digest-sweep.js';
 import { startDueReminderSweep } from './platform/due-reminders.js';
 import { ExpoPushProvider, WebPushProvider } from './platform/push-provider.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
@@ -259,6 +260,15 @@ const digestSweep = startDigestSweep({
   sendDigestEmail: notificationMail.sendDigest,
 });
 
+/* "Email me this project's standup" (migration 0108) — the same daily
+   timer-in-`apps/api` placeholder as every sweep here, reusing
+   `notificationMail`'s own queue rather than opening a fourth one: this is
+   a sibling of the notification digest above, not a different concern. */
+const standupDigestSweep = startStandupDigestSweep({
+  logger: createLogger({ name: 'standup-digest', level: env.LOG_LEVEL }),
+  mail: { queue: notificationMail.queue, webOrigin: env.WEB_ORIGIN },
+});
+
 /* The due-reminder sweep needs the sweep pool above. When the URL is unset,
    the starter warns and no-ops — the identical shape startBacklinksRelay
    uses. */
@@ -331,6 +341,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       backlinksRelay.stop();
       searchIndexRelay.stop();
       digestSweep.stop();
+      standupDigestSweep.stop();
       dueReminderSweep.stop();
       retention?.stop();
       recordingIngest?.stop();

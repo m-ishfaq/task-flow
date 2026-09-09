@@ -61,6 +61,14 @@ export interface LocationSectionProps {
   readonly projectId: ProjectId | null;
   /** Closes the panel when the card leaves the board this panel was opened from. */
   readonly onLeaveBoard: () => void;
+  /**
+   * `card:move`'s own catalog entry, not `card:update` — but `RELATION_GRANTS`
+   * puts both actions on `editor` and neither on `viewer`/`commenter`, so the
+   * caller passes its `card:update` capability straight through: for every
+   * guest relation the two already agree, and no role/tuple combination in
+   * this codebase splits them.
+   */
+  readonly canMove: boolean;
 }
 
 export function LocationSection({
@@ -70,6 +78,7 @@ export function LocationSection({
   listId,
   projectId,
   onLeaveBoard,
+  canMove,
 }: LocationSectionProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -80,8 +89,14 @@ export function LocationSection({
      selection as soon as the query refetched. */
   const [showingBoardId, setShowingBoardId] = useState<BoardId>(boardId);
 
-  const lists = useQuery(listsQuery(orgId, showingBoardId));
-  const destinationCards = useQuery(cardsQuery(orgId, showingBoardId, null));
+  /* `enabled: canMove` — a viewer/commenter-relation guest can never move a
+     card, and this section is hidden entirely for them below, so there is
+     nothing for either query's result to feed. */
+  const lists = useQuery({ ...listsQuery(orgId, showingBoardId), enabled: canMove });
+  const destinationCards = useQuery({
+    ...cardsQuery(orgId, showingBoardId, null),
+    enabled: canMove,
+  });
 
   const move = useMutation({
     mutationFn: (targetListId: ListId) =>
@@ -118,6 +133,14 @@ export function LocationSection({
   });
 
   const busy = move.isPending || lists.isPending || destinationCards.isPending;
+
+  /* Hidden entirely, not disabled — no guest relation ever grants `card:move`
+     (`RELATION_GRANTS` puts it only on `editor`, alongside `update`), so a
+     viewer/commenter-relation guest sees a board/list select that can never
+     do anything, matching this codebase's "hide, don't disable" rule rather
+     than a control that always answers FORBIDDEN. Whoever opened this panel
+     already knows which board/list they browsed to reach it. */
+  if (!canMove) return null;
 
   return (
     <section className="space-y-2">

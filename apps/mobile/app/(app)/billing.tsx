@@ -19,6 +19,7 @@ import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
+import { CapabilityGate } from '../../src/lib/capability-gate.js';
 import {
   BILLING_OVERVIEW_QUERY_KEY,
   BILLING_PLANS_QUERY_KEY,
@@ -52,9 +53,17 @@ const PLAN_DESCRIPTIONS: Record<string, string> = {
  * ("who is in it and what can they do") — web's single settings page
  * bundles both for density on a wide layout; a phone screen has no such
  * spare room, and the two were already two different `Section`s there.
- * Reached from a "Billing" link at the top of `org-settings.tsx`, always
- * visible for the same reason every control there is (§8.2): a non-owner
- * gets the honest error below, not a hidden link.
+ * Reached from a "Billing" link at the top of `org-settings.tsx`, which
+ * (Phase 15 §1) now hides that link entirely for a non-owner rather than
+ * showing it and letting this screen answer FORBIDDEN — `org:billing` is
+ * Owner-only and nothing (no plan upgrade, no member grant) ever changes
+ * that for anyone else, so there is no honest "locked" state to show, only
+ * a door nobody but the current owner can open. This default export
+ * additionally wraps the real screen in `CapabilityGate
+ * capability="viewBilling"`, so a stale link or a deep link lands on a
+ * plain "not for your role" screen instead of loading straight into a raw
+ * FORBIDDEN — the same second layer web's route-level `CapabilityGate`
+ * already provides for its equivalent pages.
  *
  * **Checkout and the customer portal are processor-hosted redirects,
  * exactly as on web** — this screen never collects a card number, and
@@ -93,7 +102,15 @@ function usagePercentWidth(spentCents: number, capCents: number): DimensionValue
   return (String(percent) + '%') as DimensionValue;
 }
 
-export default function BillingScreen() {
+export default function BillingScreen(): React.JSX.Element | null {
+  return (
+    <CapabilityGate capability="viewBilling">
+      <BillingScreenContent />
+    </CapabilityGate>
+  );
+}
+
+function BillingScreenContent() {
   const paddingTop = useTopInset();
   const queryClient = useQueryClient();
   const [opening, setOpening] = useState(false);

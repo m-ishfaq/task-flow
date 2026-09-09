@@ -209,14 +209,22 @@ export default function DocsSpaceScreen() {
           {space?.name ?? 'Space'}
         </Text>
         <View style={styles.titleActions}>
-          <Pressable
-            style={styles.templatesButton}
-            onPress={() => {
-              setManagingTemplates(true);
-            }}
-          >
-            <Text style={styles.templatesButtonText}>Templates</Text>
-          </Pressable>
+          {/* `space:manage` (`docs.templates.delete` reuses it) — this
+              button opens the DELETE sheet, so it is hidden entirely for a
+              caller who cannot manage the space rather than shown and left
+              to answer FORBIDDEN (Phase 15 §1's sweep). Creating a
+              template lives on `docs-page/[pageId].tsx` instead, gated the
+              same way there. */}
+          {space?.capabilities.manage === true && (
+            <Pressable
+              style={styles.templatesButton}
+              onPress={() => {
+                setManagingTemplates(true);
+              }}
+            >
+              <Text style={styles.templatesButtonText}>Templates</Text>
+            </Pressable>
+          )}
           <Pressable
             style={styles.newButton}
             onPress={() => {
@@ -550,13 +558,22 @@ function PageOptionsModal({
             <Pressable style={styles.modalOptionRow} onPress={onMove}>
               <Text style={styles.modalOptionText}>Move to…</Text>
             </Pressable>
-            <Pressable style={styles.modalOptionRow} disabled={archivePending} onPress={onArchive}>
-              <Text style={styles.modalDangerText}>
-                {page?.archivedAt !== null && page?.archivedAt !== undefined
-                  ? 'Restore this page'
-                  : 'Archive this page'}
-              </Text>
-            </Pressable>
+            {/* `page:delete` is tuple-shareable per page — `page.capabilities
+                .archive` is the server's own answer for THIS page, mirroring
+                the "Templates" button above. Hidden entirely for a caller
+                with no grant rather than shown and left to answer FORBIDDEN
+                (Phase 15 §1's sweep). */}
+            {page?.capabilities.archive === true && (
+              <Pressable
+                style={styles.modalOptionRow}
+                disabled={archivePending}
+                onPress={onArchive}
+              >
+                <Text style={styles.modalDangerText}>
+                  {page.archivedAt !== null ? 'Restore this page' : 'Archive this page'}
+                </Text>
+              </Pressable>
+            )}
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>

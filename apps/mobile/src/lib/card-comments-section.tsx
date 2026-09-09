@@ -46,12 +46,19 @@ import { styles } from './card-detail-styles.js';
  * `parseFormattedText` existed; what changed is that new `**`/`[]()`/list
  * syntax typed during THAT edit now composes correctly, same as a fresh
  * comment.
- * **Delete stays visible to EVERYONE, unconditionally** — unlike Edit,
- * moderation is a real, legitimate path (author-or-moderator, and the
- * event records which), so this never re-derives that decision
- * client-side; the server is the only adjudicator (CLAUDE.md §8.2), the
- * same as every other permission-gated control on this screen. Neither
- * mutation is optimistic — matching this screen's own already-shipped
+ * **Delete is shown to the author, or a caller who `canModerate`** —
+ * `comment:delete` is Admin-and-Owner only by role
+ * (`packages/policy/src/roles.ts`), so this used to render for every
+ * Member on every comment they did not write and let their tap come back
+ * FORBIDDEN (Phase 15 §1's sweep, mirroring the identical fix in
+ * `apps/web/src/features/work/detail/comment-section.tsx`). `canModerate`
+ * is `cards.get`'s `capabilities.moderateComments` — computed per-card,
+ * server-side, since `comment:delete` is resource-scoped (a tuple on this
+ * card's board can grant it without any org-wide role change) — passed
+ * down from `card/[cardId].tsx`'s own already-fetched card query rather
+ * than fetched a second time here. The author's own Delete still needs
+ * nothing beyond `comment:create`, same as the service. Neither mutation
+ * is optimistic — matching this screen's own already-shipped
  * status/assignee/label sections rather than web's optimistic-with-a-
  * fake-pending-id complexity, which exists there only because posting
  * itself is optimistic; posting stays round-trip here, as it already was.
@@ -84,7 +91,14 @@ import { styles } from './card-detail-styles.js';
  * has always rendered one) — a real, one-line gap on this screen, not a
  * deliberate mobile omission.
  */
-export function CommentsSection({ cardId }: { readonly cardId: CardId }) {
+export function CommentsSection({
+  cardId,
+  canModerate,
+}: {
+  readonly cardId: CardId;
+  /** `cards.get`'s `capabilities.moderateComments` — see the header note. */
+  readonly canModerate: boolean;
+}) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
   const { personOf, people } = useMembers();
@@ -162,6 +176,7 @@ export function CommentsSection({ cardId }: { readonly cardId: CardId }) {
             <CommentRow
               comment={comment}
               viewerId={userId}
+              canModerate={canModerate}
               personOf={personOf}
               isEditing={editingId === comment.commentId}
               editDraft={editDraft}
@@ -195,6 +210,7 @@ export function CommentsSection({ cardId }: { readonly cardId: CardId }) {
               <CommentRow
                 comment={reply}
                 viewerId={userId}
+                canModerate={canModerate}
                 personOf={personOf}
                 isEditing={editingId === reply.commentId}
                 editDraft={editDraft}
@@ -419,6 +435,7 @@ function CommentComposer({
 function CommentRow({
   comment,
   viewerId,
+  canModerate,
   personOf,
   isEditing,
   editDraft,
@@ -432,6 +449,7 @@ function CommentRow({
 }: {
   readonly comment: Comment;
   readonly viewerId: string | null;
+  readonly canModerate: boolean;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly isEditing: boolean;
   readonly editDraft: string;
@@ -501,9 +519,11 @@ function CommentRow({
                 <Text style={styles.commentActionText}>Edit</Text>
               </Pressable>
             )}
-            <Pressable onPress={onDelete}>
-              <Text style={styles.commentActionText}>Delete</Text>
-            </Pressable>
+            {(isOwn || canModerate) && (
+              <Pressable onPress={onDelete}>
+                <Text style={styles.commentActionText}>Delete</Text>
+              </Pressable>
+            )}
             {onReply !== undefined && (
               <Pressable onPress={onReply}>
                 <Text style={styles.commentActionText}>Reply</Text>

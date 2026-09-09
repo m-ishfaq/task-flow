@@ -35,8 +35,16 @@ import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from './rich-text.
  *
  *   DELETE is author-or-moderator, and the event records which. Moderation is a
  *   real need, so unlike Edit there IS a legitimate way for someone else's
- *   Delete to succeed — the control stays visible to everyone and the server
- *   decides, same as every other permission-gated control in this app.
+ *   Delete to succeed — but `comment:delete` is Admin-and-Owner only
+ *   (`packages/policy/src/roles.ts`), so it used to render for every Member
+ *   on every comment they did not write and let their click come back
+ *   FORBIDDEN (Phase 15 §1's sweep). `canModerate` (`CardDetailProps` →
+ *   `cards.get`'s `capabilities.moderateComments`, computed per-card since
+ *   `comment:delete` is resource-scoped — a Member can hold it via a tuple
+ *   on this card's board without any org-wide grant) is what the Delete
+ *   button reads instead: `comment.authorId === viewerId || canModerate`.
+ *   The AUTHOR's own Delete still needs no permission at all (`comment:
+ *   create` covers withdrawing your own comment, same as the service).
  *
  * Commenting is `comment:create`, never `card:update`. That separation is why
  * the `commenter` relation exists at all (§8.2): someone can be given a voice on
@@ -190,9 +198,26 @@ export interface CommentSectionProps {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly cardId: CardId;
+  /** `cards.get`'s `capabilities.moderateComments` — see the header note. */
+  readonly canModerate: boolean;
+  /**
+   * `cards.get`'s `capabilities.comment` (`comment:create`) — gates the
+   * top-level composer, Reply, and (alongside the author check already here)
+   * Edit: all three routes floor on `comment:create`, so a viewer-relation
+   * guest — who holds none of it — never sees a box or button whose submit
+   * the server would refuse. Reading comments stays open regardless; only
+   * writing one is gated.
+   */
+  readonly canComment: boolean;
 }
 
-export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) {
+export function CommentSection({
+  orgId,
+  boardId,
+  cardId,
+  canModerate,
+  canComment,
+}: CommentSectionProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const comments = useQuery(commentsQuery(orgId, cardId));
@@ -277,6 +302,8 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
             <CommentRow
               comment={comment}
               viewerId={viewerId}
+              canModerate={canModerate}
+              canComment={canComment}
               personOf={personOf}
               isEditing={editing === comment.commentId}
               onStartEdit={() => {
@@ -293,7 +320,7 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
                 remove.mutate(comment.commentId as CommentId);
               }}
               onReply={
-                isPending(comment.commentId)
+                !canComment || isPending(comment.commentId)
                   ? undefined
                   : () => {
                       setReplyingTo((current) =>
@@ -310,6 +337,8 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
                     <CommentRow
                       comment={reply}
                       viewerId={viewerId}
+                      canModerate={canModerate}
+                      canComment={canComment}
                       personOf={personOf}
                       isEditing={editing === reply.commentId}
                       onStartEdit={() => {
@@ -349,26 +378,28 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
         ))}
       </ul>
 
-      <RichTextEditor
-        value={composer.draft}
-        placeholder="Write a comment… (@ to mention someone)"
-        onChange={composer.setDraft}
-        footer={
-          /* Not disabled while pending, and the editor clears on SUBMIT rather
-             than on success — a thread is written in a burst, and putting a
-             round trip between two replies is what makes people stop using it.
-             The comment is already visible in the list above by the time this
-             runs. */
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={isEmptyDocument(composer.draft)}
-            onClick={composer.submit}
-          >
-            Comment
-          </Button>
-        }
-      />
+      {canComment && (
+        <RichTextEditor
+          value={composer.draft}
+          placeholder="Write a comment… (@ to mention someone)"
+          onChange={composer.setDraft}
+          footer={
+            /* Not disabled while pending, and the editor clears on SUBMIT rather
+               than on success — a thread is written in a burst, and putting a
+               round trip between two replies is what makes people stop using it.
+               The comment is already visible in the list above by the time this
+               runs. */
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={isEmptyDocument(composer.draft)}
+              onClick={composer.submit}
+            >
+              Comment
+            </Button>
+          }
+        />
+      )}
 
       {/* No inline error rows — every mutation here reports through a toast. */}
       {viewerId === null && <p className="text-[11px] text-ink-faint">Not signed in.</p>}
@@ -429,6 +460,8 @@ function ReplyComposer({
 function CommentRow({
   comment,
   viewerId,
+  canModerate,
+  canComment,
   personOf,
   isEditing,
   onStartEdit,
@@ -440,6 +473,8 @@ function CommentRow({
 }: {
   readonly comment: Comment;
   readonly viewerId: string | null;
+  readonly canModerate: boolean;
+  readonly canComment: boolean;
   readonly personOf: (userId: string) => Person;
   readonly isEditing: boolean;
   readonly onStartEdit: () => void;
@@ -498,11 +533,16 @@ function CommentRow({
           <div className="flex gap-1">
             {/* Edit is hidden for anyone but the author — there is no
                 override, ever (updateComment), so showing it to someone else
-                could only ever end in a FORBIDDEN toast. Delete stays visible
-                to everyone: a moderator without `comment:delete` gets a real
-                denial from the server, the same as every other
-                permission-gated control here. */}
-            {comment.authorId !== null && comment.authorId === viewerId && (
+                could only ever end in a FORBIDDEN toast. It is also hidden
+                without `canComment`: `comments.update` floors on the same
+                `comment:create` permission as posting, so an author whose
+                access has since been downgraded to `viewer` would otherwise
+                see a Save button the server refuses. Delete is shown to
+                the author (needs only `comment:create`, same as the
+                service) OR a caller `canModerate` — `comment:delete` is
+                Admin-and-Owner only, so a plain Member viewing someone
+                else's comment sees neither control at all. */}
+            {canComment && comment.authorId !== null && comment.authorId === viewerId && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -512,9 +552,11 @@ function CommentRow({
                 Edit
               </Button>
             )}
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
-              Delete
-            </Button>
+            {(comment.authorId === viewerId || canModerate) && (
+              <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
+                Delete
+              </Button>
+            )}
             {onReply !== undefined && (
               <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onReply}>
                 Reply

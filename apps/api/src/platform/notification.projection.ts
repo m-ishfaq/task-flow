@@ -121,7 +121,14 @@ type NotificationKind =
   | 'call.missed'
   | 'member.added'
   | 'member.role_changed'
-  | 'member.removed';
+  | 'member.removed'
+  /* Phase 15 §8 checklist item 2 (migration 0102) — told to the manager of a
+     newly added member, never to the member themself (that is
+     `member.added`, above). See `planManagerNotified`'s own header for why
+     this is a third role none of the other kinds have needed: the recipient
+     is neither the actor (who added them) nor the event's own subject (who
+     was added). */
+  | 'member.report_joined';
 
 interface PlannedNotification {
   readonly userId: string;
@@ -232,6 +239,97 @@ function planMemberAdded(
       boardId: null,
     },
   ];
+}
+
+/**
+ * The target of a `member.added` event's own payload, or null for any other
+ * event (or a malformed payload) — the one field `planMemberAdded` and this
+ * file's manager-notification plumbing both need to read independently of
+ * each other, so it is factored out rather than duplicated.
+ */
+function memberAddedUserId(row: OutboxRow): string | null {
+  if (row.name !== 'member.added') return null;
+  const record = asRecord(row.payload);
+  if (record === null) return null;
+  const userId = (record as { readonly userId?: unknown }).userId;
+  return typeof userId === 'string' ? userId : null;
+}
+
+/**
+ * "X joined your team" — told to the manager of a newly added member (Phase
+ * 15 §8 checklist item 2, migration 0102).
+ *
+ * A third role none of this file's other kinds have needed: every existing
+ * `plan*` function tells either the ACTOR's target (`planMemberAdded`,
+ * `planCardAssigned`, ...) or a list the event names directly
+ * (`missedUserIds`). The manager is neither — they are computed from a
+ * SEPARATE table (`people.membership_profiles.manager_user_id`) the pure
+ * planning layer cannot read, so `drainNotifications` resolves it and calls
+ * this function explicitly for `member.added` rows, rather than folding it
+ * into `planMemberAdded`'s own switch case (`planNotifications`'s signature
+ * stays the uniform two-argument shape every kind shares).
+ *
+ * Excludes the manager from their own notification the same way every other
+ * `plan*` function excludes `row.actorId` — a manager who added their own
+ * report should not be told about their own action a second time. The
+ * `managerUserId === userId` guard cannot fire today
+ * (`membership_profiles_no_self_report`, migration 0031), kept anyway per
+ * this file's own habit of not treating "cannot happen" as a property this
+ * function may assume rather than one today's schema happens to enforce.
+ */
+export function planManagerNotified(
+  row: OutboxRow,
+  newMemberLabel: string | null,
+  managerUserId: string,
+): readonly PlannedNotification[] {
+  const record = asRecord(row.payload);
+  if (record === null) return [];
+  const fields = record as { readonly membershipId?: unknown; readonly userId?: unknown };
+
+  const membershipId = typeof fields.membershipId === 'string' ? fields.membershipId : null;
+  const userId = typeof fields.userId === 'string' ? fields.userId : null;
+  if (membershipId === null || userId === null) return [];
+  if (managerUserId === row.actorId || managerUserId === userId) return [];
+
+  return [
+    {
+      userId: managerUserId,
+      kind: 'member.report_joined',
+      subjectType: 'membership',
+      subjectId: membershipId,
+      title:
+        newMemberLabel === null
+          ? 'A new member joined your team'
+          : `${newMemberLabel} joined your team`,
+      excerpt: null,
+      channelId: null,
+      boardId: null,
+    },
+  ];
+}
+
+/**
+ * The manager-notification half of processing one row — resolves whether
+ * this row's own target has a manager on record and, if so, delegates to
+ * `planManagerNotified`. Returns `[]` immediately for any row that is not a
+ * `member.added` event (`memberAddedUserId`'s own guard), so a caller can
+ * call this unconditionally for every row in a batch without a `row.name`
+ * check of its own.
+ *
+ * Takes the WHOLE-BATCH lookups `drainNotifications` already resolved
+ * (`actorLabels`, `managerUserIds`) rather than querying — this function has
+ * no database access, matching every other `plan*` function in this file.
+ */
+export function planManagerNotifications(
+  row: OutboxRow,
+  actorLabels: ReadonlyMap<string, string>,
+  managerUserIds: ReadonlyMap<string, string>,
+): readonly PlannedNotification[] {
+  const targetUserId = memberAddedUserId(row);
+  if (targetUserId === null) return [];
+  const managerUserId = managerUserIds.get(`${row.orgId}:${targetUserId}`);
+  if (managerUserId === undefined) return [];
+  return planManagerNotified(row, actorLabels.get(targetUserId) ?? null, managerUserId);
 }
 
 /**
@@ -738,12 +836,24 @@ export async function drainNotifications(
 
     /* One batched lookup for the whole tick, not one per row — see
        `resolveActorLabels`'s own header on why `people.profiles` (never the
-       retired `identity.users.display_name`) is the source. */
+       retired `identity.users.display_name`) is the source. Widened to also
+       resolve `member.added` rows' own TARGET user id, not just row.actorId
+       — `planManagerNotified`'s title needs the new member's own name, and
+       this is the same "give me a label for this set of ids" lookup, not a
+       second mechanism. */
     const actorLabels = await resolveActorLabels(
       tx,
-      pending.map((row) => row.actorId).filter((id): id is string => id !== null),
+      [
+        ...pending.map((row) => row.actorId).filter((id): id is string => id !== null),
+        ...pending.map((row) => memberAddedUserId(row)).filter((id): id is string => id !== null),
+      ],
       logger,
     );
+
+    /* Phase 15 §8 checklist item 2 (migration 0102) — who manages each
+       `member.added` row's own target, if anyone. Empty when the batch has
+       no membership events at all (the common case). */
+    const managerUserIds = await resolveManagerUserIds(tx, pending, logger);
 
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said
@@ -769,10 +879,15 @@ export async function drainNotifications(
          filters them out. */
       if (!activeOrgIds.has(row.orgId)) continue;
 
-      const plans = planNotifications(
-        row,
-        row.actorId === null ? null : (actorLabels.get(row.actorId) ?? null),
-      );
+      const plans = [
+        ...planNotifications(
+          row,
+          row.actorId === null ? null : (actorLabels.get(row.actorId) ?? null),
+        ),
+        // Phase 15 §8 checklist item 2 (migration 0102) — a no-op for every
+        // row that is not `member.added`.
+        ...planManagerNotifications(row, actorLabels, managerUserIds),
+      ];
 
       if (plans.length === 0) {
         /* Not every event produces a notification — but a `card.updated`
@@ -1037,6 +1152,69 @@ export async function resolveActorLabels(
     logger?.warn(
       { err: error },
       'resolveActorLabels failed — notification titles for this batch stay anonymous',
+    );
+    return new Map();
+  }
+}
+
+/**
+ * Manager lookups for a batch's `member.added` events (Phase 15 §8 checklist
+ * item 2, migration 0102) — one query for the whole tick, the same shape
+ * `resolveActorLabels` above already uses and for the identical reason.
+ *
+ * Keyed by `${orgId}:${userId}` rather than `userId` alone:
+ * `people.membership_profiles`' own primary key is (org_id, user_id), and
+ * the SAME user id can be a member — with a DIFFERENT manager, or none — of
+ * more than one org (this file's own account of multi-org membership
+ * elsewhere in this codebase is the reason), so a bare userId key would let
+ * one org's manager answer for another org's row.
+ *
+ * Fails OPEN, the identical `resolveActorLabels` reasoning and for the
+ * identical concrete failure mode 0087/0088 already found once: an
+ * unhandled error here would abort `drainNotifications`' whole transaction
+ * and silently stop every consumer scheduled after it in the same tick — a
+ * total outage traded for one cosmetic notification, the wrong trade. A
+ * missing manager notification degrades to "no manager notification for
+ * this batch", never to a thrown error.
+ */
+export async function resolveManagerUserIds(
+  tx: Parameters<Parameters<typeof withAuditScope>[0]>[0],
+  pending: readonly OutboxRow[],
+  logger?: Logger,
+): Promise<Map<string, string>> {
+  const targets = pending
+    .map((row) => {
+      const userId = memberAddedUserId(row);
+      return userId === null ? null : { orgId: row.orgId, userId };
+    })
+    .filter((entry): entry is { orgId: string; userId: string } => entry !== null);
+  if (targets.length === 0) return new Map();
+
+  try {
+    const rows = await tx
+      .select({
+        orgId: schema.membershipProfiles.orgId,
+        userId: schema.membershipProfiles.userId,
+        managerUserId: schema.membershipProfiles.managerUserId,
+      })
+      .from(schema.membershipProfiles)
+      .where(
+        and(
+          inArray(schema.membershipProfiles.userId, [...new Set(targets.map((t) => t.userId))]),
+          inArray(schema.membershipProfiles.orgId, [...new Set(targets.map((t) => t.orgId))]),
+        ),
+      );
+
+    const managerByKey = new Map<string, string>();
+    for (const row of rows) {
+      if (row.managerUserId === null) continue;
+      managerByKey.set(`${row.orgId}:${row.userId}`, row.managerUserId);
+    }
+    return managerByKey;
+  } catch (error) {
+    logger?.warn(
+      { err: error },
+      'resolveManagerUserIds failed — no manager notifications for this batch',
     );
     return new Map();
   }

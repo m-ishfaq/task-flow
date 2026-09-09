@@ -124,3 +124,133 @@ describe('the connector action schema (Wave 4 §7.6)', () => {
     expect(schema.safeParse({ ...SLACK, text: '' }).success).toBe(false);
   });
 });
+
+/**
+ * §8 (ai/phase-15-ai-copilot-and-permissions.md) — onboarding/offboarding
+ * automation's actions, at the WRITE boundary. Unconditional, like the
+ * connector pair above: no deployment flag hides them.
+ */
+describe('the §8 onboarding/offboarding action schemas', () => {
+  const schema = buildAutomationActionSchema(false);
+  const UUID = '018f4d1e-7c3a-7b2e-8f1a-0000000000f3';
+
+  it('admits all six regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const withFlag = buildAutomationActionSchema(enabled);
+      expect(withFlag.safeParse({ type: 'channel.add_member', channelId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'channel.remove_member', channelId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'docs.grant_space_access', spaceId: UUID }).success).toBe(
+        true,
+      );
+      expect(withFlag.safeParse({ type: 'identity.revoke_sessions' }).success).toBe(true);
+      expect(withFlag.safeParse({ type: 'member_grant.revoke_all' }).success).toBe(true);
+      expect(withFlag.safeParse({ type: 'cards.bulk_reassign', toUserId: UUID }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it('refuses a userId field on any of them — a rule may only act on the member its trigger named', () => {
+    /* `.strict()` is the control here, identical to the connector schema's
+       own "refuses a repository named by the rule" test: an extra field a
+       rule author could set is a capability the executor's `userIdOf`
+       discipline exists specifically to deny. */
+    expect(
+      schema.safeParse({ type: 'channel.add_member', channelId: UUID, userId: UUID }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ type: 'identity.revoke_sessions', userId: UUID }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'member_grant.revoke_all', userId: UUID }).success).toBe(false);
+  });
+
+  it('refuses a channel/space/user named by anything but a row id', () => {
+    expect(schema.safeParse({ type: 'channel.add_member', channelId: 'general' }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'docs.grant_space_access', spaceId: 'handbook' }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ type: 'cards.bulk_reassign', toUserId: 'not-a-uuid' }).success).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * §8 checklist item 1 (starter checklist cards) — `card.create`'s own schema.
+ * Unconditional, like the connector pair and the six actions above: it costs
+ * nothing and reaches only the org's own board.
+ */
+describe('the card.create action schema (§8 checklist item 1)', () => {
+  const UUID = '018f4d1e-7c3a-7b2e-8f1a-0000000000f4';
+
+  it('admits a plain title regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const schema = buildAutomationActionSchema(enabled);
+      expect(
+        schema.safeParse({ type: 'card.create', listId: UUID, title: 'Set up your laptop' })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses an empty title and a list named by anything but a row id', () => {
+    const schema = buildAutomationActionSchema(false);
+
+    expect(schema.safeParse({ type: 'card.create', listId: UUID, title: '' }).success).toBe(false);
+    expect(schema.safeParse({ type: 'card.create', listId: 'Backlog', title: 'x' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a description field — the executor always creates a title-only card', () => {
+    /* `.strict()` is the control: a rule cannot store a rich-text document to
+       be handed to `createCard`'s validator from a stored column. */
+    const schema = buildAutomationActionSchema(false);
+
+    expect(
+      schema.safeParse({
+        type: 'card.create',
+        listId: UUID,
+        title: 'x',
+        description: 'not allowed',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * §8 checklist item 3 (the role default grant bundle) — `member_grant.
+ * apply_role_defaults`'s own schema. No arguments at all: it always applies
+ * the TARGET member's own current role's bundle, never a role or permission
+ * a rule author could name.
+ */
+describe('the member_grant.apply_role_defaults action schema (§8 checklist item 3)', () => {
+  it('admits the bare action regardless of the telephony flag', () => {
+    for (const enabled of [false, true]) {
+      const schema = buildAutomationActionSchema(enabled);
+      expect(schema.safeParse({ type: 'member_grant.apply_role_defaults' }).success).toBe(true);
+    }
+  });
+
+  it('refuses a role or permission field — a rule cannot name either', () => {
+    /* `.strict()` is the control, the identical reasoning the six §8 actions'
+       own "refuses a userId field" test already gives: a field a rule
+       author could set is a capability this action's own design exists to
+       deny. */
+    const schema = buildAutomationActionSchema(false);
+
+    expect(
+      schema.safeParse({ type: 'member_grant.apply_role_defaults', role: 'member' }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ type: 'member_grant.apply_role_defaults', permission: 'call:place' })
+        .success,
+    ).toBe(false);
+  });
+});

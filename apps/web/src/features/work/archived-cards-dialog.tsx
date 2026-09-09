@@ -31,7 +31,20 @@ export interface ArchivedCardsDialogProps {
   readonly boardId: BoardId;
 }
 
-export function ArchivedCardsDialog({ orgId, boardId }: ArchivedCardsDialogProps) {
+export function ArchivedCardsDialog({
+  orgId,
+  boardId,
+  canManageBoard,
+}: ArchivedCardsDialogProps & {
+  /**
+   * `boards.list`'s per-board `capabilities.update` — restoring an
+   * archived LIST is `lists.archive` (`board:update`), unlike restoring an
+   * archived CARD (`cards.archive`, `card:delete`, which every Member
+   * holds). `ArchivedListsList`'s "Restore" used to render for every
+   * viewer regardless (Phase 15 §1's sweep).
+   */
+  readonly canManageBoard: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -56,7 +69,7 @@ export function ArchivedCardsDialog({ orgId, boardId }: ArchivedCardsDialogProps
               <ArchivedCardsList orgId={orgId} boardId={boardId} />
             </Section>
             <Section title="Lists">
-              <ArchivedListsList orgId={orgId} boardId={boardId} />
+              <ArchivedListsList orgId={orgId} boardId={boardId} canManage={canManageBoard} />
             </Section>
           </>
         )}
@@ -90,7 +103,11 @@ function Section({ title, children }: { readonly title: string; readonly childre
  * stop cards being STRANDED by an archive, and applying it in reverse would
  * refuse exactly the columns worth restoring.
  */
-function ArchivedListsList({ orgId, boardId }: ArchivedCardsDialogProps) {
+function ArchivedListsList({
+  orgId,
+  boardId,
+  canManage,
+}: ArchivedCardsDialogProps & { readonly canManage: boolean }) {
   const queryClient = useQueryClient();
   const archived = useQuery(archivedListsQuery(orgId, boardId));
 
@@ -142,16 +159,18 @@ function ArchivedListsList({ orgId, boardId }: ArchivedCardsDialogProps) {
                   : `${String(list.cardCount)} card${list.cardCount === 1 ? '' : 's'}`}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={restore.isPending && restore.variables === list.listId}
-              onClick={() => {
-                restore.mutate(list.listId as ListId);
-              }}
-            >
-              Restore
-            </Button>
+            {canManage && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={restore.isPending && restore.variables === list.listId}
+                onClick={() => {
+                  restore.mutate(list.listId as ListId);
+                }}
+              >
+                Restore
+              </Button>
+            )}
           </li>
         ))}
       </ul>

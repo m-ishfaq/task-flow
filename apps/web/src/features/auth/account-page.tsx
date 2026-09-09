@@ -25,6 +25,7 @@ import { useStepUp } from './use-step-up.js';
 import { PasskeySection } from './passkey-section.js';
 import { TotpSection } from './totp-section.js';
 import { ConnectedAccountsSection } from './connected-accounts-section.js';
+import { CalendarFeedSection } from './calendar-feed-section.js';
 import { NotificationPreferencesSection } from '../notifications/notification-prefs-section.js';
 import { RingtoneSection } from '../rtc/ringtone-section.js';
 import { profileQuery, updateProfile } from '../people/api.js';
@@ -41,9 +42,10 @@ import { profileQuery, updateProfile } from '../people/api.js';
  *
  * Deliberately NOT §3.5's "People" surface — no org directory, no teams, no
  * device inventory yet (Phase 12 Wave 2 §3.4, a separate slice from this
- * one). Seven sections, all personal: profile, notification preferences,
- * passkeys, two-factor authentication (§3.2), connected OAuth accounts
- * (§3.3), sign-out-everywhere, and the list of organizations you belong to.
+ * one). Personal settings: profile, notification preferences, passkeys,
+ * two-factor authentication (§3.2), connected OAuth accounts (§3.3), a
+ * personal calendar feed (per-card opt-in sync), sign-out-everywhere, and
+ * the list of organizations you belong to.
  */
 export function AccountPage() {
   return (
@@ -65,6 +67,7 @@ export function AccountPage() {
       <PasskeySection />
       <TotpSection />
       <ConnectedAccountsSection />
+      <CalendarFeedSection />
       <SessionsSection />
       <ExportDataSection />
       <OrganizationsSection />

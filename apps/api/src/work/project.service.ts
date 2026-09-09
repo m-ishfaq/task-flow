@@ -1,6 +1,7 @@
 import { and, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors, type ProjectId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import { can } from '@taskflow/policy';
 import { newId } from '@taskflow/security';
 import { projectArchived, projectCreated, projectUpdated } from './events.js';
 import {
@@ -43,10 +44,26 @@ export interface ProjectSummary {
 }
 
 /**
- * Every live project in the organization.
+ * Every live project in the organization the caller may actually see.
  *
  * No `org_id` in the WHERE clause — RLS enforces it (guardrail 2). The filter
  * that IS here excludes soft-deleted rows, which RLS knows nothing about.
+ *
+ * A per-row `can()` filter, NOT a bare return — the identical fix
+ * `docs/space.service.ts`'s `listSpaces` already applies, for the identical
+ * reason. `route({ permission: 'project:read' })`'s floor is `couldGrant`,
+ * which passes on a relationship tuple as well as on a role — and `member`'s
+ * grant set covers every `:read` permission in the catalog by action suffix.
+ * So a Guest holding a `member` tuple on one chat channel (every user who
+ * joins a channel holds one) cleared the floor and received every project's
+ * name and key in the org, having no Work relationship of any kind. Every
+ * non-guest role holds `project:read` flatly by role, which is why this was
+ * invisible until a Guest could hold a Work-scoped tuple at all.
+ *
+ * A bounded loop over the org's projects, deliberately not a join — the same
+ * shape and the same reasoning as `search/router.ts`'s per-hit check and
+ * `listSpaces`'s own. Projects are org furniture and there are tens of them,
+ * not thousands.
  */
 export async function listProjects(
   actor: WorkActor,
@@ -80,17 +97,26 @@ export async function listProjects(
     }
 
     const orgId = orgOf(actor);
-    return rows.map((row) => ({
-      ...row,
-      boardCount: counts.get(row.projectId) ?? 0,
-      capabilities: manageCapabilitiesFor(
-        actor.subject,
-        { update: 'project:update', delete: 'project:delete' },
-        { type: 'project', id: row.projectId },
-        { orgId },
-        [],
-      ),
-    }));
+    return rows
+      .filter(
+        (row) =>
+          can(actor.subject, 'project:read', {
+            orgId,
+            resource: { type: 'project', id: row.projectId },
+            ancestors: [],
+          }).allowed,
+      )
+      .map((row) => ({
+        ...row,
+        boardCount: counts.get(row.projectId) ?? 0,
+        capabilities: manageCapabilitiesFor(
+          actor.subject,
+          { update: 'project:update', delete: 'project:delete' },
+          { type: 'project', id: row.projectId },
+          { orgId },
+          [],
+        ),
+      }));
   });
 }
 
@@ -252,9 +278,9 @@ export async function requireProject(
   actor: WorkActor,
   projectId: ProjectId,
   permission: 'project:read' | 'project:update',
-): Promise<{ readonly orgId: string; readonly name: string }> {
+): Promise<{ readonly orgId: string; readonly name: string; readonly key: string }> {
   const rows = await tx
-    .select({ orgId: schema.projects.orgId, name: schema.projects.name })
+    .select({ orgId: schema.projects.orgId, name: schema.projects.name, key: schema.projects.key })
     .from(schema.projects)
     .where(and(eq(schema.projects.id, projectId), isNull(schema.projects.deletedAt)))
     .limit(1);

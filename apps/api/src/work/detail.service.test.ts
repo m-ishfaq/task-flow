@@ -25,6 +25,7 @@ import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
+import * as guestAccess from './guest-access.service.js';
 import type { RichTextNode } from './richtext.js';
 import type { WorkActor } from './shared.js';
 
@@ -42,11 +43,13 @@ import type { WorkActor } from './shared.js';
 const OWNER = unsafeAsId<'UserId'>('0195ef00-0000-7000-8000-000000000001');
 const MEMBER = unsafeAsId<'UserId'>('0195ef00-0000-7000-8000-000000000002');
 const VIEWER = unsafeAsId<'UserId'>('0195ef00-0000-7000-8000-000000000003');
+const GUEST = unsafeAsId<'UserId'>('0195ef00-0000-7000-8000-000000000004');
 
 const USERS: readonly [UserId, string][] = [
   [OWNER, 'owner@detail.test'],
   [MEMBER, 'member@detail.test'],
   [VIEWER, 'viewer@detail.test'],
+  [GUEST, 'guest@detail.test'],
 ];
 
 const requestId = unsafeAsId<'RequestId'>('0195ef00-0000-7000-8000-0000000000ff');
@@ -742,6 +745,27 @@ describe('comments', () => {
     expect(card.commentCount).toBe(0);
   });
 
+  it('exposes moderateComments to a moderator and hides it from a plain member (Phase 15 §1)', async () => {
+    /* `getCard`'s `capabilities.moderateComments` is what `comment-
+       section.tsx` reads to decide whether to show "Delete" on a comment
+       that is not the viewer's own — a Member without `comment:delete`
+       used to see that button on every comment and get a real FORBIDDEN
+       on click. */
+    const fixture = await scaffold('detail-comments-capabilities');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@detail.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    const asOwner = await cards.getCard(fixture.owner, { cardId: fixture.cardId });
+    expect(asOwner.capabilities.moderateComments).toBe(true);
+
+    const asMember = await cards.getCard(member, { cardId: fixture.cardId });
+    expect(asMember.capabilities.moderateComments).toBe(false);
+  });
+
   it('refuses a member deleting another member’s comment', async () => {
     const fixture = await scaffold('detail-comments-nomod');
     for (const email of ['member@detail.test', 'viewer@detail.test']) {
@@ -904,5 +928,135 @@ describe('comments', () => {
         parentCommentId: top.commentId,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('getCard capabilities — hidden, not disabled, for a guest (a real report)', () => {
+  /* A project shared with a guest at `viewer` used to still render every
+     edit/comment control in `card-detail-panel.tsx` — labels, checklist,
+     dates, the comment composer, all of it — because `getCard` carried only
+     `moderateComments` and nothing to gate the rest. Reported directly:
+     "since i have shared access with person as viewer they should not be
+     able to see options to edit or comment... same goes to if we gave them
+     editor or comment access." These cases prove the three guest relations
+     land on the three real answers `RELATION_GRANTS` gives them — never
+     `card:read` alone, which every one of the three already holds. */
+
+  it('a viewer-relation guest gets read-only capabilities across the board', async () => {
+    const fixture = await scaffold('detail-caps-viewer');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'guest@detail.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await guestAccess.inviteGuestToProject(fixture.owner, {
+      projectId: fixture.projectId,
+      userId: GUEST,
+      relation: 'viewer',
+      expiresAt: null,
+    });
+
+    const guest = await actorFor(fixture.orgId, GUEST, 'guest');
+    const card = await cards.getCard(guest, { cardId: fixture.cardId });
+
+    expect(card.capabilities).toEqual({
+      update: false,
+      archive: false,
+      comment: false,
+      manageProjectVocabulary: false,
+      moderateComments: false,
+    });
+  });
+
+  it('a commenter-relation guest may comment but not edit', async () => {
+    const fixture = await scaffold('detail-caps-commenter');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'guest@detail.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await guestAccess.inviteGuestToProject(fixture.owner, {
+      projectId: fixture.projectId,
+      userId: GUEST,
+      relation: 'commenter',
+      expiresAt: null,
+    });
+
+    const guest = await actorFor(fixture.orgId, GUEST, 'guest');
+    const card = await cards.getCard(guest, { cardId: fixture.cardId });
+
+    expect(card.capabilities).toEqual({
+      update: false,
+      archive: false,
+      comment: true,
+      manageProjectVocabulary: false,
+      moderateComments: false,
+    });
+  });
+
+  it('an editor-relation guest may edit, comment, and manage the project vocabulary — never archive', async () => {
+    /* `editor` reaches `project:update` too, not just `card:update` —
+       `relationGrants` matches an action by SUFFIX regardless of resource
+       type, and `RELATION_GRANTS.editor.actions` includes `update`. `delete`
+       is never in that list for any guest relation, which is exactly why
+       `archive` stays its own capability rather than being folded into
+       `update` — an editor here must still never see the Archive button. */
+    const fixture = await scaffold('detail-caps-editor');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'guest@detail.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await guestAccess.inviteGuestToProject(fixture.owner, {
+      projectId: fixture.projectId,
+      userId: GUEST,
+      relation: 'editor',
+      expiresAt: null,
+    });
+
+    const guest = await actorFor(fixture.orgId, GUEST, 'guest');
+    const card = await cards.getCard(guest, { cardId: fixture.cardId });
+
+    expect(card.capabilities).toEqual({
+      update: true,
+      archive: false,
+      comment: true,
+      manageProjectVocabulary: true,
+      moderateComments: false,
+    });
+  });
+
+  it('a plain Member holds update but not manageProjectVocabulary — the gap a shared boolean would have reintroduced', async () => {
+    /* `roles.ts`'s `MEMBER` list grants `card:update` flatly but has no
+       `project:update` at all — reusing `update` to also gate the
+       create-label/create-field forms would show them to every Member and
+       let their submit come back FORBIDDEN, the exact bug this capability
+       set exists to close, just for a different actor than the guest. */
+    const fixture = await scaffold('detail-caps-member');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@detail.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+    const card = await cards.getCard(member, { cardId: fixture.cardId });
+
+    expect(card.capabilities.update).toBe(true);
+    expect(card.capabilities.comment).toBe(true);
+    expect(card.capabilities.archive).toBe(true);
+    expect(card.capabilities.manageProjectVocabulary).toBe(false);
+  });
+
+  it('the owner holds every capability', async () => {
+    const fixture = await scaffold('detail-caps-owner');
+    const card = await cards.getCard(fixture.owner, { cardId: fixture.cardId });
+
+    expect(card.capabilities).toEqual({
+      update: true,
+      archive: true,
+      comment: true,
+      manageProjectVocabulary: true,
+      moderateComments: true,
+    });
   });
 });

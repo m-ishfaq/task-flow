@@ -23,9 +23,13 @@ import * as views from './view.service.js';
 import * as sprints from './sprint.service.js';
 import * as importExport from './import-export.service.js';
 import * as duplicate from './duplicate.service.js';
+import * as guestAccess from './guest-access.service.js';
+import * as calendarSync from './card-calendar.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
+import type { BranchWriteDeps } from '../automation/branch.service.js';
+import type { InvitationServiceDeps } from '../tenancy/invitation.service.js';
 
 /**
  * Work routes (PLAN.md §13 phase 3).
@@ -238,9 +242,16 @@ const CardSummaryOutput = z
  */
 export interface WorkRouterDeps {
   readonly attachments: AttachmentDeps;
+  /**
+   * `guests.inviteByEmail`'s own dependency, reused verbatim from
+   * `tenancy.invitations.send` (`invitation.service.ts`'s `createInvitation`)
+   * rather than a second `MailQueue` wiring path — see the composition root
+   * in `apps/api/src/router.ts`.
+   */
+  readonly invitationMail?: InvitationServiceDeps['mail'];
 }
 
-export function createWorkRouter(deps: WorkRouterDeps) {
+export function createWorkRouter(deps: WorkRouterDeps & { readonly branch: BranchWriteDeps }) {
   const actorOf = (ctx: {
     principal: Parameters<typeof subjectOf>[0];
     requestId: WorkActor['requestId'];
@@ -339,6 +350,79 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .input(z.object({ projectId: ProjectIdSchema, archived: z.boolean() }).strict())
         .output(z.object({ archived: z.boolean() }))
         .mutation(({ input, ctx }) => projects.archiveProject(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Guest access into Work (`guest-access.service.ts`) — a dedicated,
+     * project-scoped invite flow separate from the generic Share dialog
+     * (`tenancy.grants.*`, still used by `share-board.tsx` for sharing a
+     * board with an existing member). `project:update`, same floor as
+     * every other project-vocabulary route above — inviting a guest
+     * changes who can reach the project, the identical class of change as
+     * renaming it or editing its labels.
+     */
+    guests: router({
+      list: route({ permission: 'project:update' })
+        .input(z.object({ projectId: ProjectIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                tupleId: z.string(),
+                userId: z.string(),
+                email: z.string(),
+                displayName: z.string().nullable(),
+                relation: z.string(),
+                expiresAt: z.date().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => guestAccess.listProjectGuests(actorOf(ctx), input)),
+
+      invite: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              userId: UserIdSchema,
+              relation: z.enum(['viewer', 'commenter', 'editor']),
+              expiresAt: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ tupleId: z.string() }))
+        .mutation(({ input, ctx }) => guestAccess.inviteGuestToProject(actorOf(ctx), input)),
+
+      /**
+       * The one door the guest-access section actually calls now — see
+       * `guest-access.service.ts`'s "One door, not two" header. Grants
+       * instantly for an existing Guest-role member of this org; otherwise
+       * sends a real, mailed org invitation carrying a pending grant for
+       * this exact project, applied automatically on acceptance.
+       */
+      inviteByEmail: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              email: z.string().trim().email().max(254),
+              relation: z.enum(['viewer', 'commenter', 'editor']),
+              expiresAt: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ status: z.enum(['granted', 'invited']) }))
+        .mutation(({ input, ctx }) =>
+          guestAccess.inviteGuestByEmail(actorOf(ctx), input, {
+            invitations: { mail: deps.invitationMail },
+          }),
+        ),
+
+      revoke: route({ permission: 'project:update' })
+        .input(z.object({ projectId: ProjectIdSchema, userId: UserIdSchema }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) => guestAccess.revokeGuestAccess(actorOf(ctx), input)),
     }),
 
     /**
@@ -731,6 +815,20 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             version: z.number().int().positive(),
             createdAt: z.date(),
             updatedAt: z.date(),
+            /* Read by `card-detail-panel.tsx`/`comment-section.tsx` to hide
+               (not disable) every edit/comment control a viewer- or
+               commenter-relation guest cannot use — see `CardDetail`'s own
+               comment for why this is computed per-card rather than folded
+               into the org-level `SettingsCapabilities`. */
+            capabilities: z
+              .object({
+                update: z.boolean(),
+                archive: z.boolean(),
+                comment: z.boolean(),
+                manageProjectVocabulary: z.boolean(),
+                moderateComments: z.boolean(),
+              })
+              .strict(),
           }),
         )
         .query(({ input, ctx }) => cards.getCard(actorOf(ctx), input)),
@@ -841,6 +939,28 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .mutation(({ input, ctx }) => sprints.releaseSprint(actorOf(ctx), input)),
 
       /**
+       * Per-card calendar sync (product brainstorm: opt-in per event, never
+       * a default "assigned to me" scope). `card:read`, not `card:update` —
+       * deciding to put a card you can already see on your OWN calendar
+       * needs no extra permission; see `card-calendar.service.ts`'s own
+       * header. Self-referential only: there is no `userId` field, ever —
+       * the caller can only toggle their own subscription.
+       */
+      calendarSync: router({
+        status: route({ permission: 'card:read' })
+          .input(z.object({ cardId: CardIdSchema }).strict())
+          .output(z.object({ synced: z.boolean() }))
+          .query(async ({ input, ctx }) => ({
+            synced: await calendarSync.isCalendarSynced(actorOf(ctx), input),
+          })),
+
+        toggle: route({ permission: 'card:read' })
+          .input(z.object({ cardId: CardIdSchema, synced: z.boolean() }).strict())
+          .output(z.object({ synced: z.boolean() }))
+          .mutation(({ input, ctx }) => calendarSync.toggleCalendarSync(actorOf(ctx), input)),
+      }),
+
+      /**
        * Export a project's cards as CSV or JSON (§7.7).
        *
        * Project-scoped — the route is `cards.*` because the thing being
@@ -934,7 +1054,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
      * keeps `work.labels.*` reachable at one dot-path while letting that
      * reasoning live next to the services it constrains.
      */
-    ...createCardDetailRouter()._def.record,
+    ...createCardDetailRouter({ branch: deps.branch })._def.record,
 
     /**
      * Attachments (§8.4).

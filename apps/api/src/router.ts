@@ -18,6 +18,8 @@ import { createBillingRouter } from './billing/router.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
+import { createAiRouter } from './ai/router.js';
+import { createStandupRouter } from './standup/router.js';
 import { createAutomationRouter } from './automation/router.js';
 import { createAnalyticsRouter } from './analytics/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
@@ -99,6 +101,10 @@ export interface AppRouterDeps extends IdentityRouterDeps {
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
+  /* Shared by `search` and `ai` below — both are stateless wrappers over
+     the same env-configured backend, so one instance is enough. */
+  const searchProvider = new PostgresSearchProvider();
+
   return router({
     health: router({
       /**
@@ -119,11 +125,16 @@ export function createAppRouter(deps: AppRouterDeps) {
     /**
      * Tenancy, authorization and audit (Phase 2).
      *
-     * Takes `trialDays` (Phase 12 Wave 3) and nothing else: everything else
-     * it needs is the tenant-scoped database and the policy engine, both of
-     * which are module-level and stateless.
+     * Takes `trialDays` (Phase 12 Wave 3) and, since email invitations
+     * (migration 0107), `invitationMail` — reusing billing's own mail deps,
+     * the identical reuse `platformAdmin`'s own `mail` field already makes
+     * below, rather than building a second `MailQueue` wiring path for one
+     * more mail class.
      */
-    tenancy: createTenancyRouter({ trialDays: deps.billing.trialDays }),
+    tenancy: createTenancyRouter({
+      trialDays: deps.billing.trialDays,
+      invitationMail: deps.billing.mail,
+    }),
 
     /**
      * Work — projects, boards, lists, cards, card detail, attachments (Phase 3).
@@ -134,7 +145,24 @@ export function createAppRouter(deps: AppRouterDeps) {
      * the exception — object storage and the virus scanner are external
      * services with configuration and a lifecycle.
      */
-    work: createWorkRouter(deps.work),
+    work: createWorkRouter({
+      ...deps.work,
+      /* `createBranchFromCard`'s own dependency — the SAME KeyProvider
+         `deps.automation.keys` already wraps every other connector
+         credential under, not a second instance. Merged here rather than
+         folded into `WorkRouterDeps` itself, so `main.ts`'s own `deps.work`
+         construction (attachments only) does not need to know about a
+         connector this module reaches only through the composition root. */
+      /* `providers` (migration 0109) travels alongside `keys` now too — the
+         client_id/secret pair `connectorFor`'s transparent-refresh path
+         needs to renew a near-expiry GitHub token, the same reasoning
+         `BranchWriteDeps`'s own comment gives. */
+      branch: { keys: deps.automation.keys, providers: deps.automation.integration.providers },
+      /* `guests.inviteByEmail`'s own dependency — the SAME mail deps
+         `tenancy.invitations.send` already uses, above, not a second
+         `MailQueue` wiring path for one more mail class. */
+      invitationMail: deps.billing.mail,
+    }),
 
     /**
      * Chat — channels, direct messages, messages (Phase 5).
@@ -200,6 +228,13 @@ export function createAppRouter(deps: AppRouterDeps) {
       payments: deps.billing.payments,
       storage: deps.work.attachments.storage,
       scanner: deps.work.attachments.scanner,
+      /* Phase 15 §2.3 — the AI provider catalog's envelope encryption.
+         Reuses `deps.automation.keys` rather than a fourth `SoftwareKeyProvider`
+         instance: both wrap under the SAME env-configured master key, and
+         `identityFieldAad`'s table/column/row binding (not the provider
+         instance) is what keeps the two surfaces' wrapped blobs from ever
+         being confused with each other. */
+      ai: { keys: deps.automation.keys },
       /* Reuses billing's own mail deps — see PlatformAdminRouterDeps's own
          comment on why a second queue is not worth opening for this. */
       ...(deps.billing.mail === undefined ? {} : { mail: deps.billing.mail }),
@@ -251,7 +286,34 @@ export function createAppRouter(deps: AppRouterDeps) {
      * `search:query` is the membership floor; every hit is re-checked with
      * per-resource `can()` before it is returned (§2.7).
      */
-    search: createSearchRouter(new PostgresSearchProvider()),
+    search: createSearchRouter(searchProvider),
+
+    /**
+     * The AI Copilot's assistant chat (Phase 15 §4, §4.3 Wave 1 —
+     * read-only tools only: `search`, sharing the SAME `SearchProvider`
+     * instance the search router above uses, since both are stateless
+     * wrappers over the one env-configured backend). Gated on `ai:use`
+     * (per member, grantable per §1) AND the `aiAssistant` flag (per org
+     * plan) — see `ai/router.ts`'s own header. Reuses
+     * `deps.automation.keys` for the provider catalog's envelope
+     * encryption, the identical reuse `platformAdmin`'s own `ai.keys`
+     * makes just below, for the identical reason (one master key, kept
+     * unambiguous by AAD, not by a fourth `SoftwareKeyProvider` instance).
+     */
+    ai: createAiRouter({
+      keys: deps.automation.keys,
+      searchProvider,
+      providers: deps.automation.integration.providers,
+    }),
+
+    /**
+     * The standup view (Phase 15 §5) — assembled from existing card/sprint
+     * data (`standup.query`, `project:read`), plus an AI narration
+     * (`standup.narrate`) built on `completeGated` directly rather than the
+     * tool-calling loop above, since there is nothing for the model to DO
+     * here, only text to produce from data this route already queried.
+     */
+    standup: createStandupRouter({ keys: deps.automation.keys }),
 
     /**
      * Automation rules (Phase 10 Wave 1) — the surface that MANAGES rules.

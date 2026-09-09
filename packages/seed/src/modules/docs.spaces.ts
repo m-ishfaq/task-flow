@@ -273,6 +273,7 @@ export const spacesModule = defineSeedModule({
             'granted_by',
             'expires_at',
             'created_at',
+            'is_guest',
           ],
           tupleRows,
         );
@@ -609,6 +610,7 @@ function buildGrants(
     objectType: ResourceType,
     objectId: string,
     at: Date,
+    isGuest = false,
   ): boolean => {
     const key = `${subjectType}:${subjectId}:${relation}:${objectType}:${objectId}`;
     if (seen.has(key)) return false;
@@ -630,6 +632,7 @@ function buildGrants(
          different days. */
       null,
       createdAt,
+      isGuest,
     ]);
 
     ctx.emit(
@@ -643,6 +646,7 @@ function buildGrants(
           objectType,
           objectId,
           expiresAt: null,
+          isGuest,
         },
         envelopeFor(org.id, org.owner.id, createdAt),
       ),
@@ -667,7 +671,15 @@ function buildGrants(
     }
     const target = shallowest ?? deepest;
     if (target !== null) {
-      grant('user', guest.user.id, 'viewer', PAGE_OBJECT_TYPE, target.id, target.createdAt);
+      grant(
+        'user',
+        guest.user.id,
+        'viewer',
+        PAGE_OBJECT_TYPE,
+        target.id,
+        target.createdAt,
+        /* isGuest */ true,
+      );
     }
   }
 

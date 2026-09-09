@@ -18,9 +18,17 @@ import {
  * A plain FK, not a second upload pipeline — the recording already exists
  * (`comms.recordings`, ingested from a call), this just points a card at
  * one. `recording-card.service.ts` checks `recording:read` AND `card:read`/
- * `card:update` separately; the route-level `recording:read` gate only
- * covers the first, so a member with `card:update` but not `recording:read`
- * still gets a real FORBIDDEN here rather than a hidden section.
+ * `card:update` separately.
+ *
+ * `card-detail-panel.tsx` only mounts this component when
+ * `capabilities.readRecordings` is true (Phase 15 §1's sweep) — `recording:
+ * read` is Admin-and-Owner only by role, with no tuple and no member grant
+ * that could turn it on for anyone else, and this section used to render
+ * on every card regardless, landing a Member on a real FORBIDDEN the
+ * moment they touched it. This component itself still does no
+ * re-checking — it trusts the mount decision, and the route-level
+ * `recording:read` gate still enforces the real permission regardless of
+ * what the client decided.
  *
  * The picker is two steps — pick a recorded CALL, then pick its RECORDING —
  * because there is no "browse every recording org-wide" endpoint (only

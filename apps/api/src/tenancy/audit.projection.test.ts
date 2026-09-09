@@ -125,6 +125,11 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   // Phase 12 Wave 2 §3.4 — same shape as its two siblings above: the fact
   // names the account that just signed in, which is already in `actor_id`.
   'session.impossible_travel_detected',
+  // Per-card calendar sync (migration 0110/0111). Same shape as the
+  // passkey/totp/oauth pairs above: the fact names the account that minted
+  // (or rotated) its own feed token, already in `actor_id`, and a bearer
+  // token has no resource type of its own for `resource_id` to name instead.
+  'user.calendar_feed_token_minted',
   // Work (Phase 3 / 3.5)
   'attachment.presigned',
   'attachment.uploaded',
@@ -152,6 +157,15 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'saved_search.created',
   'saved_search.updated',
   'saved_search.deleted',
+  /* Email invitations (migration 0107). `invitation.accepted` IS mapped (to
+     `member`/`userId`, in `RESOURCE_OF` — it carries a real account id and
+     fires alongside `member.added`). `invitation.sent`/`.revoked` carry no
+     `userId` yet, and the same `saved_search.*` reasoning one block up
+     applies: no container but the org (already in `org_id` on every row),
+     and `invitation` is deliberately absent from `RESOURCE_TYPES` since no
+     relationship tuple can point at one. */
+  'invitation.sent',
+  'invitation.revoked',
 ]);
 
 /**

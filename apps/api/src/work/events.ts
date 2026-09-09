@@ -248,6 +248,28 @@ export const cardArchived = defineEvent(
 );
 
 /**
+ * Offboarding automation's bulk reassignment (ai/phase-15-ai-copilot-and-
+ * permissions.md §8) — its OWN event rather than one `card.assigned` per
+ * card, because a loop of the existing event would tell an audit reader "N
+ * unrelated cards changed assignee" when what actually happened is one
+ * operation: everything `fromUserId` was carrying got handed to `toUserId`
+ * at once. `cardIds` is every card the operation actually touched — a card
+ * skipped because the rule owner lacked `card:update` on its board is not
+ * in this list, and is recorded as its own failed `ActionResult` instead
+ * (`bulkReassignCards`'s own header).
+ */
+export const cardsBulkReassigned = defineEvent(
+  'card.bulk_reassigned',
+  z
+    .object({
+      cardIds: z.array(z.string()).readonly(),
+      fromUserId: z.string(),
+      toUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
  * A list's ranks were renormalized (§10.1).
  *
  * Not a user action, and the only event here that no human caused — which is
@@ -349,6 +371,112 @@ export const checklistDeleted = defineEvent(
       boardId: z.string(),
       name: z.string(),
       itemCount: z.number().int(),
+    })
+    .strict(),
+);
+
+/**
+ * A card <-> GitHub PR link (migration 0105, Phase 15 §7.2). `providerScope`
+ * + `prNumber` name the PR — carried here rather than an `integrationId`,
+ * because the audience for "what happened to this CARD" should not need to
+ * know which internal connector row a repo resolved to; the scope string
+ * (`owner/repo`) is the fact a person reading the card's history recognizes.
+ */
+export const cardPullRequestLinked = defineEvent(
+  'card.pull_request_linked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
+export const cardPullRequestUnlinked = defineEvent(
+  'card.pull_request_unlinked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
+/**
+ * A linked PR merged — the trigger `ai/phase-15-ai-copilot-and-permissions.md`
+ * §7.2 named ("a new domain event... a new trigger name plus the
+ * already-existing `card.move` action") and that section's own earlier
+ * account said still needed research before it could be scoped: the missing
+ * piece was knowing WHICH card a merged PR is about at all, which the
+ * `work.card_pull_requests` link table (and its PR-first reverse index,
+ * built for exactly this) now answers.
+ *
+ * Emitted from `integration-webhooks.ts`'s GitHub route, never from a rule
+ * action — it carries a real `cardId`, so it is an ORDINARY card trigger as
+ * far as `resourceForTrigger`/`cardIdOf` are concerned (no `connector`-set
+ * special case needed), and a rule built on it composes with the
+ * already-existing `card.move` action exactly as that spec entry predicted.
+ * One card linked to a PR that merges emits one of these; a PR linked to
+ * SEVERAL cards (the many-to-many shape `card_pull_requests` was built for)
+ * emits one per card, each with its own `cardId` — never a batch, since a
+ * rule's blast radius is "the card the trigger named" (`cardIdOf`'s own
+ * doc comment) and a single event naming several cards would break that.
+ */
+export const cardPullRequestMerged = defineEvent(
+  'card.pull_request_merged',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      prNumber: z.number().int(),
+    })
+    .strict(),
+);
+
+export const cardBranchLinked = defineEvent(
+  'card.branch_linked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      branchName: z.string(),
+    })
+    .strict(),
+);
+
+export const cardBranchUnlinked = defineEvent(
+  'card.branch_unlinked',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      providerScope: z.string(),
+      branchName: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * A member opted a card into (or out of) their own personal calendar feed
+ * (migration 0110, `card-calendar.service.ts`). Self-referential — `userId`
+ * is always the actor, never someone else's — so it carries no separate
+ * "who did this" beyond the envelope's own `actorId`, and `synced` is the
+ * one fact worth recording: which direction the toggle went.
+ */
+export const cardCalendarSyncToggled = defineEvent(
+  'card.calendar_sync_toggled',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      userId: z.string(),
+      synced: z.boolean(),
     })
     .strict(),
 );

@@ -392,6 +392,11 @@ describe('docs.spaces — grants', () => {
     // authorization deciding what `onAuthenticate` opens for them (§3.3).
     expect(guestTuples).toHaveLength(1);
     expect(guestTuples[0]?.['object_type']).toBe('page');
+    // `is_guest` is the marker CLAUDE.md's own "Guest access into Work"
+    // section says exists "for review" — the seed data's own illustration
+    // of a guest tuple has to actually carry it, not rely on every other
+    // tuple's default of `false` to look right by coincidence.
+    expect(guestTuples[0]?.['is_guest']).toBe(true);
 
     const target = String(guestTuples[0]?.['object_id']);
     expect(pages.some((page) => page['id'] === target)).toBe(true);

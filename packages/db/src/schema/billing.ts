@@ -205,6 +205,10 @@ export const plans = billing.table(
     telephonyCapCents: bigint('telephony_cap_cents', { mode: 'number' }),
     automationRunsPerHour: integer('automation_runs_per_hour'),
     turnIssuancePerDay: integer('turn_issuance_per_day'),
+    /** Migration 0100 (Phase 15 §3.2) — the fourth ceiling in this same
+     *  resolution chain. NULL is unlimited, 0 is none-at-all, matching every
+     *  column beside it. */
+    aiTokenBudgetMonthlyCents: bigint('ai_token_budget_monthly_cents', { mode: 'number' }),
     /** What the subscription already covers; past it, overage accrues (§3.8). */
     telephonyIncludedCents: bigint('telephony_included_cents', { mode: 'number' })
       .notNull()
@@ -295,6 +299,9 @@ export const orgEntitlements = billing.table(
     telephonyMarkupPct: integer('telephony_markup_pct'),
     automationRunsPerHour: integer('automation_runs_per_hour'),
     turnIssuancePerDay: integer('turn_issuance_per_day'),
+    /** Migration 0100 — same nullable-inherits-the-plan convention as every
+     *  other override column here. */
+    aiTokenBudgetMonthlyCents: bigint('ai_token_budget_monthly_cents', { mode: 'number' }),
     reason: text('reason').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     setBy: uuid('set_by').references(() => users.id, { onDelete: 'set null' }),

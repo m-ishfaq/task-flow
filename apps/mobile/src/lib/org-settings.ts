@@ -30,7 +30,12 @@ export type Member = Wire<
 export type Team = Wire<
   Awaited<ReturnType<MobileTRPCClient['tenancy']['teams']['list']['query']>>
 >[number];
+/** One individual, org-level permission grant — `permissions.tsx`'s own list. */
+export type MemberGrant = Wire<
+  Awaited<ReturnType<MobileTRPCClient['tenancy']['memberGrants']['list']['query']>>
+>[number];
 
 export const ORG_DETAIL_QUERY_KEY = ['tenancy.orgs.get'] as const;
 export const MEMBERS_QUERY_KEY = ['tenancy.members.list'] as const;
 export const TEAMS_QUERY_KEY = ['tenancy.teams.list'] as const;
+export const MEMBER_GRANTS_QUERY_KEY = ['tenancy.memberGrants.list'] as const;

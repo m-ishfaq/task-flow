@@ -87,6 +87,13 @@ export function boardsQuery(orgId: string, projectId: ProjectId) {
   });
 }
 
+export function projectGuestsQuery(orgId: string, projectId: ProjectId) {
+  return queryOptions({
+    queryKey: keys.projectGuests(orgId, projectId),
+    queryFn: async () => wire(await api.work.guests.list.query({ projectId })),
+  });
+}
+
 export function listsQuery(orgId: string, boardId: BoardId) {
   return queryOptions({
     queryKey: keys.lists(orgId, boardId),
@@ -261,6 +268,108 @@ export function attachmentsQuery(orgId: string, cardId: CardId) {
   return queryOptions({
     queryKey: keys.attachments(orgId, cardId),
     queryFn: async () => wire(await api.work.attachments.list.query({ cardId })),
+  });
+}
+
+/** The PRs linked to a card (ai/phase-15-ai-copilot-and-permissions.md §7.2). */
+export function cardPullRequestsQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardPullRequests(orgId, cardId),
+    queryFn: async () => wire(await api.work.pullRequests.list.query({ cardId })),
+  });
+}
+
+/** The git branches linked to a card (ai/phase-15-ai-copilot-and-permissions.md
+    §7.2 — the direct, no-chat counterpart to `create_branch_from_card`). */
+export function cardBranchesQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardBranches(orgId, cardId),
+    queryFn: async () => wire(await api.work.branches.list.query({ cardId })),
+  });
+}
+
+/** Whether the CURRENT viewer has this card on their own calendar feed. */
+export function cardCalendarSyncQuery(orgId: string, cardId: CardId) {
+  return queryOptions({
+    queryKey: keys.cardCalendarSync(orgId, cardId),
+    queryFn: async () => wire(await api.work.cards.calendarSync.status.query({ cardId })),
+  });
+}
+
+/** The org's connected GitHub repositories — `providerScope` only
+    (`work.githubRepos.list`, `card:read`-gated; see that route's own header
+    for why this is NOT `automation.integration.list`, which needs
+    `integration:manage`). Feeds the repo picker the PR-link and
+    branch-create forms both show once more than one repo is connected. */
+export function githubReposQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.githubRepos(orgId),
+    queryFn: async () => wire(await api.work.githubRepos.list.query({})),
+  });
+}
+
+/** Live GitHub state for one linked PR — state/merged/draft plus a rolled-
+    up CI status (`work.pullRequests.status`, `pr:view`-gated, unlike its
+    `list`/`link`/`unlink` siblings; see that route's own header). A caller
+    who can link a PR (`card:update`) but holds no `pr:view` grant gets a
+    FORBIDDEN here — `retry: false` so React Query does not hammer a
+    permission refusal, and callers render nothing on `isError` rather than
+    surfacing a toast, per Phase 15 §1's "hide, don't disable" rule applied
+    to a decorative status dot rather than an action control. */
+export function pullRequestStatusQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestStatus(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.status.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
+/** The PR's raw diff — `pr:view`-gated like `status` above. Callers pass
+    `enabled: dialogOpen`: a diff can run up to 20,000 characters
+    (`MAX_DIFF_CHARS`), real payload worth fetching only once someone
+    actually asks to see it, never eagerly for every linked PR a card
+    happens to show. */
+export function pullRequestDiffQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestDiff(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.diff.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
+/** The files a PR touches — `pr:view`-gated like `diff` above. The fallback
+    `pr-diff-dialog.tsx` reaches for when the whole-PR diff cannot be shown
+    at all (GitHub's own 406 on a PR too large to diff that way) or came
+    back truncated: this route is never truncated, so it always answers,
+    and lets a person then ask for one specific file's own change. */
+export function pullRequestFilesQuery(orgId: string, providerScope: string, prNumber: number) {
+  return queryOptions({
+    queryKey: keys.pullRequestFiles(orgId, providerScope, prNumber),
+    queryFn: async () =>
+      wire(await api.work.pullRequests.files.query({ prNumber, repoScope: providerScope })),
+    retry: false,
+  });
+}
+
+/** One file's own diff within a PR — `pr:view`-gated like `diff` above,
+    fetched only once a person picks a file from `pullRequestFilesQuery`'s
+    own list (the `enabled` callers pass mirrors `pullRequestDiffQuery`'s
+    "fetch on demand" own instinct, one level narrower). */
+export function pullRequestFileDiffQuery(
+  orgId: string,
+  providerScope: string,
+  prNumber: number,
+  path: string,
+) {
+  return queryOptions({
+    queryKey: keys.pullRequestFileDiff(orgId, providerScope, prNumber, path),
+    queryFn: async () =>
+      wire(
+        await api.work.pullRequests.fileDiff.query({ prNumber, path, repoScope: providerScope }),
+      ),
+    retry: false,
   });
 }
 

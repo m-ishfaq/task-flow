@@ -75,6 +75,27 @@ export const memberRemoved = defineEvent(
 );
 
 /**
+ * An admin flagged a member as leaving (ai/phase-15-ai-copilot-and-
+ * permissions.md §8, offboarding) — distinct from `member.removed` on
+ * purpose. This event changes NOTHING about the membership row; it exists
+ * only to give the automation engine something to trigger an offboarding
+ * checklist on (session revocation, card reassignment, grant cleanup)
+ * BEFORE the person is actually removed, so those steps run against a
+ * membership that still resolves rather than racing its own deletion. The
+ * actual removal is a separate, later `removeMember` call, same as today.
+ */
+export const memberOffboardingStarted = defineEvent(
+  'member.offboarding_started',
+  z
+    .object({
+      membershipId: z.string(),
+      userId: z.string(),
+      initiatedBy: z.string(),
+    })
+    .strict(),
+);
+
+/**
  * Ownership was handed from one member to another in a single atomic action
  * (Phase 12 Wave 1, ai/phase-12-admin.md §3.5).
  *
@@ -133,6 +154,8 @@ export const grantCreated = defineEvent(
       objectType: z.string(),
       objectId: z.string(),
       expiresAt: z.string().nullable(),
+      /** Mirrors `relationship_tuples.is_guest` — an audit marker only. */
+      isGuest: z.boolean(),
     })
     .strict(),
 );
@@ -149,6 +172,108 @@ export const grantRevoked = defineEvent(
       objectId: z.string(),
     })
     .strict(),
+);
+
+/**
+ * An individual, org-level permission was granted to or revoked from one
+ * member, on top of their role (ai/phase-15-ai-copilot-and-permissions.md
+ * §1). The org-level counterpart to `grantCreated`/`grantRevoked` above,
+ * which are resource-scoped tuples — kept as separate events rather than
+ * reusing those two, because "Raj may comment on this board" and "Raj may
+ * place calls org-wide" are different enough questions that a reader
+ * grepping the audit log for one should not have to filter out the other.
+ */
+export const memberGrantCreated = defineEvent(
+  'member_grant.created',
+  z
+    .object({
+      grantId: z.string(),
+      membershipId: z.string(),
+      userId: z.string(),
+      permission: z.string(),
+    })
+    .strict(),
+);
+
+export const memberGrantRevoked = defineEvent(
+  'member_grant.revoked',
+  z
+    .object({
+      grantId: z.string(),
+      membershipId: z.string(),
+      userId: z.string(),
+      permission: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * Phase 15 §8 checklist item 3 — the role default grant bundle, migration
+ * 0103. Unlike `memberGrantCreated`/`memberGrantRevoked` above, these are not
+ * about one MEMBER — they are about org CONFIGURATION ("what does a new
+ * Member get by default"), so the payload names a `role`, never a
+ * `membershipId` or `userId`. `role-default-grant.service.ts`'s `set`/
+ * `remove` are the only writers.
+ */
+export const roleDefaultGrantSet = defineEvent(
+  'role_default_grant.set',
+  z
+    .object({ grantId: z.string(), orgId: z.string(), role: z.string(), permission: z.string() })
+    .strict(),
+);
+
+export const roleDefaultGrantRemoved = defineEvent(
+  'role_default_grant.removed',
+  z
+    .object({ grantId: z.string(), orgId: z.string(), role: z.string(), permission: z.string() })
+    .strict(),
+);
+
+/**
+ * Email invitations (migration 0107). `invitation.service.ts`'s only writer.
+ *
+ * `invitationSent` covers both a brand-new invitation and a RESEND (rotating
+ * an existing pending row's token) — both are "an admin caused mail to go to
+ * this address just now," which is what an audit trail actually wants to
+ * answer, not whether the underlying row was new.
+ */
+export const invitationSent = defineEvent(
+  'invitation.sent',
+  z
+    .object({
+      invitationId: z.string(),
+      orgId: z.string(),
+      email: z.string(),
+      role: z.string(),
+      invitedBy: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * An invitation turned into a membership. `member.added` (above) fires
+ * alongside this in the same transaction — every consumer built for "someone
+ * joined" (audit, notifications, search indexing, automation's `member.added`
+ * trigger) keeps working with no separate case for "joined via invitation."
+ * This event exists only for the fact `member.added` cannot express on its
+ * own: WHICH invitation this was, and that it is now consumed.
+ */
+export const invitationAccepted = defineEvent(
+  'invitation.accepted',
+  z
+    .object({
+      invitationId: z.string(),
+      orgId: z.string(),
+      userId: z.string(),
+      email: z.string(),
+      role: z.string(),
+    })
+    .strict(),
+);
+
+export const invitationRevoked = defineEvent(
+  'invitation.revoked',
+  z.object({ invitationId: z.string(), orgId: z.string(), email: z.string() }).strict(),
 );
 
 /*

@@ -45,7 +45,12 @@ import { extractMentions, hasPageLink } from '../../../src/lib/docs-page-editor.
 import type { PendingMention } from '../../../src/lib/message-compose.js';
 import { savePdfAndShare } from '../../../src/lib/pdf-save.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
-import { pagesQueryKey, backlinksQueryKey, type Backlink } from '../../../src/lib/docs.js';
+import {
+  pagesQueryKey,
+  backlinksQueryKey,
+  SPACES_QUERY_KEY,
+  type Backlink,
+} from '../../../src/lib/docs.js';
 import { commentsQueryKey, type DocComment } from '../../../src/lib/docs-comments.js';
 import { suggestionsQueryKey, type DocSuggestion } from '../../../src/lib/docs-suggestions.js';
 import { pageVersionsQueryKey, type PageVersionSummary } from '../../../src/lib/docs-versions.js';
@@ -104,11 +109,14 @@ import { pageVersionsQueryKey, type PageVersionSummary } from '../../../src/lib/
  * warns and asks before entering edit mode on one, rather than losing a
  * page's internal links silently on the next Save.
  *
- * Nothing here re-derives authorization (CLAUDE.md §8.2). Every button
- * (Edit, Publish, Export, comment/suggestion actions) is always shown; the
- * server answers, exactly as `card/[cardId].tsx`'s own sections do — a
- * viewer with no `page:update` still sees "Edit", and a save attempt comes
- * back FORBIDDEN rather than the control being hidden.
+ * Nothing here re-derives authorization (CLAUDE.md §8.2). Edit, Publish,
+ * Export, and the comment/suggestion actions are always shown; the server
+ * answers, exactly as `card/[cardId].tsx`'s own sections do — a viewer
+ * with no `page:update` still sees "Edit", and a save attempt comes back
+ * FORBIDDEN rather than the control being hidden. "Save as template" is
+ * the one exception: `space:manage` is Admin-and-Owner only (also
+ * grantable per-space via a tuple), so it is gated on the space's own
+ * `capabilities.manage` instead (Phase 15 §1's sweep).
  */
 export default function DocsPageScreen() {
   const params = useLocalSearchParams<{ pageId: string; spaceId: string }>();
@@ -298,6 +306,18 @@ function DocsPageContent({
     },
   });
 
+  /* `space:manage` gates "Save as template" (`docs.templates.create`
+     reuses it, per `apps/api/src/docs/router.ts`'s own note on why no new
+     permission was needed) — read off `docs.spaces.list`'s own per-space
+     `capabilities.manage`, the same field `docs.tsx`'s space list reads,
+     rather than shown unconditionally (Phase 15 §1's sweep, mirroring
+     `apps/web/src/features/docs/templates-panel.tsx`'s identical fix). */
+  const canManageSpace =
+    useQuery({
+      queryKey: SPACES_QUERY_KEY,
+      queryFn: async () => wire(await apiClient.docs.spaces.list.query()),
+    }).data?.find((space) => space.spaceId === spaceId)?.capabilities.manage === true;
+
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   const saveTemplate = useMutation({
@@ -375,14 +395,16 @@ function DocsPageContent({
               <Text style={styles.actionButtonText}>Export PDF</Text>
             )}
           </Pressable>
-          <Pressable
-            style={styles.actionButton}
-            onPress={() => {
-              setSavingTemplate(true);
-            }}
-          >
-            <Text style={styles.actionButtonText}>Save as template</Text>
-          </Pressable>
+          {canManageSpace && (
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => {
+                setSavingTemplate(true);
+              }}
+            >
+              <Text style={styles.actionButtonText}>Save as template</Text>
+            </Pressable>
+          )}
         </View>
         {page?.publishedAt !== null && page?.publishedAt !== undefined && (
           <Text style={styles.publishedHint}>

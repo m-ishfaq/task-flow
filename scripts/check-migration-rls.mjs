@@ -100,6 +100,13 @@ const RLS_EXEMPT = new Map([
       why: 'Pre-tenant webhook lookup, the identical shape and reasoning as comms.subaccount_orgs (ai/phase-12-wave3.md §3.5): a Stripe webhook is unauthenticated and carries only a customer id, which must resolve to an org BEFORE any scope can open. Holds no secrets — see migration 0059.',
     },
   ],
+  [
+    'identity.invitation_lookup',
+    {
+      columns: new Set(['token_hash', 'org_id']),
+      why: 'Pre-tenant invitation-accept lookup, the identical shape and reasoning as comms.subaccount_orgs and billing.customer_orgs: the caller holds only an opaque token from an email and is not yet a member of any org, so nothing can resolve which org to open a scope in without reading this table first. Holds a token HASH, not the token itself, and the row is deleted the moment the invitation is accepted or revoked — see migration 0107.',
+    },
+  ],
 ]);
 
 /**

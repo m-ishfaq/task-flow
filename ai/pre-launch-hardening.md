@@ -10,14 +10,14 @@ blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 li
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
 boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 is COMPLETE —
 §3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and §3.6
-(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 is
-underway: **Search (Phase 8) is COMPLETE as of 2026-08-11** — all three waves, spec:
-`ai/phase-8-search.md` (read its own header: Wave 3 carried a premature SHIPPED marker for a
-day, and item 1 of Priority 4 below records what was actually missing). **Automation
-(Phase 10) Wave 1 — the engine — SHIPPED 2026-08-11**, along with `apps/worker`, the process
-§6 of PLAN.md had listed as "arriving" since Phase 0. Phase 10's Waves 2–4 and Analytics
-(Phase 11) are the remainder of Priority 4, plus the new **Phase 10.5 (Sprints)** the Phase 11
-review inserted ahead of Analytics.
+(self-serve DSAR export) all shipped — see the Priority 3 status header. **Priority 4 is now
+COMPLETE** — this line said "underway" long after every item below it had shipped: **Search
+(Phase 8) is COMPLETE as of 2026-08-11** — all three waves, spec: `ai/phase-8-search.md` (read
+its own header: Wave 3 carried a premature SHIPPED marker for a day, and item 1 of Priority 4
+below records what was actually missing). **Automation (Phase 10) — all four waves SHIPPED**,
+along with `apps/worker`, the process §6 of PLAN.md had listed as "arriving" since Phase 0.
+**Analytics (Phase 11) — SHIPPED.** **Phase 10.5 (Sprints)**, inserted ahead of Analytics by the
+Phase 11 review, also shipped, with the Phase 10.6 sprint-flow slices built on top.
 
 **CI ran against this branch for the first time on 2026-08-10 and found four more real
 issues, all fixed the same day:** (1) `ip-address@5.9.4`, a transitive dependency of
@@ -501,15 +501,16 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    (`telephony.recordings.transcript` had shipped in Phase 7 Wave 2 with no caller). Verified
    with `migrate:verify`, full `pnpm verify` (54/54, 854 API tests) and the guardrail selftest.
 
-2. **Automation & integrations (Phase 10, ~6wk) — WAVE 1 SHIPPED 2026-08-11.** The engine:
-   `apps/worker` (the process §6 has listed as "arriving" since Phase 0), migrations 0047–0048,
-   the rules engine with four loop-protection layers, the executor running actions through
-   `apps/api`'s own service layer as the rule owner, rule CRUD + kill switch + run history, and
-   the `/automations` page. `pnpm verify` 57/57. Waves 2–4 not started. Spec:
-   [ai/phase-10-automation.md](ai/phase-10-automation.md). Still to come in Waves 2–4: outbound
-   webhooks, public API + scoped tokens, Slack/GitHub connectors, importers/exporters, and the
-   cost-bearing telephony actions behind an off-by-default env flag plus their own spend
-   sub-budget.
+2. **Automation & integrations (Phase 10, ~6wk) — ALL FOUR WAVES SHIPPED**, not just Wave 1 as
+   this item said for a long stretch after the rest landed. The engine: `apps/worker` (the process
+   §6 has listed as "arriving" since Phase 0), migrations 0047–0048, the rules engine with four
+   loop-protection layers, the executor running actions through `apps/api`'s own service layer as
+   the rule owner, rule CRUD + kill switch + run history, and the `/automations` page. `pnpm
+verify` 57/57 at Wave 1. Spec: [ai/phase-10-automation.md](ai/phase-10-automation.md). Waves
+   2–4, since shipped: outbound webhooks (`webhook.router`), the public API + scoped tokens
+   (`apiToken.router` — mint/revoke, individually grantable since Phase 15 §1), Slack/GitHub
+   connectors (`integration.router`), and the cost-bearing telephony actions behind their
+   off-by-default env flag.
 
    The spec's "checked, not assumed" pass found the phase better provisioned than it looked —
    four working outbox consumers to mirror, the condition evaluator shipped in Phase 3, the
@@ -521,7 +522,9 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    counter on the far side of the queue. Found by writing the relay, fixed by 0048, and now
    asserted in `audit.test.ts`.
 
-3. **Analytics (Phase 11, ~4wk) — SPEC DRAFTED 2026-08-11, not yet approved:**
+3. **Analytics (Phase 11, ~4wk) — SHIPPED** (this line said "SPEC DRAFTED 2026-08-11, not yet
+   approved" long after the code landed; left corrected in place rather than silently rewritten,
+   per this repo's own "a status marker is a claim, not a fact" discipline):
    [ai/phase-11-analytics.md](ai/phase-11-analytics.md). Velocity/burndown/CFD/cycle-time/
    workload dashboards and comms-spend reporting. **Not "read-only over data that already
    exists", which is what this file said before anyone checked** — `work.cards` stores only the

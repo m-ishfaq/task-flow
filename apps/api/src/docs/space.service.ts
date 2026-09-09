@@ -22,10 +22,24 @@ import {
  * decision, which applies to spaces for the identical reason.
  */
 
-export async function listSpaces(
-  actor: DocsActor,
-): Promise<
-  readonly { readonly spaceId: string; readonly name: string; readonly archivedAt: Date | null }[]
+export async function listSpaces(actor: DocsActor): Promise<
+  readonly {
+    readonly spaceId: string;
+    readonly name: string;
+    readonly archivedAt: Date | null;
+    /**
+     * Whether the caller may archive/restore this space, or manage its page
+     * templates (`space:manage` — both `templates.create`/`.delete` reuse
+     * it, per this router's own note on why no new permission was needed).
+     * Computed per space, like `spaceTarget`'s own `space:read` filter
+     * above: `space:manage` is tuple-shareable, not org-level-only, so a
+     * flat role check would both hide a control a per-space grant genuinely
+     * gives someone AND — the bug this closes — show one to a Member with
+     * no grant at all, since the web/mobile "+ Space"/archive/template
+     * controls used to render unconditionally (Phase 15 §1's sweep).
+     */
+    readonly capabilities: { readonly manage: boolean };
+  }[]
 > {
   return withOrgScope(orgOf(actor), async (tx) => {
     const rows = await tx
@@ -66,7 +80,12 @@ export async function listSpaces(
        thousands. */
     return rows
       .filter((row) => allowed(actor.subject, 'space:read', spaceTarget(row)))
-      .map((row) => ({ spaceId: row.id, name: row.name, archivedAt: row.archivedAt }));
+      .map((row) => ({
+        spaceId: row.id,
+        name: row.name,
+        archivedAt: row.archivedAt,
+        capabilities: { manage: allowed(actor.subject, 'space:manage', spaceTarget(row)) },
+      }));
   });
 }
 

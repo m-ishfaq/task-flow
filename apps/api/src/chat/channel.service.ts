@@ -24,6 +24,7 @@ import {
 } from './shared.js';
 import {
   addChannelMemberTuple,
+  channelIdsForMember,
   channelMemberIds,
   isChannelMember,
   membersOfChannels,
@@ -666,19 +667,28 @@ type ChatTx = Parameters<Parameters<typeof withOrgScope>[1]>[0];
 /**
  * The existing DM channel whose member set is exactly `participants`, or null.
  *
- * Candidates come from the CALLER's own tuples: a conversation they are not in
- * is not the conversation being reopened, so there is no need to look at the
- * org's other channels. That is what keeps this bounded no matter how many DMs
- * the organization holds.
+ * Candidates come from the CALLER's own channel-member tuples: a conversation
+ * they are not in is not the conversation being reopened, so there is no need
+ * to look at the org's other channels. That is what keeps this bounded no
+ * matter how many DMs the organization holds.
+ *
+ * Read FRESH from the database via `channelIdsForMember` — deliberately NOT
+ * `actor.subject.tuples`, an in-memory snapshot resolved once at the start
+ * of whatever request built it. A caller invoking `openDirectMessage` twice
+ * against the SAME `actor` (the AI assistant's tool-calling loop does this
+ * within one HTTP request, reusing one unrefreshed `ctx.subject` across
+ * several tool calls) would have its SECOND call see zero candidates — the
+ * tuple the FIRST call just wrote is invisible to a snapshot taken before
+ * it existed — and silently open a duplicate DM every time instead of
+ * reusing the one just created. Found by CI: a real test asserting a second
+ * `dmUserIds` call returns the SAME channel id as the first.
  */
 async function findDirectMessage(
   tx: ChatTx,
   actor: ChatActor,
   participants: readonly string[],
 ): Promise<ChannelId | null> {
-  const candidateIds = actor.subject.tuples
-    .filter((tuple) => tuple.object.type === 'channel')
-    .map((tuple) => tuple.object.id);
+  const candidateIds = await channelIdsForMember(tx, userOf(actor));
 
   if (candidateIds.length === 0) return null;
 

@@ -14,15 +14,17 @@ import {
   deleteTemplate,
   invalidatePageTemplates,
   pageTemplatesQuery,
+  spacesQuery,
 } from './api.js';
 
 /**
  * Page templates (ai/phase-6-docs.md §5, Wave 4) — "save this page's
  * content as a space's reusable starting point", per `template.service.ts`'s
  * own header. `space:manage`/`space:read` cover create/delete/list with no
- * new permission, so — same convention as everywhere else in this app
- * (CLAUDE.md §8.2) — every control here is shown unconditionally and the
- * server answers FORBIDDEN for a caller without `space:manage`.
+ * new permission. Save/delete are gated on `spaces.list`'s own per-space
+ * `capabilities.manage` (Phase 15 §1's sweep) — refetched here via
+ * `spacesQuery`, which `docs-page.tsx`'s tree panel already keeps warm, so
+ * this is normally a cache hit rather than a second request.
  *
  * `docs-page.tsx`'s `CreatePageForm` is the OTHER half — picking a template
  * when creating a page — and queries the same `pageTemplatesQuery` directly
@@ -40,6 +42,9 @@ export function TemplatesPanel({
   readonly pageId: PageId;
 }) {
   const templates = useQuery(pageTemplatesQuery(orgId, spaceId));
+  const canManage =
+    useQuery(spacesQuery(orgId)).data?.find((space) => space.spaceId === spaceId)?.capabilities
+      .manage === true;
   const queryClient = useQueryClient();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -106,15 +111,17 @@ export function TemplatesPanel({
           </Button>
         </form>
       ) : (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setSaving(true);
-          }}
-        >
-          Save this page as a template
-        </Button>
+        canManage && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSaving(true);
+            }}
+          >
+            Save this page as a template
+          </Button>
+        )
       )}
 
       {/* `templates.data ?? []` above made "still loading" and "no templates
@@ -132,15 +139,17 @@ export function TemplatesPanel({
               className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-surface-hover"
             >
               <span className="truncate text-ink-muted">{template.name}</span>
-              <ConfirmButton
-                label="Delete"
-                confirmLabel="Delete template"
-                size="sm"
-                disabled={remove.isPending}
-                onConfirm={() => {
-                  remove.mutate(template.templateId as PageTemplateId);
-                }}
-              />
+              {canManage && (
+                <ConfirmButton
+                  label="Delete"
+                  confirmLabel="Delete template"
+                  size="sm"
+                  disabled={remove.isPending}
+                  onConfirm={() => {
+                    remove.mutate(template.templateId as PageTemplateId);
+                  }}
+                />
+              )}
             </li>
           ))}
         </ul>

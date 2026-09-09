@@ -169,7 +169,8 @@ export function PlansTab({
                       {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
                       {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
                       {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
-                      {ceiling(plan.turnIssuancePerDay, 'issues/day')}
+                      {ceiling(plan.turnIssuancePerDay, 'issues/day')} · AI{' '}
+                      {ceiling(plan.aiTokenBudgetMonthlyCents, 'cents/mo')}
                       {plan.telephonyIncludedCents > 0 &&
                         ` · includes ${money(plan.telephonyIncludedCents, 'usd')} usage`}
                       {plan.telephonyMarkupPct > 0 &&
@@ -481,6 +482,7 @@ function EditLimitsDialog({
         readonly turnIssuancePerDay: number | null;
         readonly telephonyIncludedCents: number;
         readonly telephonyMarkupPct: number;
+        readonly aiTokenBudgetMonthlyCents: number | null;
         readonly stripeProductId: string | null;
       }
     | undefined;
@@ -495,6 +497,7 @@ function EditLimitsDialog({
   const [turn, setTurn] = useState<string | null>(null);
   const [included, setIncluded] = useState<string | null>(null);
   const [markup, setMarkup] = useState<string | null>(null);
+  const [aiBudget, setAiBudget] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: (input: {
@@ -504,6 +507,7 @@ function EditLimitsDialog({
       turnIssuancePerDay: number | null;
       telephonyIncludedCents: number;
       telephonyMarkupPct: number;
+      aiTokenBudgetMonthlyCents: number | null;
     }) => api.platformAdmin.plans.update.mutate(input),
     onSuccess: onSaved,
     onError: (error, input) => {
@@ -521,6 +525,7 @@ function EditLimitsDialog({
   const turnText = turn ?? asText(plan.turnIssuancePerDay);
   const includedText = included ?? String(plan.telephonyIncludedCents);
   const markupText = markup ?? String(plan.telephonyMarkupPct);
+  const aiBudgetText = aiBudget ?? asText(plan.aiTokenBudgetMonthlyCents);
 
   /** Empty means unlimited; anything else must be a non-negative integer. */
   const nullableInt = (text: string): number | null | 'invalid' => {
@@ -539,6 +544,7 @@ function EditLimitsDialog({
     turnIssuancePerDay: nullableInt(turnText),
     telephonyIncludedCents: requiredInt(includedText),
     telephonyMarkupPct: requiredInt(markupText),
+    aiTokenBudgetMonthlyCents: nullableInt(aiBudgetText),
   };
   const valid = !Object.values(parsed).includes('invalid');
   /* The migration refuses an allowance on a plan with no processor product —
@@ -617,6 +623,13 @@ function EditLimitsDialog({
             markupText,
             setMarkup,
           )}
+          {limitField(
+            'plan-ai-budget',
+            'AI assistant spend cap (cents / month)',
+            'aiTokenBudgetMonthlyCents',
+            aiBudgetText,
+            setAiBudget,
+          )}
 
           {allowanceNeedsProduct && (
             <p className="text-xs text-danger">
@@ -633,7 +646,8 @@ function EditLimitsDialog({
               runs !== null ||
               turn !== null ||
               included !== null ||
-              markup !== null) && (
+              markup !== null ||
+              aiBudget !== null) && (
               <Button
                 variant="ghost"
                 disabled={save.isPending}
@@ -643,6 +657,7 @@ function EditLimitsDialog({
                   setTurn(null);
                   setIncluded(null);
                   setMarkup(null);
+                  setAiBudget(null);
                 }}
               >
                 Reset all
@@ -660,6 +675,7 @@ function EditLimitsDialog({
                   turnIssuancePerDay: parsed.turnIssuancePerDay as number | null,
                   telephonyIncludedCents: parsed.telephonyIncludedCents as number,
                   telephonyMarkupPct: parsed.telephonyMarkupPct as number,
+                  aiTokenBudgetMonthlyCents: parsed.aiTokenBudgetMonthlyCents as number | null,
                 });
               }}
             >

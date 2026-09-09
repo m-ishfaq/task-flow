@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { orgs } from './tenancy.js';
 import { users } from './identity.js';
+import { projects } from './work.js';
 
 /**
  * Platform tables (migration 0006, PLAN.md §10.6).
@@ -826,6 +827,16 @@ export const integrations = platform.table(
     verifyWrapped: bytea('verify_wrapped'),
     verifyMasterId: text('verify_master_id'),
 
+    /* Migration 0109. NULL for Slack and for a GitHub OAuth App with no
+       expiration enabled — the same "absence is the signal" shape as the
+       verify_* columns above. Encrypted under the SAME data key as
+       token_*, never a second one — see the migration's own header. */
+    refreshTokenCiphertext: bytea('refresh_token_ciphertext'),
+    refreshTokenWrapped: bytea('refresh_token_wrapped'),
+    refreshTokenMasterId: text('refresh_token_master_id'),
+    tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+
     /** SET NULL, not CASCADE — the row is the org's, not the person's. */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -895,5 +906,101 @@ export const operationalEvents = platform.table(
   (table) => [
     index('operational_events_occurred_at_idx').on(table.occurredAt.desc()),
     index('operational_events_kind_occurred_at_idx').on(table.kind, table.occurredAt.desc()),
+  ],
+);
+
+/**
+ * The AI provider catalog (migration 0099, Phase 15 §2.3). Global, exactly
+ * like `flagOverrides` above: one row per configured provider/model, no
+ * `orgId` column at all. `apiKeyCiphertext`/`dataKeyWrapped`/
+ * `dataKeyMasterId` is the same envelope-encryption column shape
+ * `comms.subaccounts` uses — see this table's migration header for why that
+ * key is a human-review surface rather than merely a secret.
+ */
+export const aiProviderConfig = platform.table('ai_provider_config', {
+  id: uuid('id').primaryKey(),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  apiKeyCiphertext: bytea('api_key_ciphertext').notNull(),
+  dataKeyWrapped: bytea('data_key_wrapped').notNull(),
+  dataKeyMasterId: text('data_key_master_id').notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  label: text('label').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Per-org provider override (migration 0099, Phase 15 §2.3, §3.3).
+ *
+ * Unlike `flagOverrides`, this table DOES carry an `orgId` — one row names
+ * one org's chosen provider — so unlike that table it is RLS-protected,
+ * with `identity.orgs`'s own two-policy shape (an org's own request reads
+ * its own row; `taskflow_platform_admin` reads and writes across every
+ * org). See the migration's own header for why this table could not simply
+ * copy `flagOverrides`'s exemption.
+ */
+export const aiOrgOverrides = platform.table('ai_org_overrides', {
+  orgId: uuid('org_id')
+    .primaryKey()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+  providerConfigId: uuid('provider_config_id')
+    .notNull()
+    .references(() => aiProviderConfig.id),
+  setBy: uuid('set_by')
+    .notNull()
+    .references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * "Email me this project's standup, daily" (migration 0108). One row per
+ * (org, project, member) — see `apps/api/src/standup/subscription.service.ts`.
+ */
+export const standupSubscriptions = platform.table(
+  'standup_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('standup_subscriptions_unique').on(table.orgId, table.projectId, table.userId),
+    index('standup_subscriptions_project_idx').on(table.orgId, table.projectId),
+  ],
+);
+
+/**
+ * "Put this card on my calendar" (migration 0110) — one row per (org, card,
+ * person). `cardId` carries no `.references()` here; the real constraint is
+ * the COMPOSITE `(org_id, card_id) -> work.cards(org_id, id)` foreign key in
+ * the migration, which Drizzle's single-column `references()` cannot
+ * express — the identical shape `cardPullRequests`/`cardBranches` already
+ * use in `work.ts` for the same reason.
+ */
+export const cardCalendarSubscriptions = platform.table(
+  'card_calendar_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    cardId: uuid('card_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('card_calendar_subscriptions_unique').on(table.orgId, table.cardId, table.userId),
+    index('card_calendar_subscriptions_user_idx').on(table.orgId, table.userId),
   ],
 );

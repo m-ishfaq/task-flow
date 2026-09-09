@@ -144,28 +144,56 @@ function OrgPickerContent() {
             />
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.row}
-            onPress={() => {
-              void choose(item.orgId as OrgId);
-            }}
-          >
-            <OrgMark name={item.name} />
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <Text style={styles.rowSlug} numberOfLines={1}>
-                {item.slug}
-              </Text>
+        renderItem={({ item }) =>
+          item.orgStatus === 'active' && item.membershipStatus === 'active' ? (
+            <Pressable
+              style={styles.row}
+              onPress={() => {
+                void choose(item.orgId as OrgId);
+              }}
+            >
+              <OrgMark name={item.name} />
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={styles.rowSlug} numberOfLines={1}>
+                  {item.slug}
+                </Text>
+              </View>
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>{item.role}</Text>
+              </View>
+              <Text style={styles.rowChevron}>›</Text>
+            </Pressable>
+          ) : (
+            // Shown, not omitted — the same fix apps/web's org-picker-page.tsx
+            // makes, ported here for the identical reason: `orgs.list` now
+            // returns every membership, active or suspended, and a suspended
+            // one used to simply disappear from this list, indistinguishable
+            // from an org this account was never part of. Not `Pressable`:
+            // there is nothing to do here besides know why.
+            //
+            // Org status checked first, same as web: a suspended ORG is the
+            // bigger fact (it refuses every member, not just this one), and
+            // used to show here as an ordinary row with nothing distinguishing
+            // it — the query that would have explained why failed on the NEXT
+            // screen instead.
+            <View style={[styles.row, styles.rowSuspended]}>
+              <OrgMark name={item.name} />
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, styles.rowTitleMuted]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={styles.rowSlug} numberOfLines={1}>
+                  {item.orgStatus !== 'active'
+                    ? 'This organization has been suspended'
+                    : 'Your membership is suspended'}
+                </Text>
+              </View>
             </View>
-            <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{item.role}</Text>
-            </View>
-            <Text style={styles.rowChevron}>›</Text>
-          </Pressable>
-        )}
+          )
+        }
         ListFooterComponent={<SignOutLink />}
       />
     </View>
@@ -381,6 +409,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
     marginBottom: 10,
+  },
+  rowSuspended: {
+    borderStyle: 'dashed',
+    borderColor: colors.line.hex,
+    backgroundColor: colors.surfaceSunken.hex + '80',
+    opacity: 0.8,
+  },
+  rowTitleMuted: {
+    color: colors.inkMuted.hex,
   },
   orgMark: {
     height: 44,

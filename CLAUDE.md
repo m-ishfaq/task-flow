@@ -71,6 +71,11 @@ tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`ro
 `apps/api/src/platform-admin` (Phase 12 Wave 1 — the org-directory console that runs as
 `taskflow_platform_admin`, the one role that can change another org's status, plus the
 `withGlobalScope` carve-out that admits it in `packages/config/eslint/security.js`) ·
+`apps/api/src/identity/calendar-feed.service.ts`, `calendar-feed-tokens.ts` and
+`calendar-feed-route.ts` (the personal calendar feed's own long-lived bearer token and the public,
+no-session `/calendar/:token.ics` route that redeems it — a genuinely new security-surface class
+for this codebase, a deliberate, documented exception to the "re-validate against RLS, never a
+bearer capability" stance every other public read here otherwise holds) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -256,29 +261,55 @@ code, the exact "a status marker is a claim, not a fact" failure this section do
 3.5, 5, 7 and 8, caught here in the governance doc itself).** Shipped since Phase 8, each with a
 detailed entry somewhere below or a spec in [ai/](ai/): **Phase 9 (Notifications)** — bell,
 digests, due reminders, web + Expo push (`apps/api/src/platform`, migration 0027); **Phase 10
-(Automation & webhooks)** — the `apps/worker` consumers (migrations 0047, 0049, 0055); **Phase 10.5
-(Sprints)** — `work.sprints` (migration 0054), with the Phase 10.6 sprint-flow slices built on top
-(spec header still reads DRAFT); **Phase 11.5 (People)** — `apps/api/src/people`, `people.profiles`
-(migration 0030); **Phase 12 Wave 3 (Billing)** — see its corrected entry below; **Phase 13 Wave 2
-(WebRTC ringing/recording)** — see the Phase 13 section; **operator broadcasts** — migrations
-0083–0084, `apps/api/src/platform-admin/broadcast*.ts`; and **Phase 14 (Mobile)** — a full Expo /
-React Native app (`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose
-own spec header (`ai/phase-14-mobile.md`) still says "DRAFT, Wave 1 only" despite the shipped
-breadth; **Phase 11 (Analytics)** — velocity, burndown, CFD, cycle time, workload, volume and
+(Automation & webhooks)** — the `apps/worker` consumers (migrations 0047, 0049, 0055), all four
+waves (engine, webhooks, public API + scoped tokens, connectors and the flagged telephony
+actions), not just Wave 1 — PLAN.md §13's roadmap row said "Waves 2-4... not started" until this
+pass corrected it; **Phase 10.5 (Sprints)** — `work.sprints` (migration 0054), with the Phase 10.6
+sprint-flow slices (all four) built on top — that spec's own header said only slices 1-3 were
+built and "uncommitted" until this pass corrected it, past tense being the operative word: the
+code has been in `main` for some time; **Phase 11.5 (People)** — `apps/api/src/people`,
+`people.profiles` (migration 0030); **Phase 12 Wave 1 (org governance & platform admin)** and
+**Wave 3 (Billing)** — see their corrected entries below, both of whose own spec headers said
+"DRAFT, not yet approved for build" long after shipping; **Phase 13 Wave 2 (WebRTC
+ringing/recording)** — see the Phase 13 section; **operator broadcasts** — migrations 0083–0084,
+`apps/api/src/platform-admin/broadcast*.ts`; **Phase 14 (Mobile)** — a full Expo / React Native app
+(`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose own spec header
+(`ai/phase-14-mobile.md`) said "DRAFT, Wave 1 only" despite the shipped breadth until this pass
+corrected it; **Phase 11 (Analytics)** — velocity, burndown, CFD, cycle time, workload, volume and
 spend dashboards (`apps/api/src/analytics`, `apps/web/src/features/analytics`), whose own spec
-header said "DRAFT... awaiting approval" the whole time; and **Phase 12 Wave 4 (Plan catalog &
+header said "DRAFT... awaiting approval" the whole time; **Phase 12 Wave 4 (Plan catalog &
 entitlements)** — the four-tier plan/override resolution in `apps/api/src/billing/
 entitlement-resolver.ts` and its operator-facing editor in `plans-tab.tsx`, whose own spec header
 said "DRAFT... nothing built" the whole time. **Both of those last two headers were corrected the
-same day a real gap between them was found**: `analytics`'s flag had existed in the registry since
-Phase 11 landed, but no analytics route ever checked it, so every org on every plan received full
-analytics for free — the entitlement system Wave 4 built to gate exactly this kind of module was
-never connected to it. Fixed by adding `feature: { flag: 'analytics', ... }` to every route in
-`apps/api/src/analytics/router.ts` and granting `analytics` to the `business` tier in
-`packages/seed/src/modules/billing.catalog.ts` — the first real feature difference between `pro`
+same day a real gap between them was found**:
+`analytics`'s flag had existed in the registry since Phase 11 landed, but no analytics route ever
+checked it, so every org on every plan received full analytics for free — the entitlement system
+Wave 4 built to gate exactly this kind of module was never connected to it. Fixed by adding
+`feature: { flag: 'analytics', ... }` to every route in `apps/api/src/analytics/router.ts` and
+granting `analytics` to the `business` tier in `packages/seed/src/modules/billing.catalog.ts` —
+the first real feature difference between `pro`
 and `business`, which previously differed only on limits and price. When in doubt, open the
 newest `ai/phase-*.md` and read its status header, remembering it too can lag the code — twice
 more, in this case.
+
+**One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
+permission grants) shipped and was then substantially extended — see its own section below.
+§2+§3 (the `AiProvider` abstraction and the token/spend budget gate), §4 Wave 1 (the tool-calling
+assistant, read-only tools), §4 Wave 2 (single-card write tools plus confirm-before-execute), §4
+Wave 3 (sprint planning tools) and §4.3's last item (`chat.post_message`) have since shipped too —
+see their own sections below. That closes §4.3's entire wave order. `docs.create_page` — §4.1's
+table named it, no wave scheduled it — has also shipped (title-only page creation; see its own
+section), and so has the assistant's own missing frontend (`apps/web/src/features/ai`), found
+while building §6. **This paragraph itself went stale the same way PLAN.md's roadmap table and
+`ai/phase-7-voice.md`'s status header already did, for the identical reason: §5 (the standup
+view), §6 (new-org Docs bootstrap) and §8 (onboarding/offboarding automation, a real six-of-ten
+subset) shipped in later passes and this paragraph was never revisited to say so** — see each
+one's own section below for what actually shipped and, for §8, what was deliberately left out and
+why. §7 (GitHub PR review — its own spec flags this as needing a separate review pass) has since
+started: Wave 1 (read-only PR tools for the assistant) shipped; the rest of §7 — write tools, the
+webhook extension, the card↔PR link table — remains exactly as drafted in
+`ai/phase-15-ai-copilot-and-permissions.md`, designed but not built. See "Phase 15 §7 Wave 1" below
+for what actually shipped and why it turned out smaller than the spec's own text implied.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -380,10 +411,3145 @@ never be left pointing at a version that no longer exists. Fixed in the test (cl
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
-### Phase 8 — Search & TQL (COMPLETE, all three waves)
+### Email invitations (SHIPPED) — the gap `addMember`'s own doc comment named
 
-`packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
-`apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
+`packages/db/migrations/0107_identity_invitations.*` · `identity.invitations` ·
+`identity.invitation_lookup` · `apps/api/src/tenancy/{invitation.service,invitation-mail}.ts` ·
+`tenancy.invitations` sub-router · `apps/web/src/features/auth/accept-invite-page.tsx` ·
+`apps/web/src/features/admin/settings-page.tsx`'s `MemberSection`. Phase 2's own header named this
+as a deliberate deferral, and `addMember`'s doc comment spelled out exactly what it would take:
+"an invitations table, a mailed token, and an acceptance flow that decides what happens when the
+invited address later registers by another route." This is that slice, unaltered in shape from
+what was named seven phases ago.
+
+**Two tables, not one — the same "resolve the tenant before you have a scope" problem
+`comms.subaccount_orgs`/`billing.customer_orgs` already solved twice.** `identity.invitations`
+carries everything about the invitation (email, role, status, who sent it) and is an ordinary
+RLS-protected tenant table, read and written only inside `withOrgScope(orgId)` — every operation
+on it (`createInvitation`, `listInvitations`, `revokeInvitation`) is called by an admin who
+already knows which org they're acting in. `acceptInvitation` is the one caller who does NOT:
+it is invoked by someone holding nothing but an opaque token, by definition not yet a member of
+the org the token names, so there is no scope to open until the org is known.
+`identity.invitation_lookup` (`token_hash -> org_id`, no more) exists solely to answer that one
+question, over `resolveOrgByInvitationToken` (`packages/db/src/tenancy-directory.ts`) — the
+identical `withGlobalScope` shape `resolveOrgBySubaccountSid`/`resolveOrgByStripeCustomerId`
+already use, added to `scripts/check-migration-rls.mjs`'s `RLS_EXEMPT` list with the same "holds
+nothing worth protecting, and the column set is the control" reasoning as its two siblings. Unlike
+those two, this lookup answers to a caller who has already PROVEN possession of the credential (a
+raw token, hashed before it ever reaches the resolver) — there is no signature left to verify
+afterward, only pending/expiry/email checks the accept flow makes once inside the real scope.
+
+**A separate flow from `addMember`, not a widening of it.** `addMember`'s existing contract —
+instant, known-account-only, `NOT_FOUND` for an unregistered address — stays exactly as it was;
+existing tests and its own route depend on that. `createInvitation` is a second door, always
+mailed, always the same `{ status: 'invited' }` answer whether or not the address already has an
+account — an admin cannot use it to learn anything about an address beyond what `members.list`
+already tells them about their own org. `apps/web`'s Members section now offers only the second
+door (the single "Invite" form calls `invitations.send`, not `members.add`) — not because
+`addMember` was wrong, but because offering both would ask an admin to guess which one a given
+address needs, and the invitation flow's answer is a strict superset of what instant-add could do.
+
+**One row per pending invite, rotated on resend, never duplicated.**
+`invitations_org_email_pending_key` is a partial unique index on `(org_id, lower(email)) WHERE
+status = 'pending'` — re-inviting an address that already has a pending row can't create a second
+one, so `createInvitation` ROTATES the existing row's token instead: a new hash, a fresh
+`invitation_lookup` entry, and the OLD lookup row deleted in the same transaction. A stale earlier
+email's link stops resolving an org the instant a newer one is sent, and the pending list never
+shows the same person twice.
+
+**Acceptance checks the invited EMAIL against the AUTHENTICATED caller's own account, not against
+who clicked the link.** A forwarded invitation email must not hand away access to whoever happens
+to be signed in when they click it. `acceptInvitation` reads the caller's own `identity.users` row
+(no RLS — readable from any scope, the same reasoning `addMember`'s own comment gives) and refuses
+with `FORBIDDEN` on a mismatch, naming the fix ("sign in with that address") rather than leaving
+the reader to guess. Expiry is checked the same call, marking the row `expired` and deleting its
+lookup entry rather than leaving a token that resolves an org forever with nothing behind it.
+
+**Idempotent against a real race: the invited person joining some other way before they accept.**
+If the org's admin adds the same address via `addMember`, or the person is added through automation,
+between the invite being sent and being accepted, `acceptInvitation` does not attempt a second
+membership insert (which would violate the unique `(org_id, user_id)` index) — it returns
+`alreadyMember: true` and still marks the invitation accepted, emitting `invitation.accepted` but
+NOT a second `member.added` (that event already fired from whichever path actually created the
+membership).
+
+**`member.added` fires from `acceptInvitation` exactly as it does from `addMember`** — every
+existing consumer (audit, notifications, search indexing, the `member.added` automation trigger,
+Phase 15 §8's onboarding checklist) keeps working with no separate case for "joined via invitation."
+`invitation.accepted`/`invitation.sent`/`invitation.revoked` exist only for what `member.added`
+cannot express on its own: which invitation this was, and its own lifecycle.
+
+**The accept page is click-to-confirm, not auto-fire on mount** — the identical StrictMode/
+mail-scanner reasoning `verify-email-page.tsx`'s own header documents at length, reapplied here
+rather than relearned: a double-mounted effect can spend a single-use token with no observer left
+to hear the result, and a security scanner following the link before a human sees it would burn it
+silently. Requires a session (`requireSession` in `router.tsx`, not `requireOrg` — the whole point
+of this page is reaching it with no org selected yet), and `beforeLoad` carries the token forward
+into `next` so a visitor bounced to `/login` lands back here, still holding it, once signed in.
+
+**Mobile got the functional swap, not the pending-invitations list.** `org-settings.tsx`'s "Add
+member" form now calls `invitations.send` instead of `members.add` — the actual gap this feature
+closes — but has no resend/revoke UI or pending list yet, a real, narrower scope for this pass
+rather than an oversight this screen was built to ignore.
+
+### Email invitations — onboarding a person with NO account yet (SHIPPED, closes a real gap)
+
+`apps/api/src/tenancy/invitation.service.ts`'s `previewInvitation` · `tenancy.invitations.preview`
+(a `publicRoute`) · `apps/web/src/lib/pending-next.ts` · `apps/web/src/features/auth/
+invite-preview.ts` · `login-page.tsx`/`register-page.tsx`/`verify-email-page.tsx`'s invite-aware
+changes. Prompted directly, from a real question: "are we sure enough once signup the invite link
+will still be available to land on it" — this codebase's own answer, honestly, had been NO.
+
+**Every hop in the multi-step signup chain — `/login` → `/register` → a SEPARATE verification
+email → back to `/login` — dropped the destination on the floor, one link at a time, and this was
+true even OUTSIDE the invitation case.** `acceptInviteRoute`'s own `beforeLoad` correctly carries
+the invite token into `next` when bouncing an unauthenticated visitor to `/login` — but
+`login-page.tsx`'s "Create one" link was a bare `<Link to="/register">` with no `search` at all,
+`registerRoute` had no `next` search field to receive one if it had, and `verify-email-page.tsx`'s
+"Go to sign in" link (on EVERY registration, not just an invite-driven one) was a bare
+`<Link to="/login">`. Someone who had no account yet, followed the invite link, registered, and
+verified their email landed on a plain `/projects` or `/orgs` with no route back to the invitation
+they started from — they had to dig the original email back out and click it a second time.
+
+**`next` cannot travel through registration the way it travels through login, and the reason is
+structural, not a bug in how it was wired: `auth.register` answers "check your email" with no
+session and no redirect, and the verification link that follows is clicked from wherever the mail
+client opens it — often a NEW TAB, sometimes days later.** A destination held in this tab's React
+state, or even a URL param on `/register` itself, is already gone by the time that click happens.
+`pending-next.ts`'s `storePendingNext`/`peekPendingNext`/`clearPendingNext` close that gap with
+`localStorage` — shared across every tab of the same browser, unlike `sessionStorage` — accepting
+for a single-use, narrowly-scoped invitation token (join one org, as one role, for one email) the
+identical trade `session.ts`'s own header explicitly REFUSES for the access token: an XSS reading
+this can redeem one pending invite early, not act as the user. Explicitly does NOT cover verifying
+on a different device than the one used to register (a phone's inbox opening a link nothing on
+that phone's browser ever stored) — a real, stated limitation rather than something hidden;
+closing that would mean encoding the destination into the verification email's own link, a change
+to `apps/api/src/identity`'s mail pipeline this fix does not need for the common case (verifying
+in the same browser, even a different tab) to work.
+
+**`peekPendingNext`/`clearPendingNext` are deliberately TWO functions, not one read-and-clear —
+the identical split `assistant-seed.ts`'s own `useAssistantSeedStore` already makes, for the
+identical StrictMode reason.** A single "read and consume" function called from a lazy `useState`
+initializer would clear `localStorage` on React StrictMode's THROWAWAY first invocation and hand
+the kept render `null`, degrading a feature that works in production into one that silently drops
+the destination in dev. `VerifyEmailPage` peeks in its initializer (safe to call twice — no side
+effect) and clears from an effect keyed on `verify.isSuccess` (idempotent to run twice —
+`removeItem` on an absent key is a no-op).
+
+**The second half of "not good onboarding" was about someone who has NEVER used the product at
+all — no account, no context, landing on a bare sign-in form with nothing telling them why they
+are there.** `tenancy.invitations.preview` is a new `publicRoute` (no session, the token itself is
+the proof — the identical trust model `auth.verifyEmail`/`auth.resendVerification` already use for
+a mailed, single-use token) returning the org name, invited email, and role. Revealing the invited
+email back to whoever holds the token is not a new disclosure: it is the address that already
+received this exact link in its own inbox. Read-only — an expired row is left for `acceptInvitation`
+itself to flip to `'expired'` on redemption; a page load, or a mail-scanner prefetch, must not have
+a mutating side effect (`invitation.service.test.ts`'s own `previewInvitation` case proves the
+status stays `'pending'` after a refused, expired preview).
+
+**Both `/login` and `/register` preview the invite (via `inviteTokenFromNext`, parsing the token out
+of a `next` path that names `/invite/accept`) and show "You've been invited to join {orgName}" —
+context an unauthenticated visitor previously had zero of.** `/register` goes one step further:
+`invitedEmail` locks the email field (`values`, not `defaultValues` — react-hook-form's `values`
+option re-syncs once the preview query resolves after the form has already mounted, deep-compared
+so it does not fight a person's own typing in the OTHER fields). Locking is not a UX nicety — the
+only account that can ever redeem this invitation is one registered under that EXACT address, per
+`acceptInvitation`'s own email-match check, so letting someone type a different one would mean
+discovering the mismatch only after already registering and verifying, for nothing.
+
+**Deliberately not built: any of this on `apps/mobile`.** Email invitations' own mobile scope was
+already "the functional swap only, not the pending-invitations list" — this pass is the same web-only
+scoping, for the identical reason: mobile has no deep-link handler for `/invite/accept` at all today,
+and building one is real, separate work (app-scheme registration, a native equivalent of this whole
+multi-hop chain) this fix does not attempt.
+
+### Phase 15 §1 — org-level permission grants (SHIPPED, extended past its own spec)
+
+`packages/policy/src/permissions.ts` (`GRANTABLE_PERMISSIONS`) · `authz.member_grants` ·
+`apps/api/src/tenancy/member-grant.service.ts` · `apps/web/src/features/admin/settings-page.tsx`
+(`PermissionsSection`) · `apps/mobile/app/(app)/permissions.tsx`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) — its own
+header names exactly what shipped and what is still just designed; §2 onward (the AI copilot
+itself) has no code behind it yet.
+
+**One org-level permission, given to one specific member on top of their role, with no resource
+attached.** This is deliberately a SECOND mechanism from relationship tuples, not tuples stretched
+to cover a shape they were not built for — `permissions.ts`'s own `ORG_LEVEL_PERMISSIONS` already
+drew that boundary before this phase, and this phase does not remove it. `can()` composes role +
+tuple + grant; a grant only ever ADDS capability, never narrows what a role already gives (taking
+capability away from one member is a harder, explicitly deferred problem — see the spec's §9).
+
+**Closed the telephony gap the phase exists to fix, then found and closed the same gap for
+automation.** `call:place`/`call:read`/`sms:send`/`sms:read`/`phoneNumber:read` moved off the flat
+Member role onto individual grants first (Wave 1, migration 0098 backfilling existing access so
+nobody already using it was silently cut off). A follow-up pass added `automation:manage`,
+`webhook:manage`, `integration:manage`, `apiToken:create`, and `apiToken:revoke` to the same list —
+an org can now hand one Member the ability to build automation rules, or manage the webhook
+registry, without promoting them to Admin. Safe for the identical reason it is safe for every
+Admin: `automation.service.ts` asks no per-resource question when a rule is BUILT, because the
+resource-aware question is asked again at EXECUTION, in the worker, against the rule owner's own
+live permissions re-resolved on every run — granting the ability to build a rule never also grants
+what a built rule can do.
+
+**A full sweep found and fixed every remaining place a permission-gated control rendered
+unconditionally.** The pattern report started with two live bugs: a Member opening Settings →
+Billing got a raw "You do not have permission to do that" instead of the section simply not being
+there, and the "Individual permissions" list itself disclosed which extra permission each colleague
+held to anyone who could see the Members page. A search-first sweep across `apps/web` and
+`apps/mobile` (deliberately done before any fixing, per the standing instruction that motivated it)
+found the same shape repeated: telephony's Buy/Release buttons, Docs space creation and page
+archive/restore, board/list/sprint management, comment moderation, card recordings, saved-search
+sharing, and — found only by following the exact URL that had originally reported the bug, after
+the sweep itself had already been declared done — the People page's "Manage member" edit form,
+which rendered for anyone viewing a colleague's profile regardless of role. Every one of these is
+now a boolean computed server-side from the real `can()` check (`SettingsCapabilities` for
+org-level permissions, a per-row `capabilities` object for resource-scoped ones like
+`board:update`/`space:manage`/`page:delete`), read by the client to decide what to render — never a
+second authorization decision, and never assumed to be the last one: this sweep is the second time
+this exact bug class was found in this codebase (the first is Phase 5's `closed`-target findings),
+which is worth remembering the next time a permission is added to `GRANTABLE_PERMISSIONS` and every
+one of its old unconditional display sites needs the identical re-check, not just the one that gets
+reported.
+
+**Hide entirely, except when the underlying data is already visible.** The default fix for a
+control gated on a permission not every role holds is to hide it, not disable it — a disabled
+control still discloses that the action exists and, to anyone who inspects the DOM, exactly how it
+is wired. The one deliberate exception is the People page's "Manage member" section: job
+title/department/work phone/manager are not privileged the way billing figures or another
+colleague's individual grants are — they are already visible elsewhere on the same page as
+read-only badges and an org-chart card — so a caller without `manageMembers` gets
+`PersonFactsSummary`, the same four fields presented read-only, instead of nothing. Getting this
+distinction right required checking, for each hidden section, whether hiding it actually withheld
+information the viewer could not already see, not applying one rule everywhere.
+
+**The one-member-one-permission add form became a bulk batch, on both platforms.** Both the member
+picker and the permission picker in `settings-page.tsx`'s `PermissionsSection` are multi-select —
+choosing 3 members and 2 permissions and submitting once grants the full 3×2 Cartesian product.
+There is no new bulk server endpoint: `runGrantBatch` calls the existing single-pair
+`memberGrants.grant` route once per pair in sequence, which is safe only because that route is
+idempotent (granting something already granted returns the existing row) — a batch that fails
+partway through a step-up prompt is retried from the start in full, and every pair before the
+failure point silently no-ops rather than erroring or duplicating. The list gained the identical
+batching in reverse (checkboxes + "Revoke selected"), which needed `member-grant.service.ts`'s
+`revoke()` to gain the same idempotency `grant()` already had — without it, a retried revoke batch
+would 404 on a pair it already revoked before the interruption and abort whatever was left selected.
+A missing MEMBERSHIP still throws on either route; that is a different failure from "already
+granted" or "already revoked", not the same one.
+
+**Mobile had no Individual Permissions screen at all until this pass** — web-only since the
+feature was built, a real gap rather than a deliberate platform difference, and one that mattered
+more once the automation permissions became grantable too: before `permissions.tsx` existed, an
+org running mobile-only had no way to hand one out. Built to the identical bulk-grant shape as web,
+reusing the same mobile `useStepUp`/`StepUpSheet` pair `org-settings.tsx` already established.
+
+### Phase 15 §2+§3 — the AI provider abstraction and budget gate (SHIPPED)
+
+`packages/ai` · `packages/contracts/src/providers/ai-provider.ts` · migrations 0099–0100
+(`ai.usage_ledger`, `platform.ai_provider_config`, `platform.ai_org_overrides`,
+`billing.plans`/`billing.org_entitlements`'s `ai_token_budget_monthly_cents`) ·
+`apps/api/src/ai` · a new `ai` sub-router on `platformAdmin`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §2, §3.
+Deliberately NOT built in this pass: §4 onward (the assistant itself, the standup view, GitHub
+PR review, onboarding/offboarding automation) — this is §2+§3 only, per the spec's own §10 build
+order ("§2 + §3 in parallel... retrofitting spend tracking after the fact is the mistake to
+avoid"), the identical order Phase 7 Wave 1 and Phase 13 Wave 1 both used.
+
+**The ledger is `ai.usage_ledger`, not `platform.ai_usage_ledger` as the spec's draft said.**
+The draft followed `platform.flag_overrides`'s shape throughout, which is right for the model
+CATALOG (`platform.ai_provider_config` really is global — one row per configured provider/model,
+no `org_id` at all) and wrong for usage, which is per-org data. A global table queried per org
+would need `WHERE org_id = ...` in application code, which rule 1 bans outright. The ledger gets
+its own schema instead, RLS-protected exactly like `comms.spend_ledger` — the telephony spend
+gate this module directly mirrors.
+
+**`platform.ai_org_overrides` fits neither `flag_overrides`' shape nor `spend_ledger`'s cleanly,
+and got a third one.** It is operator-owned configuration, like `flag_overrides` — but unlike
+that table it names one specific org per row, so it carries an `org_id` column, and
+`scripts/check-migration-rls.mjs` is right to demand real RLS on any table that does. It gets
+`identity.orgs`'s own two-policy shape from migration 0035 instead: the ordinary tenant-isolation
+policy (so an org's own request can read which provider IT resolves to) plus a second permissive
+policy naming `taskflow_platform_admin` (so the console can set an override for ANY org).
+`taskflow_app` holds SELECT only — an org never writes its own override, only an operator does.
+
+**The budget ceiling is resolved through the SAME four-tier entitlement chain Phase 12 Wave 4
+built for telephony's cap, not a second override table next to it.** Migration 0100 adds one
+column — `ai_token_budget_monthly_cents`, the identical nullable-ceiling convention as
+`telephony_cap_cents` (NULL unlimited, 0 none-at-all) — to both `billing.plans` and
+`billing.org_entitlements`, and `entitlement-resolver.ts`'s existing `pick(override, plan)`
+resolves it for free. Building a parallel mechanism for one more ceiling would give an operator
+two different places to look for "what limits does this org have" depending on which module they
+mean.
+
+**The budget gate can only ask "has this org already reached its budget," never "would this
+call cross it" — a real, narrower guarantee than telephony's, not an oversight.** Telephony can
+price a call before placing it (`TelephonyProvider.estimateCostCents`); an LLM completion's
+token usage is not known until the response returns, so there is no honest pre-call estimate to
+check against a remaining balance. `apps/api/src/ai/spend-gate.ts`'s own header states this
+explicitly rather than inventing a token-count guess from prompt text that every provider's real
+tokenizer would disagree with.
+
+**No `estimated`/`actual` split in the ledger, unlike telephony's — the provider reports the
+real cost inline, so there is nothing to reconcile.** `comms.spend_ledger`'s whole
+`sumWithFallback` mechanism exists because a phone call's cost arrives asynchronously from a
+carrier webhook; `AiCompletionResult.usage` is returned in the same response as the content, so
+`ai.usage_ledger`'s numbers are final the moment they are written. A plain `SUM` is correct here
+where it would be a bug for telephony.
+
+**`completeGated` in `apps/api/src/ai/complete.ts` is the one call site permitted to call
+`AiProvider.complete`, mirroring `checkOutboundAllowed`'s exact role for telephony.** The
+property `complete.test.ts` exists to prove is the same one CLAUDE.md states for every spend
+gate in this codebase: on a refused request, `provider.calls` (the `FakeAiProvider`'s own
+inspection surface, built for exactly this) stays empty. When this section was written, nothing
+in this phase called `completeGated` yet — the identical "ship the gate before the thing it
+gates" state Phase 7 Wave 1 and Phase 13's TURN gate both shipped in. `assistant.ts`'s
+tool-calling loop (§4 Wave 1, its own section below) is the first real caller, added the same
+week.
+
+**`packages/ai`'s `AnthropicProvider` authenticates over raw `fetch`, no SDK**, matching
+`StripePaymentProvider`'s "one call in, one call out" shape. `system`-role messages are pulled
+out of `AiMessage[]` into Anthropic's own top-level `system` field — its Messages API has no
+system role inside the message array at all, unlike the OpenAI-shaped union `AiMessage` is
+written to resemble. Membership-set (`.has()`) checks do that pulling, not `===`/`!==`
+comparisons on `.role` — `packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier`
+guardrails ban any equality comparison naming `role`, on the theory that the shape is almost
+always an inline org-role check drifting from `can()`. `AiMessage.role` is a different concept
+(a chat turn's speaker) that the selector cannot distinguish by name alone, and per this file's
+own rule the fix is in the code, not a guardrail exemption.
+
+**`OpenAiProvider` and `GeminiProvider` (added after this section was first written) are the
+second and third `AiProvider` implementations, added specifically so `resolveAiProvider` is a
+real per-org CHOICE and not an Anthropic-shaped interface with one tenant.** Migration 0101
+widened `ai_provider_config_provider_valid` from `('anthropic')` to
+`('anthropic', 'openai', 'gemini')` — the expand half of expand-migrate-contract, no existing
+row touched — and `provider-resolver.ts`'s `providerFor` switch, `provider-config.service.ts`'s
+`CreateProviderConfigInput`, and the platform-admin router's `CreateAiProviderConfigInput` widen
+to match. Each new provider is proven against the identical `describeAiProviderContract` suite
+`AnthropicProvider` is, plus its own round-trip tests — the same "outgrowing an implementation is
+a config change plus a green contract run" property `describeTelephonyProviderContract` and
+`describePaymentProviderContract` already give their own modules. The two are NOT shaped alike
+on the wire, and each owns a real translation, not a cosmetic one: OpenAI's Chat Completions API
+already has `system`/`tool` roles inside the same `messages` array (closer to `AiMessage`'s own
+union than Anthropic's content-block scheme), but has no `is_error` field on a tool message, so a
+failed result is prefixed `Error: ` rather than dropping the signal. Gemini has no call-id concept
+at all — a `functionCall`/`functionResponse` pair is matched by NAME, not an opaque id the
+provider mints — so `AiToolCall.id` is synthesized as `"<name>::<partIndex>"` and decoded back on
+the return trip; and `stopReason` cannot trust `finishReason` alone, because Gemini often reports
+`STOP` on a turn that also asked for a tool, so `tool_use` is read off the presence of a
+`functionCall` part instead. `rates.ts` carries each provider's own published list prices rather
+than one blended figure, the same reasoning `RATES`' own header gives for Anthropic's three tiers.
+
+**The provider catalog's write path lives in `apps/api/src/ai/provider-config.service.ts`,
+gated entirely on `platformRoute`, and publishes through the injected `EventBus` rather than
+the transactional outbox** — `taskflow_platform_admin` holds no grant on `platform.outbox`
+(migration 0083's own header), the identical reason `flags.service.ts`'s `setFlag` and
+`org-directory.service.ts`'s suspend/reactivate already publish the same way. Every API key is
+envelope-encrypted under its OWN freshly generated data key — never a key shared across catalog
+rows — the same "one wrapped key per row" shape `comms.subaccounts` uses, so retiring one
+config's credential can never affect another's. The AAD reuses `identityFieldAad` (table +
+column + row, no org) rather than a new helper: `platform.ai_provider_config` has no `org_id`
+at all, the identical no-org shape `identity.totp_credentials` already uses that function for,
+even though the row itself is not an `identity.*` table.
+
+**`resolveAiProvider` needs no `withGlobalScope`, and deliberately does not use it** — reading
+both `platform.ai_org_overrides` (RLS-scoped to the caller's own org) and
+`platform.ai_provider_config` (no RLS at all, a genuinely global catalog) inside one ordinary
+`withOrgScope` transaction works because RLS only restricts tables that declare it; a table
+with none is visible to any scope. `apps/api/src/ai` is not on `withGlobalScope`'s short
+exempt-module list (identity, people, platform-admin) and does not need to be.
+
+**`@taskflow/ai`'s own `index.ts` re-exported `describeAiProviderContract` straight from
+`contract-test.ts`, and crashed `apps/api`'s dev server the first time someone actually ran
+it.** `contract-test.ts` imports `vitest` at module scope; re-exporting it from the package's
+main entry drags `vitest` into the runtime graph of every consumer, and `vitest`'s `expect`
+throws immediately ("Vitest failed to access its internal state") when there is no active
+worker — which every real process outside `vitest run` is. `packages/telephony/src/index.ts`
+already hit and fixed this EXACT bug for `describeTelephonyProviderContract`, with a comment
+explaining it in detail; `@taskflow/ai` repeated the mistake rather than following that
+precedent, and nothing in CI catches it because no test suite actually boots `apps/api` as a
+live process — every test calls services or the tRPC router directly. Fixed the identical way:
+the re-export is gone, `packages/ai/package.json` gained a `./contract-test` subpath export
+(the four provider test files already imported the suite via a relative path, so nothing in
+`packages/ai` itself needed to change), and `index.ts` carries the same explanatory comment
+telephony's does. Found by the project owner running `pnpm --filter @taskflow/api dev` locally
+— the one way to reach this that no test in this repo exercises.
+
+**The "AI Models" tab the platform-admin router's own comment already named did not exist —
+`apps/api/src/ai/provider-config.service.ts`'s CRUD had shipped with no caller in `apps/web` at
+all, the identical "shipped backend, no consumer" gap this file's own "Phase 15 §4 — the
+assistant's missing frontend" section already documents once for `ai.chat.send`.** Found the
+same way: the project owner went looking for where to add a real provider and found nowhere.
+Closed by `apps/web/src/features/platform-admin/ai-tab.tsx` — catalog list/create/rotate-
+key/set-default, an org-override panel, and the cross-org spend report, wired into
+`platform-admin-page.tsx`'s tab bar. One more real gap surfaced while building it:
+`getOrgProviderOverride` existed (`provider-config.service.ts`'s own doc comment already called
+it "for the console's per-org detail view") but had no route at all — `orgOverride.set`/
+`.clear` could change an org's override with no way to read it back. Added
+`platformAdmin.ai.orgOverride.get`, and gave `getOrgProviderOverride` the `operator` parameter
+and `recordOperatorAction` call every other read in this file already has — it had neither,
+because nothing had ever called it end to end before.
+
+**The spend report showed a bare org uuid, and the project owner's own question — "how are we
+calculating the cost, on what basis" — surfaced that the answer was nowhere in the UI either.**
+`aiSpendReport` now joins `identity.orgs` (the exact same grant every other cross-org report in
+`provider-config.service.ts`/`billing-directory.service.ts` already relies on) for `orgName`/
+`orgSlug`, and sums `input_tokens`/`output_tokens` alongside `cost_cents` — real numbers already
+sitting in `ai.usage_ledger`, not a re-derivation. `rates.ts` gained `rateFor(model)`, a read-only
+lookup alongside the existing `costCentsFor`, so a row can report the published per-model rate it
+was actually billed at. `SpendReportPanel` renders these collapsed behind a per-row expand
+("40,000 input tokens at $0.80 / 1M tokens + 8,000 output tokens at $4.00 / 1M tokens"), hidden by
+default so the table stays scannable.
+
+**Explicitly did NOT start storing the actual prompt or response text, after asking rather than
+assuming.** The obvious literal reading of "let me see the details" would be logging the real
+messages sent to and from the provider — and `packages/ai`'s own `AiProvider` header already
+states the reason not to: this is the one provider interface that moves org-authored CONTENT
+(card text, chat messages, comments) to a third party, and persisting a second copy of that in an
+operator-readable table is a real retention/redaction decision, not a UI affordance. Put to the
+project owner directly rather than built silently; the answer was to show the computation's real
+inputs (tokens, rate) instead, which is what shipped. `ai.usage_ledger` still carries no content
+column of any kind — CLAUDE.md's own account of the schema (§2+§3's section above) remains
+accurate unchanged.
+
+**`aiAssistant` had never been granted to a single billing plan, which meant the entire assistant
+surface — `/assistant`, the standup Narrate button, the §6 new-org setup dialog — was unreachable
+for every org on every plan, found from a real report: a freshly created org's setup dialog never
+appeared.** `entitlement-resolver.ts` only turns a flag on for an org when it appears in that org's
+PLAN's `features` array, and `aiAssistant`'s own registry entry had said, since it was written,
+"registered ahead of its first caller so the plan catalog has a name to grant the day §4 ships
+one" — and then nobody ever came back to actually grant it once §4 shipped. `stage: 'in-progress'`
+was the one honest marker left; every other launched, `perOrg` flag in the registry had a real
+grant somewhere. This is `analytics`'s own bug (flag existed, no route ever checked it) in
+reverse: here every route checks it, but no plan ever turns it on.
+
+**Granted to all four tiers — free through business — each with its own AI spend ceiling in the
+SAME nullable-ceiling convention `telephonyCapCents` already uses, added to `billing.catalog.ts`
+rather than a migration.** A migration would be a one-time INSERT that a later catalog edit could
+never reach — `packages/seed/src/modules/billing.catalog.ts`'s own header already explains why
+this whole module calls the real `createPlan`/`updatePlan` platform-admin service functions
+instead of writing rows directly, the identical mechanism this fix reuses rather than inventing a
+second one. `aiTokenBudgetMonthlyCents` is bounded on every tier, including Business, rather than
+following `automationRunsPerHour`/`turnIssuancePerDay`'s null-on-Business pattern — deliberately:
+an LLM completion is real third-party spend (Anthropic/OpenAI/Gemini), the same unvetted
+self-serve-checkout risk `telephonyCapCents`'s own comment already argues against leaving
+unbounded on Business, not an internal cost like an automation run. Business's number ($100/month)
+is the identical figure `telephonyCapCents` already uses for that tier.
+
+**The read side of `aiTokenBudgetMonthlyCents` worked from the moment migration 0100 added the
+column — `entitlement-resolver.ts`'s `pick(override, plan)` already resolved it correctly, because
+`select()` with no column list reads every column. The WRITE side did not exist at all.**
+`plan-catalog.service.ts`'s `PlanLimitsInput`/`CreatePlanInput`/`UpdatePlanInput` had no
+`aiTokenBudgetMonthlyCents` field, and `createPlan`/`updatePlan` never touched the column — so
+there was no way, even from the platform console, to ever set it to anything but the migration's
+default of NULL. Wired the same way every other limit field already is: a new required field on
+`PlanLimitsInput` (required, not optional — the same "a write tool that forgot to set it should
+fail to compile" reasoning guardrail 6 gives for a domain event), read into `readPlans()`'s mapping,
+written in `createPlan`'s insert, and diffed in `updatePlan`'s own `assign()` helper. The
+platform-admin router's `PlanLimitFields` (shared between create and update) and `PlanRow` output
+schema both widened to match, and `plans-tab.tsx`'s `EditLimitsDialog` gained a matching form field
+— without it, an operator could see the catalog's seeded number but never change it for one plan
+without editing code and re-running the reconcile script.
+
+**Editing `billing.catalog.ts` alone does not retroactively touch `free`/`pro` on an existing
+database — migration 0063 already seeded both of those two ids directly, and this seed module
+treats an existing plan id as `reused` (a no-op) unless `ctx.reseedPlans` is explicitly true.**
+0063's own header states why it seeded `free`/`pro` at all rather than leaving the catalog module
+to create everything: `identity.orgs.plan_id`'s foreign key needed something to reference before it
+could be added, so those two ids exist in every database ahead of this module ever running, with
+whatever feature list 0063 hardcoded at the time (no `aiAssistant` — it did not exist yet). Getting
+the new grant onto an already-seeded database is `pnpm --filter @taskflow/seed plan-catalog-reconcile`
+(or a fixture reseed with `--reseed-plans`) — not a migration, per the project owner's own
+instruction, and not automatic from editing the catalog literal alone.
+
+**No test in this codebase exercises `createPlan`/`updatePlan` directly — a pre-existing gap, not
+one this pass introduced, and not closed here either.** `plan-catalog.service.test.ts` only tests
+`setOrgEntitlements` (the per-org override, a different interface entirely, with no
+`aiTokenBudgetMonthlyCents` field of its own — out of scope for this pass, which was about the
+PLAN ceiling the project owner asked for, not a second per-org override). Building real DB-backed
+coverage for the plan-catalog write path is real, separate work.
+
+**The grant above still did nothing for a brand-new org, found the same day from a real run —
+`createOrg` never places a new org on `free`.** It writes `plan_id = 'trial'` directly (migration
+0094's own non-purchasable, `is_active = false` tier, "every new organization starts here"), and
+`trial` is not one of `CATALOG`'s four owner-facing tiers — so neither `billing.catalog.ts`'s own
+seed loop nor `plan-catalog-reconcile.cli.ts` had ever looked at it. The identical class of bug
+`aiAssistant`'s own flag entry already caused once (a grant that reaches nowhere), recurring one
+tier lower and caught only by actually running the reconcile script and checking a fresh org
+against it.
+
+**`TRIAL_PLAN` is a second constant, exported alongside `CATALOG` but never folded into it —
+`trial` fails every property that array is FOR.** `CATALOG` is the owner-facing catalog: what a
+person can buy, most with a real price and a Stripe product. `trial` has neither, and must never
+be reached through `createPlan`, which hardcodes `isActive: true` on every row it creates — `trial`
+has to stay `is_active = false` forever (0094's own comment: never in the upgrade picker, never
+operator-assignable). So `TRIAL_PLAN` is only ever passed to `updatePlan`, on the standing
+assumption that migration 0094 already created the row — which every migrated database has,
+before any seed script runs. Both the seed module and the reconcile CLI now validate its feature
+names and reconcile it (the seed module gated on the identical `ctx.reseedPlans` flag every
+`CATALOG` tier already uses; the CLI unconditionally, gated only by its own `--dry-run`), right
+after their existing per-tier loop — a missing `trial` row at that point throws loudly rather than
+silently creating one, since that would mean 0094 was rolled back without being re-applied, a real
+anomaly worth surfacing rather than papering over.
+
+**Every number on `TRIAL_PLAN.limits` mirrors 0094's own INSERT literally, except the new AI
+field.** Reconciling `trial`'s telephony/automation ceilings to anything other than what that
+migration deliberately chose would be this file silently overriding a decision it was never asked
+to revisit. `aiTokenBudgetMonthlyCents: 100` follows 0094's own stated reasoning for its telephony
+cap exactly — "enough to prove the feature works, never enough to be worth abusing" — applied to
+the one ceiling that migration predates and could not have set.
+
+**None of the three real `AiProvider`s ever put a timeout on their own outbound `fetch` call —
+found from a real report of the assistant page's Approve/Decline buttons staying disabled
+forever, with "Thinking…" never clearing.** A stalled connection to the provider (a TLS hang, a
+connection accepted and never answered — real, if rare, failure modes for a third-party HTTPS
+endpoint this deployment does not control) left `AiProvider.complete`'s promise pending
+indefinitely, and every control gated on the assistant page's one mutation (`turn.isPending`) —
+Approve, Decline, the composer, the send button — is disabled for exactly as long as that promise
+takes to settle. A promise that never settles is a UI that never recovers, with no error to show
+and no route back except a hard reload.
+
+**`packages/ai/src/timeout.ts`'s `COMPLETION_TIMEOUT_MS` (90s) plus `signal:
+AbortSignal.timeout(...)` on each provider's `fetch` call is the fix — the identical mechanism
+`apps/worker/src/webhooks/delivery.ts`'s own `TIMEOUT_MS` already uses for the same "bound a
+request to a third party this deployment does not control" problem.** A timed-out `fetch` REJECTS
+rather than hanging, which is a case every provider's code already handles correctly (the same
+path an ordinary network failure or a non-2xx response already takes) — so the fix needed no new
+error handling, only a bound on how long the attempt gets before it counts as one. 90 seconds
+rather than `delivery.ts`'s 15: a webhook is one HTTP round trip to an endpoint an operator
+configured; a completion is a real LLM inference call, slower by nature and slower still with
+tools attached or a large system prompt, so a much tighter bound would misclassify a legitimately
+slow-but-working answer as wedged. This bounds each INDIVIDUAL provider call, not
+`ai.chat.send`'s whole request — a multi-round tool-calling turn (up to `MAX_TOOL_ITERATIONS`
+real completions) can still legitimately take longer in total; the fix is that it now always
+either finishes or fails within a bounded time, never hangs forever on one stuck call within it.
+
+**Each provider's own test file gained a case proving a real `AbortSignal` is actually attached to
+the request, not just that the timeout constant exists somewhere.** `capturedInit?.signal` is
+asserted to be an `AbortSignal` instance and not yet aborted — proving the wiring reaches the real
+`fetch` call, the same "test the property, not that it compiles" standard this package's other
+provider tests already hold themselves to.
+
+### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
+
+`apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·
+`apps/api/src/search/search.service.ts` · `ai.chat.send`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §4, §4.3.
+Deliberately NOT built in this pass: §4's write tools and confirm-before-execute (§4.2), the
+standup view (§5), new-org Docs bootstrap (§6), GitHub/PR integration (§7, its own spec explicitly
+flags it as needing a separate review pass), and onboarding/offboarding automation (§8) — this is
+Wave 1 only, per §4.3's own order ("read-only... proves the UX and the token ledger with the
+least risk"). _(Wave 2 — single-card writes and confirm-before-execute — has since shipped; see its
+own section below.)_
+
+**`AiMessage` shipped in §2 could not actually hold a multi-turn tool-calling conversation, and
+nothing caught it until this wave tried to build one.** The original type was a flat
+`{ role: 'system' | 'user' | 'assistant', content: string }` — plausible, unremarkable, and wrong
+the moment a second turn needed to reference a tool call from the first: Anthropic's API rejects a
+`tool_use` content block that is not followed, in the very next turn, by a `tool_result` block
+naming the same id, and a flat string had nowhere to put either. `AiMessage` is now a
+discriminated union (`system` / `user` / `assistant` with an optional `toolCalls` array /
+`tool_result` naming a `toolCallId`), and `packages/ai`'s `AnthropicProvider` maps each variant to
+Anthropic's actual content-block wire shape (`anthropic.test.ts`'s two new cases assert the
+round-trip, including that a `tool_use` block replays as content, not as flattened text). This is
+exactly the kind of gap §2's own contract test could not have caught: nothing in Wave 1's tests
+ever sent a second turn.
+
+**The client owns conversation history; the server owns the system prompt.** `ai.chat.send` is
+stateless — no `ai_conversations` table, no server-side session. The caller resends the growing
+`messages` array every turn (capped at 40, matching `search.query`'s own input-size hygiene, not a
+product decision about conversation length), and `runAssistantTurn` prepends its own system prompt
+before calling the model and never returns it — so the array a caller stores after one turn is
+exactly what it sends as the next turn's input, with nothing to strip back out. A persistent,
+multi-conversation history is real, separate work this wave does not need to prove the loop or the
+budget gate.
+
+**Every round of a multi-round tool-calling exchange is its own priced completion — there is no
+"free" intermediate call.** A model that requests a tool, reads the result, and asks a follow-up
+question has made TWO real completions, both budget-gated through `completeGated`, both real rows
+in `ai.usage_ledger`. `assistant.test.ts` asserts the row count directly rather than trusting the
+loop's own bookkeeping.
+
+**The loop is bounded (`MAX_TOOL_ITERATIONS = 6`) because a tool-calling conversation can
+genuinely spin** — a model retrying its own tool call, or misreading a result as "try again" —
+and the bound exists to cap the blast radius of that to one request, the same reasoning
+`search.query`'s own result limit bounds a fan-out rather than trusting the caller to ask
+reasonably. `assistant.test.ts` proves it by queuing ten consecutive tool-call responses from a
+`FakeAiProvider` and asserting the loop throws `AssistantLoopExceededError` rather than running
+forever.
+
+**Tool execution is sequential, not `Promise.all`, even though Wave 1's only tool (`search`) is
+read-only and side-effect-free.** A future write tool's ordering must not depend on which of
+several concurrent promises a JavaScript runtime happens to settle first — paying a small latency
+cost now is cheaper than discovering the race the day Wave 2 adds a mutating tool.
+
+**A thrown error inside a tool — most commonly a `can()` refusal — becomes a `tool_result` the
+MODEL sees, never a rejection that aborts the turn.** `defineTool`'s wrapper (§4.1) catches both a
+Zod validation failure and a thrown exception and turns each into
+`{ content, isError: true }`, so the model can tell the person "I don't have permission to do
+that" the same way a UI renders a denied action as a message rather than crashing. Every real tool
+still goes through the exact `can()`-checked service call a human's own click would — `search`
+wraps `performSearch`, freshly extracted out of `search/router.ts` so the tRPC route and the
+assistant's tool call the identical authorized pipeline rather than the tool re-deriving the
+per-hit authorization loop that file's own header warns against duplicating.
+
+**Two independent gates on `ai.chat.send`, composed by the ordinary `route()` machinery and
+nothing bespoke:** `ai:use` (per member, grantable per §1) and the `aiAssistant` feature flag (per
+org plan, resolved through the same entitlement chain §3 already reuses). `router.test.ts` proves
+both fire independently — a member with no grant is refused before any provider is ever resolved,
+and an owner on a plan without the flag gets `PLAN_REQUIRED` even though their role alone would
+grant `ai:use`.
+
+**`search` alone could not answer "what are my pending tasks" at all — a real, structural gap, not
+a prompt problem — found from a real transcript where the model tried `search` four times and gave
+up.** `packages/filter/src/fields.ts`'s `SEARCH_FIELDS` (`type`/`title`/`text`/`author`/`updated`/
+`created`/`archived`) and `CARD_FIELDS` (`assignee`/`status`/`due`/...) are deliberately DISJOINT
+(Phase 8's own header), so a TQL query filtering by assignee or due date is valid syntax against
+the wrong resource and fails validation every time — and `search`'s own tool description made this
+worse by offering `"status = open AND assignee = @me"` as its EXAMPLE query, actively steering the
+model toward a shape that can never work. Fixed two ways: `search`'s description and example were
+rewritten to use only real search fields and explicitly say what it cannot do, and a new `my_cards`
+tool (`my-cards.ts`) wraps `listMyCards` — the same real, per-row-authorized, cross-board query
+`work.cards.mine` (My Tasks) already runs — to answer the actual question. "Pending" is filtered
+INSIDE the tool, deterministically, via one batched lookup of each returned card's status category
+(`listMyCards`'s own output carries only an opaque `statusId`, no category) — the identical
+"classification stays deterministic" rule this file's standup section already applies, extended
+here so the model is never handed a raw status id and trusted to guess whether it means "done."
+The system prompt (`router.ts`) also gained today's date, since a tool result only ever carries a
+raw due date — nothing previously gave the model a reference point to resolve "this week" or
+"overdue" against.
+
+**A second real gap, found the same way: "create a card in project X... tag it Y" had no way to
+resolve either NAME to an id — closed by `lookup.ts`'s three read tools plus a new write tool,
+`card_add_labels`.** Every write tool in this registry takes an id
+(`listId`/`cardId`/`labelId`/...), never a name, and until now nothing in the registry could ever
+PRODUCE one from a name a person actually typed — `search`'s entity types
+(`card`/`message`/`page`/`comment`/`transcript`) have no `project`/`board`/`label` at all, because
+Phase 8 indexed content people write, not the vocabulary a project is organized with. `list_boards`
+deliberately nests each board's lists in one response rather than requiring a separate
+`list_lists` call — a card is always created into a specific LIST, so a project resolved by
+`list_projects` needs exactly two more calls (`list_boards`, then `card_create`) to reach one,
+not three. `card_add_labels` wraps `setCardLabels` — the real service's own doc comment says it
+REPLACES the whole set, for the same "concurrent editors sending deltas would fight" reason
+`assignCard` does — the same ADDITIVE fix `card_assign` already applies: read the card's current
+labels first, union with the requested ones, then call the real replace. If a label the user names
+is not found by `list_labels`, the tool's own description tells the model to say so rather than
+guess a close match — there is no fuzzy matching or on-the-fly label creation here, a deliberate,
+narrower scope than "tag it Y" might suggest; inventing a label nobody asked for by name is a worse
+failure mode than asking the person to create it first.
+
+**A third gap in the same report — nobody using the assistant could tell what it was capable of —
+was a pure discoverability problem, not a missing tool, and got a UI fix instead of a new tool.**
+`apps/web/src/features/ai/assistant-page.tsx` gained a "What can I do?" panel (open by default on
+a fresh conversation, toggleable afterward from the header) listing every capability in plain
+language, plus clickable example prompts that fill the message box without sending it — so a
+person can see the exact phrasing that reaches a tool and edit it before anything happens. The
+panel's content (`CAPABILITIES`) is hand-curated, not generated from the tool registry: a tool's
+own `description`/`jsonSchema` is written for the MODEL and reads like an API reference (the same
+reason `search`'s own tool description is not what a person should see), so this is a second,
+human-facing restatement kept in sync by hand — the same trade `packages/tokens` already accepts
+for staying in sync with `apps/web/src/styles.css`'s `@theme` block by hand rather than a
+build-time dependency.
+
+**A follow-up report on the same `my_cards` result — real data, but "hard to read and act on
+it" — was a presentation problem the prompt alone could not fix, so it got a real UI, not more
+prompt tuning.** The assistant's own text reply was a numbered list the MODEL had retyped from
+`my_cards`' JSON — accurate, but unclickable, and only as trustworthy as the model's own
+transcription of data the frontend already had verbatim. `my-cards.ts` gained a `cardId` field
+(previously omitted, on `search.ts`'s own "plumbing the model has no use for" reasoning — but the
+FRONTEND does), and `assistant-page.tsx`'s `MessageBubble` now looks up the real `tool_result` a
+`my_cards` call produced (matched by `toolCallId`, from a `toolResultsById` map — a `switch` on
+`role`, not `===`, the identical guardrail-7 collision this file's own `DisplayableMessage`
+handling already documents) and, when it parses as a real card list, renders it as one — reference,
+title, priority, due date, each opening `CardQuickView`.
+
+**`CardQuickView` moved from `features/standup` to `features/work`, and its `onClose` was
+generalized to hand the caller the loaded card rather than invalidating a query itself.** The
+component's own cache-refresh side effect (re-fetching the standup buckets a card edit could have
+changed) was specific to the ONE feature that first needed it; the assistant page needs no such
+refresh, and a shared component has no business knowing which sibling views exist. `onClose` now
+receives the card (or `undefined` if it never loaded) and each caller decides what, if anything,
+to invalidate — `standup-page.tsx` still does its own project-scoped standup invalidation, moved
+into its own `onClose` callback verbatim; the assistant page does nothing extra at all.
+
+**The system prompt (`router.ts`) was told the app already shows a `my_cards` list separately, and
+asked for one short sentence of commentary instead of a restated table** — the same "classification
+stays deterministic, the model only adds real color" instinct this section's `my_cards` entry and
+the standup redesign both already apply, extended to PRESENTATION: once the UI renders the real
+data, a model's prose restatement of the same fields is redundant, not merely verbose.
+
+**A follow-up report — "still no way to mention a sprint or member, and creating a fully-specified
+card takes multiple iterations" — closed the last of the name-resolution gap and, separately, made
+a fully-specified card ONE confirmation instead of up to five.** Two distinct fixes, found from the
+same complaint:
+
+`list_members` and `list_sprints` (`lookup.ts`) round out `list_projects`/`list_boards`/
+`list_labels` — every noun a person can name when describing a card ("assign to Priya," "add it to
+Sprint 14") now resolves to an id in the same conversational turn. `list_members` is the one closing
+a gap this file's own §4.3 section named explicitly and left open: "there is still no tool that
+resolves a person's NAME to a `userId`." It has to check `member:read` itself
+(`can(ctx.subject, 'member:read').allowed`, the identical in-executor check
+`apps/worker`'s automation executor already uses for services with no built-in permission check of
+their own) — `listMembers`'s route floors on `member:read`, and a tool call bypasses every route.
+
+The multi-iteration complaint turned out not to be about the READ side at all — the read-only lookup
+calls above already chain automatically within one turn, invisible to the person typing (that is
+what the tool-calling loop is for). It was the WRITE side: `card_create` only ever took
+`listId`/`title`/`description`, so a fully-specified card ("project X, assign Y, tag Z, due Friday")
+needed `card_create` and then a SEPARATE confirmation for `card_assign`, another for
+`card_add_labels`, another for `card_update`'s priority/due date — up to four more approvals for one
+mental action. Confirmation happens at the TOOL boundary, not the service boundary, so nothing
+stopped one tool from calling the same real services in sequence behind ONE confirmation instead:
+`card_create` now takes optional `assigneeIds`/`labelIds`/`priority`/`dueDate`/`sprintId`, and
+`execute()` chains `createCard` → `assignCard`/`setCardLabels` (full-replace is correct here,
+unlike `card_assign`/`card_add_labels`'s own additive fix — a card that was JUST created has nothing
+to accidentally drop) → `updateCard` (priority/due date, read-then-patch as `card_update` already
+does) → `assignSprint`, all under `card_create`'s own `can()` checks. A failure partway through
+(most commonly a wrongly-resolved id) is reported in a `warnings` array rather than thrown — the
+card already exists by that point, and throwing would leave a real card behind while telling the
+model nothing happened, the same "report per-item outcome, do not pretend nothing happened"
+reasoning `sprint_add_cards` already established for a batch. `card_create`'s own comment states the
+property this whole fix rests on: bundling several real service calls behind one tool call changes
+nothing about what a caller is allowed to do — every call still runs through its own real `can()`
+check — only how many times a human has to click "Approve."
+
+**The `my_cards` fix above was a one-off, and the very next report proved it — `list_projects`
+and `list_boards` results still came back as the model's own retyped bullet tree.** Every tool in
+the registry has always returned real, well-formed JSON as `ToolResult.content`; that was never
+the gap. The gap was that `assistant-page.tsx`'s `MessageBubble` only knew how to interpret ONE
+tool's shape (`my_cards`), so every other tool call fell back to a plain "Used `<tool>`" chip with
+no data in it — and since the model still has to say SOMETHING, it filled the silence by
+transcribing the tool's JSON into prose of its own, which is exactly the "not a clean way to
+present info" complaint repeating itself one tool later. Patching `list_projects` next would have
+left `list_labels` broken, then `list_members`, then every future tool the registry ever grows —
+the same one-test-case-at-a-time trap the report named directly, asking for the whole rendering
+surface fixed at once rather than iteratively.
+
+**`apps/web/src/features/ai/tool-results.tsx` is that whole surface — one renderer per tool, keyed
+by tool NAME through a `RENDERERS` lookup table, dispatched generically from `MessageBubble`.**
+Adding a new tool to the registry now costs one new renderer function and one map entry, not
+another pass through `assistant-page.tsx`'s message-rendering logic. Every renderer reads the REAL
+`tool_result` message (`toolResultsById`, moved here unchanged from `assistant-page.tsx`) —
+never the model's narration of it — and checks `result.isError` first, rendering its own
+tool-specific error presentation rather than falling through to one generic error box; a failed
+`sprint_add_cards` needs to show which cards failed and why, which a generic "something went
+wrong" cannot. `renderToolResult(call, resultsById, ctx)` returns `null` for an unrecognized shape
+or a still-missing renderer, and `MessageBubble` falls back to the plain "Used `<tool>`" chip in
+that case — the fallback that started this whole complaint is now the edge case, not the norm.
+
+**Write-tool renderers read entity identity from `call.input`, not from the service's own output —
+deliberately, to keep the fix entirely frontend-side.** `card_update`, `card_assign`,
+`card_set_status`, and `card_add_labels` all require `cardId` in their INPUT schema, but their
+SERVICE outputs (`{version}`, `{assigneeIds}`, `{statusId}`, `{labelIds}`) never carry it back —
+enriching four backend services and their tests to echo an id the caller already sent would be
+real, avoidable churn. `cardWriteRenderer(verb)` is a small factory that reads
+`call.input['cardId']` and renders the shared `CardActionResult` chip (a checkmark, the verb, and
+an "Open card" link into `CardQuickView`) — one function producing `renderCardUpdate`,
+`renderCardAssign`, `renderCardSetStatus`, and `renderCardAddLabels`, since all four only differ by
+their confirmation verb.
+
+**Every list result links to the real page it names, using the actual route tree
+(`apps/web/src/router.tsx`) rather than a guessed URL** — `list_projects` links each row to
+`/projects/$projectId`, `list_boards` to `/boards/$boardId` with its lists as `Badge` chips beneath,
+`list_members` to `/people/$userId`, `list_sprints` to the project's `/projects/$projectId/sprints`
+view (no per-sprint route exists to link to one directly), `chat_post_message` to `/chat?channel=`,
+and `docs_create_page` to `/docs?space=&page=`. Building these surfaced a real TanStack Router
+typing quirk worth knowing before adding another one: whether a route's `params`/`search` prop
+needs a branded id (`as UserId`, `as ChannelId`) or accepts a plain `string` depends entirely on
+whether that route's `parseParams`/`validateSearch` actually parses through the branded Zod schema
+or passes the value through raw — `boardRoute` and `projectSettingsRoute` do the former and need
+the cast; `personRoute`, `chatRoute`'s `channel`, and `docsRoute`'s `space`/`page` do the latter and
+flag the cast as an `@typescript-eslint/no-unnecessary-type-assertion` error. There is no way to
+know which a given route needs without reading its actual `parseParams`/`validateSearch` — guessing
+either way compiles until lint catches it.
+
+**The system prompt's "don't restate what a tool already rendered" instruction, previously
+`my_cards`/`search`-specific, is now written for every tool in the registry by name** — the same
+generalization the frontend just made, made once more in `router.ts` so the model's own behavior
+matches what the UI actually shows: at most one sentence of genuine commentary after a READ tool,
+never a restated list; a brief confirmation sentence after a WRITE tool that never repeats the
+fields the confirmation chip already shows.
+
+**A long conversation eventually hit `ChatSendInput.messages`' own 40-element cap and got stuck —
+found from a real server log, `BAD_REQUEST: Array must contain at most 40 element(s)`, with the
+assistant simply refusing to reply from then on.** `assistant-page.tsx` resends the WHOLE growing
+transcript every turn (its own header, unchanged since §4 Wave 1) with nothing on the client ever
+bounding it — a real conversation crosses 40 messages faster than it looks, since a single
+tool-calling round contributes an assistant turn PLUS one `tool_result` per tool call, not one
+message per exchange. The 40 cap itself is correct and deliberately not raised: `router.ts`'s own
+comment already calls it "real input-size hygiene, not a product decision about conversation
+length," the identical role `search.query`'s own `.max()` plays.
+
+**The fix windows what gets SENT, not what stays on screen.** `windowForRequest` (`api.ts`) trims
+at the TRANSPORT boundary; `assistant-page.tsx`'s own `messages` state keeps the full history
+forever, and `onSuccess` appends only the new suffix of what comes back
+(`result.messages.slice(variables.messages.length)`) rather than replacing the displayed
+transcript with the server's own (windowed) view of it — `runAssistantTurn`'s own contract,
+`[...transcript, ...newTurns]`, is what guarantees that slice is exactly "what this turn added"
+regardless of how much of the front got trimmed before sending.
+
+**Trimming per MESSAGE would corrupt the transcript, not merely shorten it — Anthropic and OpenAI
+alike reject a `tool_use`/`toolCalls` block with no matching `tool_result` in the very next turn,
+so an assistant tool-call message and the results answering it are one atomic UNIT.**
+`messageUnits` groups the array into these units first; `windowForRequest` then keeps the longest
+RECENT run of whole units that both fits under the cap and starts on a `user` turn — never a
+window that opens on an `assistant` message, since that would mean its own preceding `user`
+message got dropped out from under it, a shape neither provider's API accepts as a first message.
+Walking backward from the newest unit and remembering the earliest `user`-headed unit still within
+budget (rather than stopping at the first one found) is what lets the window include as much
+recent history as actually fits, not just the last two units. The one accepted fallback — a window
+that opens on `assistant` after all — fires only when no `user`-starting suffix fits under the cap
+at all, a pathological shape unreachable at the real 40-message cap in practice; `api.test.ts`
+covers it anyway, alongside the atomic-unit and user-start-preferring properties, as the pure
+function this codebase's own "test the pure half directly" precedent (`neighbours.test.ts`,
+`peer-mesh.test.ts`) already establishes for exactly this kind of client-only logic.
+
+**Two `.role ===` comparisons inside `windowForRequest`/`messageUnits` tripped guardrail 7's
+`roleMember` rule on first pass** — the identical name-not-semantics collision this file's own
+`router.ts`/`anthropic.ts`/`assistant-page.tsx` entries already document for `ChatMessageWire`'s
+chat-turn `role`. Fixed the same way `assistant.ts`'s own `ASSISTANT_ROLE_MESSAGES` already does:
+`Set.has()` membership tests (`USER_ROLE_MESSAGES`, `ASSISTANT_ROLE_MESSAGES`,
+`TOOL_RESULT_ROLE_MESSAGES`) rather than a `switch`, since these are boolean predicates embedded in
+larger expressions, not exhaustive dispatches over the whole union.
+
+**A real transcript surfaced four more defects in one pass: a bare, context-free tool error that
+made a whole conversation unrecoverable; two structured renderers that collapsed into unreadable
+run-on text on copy; the model calling a lookup tool with an id it could not possibly have yet; and
+the model's own free-text replies never rendering as anything but a flat paragraph.** Diagnosed by
+reading the transcript literally — tracing "Not found." to the exact line that produces it, not
+guessing — rather than patched by intuition.
+
+**`defineTool`'s thrown-error branch discarded all context, while its OWN validation-failure branch
+two lines above already prefixed with the tool name — an inconsistency inside one function.**
+`apps/api/src/work/shared.ts`'s `translatingConstraints` turns a foreign-key violation into a bare
+`errors.notFound()` (`packages/contracts/src/errors.ts`'s own default: `'Not found.'`), and dozens
+of call sites across `work/card.service.ts` alone throw that same bare default. Traced from a real
+transcript: with no label-creation tool in the registry (`ai/tools/index.ts` has none, by design —
+"no fuzzy matching or on-the-fly label creation," this file's own Phase 15 §4 Wave 1 section), the
+model fabricated a plausible-looking uuid for `card_add_labels`'s `labelIds`, which passed Zod's
+FORMAT-only check, then failed the real foreign key — surfacing as a bare "Not found." with zero
+indication of which of several tool calls in the turn had even failed. `registry.ts`'s catch now
+prefixes every thrown-error result the identical way its own validation branch already does:
+`` `Tool "${name}" failed: ${message}` ``. `registry.test.ts` gained a case naming this exact
+scenario (a thrown `Error('Not found.')` on a tool named `card_add_labels`) rather than only a
+generic one, so the fix is proven against the failure it was found from, not just a stand-in.
+
+**Two structured list renderers collapsed into unreadable run-on text the moment a person copied
+them as plain text — `Badge` is a `<span>`, and a browser only inserts a line break between
+BLOCK-level elements, not ones separated purely by CSS `gap`.** `list_labels`' flat row of `Badge`
+chips pasted as `choredesigndocsfeaturegoodfirstissue...`; `list_boards`' nested per-board `Badge`
+row of list names pasted as `BacklogTo DoIn ProgressIn ReviewBlockedDone` — both confirmed from a
+real pasted transcript, not merely suspected (an earlier pass had noticed the SAME shape once for
+`my_cards` and left it as an unconfirmed hypothesis; this is that hypothesis confirmed, for a
+different pair of renderers). `renderListLabels` (`tool-results.tsx`) now renders a real vertical
+`EntityList`/`EntityRow` — one label per `<li>`, a genuine block boundary — both more readable at a
+glance for more than a handful of labels and immune to the collapse, since block-level siblings
+survive a plain-text copy. `renderListBoards`' per-board list-of-lists stays a compact single line
+(a board's own columns read naturally that way) but is now a literal joined string
+(`board.lists.map(l => l.name).join(' · ')`) rather than a row of chips — a real character between
+each name, not CSS spacing a copy can silently drop.
+
+**The system prompt gained explicit rules against three behaviors a real transcript caught in one
+sitting: guessing an id, offering a capability with no tool behind it, and silently answering only
+part of a compound request.** `list_boards`/`list_sprints` failed Zod's UUID check on the very
+first turn of a conversation — before the model had ever seen a real project id back from
+`list_projects` — because nothing stopped it from requesting a dependent tool in the SAME round as
+the lookup it depends on; `assistant.ts`'s own loop only guarantees SEQUENTIAL tool EXECUTION
+within a round, never that a later call in the same round can see an earlier one's result, since
+all of a round's tool calls come from one completion the model produced before any of them ran.
+Separately, the model offered to "create the label first" for a capability the registry has never
+had, then retried the identical broken approach a second time after the first attempt's bare
+"Not found." gave it nothing to learn from (now fixed by the paragraph above) — and a compound
+instruction ("set it to urgent and what about labels") got only its second half answered, with no
+`card_update` confirmation for the first half anywhere in the transcript. None of these has a code
+fix on its own — they are the model's own behavior, not a service the assistant calls — so the
+system prompt (`router.ts`) now states each rule directly: every id-shaped field must come from a
+tool result already in the conversation, never invented, with dependent calls sequenced across
+rounds rather than guessed at in the same one; the model can only do what a tool in its list lets
+it do, and must say so plainly rather than offer or retry something it cannot; and a multi-part
+message needs every part answered, not just the last. The same paragraph adds a rule against
+re-calling a `list_*` tool for something an earlier result in the SAME conversation already gave it
+— `list_projects` was called twice and `list_members` a third time in the one transcript that found
+all of this, wasted spend and turns that also made the conversation cross `ai.chat.send`'s 40-message
+cap far sooner than a conversation of its actual complexity should have.
+
+**The model's own free-text replies rendered as a bare `<p>{content}</p>`, so a fixed-enum answer
+with no tool behind it — "1. Urgent 2. High 3. Normal 4. Low" — showed the literal markdown syntax,
+never an actual list.** Most of the model's commentary is one short sentence by design (this
+section's own system-prompt entries above), which a plain paragraph handles fine; the gap is
+exactly the reply that has no tool result to render instead, where the model has to fall back to
+describing something in its own words. `apps/web/src/features/ai/markdown-lite.tsx` is a small,
+deliberately narrow renderer — bold spans and bullet/numbered lists, nothing else — built from real
+React elements (`<p>`, `<ul>`, `<ol>`, `<li>`, `<strong>`) parsed from plain text, never
+`dangerouslySetInnerHTML` over a markdown-to-HTML string, which rule 4 bans outright with no
+exception for content the app itself generated. `parseMarkdownBlocks`/`parseInlineSegments` are
+exported pure functions, tested directly (`markdown-lite.test.ts`) the same "test the pure half"
+way `windowForRequest` and `neighbours.ts` already are, rather than only through a rendered
+component. `MessageBubble`'s assistant bubble now wraps `<MarkdownLite text={message.content} />`
+in the same bg/padding/rounding the bare `<p>` used to carry directly.
+
+**`find_card` closes the one lookup gap `lookup.ts`'s tools had left open — a card by the
+reference every OTHER surface in this app already names it by.** Found from a real transcript:
+"move WEB-709" had no path to a real `cardId` at all, `search` matched nothing (it indexes card
+CONTENT, never the reference), and the model fell back to a plain listing of ~50 unfiltered cards
+and guessed wrong. `getCardByReference` (`work/card.service.ts`) parses `"WEB-142"` into a project
+key and number, uppercasing the key first — `router.ts`'s own `ProjectKey` schema transforms every
+key to uppercase before it is ever stored, so a lowercase reference a person actually types would
+silently match nothing without that step — then the same `card:read` `enforceOn` check every other
+card read already goes through. `lookup.test.ts` gained a `find_card` block covering the real
+match, the case-insensitive match, a reference that parses but does not exist, and text that is not
+a valid reference shape at all — the same "children before parents" teardown fix
+(`work.cards` before `work.sprints`/org) this file's own §4 Wave 3 section already documents,
+needed the moment this test file started creating a card too.
+
+**The system prompt now tells the model directly to use `find_card` for a named reference, since
+nothing about the tool's own existence tells the model WHEN to reach for it over `search`.** The
+same paragraph that already banned inventing an id now names the specific failure mode this closes:
+`search` looking like the obvious tool for "WEB-142" and quietly returning nothing.
+
+**The capabilities panel and empty state were both real instances of the "excessive text nobody
+reads" complaint, found from a screenshot rather than a transcript.** `CAPABILITIES`' items were
+trimmed to true one-liners (padding words removed, not information), and a new `REFERENCE_HINTS`
+row ("Point at things: A card (WEB-142) · A person (@Priya) · A project, board, sprint, or label
+(just its name)") teaches the conventions the assistant is actually reliable at resolving now that
+`find_card` exists — phrased as conventions that work, not a special trigger syntax the input
+enforces, since no such syntax is wired up yet. The empty state's own description used to restate
+the same "ask a question about your projects..." text the panel above it already shows whenever the
+panel is open on a fresh conversation — real duplication on screen at once, fixed by showing that
+description only when the panel is collapsed (`exactOptionalPropertyTypes` needs a conditional
+prop spread here, not `description={condition ? text : undefined}`, since the target's own
+`description?: string` refuses an explicit `undefined` under that setting).
+
+**The reference-hints row hit the identical collapse-on-copy bug this file's own `tool-results.tsx`
+entry just documented for a `Badge` row — caught before shipping, not after.** Three adjacent
+`<span>`s separated only by `gap-x-3` CSS spacing collapse into one run-on line on a plain-text
+copy; fixed the same way, a literal `" · "` string between entries rather than layout spacing
+alone.
+
+**A real `@`/`#`/`&`/`%`/`~` mention picker was deferred here as a genuine scope decision needing
+the project owner's own choice — asked directly, and shipped the same session once both answers
+came back.** `apps/web/src/features/ai/{entity-reference.ts,entity-mention-extension.ts,
+assistant-composer.tsx}`. The two open questions this paragraph itself named: what a picked mention
+actually sends (a display string the model still resolves via a lookup tool, or an embedded id),
+and which entities get a picker at all. The answer to the first was "zero error" stated directly —
+which a display-string-only mention cannot promise on its own, since the MODEL still has to
+independently resolve it, the exact step that can still go wrong (two members sharing a display
+name is a real, documented possibility in this codebase's own seed data — see `packages/seed`'s
+`displayNameNicknameShare`, cited once already in this file's Phase 15 §5 section for exactly this
+collision). The answer to the second was "for all" of people/projects/boards/sprints/lists, with
+the trigger character for the four non-person types left to be decided.
+
+**The wire format needed no change at all — `Label{{type:id}}` is a plain-text suffix, not a new
+`ChatSendInput` field.** `entity-reference.ts`'s own header states the reasoning: `ai.chat.send`'s
+`content` stays an ordinary string, so nothing about `ChatMessageWire`, the server's Zod schemas, or
+the tool-calling loop changes — only the system prompt (`router.ts`) needed a new paragraph telling
+the model to trust an id arriving this way rather than re-resolving it, and `stripReferenceEmbeds`
+strips the suffix back out for DISPLAY of a person's own sent bubble, which otherwise would show the
+raw id sitting behind their `@Priya Nakamura`. `{{type:uuid}}` (ASCII, a closed type enum, a real
+UUID shape required inside) is deliberately over-specific rather than a bare `{{...}}` — a person
+pasting a Handlebars or MediaWiki-style `{{template}}` into a message must never have that text
+silently eaten by a strip function meant only for what the picker itself inserts;
+`entity-reference.test.ts` asserts exactly that non-collision directly.
+
+**Reusing Chat's own `mention-extension.ts` turned out not to be possible, and the real reason is
+worth knowing before trying again:** it is built on a ProseMirror editor instance and serializes
+into Chat's own rich-text JSON, which already carries `userId` structurally — nothing about it needs
+an assistant-specific embed trick, because Chat never throws the structure away. The assistant does
+throw it away (down to a plain string), which is the one thing Chat's node was never built to do.
+`entity-mention-extension.ts` is a NEW, purpose-built generalization of the same underlying pattern
+(a TipTap `Node` on `@tiptap/suggestion`) rather than a Chat/Docs code change — one factory function
+taking `{name, char, type, pluginKey, fetchItems, emptyHint}`, instantiated five times from
+`assistant-composer.tsx`, where the runtime data (`queryClient`, `orgId`, the current document's own
+content) actually lives.
+
+**A plain `<textarea>` was considered and rejected for a reason beyond "TipTap is what Chat already
+uses" — string-index tracking cannot survive an edit near an inserted mention.** Splicing a
+mention's display text into a plain string and remembering `{start, end, type, id}` breaks the
+moment a person edits text before or after it: the recorded range drifts, and there is no way to
+tell "three characters were deleted before the mention" from "part of the mention itself was
+deleted." A TipTap atomic inline node does not have this problem — it is a single indivisible unit
+that carries its `refId` regardless of what is typed around it, the identical guarantee Chat's own
+`@mention` already relies on. The genuine complexity of a real editor instance is spent buying
+correctness a string-splicing approach cannot actually deliver, not convenience.
+
+**Registering five `Suggestion()` plugins in one editor crashes unless each gets its own
+`PluginKey` — the library's own default silently shares one across every instance that does not set
+one explicitly.** `@tiptap/suggestion`'s `Suggestion({pluginKey = SuggestionPluginKey, ...})`
+defaults to the SAME exported singleton, fine for Chat/Docs (one mention type each) and fatal here:
+ProseMirror refuses to build an editor state with two plugins sharing a key at all. Each of the five
+entity types gets its own `PluginKey`, created once in `assistant-composer.tsx` (a lazy `useState`
+initializer, not a fresh one per render, since `isAnyMentionSuggestionActive`'s lookups need the
+SAME reference across renders to keep resolving) and threaded into the factory. The consequence
+reaches further than plugin registration: `rich-text-editor.tsx`'s own `handleKeyDown` checks ONE
+`SuggestionPluginKey.getState()` to tell "Enter should pick the highlighted candidate" from "Enter
+should submit" — with five independent keys, that check has to ask all five,
+`isAnyMentionSuggestionActive` doing exactly that.
+
+**Board/sprint/list pickers require a project (or board) already mentioned earlier in the SAME
+draft — a real, documented boundary, not a corner cut for time.** `work/api.ts` has no org-wide
+"every board" or "every sprint" query; `boardsQuery`/`sprintsQuery` take a `projectId`,
+`listsQuery` a `boardId`, matching the actual hierarchy a board belongs to a project and a list to a
+board. Inventing new backend routes purely so this ONE picker could search org-wide would be new
+surface for a UI convenience a real workflow does not need anyway — "in Website's Delivery board"
+is how a person phrases this regardless. `firstMentionInDoc` walks the CURRENT ProseMirror document
+for the first node of the prerequisite type and reads its `refId`; typing `&`/`%` before a project,
+or `~` before a board, shows "Mention a project first." / "Mention a board first." instead of an
+empty list that looks like the org simply has none.
+
+**The placeholder text is a small React-managed overlay, not `@tiptap/extension-placeholder`.**
+Adding a new dependency for one small affordance in an already-large change was not worth it; the
+overlay is built from `empty` state this component already tracks via `onUpdate` (shown only while
+`editor.isEmpty`), rather than the official extension's usual mechanism — a ProseMirror decoration
+carrying `content: attr(data-placeholder)` on the exact empty `<p>` node, which the FIRST version of
+this file got wrong by setting `data-placeholder` on `editorProps.attributes` instead (the OUTER
+`contentEditable` div, not the inner paragraph CSS's `attr()` actually needs it on) — caught before
+shipping by reasoning through the CSS rule rather than by a runtime check, since a broken placeholder
+is easy to miss visually behind an already-empty-looking input.
+
+**The example prompts in `CapabilitiesPanel` show trigger characters as literal pre-fill text, and
+clicking one does NOT produce a real resolved mention.** `insertPlainText` inserts exactly the
+characters shown — `#Website` lands as four ordinary characters, not a `projectMention` node with a
+real `refId` — since a static string has no candidate to resolve against. The example demonstrates
+PHRASING; retyping the trigger character after clicking one in is what actually opens a picker and
+earns the "zero error" property. Documented in the constant's own comment rather than silently
+accepted as a minor inconsistency, since it is exactly the kind of gap a person could reasonably
+expect not to exist.
+
+**A real transcript, made possible by `find_card` actually letting the assistant REACH a card,
+surfaced the next two gaps immediately behind it: moving a card between lists/boards had no tool,
+and neither did commenting on one.** "Move it to Bug Triage" (a board name) failed twice — the
+model tried `card_set_status` (a different concept entirely: a card's STATUS, per
+`card.service.ts`'s own `setCardStatus`, is a project-level field with no relationship to which
+list or board a card sits on) and `sprint_add_cards` (mistaking a board for a sprint) — both ending
+in a bare "Not found." (now at least correctly attributed to the right tool, per this file's own
+earlier `registry.ts` fix). "Add a comment... and tag @Rosa" reached for `chat_post_message`
+instead, a completely different subsystem — a card comment is Work's own `comment:create`, never a
+Chat channel message.
+
+**`card_move` wraps the real `moveCard`, which the tool registry had simply never reached before —
+`card_set_status` was never it, by design.** `moveCard`'s own doc comment already states it can
+cross BOARDS within the same project (never across projects, refused by the service itself), which
+is exactly "move it to Bug Triage" when Bug Triage is another board in the same project. The tool
+takes `cardId`, `boardId`, and `listId` — `boardId` requested explicitly rather than looked up
+inside the tool, since the model already has it from `list_boards`' own nested
+`{boardId, lists: [{listId}]}` shape, avoiding a second lookup purely for this tool's convenience.
+
+**There is no `beforeCardId`/`afterCardId` input, on purpose — a model has no drag position to
+report — and always appending to the END of the target list caught a real bug in its own first
+implementation.** `moveCard` derives the new rank as `between(rankOf(beforeCardId),
+rankOf(afterCardId))` — `beforeCardId` is the LOWER bound (the neighbour that sorts before the
+moved card), `afterCardId` the upper. The first version of `card_move` passed the target list's
+current last card as `afterCardId`, reading the name literally ("goes after this one") rather than
+by the actual bound it names — which is backwards, and puts the moved card BEFORE the existing
+last card, not after it. `card.test.ts`'s own test asserts the actual resulting ORDER of the target
+list post-move, not merely that the call succeeded, and failed on the first version — exactly the
+"a real test, not a mock that could agree with a wrong implementation" property this codebase's own
+Wave 2 section already states for confirm-before-execute. Fixed by passing the last card as
+`beforeCardId` and leaving `afterCardId` null.
+
+**`card_add_comment` wraps `createComment`, reusing `chat_post_message`'s own segment shape rather
+than inventing a second one.** The ordered text/mention SEGMENTS `chat_post_message` already
+composes (`chat.ts`'s own header: "a direct, lossless map onto the one paragraph `sendMessage`'s
+`body` becomes") apply identically here — `createComment`'s `body` is the same `RichTextNode` shape
+— so the schema, JSON schema, and segments-to-rich-text mapping moved to a new shared
+`apps/api/src/ai/tools/segments.ts` rather than being copied a second time, with `chat.ts` updated
+to import from it instead of keeping its own local copy.
+
+**Exporting that shared schema surfaced a real TypeScript declaration-emit trap worth knowing
+before it happens again: `tsc` refused to compile with TS4023, "has or is using name 'brand' from
+external module... but cannot be named."** A Zod schema referencing a branded type
+(`UserIdSchema`'s `UserId` brand) compiles fine as long as the schema constant is never itself
+EXPORTED with its type left to bare inference — every existing tool file's own input schemas
+(`CardCreateInput`, `CardAssignInput`, ...) are local, unexported consts, which is why none of them
+had ever hit this. The moment the identical schema needed to be exported for `card.ts` to reuse, the
+declaration emitter needed a NAMEABLE type for it and could not synthesize one from
+`@taskflow/contracts`' own internal brand symbol. Fixed by giving the export an explicit type
+annotation — a hand-written `MessageSegment` type (naming the exported `UserId`, not the
+unexported brand symbol) and `z.ZodType<MessageSegment, z.ZodTypeDef, unknown>` on the schema
+const — rather than relying on inference to produce a nameable type on its own.
+
+**The system prompt gained one more rule this same transcript's very first exchange named
+directly:** the model created a card in a project/board/list the user never specified, and the
+user's own follow-up — "but u did not ask me anything about it" — confirmed that was the wrong
+call. `router.ts` now tells the model to ASK which project, board, or list a create-or-move request
+belongs in in whenever the user's own message does not say, rather than silently picking one — even
+one mentioned earlier in the conversation — unless the most recent message clearly implies it.
+
+### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
+
+`apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·
+`ToolDefinition.requiresConfirmation`. Spec: same file, §4.2, §4.3 item 2 ("small single-card
+writes: create/update/assign/prioritize, always confirmed inline"). Deliberately not built:
+sprint planning (§4.3 item 3), cross-member tagging/discussion (item 4), the standup view (§5),
+doc-space bootstrap (§6), GitHub/PR integration (§7), onboarding/offboarding automation (§8).
+
+**§4.2 and §4.3 contradict each other on exactly these tools, and this wave ships the more
+conservative reading rather than guessing.** §4.2's illustrative text says
+`card.create`/`card.update` "are cheap to undo and can execute directly once permitted"; §4.3's
+wave-ordering table says the identical tools are "always confirmed inline." The spec is marked
+DRAFT — not yet approved for build — and this is exactly the kind of ambiguity CLAUDE.md's own
+"a status marker is a claim, not a fact" discipline exists to catch rather than paper over. Every
+write tool in this wave requires confirmation, with no exception, matching §4.3's stricter text:
+loosening any of them to auto-execute is real, separate, reviewable work later — the identical
+posture §4.3 itself takes toward PR merge/close ("loosening that later is a deliberate, separate
+decision"), not a default this pass takes for itself.
+
+**`card.set_priority` is `card.update`, not a fifth tool** — there is no separate
+`setCardPriority` SERVICE to wrap; `card.service.ts`'s own doc comment already explains why
+priority "rides" `updateCard` rather than getting a dedicated mutation, and inventing a
+priority-only AI tool around the same full-replace call would just be `card.update` with fewer
+fields exposed.
+
+**`card.update` and `card.set_priority`'s old §4.1 name both read the card FIRST and pass every
+untouched field back unchanged** — the identical fix `apps/worker`'s automation executor already
+uses for its own `card.set_priority` action, itself citing this file's documented `cards.update`
+full-replace trap for the web client. A tool that patches by taking "whatever the model
+mentioned" and defaulting the rest would erase a description per rename exactly like the bug this
+file already documents once. `'field' in input` distinguishes "not supplied" from "explicitly
+cleared" (`{ dueDate: null }`), the same reasoning `apps/web`'s own `useUpdateCard` gives.
+
+**`card.assign` is ADDITIVE, never the real `assignCard`'s full replace** — mirroring
+`apps/worker`'s own automation `card.assign` action, which is additive for the identical reason:
+"assign this to Bob" spoken in a chat means ADD Bob, and a tool that silently unassigned everyone
+else because the model did not enumerate them would do quiet damage a confirmation prompt would
+not even show clearly. An "unassign" tool is future work, not a gap in this one's contract.
+
+**Confirm-before-execute needed no new server-side state, no persistence table, and no second
+route.** When a round's tool calls include one flagged `requiresConfirmation`, NONE of that
+round's calls run — the model's assistant turn (its text plus the requested `toolCalls`) is
+appended to the transcript and `runAssistantTurn` returns immediately with `pendingToolCalls` set,
+before calling the model again. The pending state IS the transcript itself: only a deferred return
+ever leaves an unresolved assistant tool-call turn with no `tool_result` after it, since every
+other path in the loop appends matching results before returning or continuing — so a caller
+resumes by resending that exact transcript back, unchanged, with a new `confirmedToolCallIds`
+naming which pending calls a human actually approved. A call whose id is absent from that list is
+DECLINED, never merely unconfirmed — defaulting an omitted id to "run it anyway" would make a
+client bug indistinguishable from a human's "yes," which is the one guarantee this whole
+mechanism exists to prevent. `assistant.test.ts` proves all three shapes against the real
+`card.create` tool and a real database: deferred (nothing runs, zero rows), resumed-and-confirmed
+(the real service runs, a real row exists), and resumed-with-nothing-confirmed (declined, zero
+rows) — not against a mock that could agree with a wrong implementation.
+
+**`ToolDefinition.requiresConfirmation` is a required field, not a default.** The same reasoning
+guardrail 6 gives for not defaulting a domain event to "none": a write tool that forgot to set it
+should fail to compile, never silently inherit whatever the previous tool in the file happened to
+choose. `ToolContext` gained a `requestId` alongside `subject` for the identical reason a `WorkActor`
+needs one — every write tool builds a real `WorkActor` to call the real `apps/api/src/work` service,
+so the domain event it emits carries a real request id into the audit trail, reading "AI, on behalf
+of `<user>`, did X," never "AI did X."
+
+**Every tool name in this registry was `card.create`-style dotted, and every one of them broke the
+first time a real OpenAI completion tried to use one.** OpenAI's Chat Completions API validates
+`tools[].function.name` against `^[a-zA-Z0-9_-]+$` — no dot — and `ai.chat.send` 500'd with
+`Invalid 'tools[N].function.name': string does not match pattern` the moment `resolveAiProvider`
+picked `OpenAiProvider` for an org (found from real server logs, not a fixture: `packages/ai`'s
+`AnthropicProvider` shares the identical real constraint, so this was latent for Anthropic too,
+just never exercised live). Nothing in this repository's own tests could have caught it —
+`assistant.test.ts` and every tool's own test call `execute` directly or drive the loop against a
+`FakeAiProvider`/stubbed `fetch`, so a real provider never validated a real tool list until an org
+actually configured to use one did. Renamed every write tool to `snake_case`
+(`card_create`/`card_update`/`card_assign`/`card_set_status`/`sprint_create`/`sprint_add_cards`/
+`chat_post_message`/`docs_create_page`) — scoped to `apps/api/src/ai/` where these strings are
+genuine tool identifiers, since the same substrings appear unrelated elsewhere (domain event names,
+automation action types) and are not part of this rename. `apps/web/src/features/ai/setup-dialog.tsx`
+composes an instruction telling the model to use "your `docs_create_page` tool" by literal name for
+§6's bootstrap flow — the one place outside the registry itself where the exact string mattered
+functionally, not just as prose, and needed the identical fix.
+
+### Phase 15 §4 Wave 3 — sprint planning tools (SHIPPED)
+
+`apps/api/src/ai/tools/sprint.ts`. Spec: same file, §4.3 item 3 ("sprint planning (multi-card,
+higher blast radius)"). Deliberately not built in this wave: cross-member tagging/discussion
+(§4.3 item 4, mostly existing plumbing per the spec's own note — see its own section below, since
+it shipped in a later pass), the standup view (§5), doc-space bootstrap (§6), GitHub/PR
+integration (§7), onboarding/offboarding automation (§8).
+
+**Unlike Wave 2's `card.create`/`card.update`, the spec has no internal contradiction to resolve
+here** — §4.2 names "sprint creation" itself, by name, as an example of an action needing
+confirmation, and "moving many cards" as its own named example of a bulk operation that does too.
+Both `sprint.create` and `sprint.add_cards` require confirmation, consistent with Wave 2's
+across-the-board policy but this time with the spec's unambiguous agreement rather than a
+deliberately conservative reading of a contradiction.
+
+**There is no bulk `assignSprint` in the service layer, so `sprint.add_cards` loops the real
+per-card one — sequentially, the same ordering guarantee every write tool in this registry
+keeps — and reports each card's OWN outcome rather than aborting the whole batch on the first
+failure.** This is a deliberate departure from `apps/worker`'s automation executor, which stops a
+RULE at its first failed action because a rule runs unattended and a partial run with nobody
+watching needs a clean, unambiguous point to retry from. This tool runs only after a human has
+already confirmed moving these specific cards; abandoning the other 49 because card 3 was already
+in a completed sprint would be worse for them, not safer, since they can see exactly which cards
+failed and why and decide what to do about only those. `sprint.test.ts` proves the property
+directly: one bogus card id alongside one real one still moves the real one and reports the bogus
+one's failure by name, rather than either silently dropping the failure or refusing the whole
+batch.
+
+**Teardown for this test file needed the `work.sprints` row deleted before `work.projects`** —
+`card.test.ts`'s simpler fixture (no sprints) can delete an org straight through and let
+whatever cascade exists handle the rest, but a sprint referencing a project with no `ON DELETE
+CASCADE` between them means the identical straight-through teardown here hits
+`sprints_project_fk` the first time a test actually creates one. Fixed the same way
+`work.service.test.ts`'s own `removeOrg` and `tenancy-seed.ts`'s `clearTenant` already document:
+children before parents, explicit about every table rather than relying on a cascade path that
+may not exist for a table a fixture only started touching later.
+
+### Phase 15 §4.3's last item — `chat.post_message` (SHIPPED, closes §4.3's wave order)
+
+`apps/api/src/ai/tools/chat.ts`. Spec: same file, §4.1's table and §4.3 item 4 ("cross-member
+tagging/discussion — already mostly exists via `mention` + Chat, mainly assistant wiring, not new
+primitives"). With this, every wave §4.3 names is shipped. _(§4.1's table named one more tool no
+wave had built — `docs.create_page` — shipped in a follow-up pass; see its own section below.)_
+
+**This is the one write tool where §4.2's own text is unopposed, and it still requires
+confirmation.** §4.2 names `chat.post_message` alongside `card.create`/`card.update` as "cheap to
+undo... can execute directly once permitted," and unlike those two, §4.3 never separately
+contradicts that for this tool — there was no genuine ambiguity here the way Wave 2's had one to
+resolve. The choice to gate it anyway is deliberate, not a reflex extension of Wave 2's policy: a
+posted message is read — and a `mention` notifies its target — before anyone could undo it,
+unlike a card field only the people already looking at that card would ever notice change.
+Loosening this to auto-execute, matching §4.2's text exactly, is real, separate, reviewable work
+later, the same posture this registry already takes toward every other write tool.
+
+**The model composes the message as ordered SEGMENTS, not a markup string the tool would have to
+parse.** A `text` segment becomes a `text` node; a `mention` segment (naming a `userId` and the
+`label` to display) becomes a `mention` node — the exact TipTap shape a human's own composer
+produces, mapped directly rather than reconstructed from parsed `@name` syntax. This is what makes
+`mentionedUserIds` (Phase 9's notification extraction) see the tag: the tool calls the real
+`sendMessage`, so a person the assistant mentions is notified through the SAME path a human
+mentioning them would use, not a second one invented for the assistant.
+
+**There is still no tool that resolves a person's NAME to a `userId`** — the identical
+discoverability gap `card.create`'s `listId` and `sprint.add_cards`'s `sprintId` already have (see
+their own sections). A mention today needs a `userId` the conversation already supplied some other
+way. Real, not fatal: `mention`'s own `isValidId` check inside `RichTextDocument` means a malformed
+id refuses cleanly rather than posting garbage, the same as every other rich-text boundary in this
+codebase.
+
+### Phase 15 — `docs.create_page` (SHIPPED, §4.1's table's last unbuilt tool)
+
+`apps/api/src/ai/tools/docs.ts`. Spec: same file, §4.1's table ("used by the org-onboarding
+bootstrap, §6") and §6 itself. Deliberately not built: §6's actual bootstrap FLOW — the new-org
+prompt offering to run the assistant, and the conversational "team size, wiki vs. handbook"
+question sequence — which needs a UI trigger this pass does not add; only the tool the flow would
+call.
+
+**Title only, no body content — because that is genuinely all the real `createPage` service can
+do, not a scope-narrowing choice this tool makes on its own.** Docs Wave 1 shipped `docs.pages` as
+tree-only with no body column at all; a page's actual prose is written exclusively through
+`apps/collab`'s Hocuspocus/Yjs sync, "the one process allowed to write from a socket handler."
+There is no honest "create this page with this text" call for an ordinary HTTP caller to make —
+this tool included — so a page the assistant creates is a titled, empty node in the tree, exactly
+what §6's own description asks for ("a starter Docs space — a handful of pages... using the
+`docs.create_page` tool," never pre-filled prose). Whoever opens the new page still writes its
+content the normal way.
+
+**Requires confirmation despite §6 making the strongest case yet for skipping it.** §6 calls a
+created page "safe by construction" and "trivially reversible" — stronger language than §4.2 uses
+for `chat.post_message`, and §4.2 does not even list `docs.create_page` among its own "cheap to
+undo" examples, so that argument is this codebase's reading of §6, not the spec's own text. Kept
+confirmation-gated anyway: one uniform rule (nothing writes without a human's explicit yes) is
+simpler to reason about and audit than deciding tool-by-tool which risk is low enough to skip, and
+consistency is worth more here than the marginal convenience of auto-executing the one tool with
+the best argument for it.
+
+### Phase 15 — five more tool-registry gaps, closed in one pass (SHIPPED)
+
+`apps/api/src/ai/tools/{lookup,chat,card}.ts`. Prompted directly by the project owner ("add all
+the tools missing, why do I need to ask for every one") after a transcript surfaced three failures
+in one conversation rather than the usual single bug report — this pass is a deliberate departure
+from the wave-by-wave, one-report-at-a-time cadence every earlier tool addition in this file
+followed. The instruction changed the METHOD (audit the registry proactively instead of waiting for
+the next failure), not the bar for what counts as a real gap — every addition below still traces to
+a concrete transcript or a documented "future work" comment already sitting in the code, not a
+speculative capability nobody asked for.
+
+**`list_statuses` (`lookup.ts`) — the same name-to-id gap `list_boards`/`list_labels`/`list_sprints`
+already closed, one entity type they missed.** `card_set_status` failed "Not found." three times in
+a row against a project with boards "Roadmap" and "Incidents": a card's `statusId` is a
+project-level field (`work.statuses`) entirely independent of which list/board it sits on
+(`status.service.ts`'s own header), and nothing in the registry had ever produced one — the model
+guessed a list id where a status id belonged, because in that project's own vocabulary a status name
+("In Progress") and a list name happened to overlap. Wraps the real `listStatuses`, which already
+enforces `project:read` itself; no in-tool check needed, the same shape every other project-scoped
+lookup tool here already has.
+
+**`list_channels` and `chat_post_message`'s new `dmUserIds` (`chat.ts`) — the identical id-resolution
+gap, for Chat.** "Send a msg to @Rosa Pereira" failed "Not found." for the structural reason
+`list_statuses` above fixes for cards: nothing in the registry could ever produce a `channelId` —
+not for an existing named channel, and not for a DM, since `list_members` gives a `userId`, never a
+channel. Two tools close it, not one, because the two cases have different shapes: `list_channels`
+is an ordinary read (wraps `listChannels`, which already filters to what the caller may see via its
+own per-row `can()`, so this tool adds no authorization of its own) for a channel or DM that ALREADY
+exists; a DM that does not yet exist needs a WRITE (`openDirectMessage` finds-or-creates it), and
+giving that its own confirmation step would mean two approvals for one "message Rosa" request — one
+to open the DM, a second to actually send anything. Instead `dmUserIds` is a second, mutually
+exclusive input on `chat_post_message` itself, and `execute()` calls `openDirectMessage` then
+`sendMessage` behind the SAME single confirmation, the identical "bundle several real service calls
+behind one tool call" shape `card_create` already established for create+assign+label+priority+
+sprint — every call still runs through its own real check, so bundling changes nothing about what
+the caller may do, only how many times a human clicks Approve. `openDirectMessage`'s own ROUTE
+floors on `channel:read` ("starting a conversation with a colleague is not the same capability as
+creating a channel the whole organization sees"); a tool call bypasses every route, so the tool
+checks that permission itself before calling it, the same in-executor pattern `list_members` already
+uses for `member:read`.
+
+**`card_unassign` and `card_remove_labels` (`card.ts`) — the subtractive counterparts `card_assign`
+and `card_add_labels` never got.** "Remove the first assignee we had" was not a bug — the model
+correctly reported that unassigning was unsupported, exactly as `card_assign`'s own comment
+predicted ("a separate 'unassign' tool is future work, not a gap in this one's contract"). The
+explicit "add everything missing" instruction turned that documented deferral into work for this
+pass. Both mirror their additive sibling exactly in reverse: read the current set fresh (never a
+stale one the model might be holding from an earlier turn), drop the named ids, write the remainder
+back through the same full-replace service call (`assignCard`/`setCardLabels`) the additive tools
+already use — resolving against a freshly read set is what keeps this safe against a concurrent
+change the same way the additive tools already are.
+
+**Label CREATION was deliberately left out of this pass, not overlooked.** Unlike the five additions
+above, "labels can only be looked up and applied, never created" is an existing, reasoned design
+decision (this file's own §4.3 entry: "inventing a label nobody asked for by name is a worse failure
+mode than asking the person to create it first"), not a gap this transcript's failures pointed at —
+nothing in the pasted conversation showed the MODEL trying and failing to create one; it correctly
+declined. Reversing a deliberate scope boundary is a different kind of change than closing an
+oversight, and belongs in its own pass if wanted, not folded silently into a sweep prompted by
+unrelated bugs.
+
+`router.ts`'s system prompt gained explicit guidance on the two sharpest confusions the transcript
+showed: a card's STATUS (`list_statuses`) is a different thing from its LIST/BOARD (`list_boards`),
+never one guessed for the other; and there is no separate "open a DM" tool to look for —
+`chat_post_message`'s own `dmUserIds` handles it. `apps/web/src/features/ai/tool-results.tsx` grew a
+renderer for each new read tool (`list_statuses`, `list_channels`) and reused the existing
+`cardWriteRenderer` shape for the two new card tools; `chat_post_message`'s renderer now reads
+`channelId` back from the tool's own RESULT rather than the call's `input`, since a DM opened via
+`dmUserIds` has no `channelId` in its input at all — only in what the tool resolved it to.
+
+### Phase 15 §8 — onboarding/offboarding automation (SHIPPED, a real subset)
+
+`apps/worker/src/automation/{types,executor,loop-protection}.ts` (the six new action types) ·
+`apps/api/src/automation/{router,automation.service}.ts` (the matching write-boundary schemas) ·
+`apps/api/src/tenancy/{events,member.service,member-grant.service}.ts` (`member.offboarding_started`,
+`startOffboarding`, `revokeAll`) · `apps/api/src/work/{events,card.service}.ts`
+(`card.bulk_reassigned`, `bulkReassignCards`) · `apps/api/src/identity/identity.service.ts`
+(`logoutEverywhere`'s new `reason` parameter and narrowed deps type). Spec: same file, §8
+("no new subsystem, two new trigger events and a handful of new actions"). This section ships six
+of §8's ten checklist items — the ones a real service call already exists for, or needed only a
+small, reviewable one — and documents the other four as deliberate deferrals below rather than
+half-building them.
+
+**The onboarding trigger already existed and needed no new code.** §8's draft names
+`membership.created`; the real event, registered since Phase 2, is `member.added`
+(`apps/api/src/tenancy/events.ts`) — the identical "the spec's draft event name doesn't match the
+schema" gap this file's Phase 15 §2+§3 section already documents for `ai.usage_ledger`. Every
+onboarding rule below is written against `member.added`.
+
+**Offboarding needed a genuinely new trigger, and it changes nothing about the membership row.**
+`member.offboarding_started` (`tenancy/events.ts`) is raised by a new `tenancy.members.startOffboarding`
+route (`member:remove`, no step-up — nothing here is destructive) that writes no column at all; its
+only effect is the event. This is the "distinct from immediate removal" §8 asks for: an admin can
+flag someone as leaving and let the checklist run (session revocation, card reassignment, grant
+cleanup) while the person is still, technically, a member — `removeMember` remains the only thing
+that actually ends the membership, called separately, same as today. Calling `startOffboarding`
+twice is not an error, on purpose: there is no state here a second call could corrupt.
+
+**All six new actions act on the member the TRIGGER named, never a `userId` the rule stores** —
+`userIdOf(event)` in `executor.ts` is `cardIdOf`'s exact discipline (§4's own established pattern)
+applied to §8: `member.added`/`member.offboarding_started` both carry `userId` in their payload, no
+action's Zod schema has a `userId` field of its own (`.strict()` refuses one), and
+`action-schema.test.ts` asserts that refusal directly. The one action naming a SECOND person,
+`cards.bulk_reassign`'s `toUserId`, is the replacement assignee — there is no other way to say who a
+departing member's work goes to.
+
+**`channel.add_member` / `channel.remove_member` wrap the existing `addChannelMember`/
+`removeChannelMember` (Phase 5) and need no authorization check of their own in the executor** —
+both already carry `channel:manage` internally, the identical "the service checks itself" shape
+`card.assign` etc. already rely on. Message history is untouched by a removal for the ordinary
+reason it always has been: `removeChannelMember` only deletes the membership tuple, never a message
+row, so §8's "without deleting their message history" item needed no new mechanism at all — the
+existing service already has that property.
+
+**`docs.grant_space_access` and `member_grant.revoke_all`/`identity.revoke_sessions` are the three
+actions that needed an authorization check INSIDE THE EXECUTOR, because the services they call do
+not check themselves.** `grant.service.ts`'s `grant()`, `member-grant.service.ts`'s `revokeAll()`
+(new — see below), and `identity.service.ts`'s `logoutEverywhere()` all rely on their tRPC ROUTE's
+`route({ permission: 'member:manage' })` for authorization, exactly as `grants.grant`'s route
+comment says: "writing a tuple is granting access to a specific thing, so it sits behind
+`member:manage`." A worker call bypasses every route, so `executor.ts`'s three new cases call
+`can(actor.subject, 'member:manage')` themselves before reaching the service — the identical
+reasoning `enqueueWebhookDelivery` already gives for checking `webhook:manage` INSIDE itself rather
+than trusting a route that cannot see this caller. `docs.grant_space_access` fixes the relation at
+`'viewer'` rather than taking one as a field, on purpose: an unattended rule handing out `'editor'`
+or `'owner'` on a space is a bigger blast radius than "let the new hire read the handbook" needs.
+
+**`member-grant.service.ts` gained `revokeAll` — a loop of the same conditional UPDATE `revoke()`
+already makes, not a new bulk statement** — because each permission is its own `memberGrantRevoked`
+event (guardrail 6), and an admin auditing "what could this person still do the day they left"
+wants the list, not a count. Idempotent on zero active grants, the common case for most members.
+
+**`identity.service.ts`'s `logoutEverywhere` gained a `reason` parameter (`'logout_all'` default,
+`'admin'` for offboarding) and a narrowed deps type — `Pick<IdentityDeps, 'events' | 'now'>` instead
+of the full interface.** The narrowing is what makes this the one identity mutation callable from
+OUTSIDE the identity module without fabricating a `config`/`checkBreached`/`deliver` the caller
+holds none of. `identity.sessions` carries no RLS at all (Phase 12 Wave 2), so there is no
+per-resource question for `can()` to ask here the way there is for a grant on one space — ending a
+colleague's sessions is folded into the same `member:manage` bucket that already covers role changes
+and removal.
+
+**`cards.bulk_reassign` is a genuinely new mutation shape, exactly as §8 itself calls it out
+("own audit event since it's a new mutation shape, not a loop of existing ones").** No bulk
+`assignCard` exists, so `bulkReassignCards` (`work/card.service.ts`) queries every non-archived card
+carrying `fromUserId` (`uuidArrayContains`, the same named expression Docs' ancestor lookups use) and
+updates each — but authorization is still PER CARD, inside the loop, because a relationship tuple can
+restrict `card:update` on one board and not another (§8.2's worked example). A card the rule owner
+cannot touch is reported in the result's `failed` list rather than thrown — the `sprint.add_cards`
+precedent for a confirmed bulk operation: abandoning every other card because one board refused would
+be worse for the org, not safer. One event, `card.bulk_reassigned`, names every card the operation
+actually touched; `apps/api/src/tenancy/audit.projection.ts` resolves it to the departing member
+(`fromUserId`) rather than to any one card, since there is no single card to name and "what happened
+to this departing member's work" is the question an offboarding audit actually asks.
+
+**Four of §8's ten checklist items are deliberately NOT built, and each needed a real design
+decision this pass did not make, not just more typing:**
+
+- **Onboarding item 3 (starter checklist cards / "clone template cards").** There is no `card.create`
+  automation action and no card-template-cloning concept in the engine at all; inventing either is
+  real, separate work, not a one-line addition to this pass's six.
+- **Onboarding item 4 (notify the manager).** `platform/notification.projection.ts`'s `plan*`
+  functions are deliberately PURE — no database read — and "who is this new hire's manager" needs
+  one (`people.membership_profiles.manager_user_id`, Phase 11.5). Breaking that purity for one
+  notification kind is a design decision for that file, not something to slip in here.
+- **Onboarding item 5 (apply the role's default permission-grant bundle).** There is no "role →
+  default `member_grants`" config table anywhere in this codebase yet — building one is new state,
+  not a new action wrapping existing state, and deserves its own review.
+- **Offboarding item 3's connector half ("connected-tool access (repo, telephony)").** The telephony
+  half is already covered: `call:place`/`sms:send`/`phoneNumber:read` are ordinary `member_grants`
+  permissions, which `member_grant.revoke_all` already revokes. The connector half does not apply to
+  this codebase's actual model — Slack/GitHub connector rows are ORG-scoped credentials
+  (`apps/worker`'s own `integration-action.service.ts`), not per-member, so there is nothing
+  per-departing-member to revoke there.
+
+_(Corrected in place, per this file's own habit, rather than silently rewritten: three of these
+four — starter cards, notify the manager, the role default grant bundle — shipped in a later pass,
+each after the real design decision this paragraph said it needed. The connector item above needed
+no further work; it was already closed. See "Phase 15 — §8's four deferred items, closed" further
+down for what actually shipped and why.)_
+
+Offboarding item 5 ("final audit entry confirming the checklist completed") needed no new code
+either, for a different reason: `automation_runs` already records every rule's full outcome
+(`RunOutcome` — status, per-action results, duration) on every execution, which already answers
+"did the checklist complete and what happened" more precisely than a single confirmation entry
+would.
+
+### Phase 15 §4 — the assistant's missing frontend, found while building §6 (SHIPPED)
+
+`apps/web/src/features/ai/{api,assistant-page,setup-dialog}.tsx` ·
+`apps/web/src/lib/{assistant-seed,bootstrap-flag}.ts` · the `useAi` capability
+(`apps/api/src/tenancy/org.service.ts`). Spec: same file, §4 and §6.
+
+**Every wave of the assistant — read-only search, single-card writes, sprint planning,
+`chat.post_message`, `docs.create_page` — had shipped as a tRPC route with no way for a person to
+actually reach it.** Building §6 (the new-org bootstrap offer) surfaced this: §6 assumes an
+assistant chat surface exists to hand the user off to, and none did. Closing that gap turned out
+to be §6's real prerequisite, not `docs.create_page` (which §6's own spec correctly named as
+already built) — the missing piece was the ENTIRE frontend, found only because building the
+feature that depends on it forced someone to look for the page it links to.
+
+**`ai.chat.send`'s statelessness (§4 Wave 1's own design) is what let the client own the whole
+transcript with no new persistence.** `assistant-page.tsx` keeps `messages` in local component
+state, resending the growing array every turn exactly as the route's header always specified;
+nothing server-side needed to change to grow a UI on top of it.
+
+**Confirm-before-execute (§4.2) is rendered as one Approve/Decline row per pending call, never a
+single "approve all."** `assistant.ts`'s own contract is per-id — an id absent from
+`confirmedToolCallIds` is declined, never "undecided" — and a blanket approve button would make it
+impossible to say yes to two proposed actions and no to a third, the exact shape a batch of
+pending tool calls can take.
+
+**`message.role === 'user'` in `MessageBubble` tripped the identical guardrail-7 name collision
+`packages/ai/src/anthropic.ts` already documents for `AiMessage.role`** — a chat-turn speaker,
+not an org role, matched by the lint rule's syntactic selector anyway. Fixed the same way: a
+`switch` on `message.role` is not a `BinaryExpression`, so it does not trip
+`packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier` rules.
+
+**`ai:use` needed its own `SettingsCapabilities` field, `useAi`, because nothing had ever read it
+from `apps/web` before.** Every other individually-grantable permission (§1's Wave 2 sweep, the
+telephony five) already had one; `ai:use` existed in `packages/policy` since §2.4 but had no
+nav-visibility boolean to gate the new `/assistant` route and sidebar item on, the identical
+`capability` + `flag` pairing `/analytics` already uses (all-or-nothing by role, unlike `/calls`'s
+`anyOfCapabilities`).
+
+**A real transcript from the §6 setup dialog produced an opaque OpenAI 400 — "An assistant message
+with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'" — on a
+request this codebase's own code should never have been able to construct.** Root cause:
+`assistant-page.tsx`'s `respondToPending` cleared `pendingToolCalls` SYNCHRONOUSLY, before its own
+resume request resolved. With `pendingToolCalls` back to `[]`, the composer's disabled condition
+depended on `busy` alone to still block it — and a render landing between the `mutate()` call and
+React Query's `isPending` flip (or simply a fast click) could re-enable it. Sending a new message in
+that window appends a user turn, in LOCAL state, immediately after the still-unresolved §4.2
+confirmation turn — a shape `pendingCallsIn` (`assistant.ts`) cannot see, since it only ever
+inspects the transcript's LAST message. The malformed transcript sailed straight through to the
+provider.
+
+**Fixed on both sides, not just the client.** `respondToPending` no longer clears
+`pendingToolCalls` itself — `onSuccess` already sets it to whatever the resumed turn's own result
+says, and leaving it populated for the whole round trip keeps the composer AND the pending-actions
+panel correctly disabled via `busy`, closing the race outright. `PendingActions` gained a `key`
+derived from its own batch's call ids: since it no longer unmounts between batches
+(`pendingToolCalls` never briefly empties), its internal `decided`/`approved` state needed a real
+reason to reset between two different batches — otherwise a Gemini-synthesized id
+(`"<name>::<index>"`, `packages/ai/src/gemini.ts`) reused by coincidence across two unrelated
+rounds would read as already decided. `assistant.ts` gained `assertWellFormedTranscript`, a
+defense-in-depth guard independent of the client fix: it refuses, with a clear `VALIDATION_FAILED`,
+any assistant tool-calls turn that is NOT the transcript's own trailing message and has no matching
+`tool_result` later in the array — turning an opaque provider-level 400 into an ordinary,
+actionable validation error, and protecting against any client (this one after a regression, or a
+different one) ever producing the same malformed shape again. `assistant.test.ts` proves the exact
+shape from the real transcript is refused before a second provider call is ever made.
+
+### Phase 15 §6 — new-org Docs bootstrap (SHIPPED)
+
+`apps/web/src/features/ai/setup-dialog.tsx`. Spec: same file, §6 ("when a new org is created,
+offer to have the assistant ask a few questions... and then create a starter Docs space...
+using the `docs.create_page` tool").
+
+**The "few questions" are an ordinary form, not a model-led conversation.** Letting the MODEL
+phrase and interpret free-form answers to "how big is your team" would make the feature's
+behaviour depend on how well the model listens to small talk, which is not a property a dialog
+can test or guarantee. Two form fields (team size, handbook-only vs. handbook-plus-wiki) produce
+one fully-formed instruction naming EXACT page titles, so the model's job is reduced to calling
+`docs.create_page` the requested number of times — exactly what §6 asks for ("using the
+`docs.create_page` tool") without depending on it having asked the right follow-up questions
+itself.
+
+**Creating the Docs SPACE is a plain mutation, not a model decision — every new org gets one
+"{OrgName} Wiki" space the same way regardless of the answers, so there is no reason to spend a
+model call deciding to do it.** WHICH PAGES to seed depends on the answers, and routing only that
+part through `ai.chat.send` is what makes this genuinely §6 rather than an ordinary settings form:
+it exercises the real §4.2 confirm-before-execute path `docs.create_page` requires, on the real
+assistant page.
+
+**REDESIGNED after shipping: the trigger is no longer a `sessionStorage` flag at all — it is
+`docs.spaces.list` being empty.** The original trigger was `markOrgForBootstrap`/
+`consumeBootstrapFlag` (`bootstrap-flag.ts`, now deleted), a flag set the moment `orgs.create`
+succeeded and consumed — read-and-cleared — on the very next render: an offer seen exactly once,
+in the tab that created the org, whether or not anyone acted on it. Closing the dialog, missing it
+behind another modal, or simply not being ready to decide meant it was gone for good, with no
+route back except finding Docs' own manual "+ Space" control — a real loss for exactly the org
+that most needs a starter space, raised directly rather than found from a transcript. The fix
+needs no flag at all, stored or otherwise: `docs.spaces.list` is already the authoritative answer
+to "does this org have Docs content yet," so `NewOrgSetupDialog` now renders whenever that list is
+empty and stops the moment it isn't — checked fresh via `spacesQuery(orgId)` on every mount rather
+than remembered from a past visit. This is a STRICTLY simpler mechanism than the one it replaces:
+no `sessionStorage`, no per-org key, no "a read is a consume" contract to get right, one query the
+page already needs to decide whether to render at all. `org-picker-page.tsx`'s `orgs.create`
+success handler lost its `markOrgForBootstrap` call entirely — a freshly created org trivially
+satisfies "zero Docs spaces" on its own, so there is nothing left to set.
+
+**`dismissed` stays local, un-persisted `useState`, on purpose — the offer's "off" switch and its
+"on" switch are deliberately asymmetric.** Closing the dialog quiets it for the rest of THIS
+browsing session (so it does not reopen on every route change within the app, which the
+gating query alone would do since nothing about a route change makes a Docs space appear), but a
+fresh page load re-evaluates from scratch: if the org still has no space, the offer is back. That
+is the literal shape asked for — shown until a space exists, not shown forever once dismissed
+once — and it is why `dismissed` must NOT be persisted to `sessionStorage` the way the old trigger
+was: persisting the dismissal would recreate the exact one-shot behavior this redesign exists to
+remove, just moved to a different flag.
+
+**Handing the composed opening message from the dialog to `/assistant` needed exactly one piece
+of cross-navigation state, not a rewrite of where the transcript lives.** `assistant-seed.ts`'s
+`useAssistantSeedStore` holds a single pending seed — `ui-store.ts`'s own rule that Zustand holds
+only things with no server representation, applied to a draft transcript that has none either.
+`assistant-page.tsx` reads it once via a lazy `useState` initializer (never an effect calling
+`setState`, which `react-hooks/set-state-in-effect` refuses) and consumes it — clearing the
+store, not React state — in a ref-guarded effect, so Strict Mode's double-invoke can't replay the
+opening message twice and a later, unrelated visit to `/assistant` starts genuinely empty.
+
+**`NewOrgSetupDialog` derives whether to open ENTIRELY from render-time state, with no effect at
+all** — `use-board-room.ts`'s own "reset derived state when a prop changes" pattern, applied to an
+org switch: Shell mounts this component once and keeps it mounted across `orgId` changing, so
+re-deriving `dismissed` during render when `orgId !== lastOrgId` is what lets the offer re-arm
+correctly the moment someone switches to a SECOND org with no Docs space yet, without ever calling
+a `useState` setter synchronously inside a `useEffect` body. The mutation's own `onSuccess` calls
+`invalidateSpaces(queryClient, orgId)` before navigating away — without it, the gating query could
+still read the pre-creation empty list on a later visit (stale, not wrong) and show the offer one
+more time despite the space already existing.
+
+**Deliberately not built: §6's own two questions as a model-parsed free-text exchange** — a form
+was, and remains, the correct, testable choice instead (see above). The "no org-level 'was this
+ever offered' record" deferral this section used to note here no longer applies to the CURRENT
+design at all: there was never a need for one, on EITHER version — the first used a session-scoped
+flag instead, and this one uses live Docs state, and neither is a durable "offered" record of the
+kind a wizard's completion flag would be.
+
+### Phase 15 §5 — the standup view (SHIPPED)
+
+`apps/api/src/standup` · `apps/web/src/features/standup`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §5 ("a new
+screen, not a new subsystem — assembles data that already exists").
+
+**`query` floors on `project:read`, not `analytics:read` — a standup is a daily ritual every
+project member should reach, not an Admin/Owner-only report.** `standup.service.ts`'s own header
+states this explicitly: Analytics's floor is deliberately narrow because it answers a management
+question; a standup answers "what is my team doing right now", which every Member holding
+`project:read` by role already needs to see the board at all. `router.test.ts` proves the
+difference between the two enforcement LAYERS this produces for the identical `guest` refusal —
+the ROUTE floor (`route({ permission: 'project:read' })`, a plain role check that never reaches
+the handler) answers FORBIDDEN, while `queryStandup`'s own resource-aware `enforceOn` check,
+exercised directly in `standup.service.test.ts`, answers NOT_FOUND for the same guest calling the
+service layer beneath it — `enforceOn`'s `denialFor` returning the "reveals less" answer when the
+permission failing is the read permission itself. Neither test's expectation transfers to the
+other layer; each is right for what it actually measures.
+
+**Narration is one `completeGated` call, not the §4 tool-calling loop — there is nothing for the
+model to DO here, only text to produce from data the server already assembled.** `narrate.ts`
+calls `queryStandup` itself and serializes the result as the user turn; §2's own `complete.ts`
+doc comment had already anticipated `'standup'` as a feature name before this section existed,
+which is what confirmed the one-shot design was the intended shape rather than an improvised
+shortcut around the loop.
+
+**`narrate` never accepts a client-supplied "standup data" blob to summarize — it re-runs
+`queryStandup` itself, under the same two gates (`ai:use` + `aiAssistant`) `query` alone does
+not need.** A route that trusted the caller's own copy of the standup would let anyone type up a
+JSON payload for a project they cannot read and have the assistant narrate it back to them,
+defeating `query`'s own floor from one route over. `router.test.ts`'s end-to-end case (a stubbed
+`fetch`, mirroring `ai/router.test.ts`'s own pattern for the identical reason —
+`AnthropicProvider` speaks raw `fetch`, no SDK) asserts the resulting ledger row carries
+`feature: 'standup'`, not a generic `chat` label, so a spend report can tell the two apart.
+
+**Redesigned the same day it first rendered against real data — both halves of the original
+version looked correct in isolation and were genuinely unusable together.** The first cut asked
+the model for "one paragraph, plain sentences, one per person" and rendered whatever text came
+back verbatim; against ~15 real members that was one run-on paragraph with no visual seams
+between people, exactly as loosely as it sounds — nothing about a text completion GUARANTEES the
+shape a prose instruction asks for. And the page itself rendered every member's full three-bucket
+grid always expanded, one full-width section per person: since "Done recently" and "Overdue" are
+usually empty, that squeezed "Still open" (often 8-13 cards) into a third of the width and
+truncated every title into an unreadable fragment, for a page ~15 sections tall.
+
+**The fix for the narration is `AiCompletionRequest.tools` — already built for §4's tool-calling
+loop — reused here as a one-tool "response schema," not free text.** `narrate.ts`'s
+`emit_standup_lines` tool takes `{ lines: [{ userId, line }] }`; `stopReason !== 'tool_use'` is
+treated as the model declining to comply and throws, never a silent fallback to raw prose — the
+identical "have the model return real structured data" decision this file's own §2+§3 section
+already documents for the AI provider abstraction generally, applied here for the first time to
+an actual caller. Classification (who has overdue work, who has nothing) stays entirely
+DETERMINISTIC — computed server-side from the real buckets `queryStandup` already assembled,
+never something asked of the model — the model's only job is one short sentence per person it is
+already given the id for. A member the model omits gets a computed fallback line
+(`fallbackLineFor`, e.g. "2 overdue, 1 still open.") rather than silently vanishing from the
+summary; a duplicate id resolves to the LAST line named, the same "later wins" rule this codebase
+uses for every other last-write-in-a-batch shape. `linesFromCompletion` is the pure parse/merge
+half, exported specifically so `narrate.test.ts` can prove the merge-with-fallback and
+malformed-input cases directly against a hand-built `AiCompletionResult` — fast, no database —
+while `router.test.ts`'s existing end-to-end case still proves the real wiring (a stubbed `fetch`
+answering with Anthropic's actual `tool_use` content-block shape, not a plain-text one).
+
+**Structured output alone was not enough — the tool call forced a SHAPE, and said nothing about
+the CONTENT, so the first prompt still produced lines nobody would want to read.** Found by
+looking at real narrated output: every line started by repeating the person's own name a second
+time ("Aoife — Aoife has two overdue items...") because the prompt never told the model the name
+would already be shown next to it, and a person with nothing overdue got a bare "has no overdue
+tasks" — a lazy, technically-complete answer to "call out anything overdue" that says nothing
+about what they are actually doing. Both are PROMPT fixes, not shape fixes: the system prompt now
+explicitly says the name is already shown ("never repeat it, never start the sentence with it"),
+requires the line say something concrete about the person's actual work rather than only whether
+anything is overdue, and asks for card references (not just counts) and varied sentence structure
+across people so eighteen lines do not all read as the same template with different numbers
+substituted in.
+
+**`headline` is a fourth field, computed and never asked of the model, added for a genuinely
+different reason than the line-content fix above.** The project owner asked to "see it in all" —
+an aggregate across the whole roster ("how many people have overdue work, how many cards got
+done") — and the answer is a `Array.filter`/`.reduce` over data `queryStandup` already assembled,
+not a fifth thing to ask an LLM to count correctly over eighteen people's buckets. `headlineFor`
+is exported and unit-tested directly, the same "classification stays deterministic" rule this
+section's own line-fallback logic already follows — an aggregate that could be wrong in a way a
+plain count cannot is strictly worse than one more `completeGated` call would have been worth.
+
+**The apparent duplicate member row (two people both displayed as the same first name) was
+diagnosed, not silently fixed, because it isn't this feature's bug.** `queryStandup`'s per-member
+bucket is a `Map<string, ...>` keyed on the real `userId`, so it is structurally impossible for
+one person to produce two entries — two identical-looking rows can only mean two DIFFERENT
+`userId`s whose display names happen to collide, which `packages/seed`'s own
+`displayNameNicknameShare` config (a fraction of demo profiles display a bare first name instead
+of a full name) makes a real, expected possibility in fake data. Told to the project owner as a
+diagnosis with the reasoning, not assumed away — this codebase's own "verify before you claim a
+fix" discipline applied to a report, not just to code.
+
+**The fix for the page is collapsing every member to a name-plus-counts row by default, never
+merging or hiding anyone regardless of activity.** `MemberRow` opens to the identical
+three-bucket layout the first version always showed, now with the whole page width to itself
+instead of a third of it shared with fourteen other people's sections. The count badges
+(`CountBadge`) dim to near-invisible at zero rather than always drawing the eye, so a scan of the
+collapsed list answers "who has overdue work" without opening anything. Explicitly NOT done,
+by direct instruction after the redesign was scoped as options: sorting members by urgency or
+folding anyone with nothing noteworthy into a shared "no updates" group — every project member
+keeps their own row in the order `queryStandup` returns them, on the reasoning that a standup is
+a roll call, and an ordinary day is not a reason to skip someone.
+
+**The frontend reuses the real board card-detail panel wholesale, reached without a board in
+hand — not three rebuilt sections.** §5's own text names `card.move`/`card.assign` as "the
+existing mutation path, just reachable from a standup-shaped screen instead of the board view."
+Every other caller of `CardDetailPanel` already knows the card's `boardId` because it opened the
+panel FROM that board; a standup row has only a card id. `card-quick-view.tsx` closes that one
+gap — fetch the card once to learn its `boardId`/`projectId`, then mount the identical
+`CardDetailPanel` the board uses — rather than re-implementing assignee, priority and location
+controls a second time. Every mutation a person makes from the standup view is therefore the
+exact same `cards.assign`/`cards.update`/`cards.move` call, with the exact same `can()` check and
+the exact same domain event, that a click on the board would have made; the panel closing
+invalidates the standup view's own cache entry (scoped to that project, not the whole `projects`
+branch other unrelated queries share) so the buckets reflect whatever just changed.
+
+**The "Narrate" control is gated inline, on the button itself, never at the route.** Unlike
+`/analytics` and `/assistant`, which wrap their entire page in `CapabilityGate`/`FeatureGate`
+because their whole surface is Admin-and-Owner-or-plan-gated, `/projects/$projectId/standup` gates
+nothing at the route — every project member who can already open the board can already open this
+page. Only `narrate`'s two additional gates (`ai:use`, `aiAssistant`) are checked client-side, and
+only to decide whether the button renders at all, per Phase 15 §1's "hide, don't disable" rule; a
+Member without either simply does not see the button, and the server re-checks both regardless of
+what the client decided.
+
+**Deliberately not built at the time: an emailed copy of the standup**, per §5's own text ("no
+email report as the primary surface... an optional emailed copy can reuse the existing
+notification-mail path later if wanted, but is not required for this wave") — a real, explicitly
+named deferral, not an oversight. _(That "later" has since shipped — see "Standup email
+subscriptions" further down.)_
+
+**A FIXED `maxOutputTokens` broke against a real team, found from production logs rather than any
+test in this codebase's own (smaller) fixtures.** `narrateStandup` originally capped
+`emit_standup_lines`' completion at a flat 800 tokens; a project of ~18 members, each needing a
+full `userId` (a uuid, ~15-20 tokens) plus the richer per-person sentence the prompt fix above now
+requires (a card reference, concrete work described, not just a bare count), pushed the JSON tool
+arguments past that budget. The model's output was truncated mid-argument, `packages/ai`'s
+`toolCallFromWire` failed to `JSON.parse` the cut-off string, and `standup.narrate` 500'd with
+`OpenAI returned malformed tool-call arguments` — the provider's own error handling doing exactly
+its documented job (fail loud on malformed JSON rather than hand a tool corrupted input), which is
+why the fix belongs in the caller's token budget, not in loosening that check. `maxOutputTokensFor`
+replaces the constant: scaled by member count (`memberCount * 70`) rather than a second fixed
+number, floored at 800 so a small project still gets a cheap call and ceilinged at 4,000 so a very
+large roster cannot turn one narration into unbounded spend. Exported and unit-tested directly in
+`narrate.test.ts` against the floor, the linear middle, and the ceiling — the same "prove the pure
+half without a database" pattern this file's `linesFromCompletion`/`headlineFor` already use —
+rather than trusted only through `router.test.ts`'s small fixture, which is exactly the kind of
+case that let the original fixed budget go unnoticed until real data hit it.
+
+**REDESIGNED again, this time replacing the whole per-member narration with real
+Yesterday/Today/Overdue/Urgent buckets and an optional team-level callout.** The project owner's
+own comparison made the gap concrete: a real daily standup answers "what did you do yesterday,
+what are you doing today, what's blocking you" — the ClickUp workflow this screen exists to
+replace is exactly "filter the sprint by member and look at their cards," and the AI-prose design
+was answering a different, worse question. Looking at real narrated output (18 people, pasted
+directly) showed why: every line read as arbitrary busywork ("still working on X and Y") because
+`stillOpen` was the ENTIRE non-done backlog — a card nobody had opened and a card someone was
+actively coding were indistinguishable, so the model had no real signal for which two cards
+represented "today" and was effectively guessing.
+
+**The fix is a data-model change, not a prompt change — `work.statuses.category` (`not_started` /
+`active` / `done`) already had the distinction the old bucketing threw away.**
+`standup.service.ts`'s `StandupMember` now carries `yesterday` (done within the window, unchanged
+from the old `recentlyDone`), `today` (status category `active` and not done — a real "what am I
+doing right now", not the whole backlog), `overdue` (unchanged), and `urgent` (`urgent`/`high`
+priority, not done, and NOT already in `overdue`, kept disjoint from it so a card past its due
+date is never double-counted under two headings). `not_started` backlog cards are excluded from
+every bucket on purpose, not merely unbucketed — a standup is not the place to dump an entire
+backlog, and a member who wants that already has the board. `headlineFor` moved from `narrate.ts`
+into `standup.service.ts` and is now returned directly on `StandupResult` — it needs no AI call,
+so `query` alone is now a complete, meaningful standup screen with no button to click.
+
+**`narrate.ts` no longer produces a per-member line at all — its whole job shrank to one optional,
+team-wide callout paragraph.** Once real Yesterday/Today/Overdue/Urgent lists are the page's
+primary content, a per-person AI SENTENCE describing the same data is redundant with what the page
+already renders directly next to that person's name — the "classification stays deterministic"
+rule extended one step further: not just the bucketing but the PRESENTATION of one person's own
+status is a fact, not something worth a completion to paraphrase. What a model is actually suited
+for is the one thing buckets alone cannot show: a pattern across the WHOLE roster a PM would
+otherwise have to find by eyeballing eighteen rows — several people blocked on the same
+dependency, or one person carrying an unusually heavy load relative to everyone else.
+`emit_team_callout` (replacing `emit_standup_lines`) takes exactly `{ callout: string }`, and the
+model is explicitly told it is fine to say nothing stands out rather than inventing a pattern to
+fill space. `calloutFromCompletion` (replacing `linesFromCompletion`) still fails LOUD on a
+declined or malformed response — but for a different reason than before: the old fallback-per-line
+design existed because the UI structurally needed one line per member and could not afford to
+silently drop anyone, while this route's entire output IS the callout, so there is nothing sensible
+to fall back to.
+
+**The old per-member token-budget fix (`maxOutputTokensFor`, scaled by team size) is gone along
+with the mechanism it protected — replaced by a single fixed `MAX_OUTPUT_TOKENS = 400`.** This is
+not a regression back to the bug a few paragraphs up: that bug existed because the OUTPUT scaled
+with team size (one JSON entry per member); a short callout paragraph does not scale with team
+size even though the INPUT payload still does, so a fixed output budget is the correct choice here
+specifically, not merely the simpler one.
+
+**The web page changed to match**: the always-visible headline banner now reads directly from
+`standup.data.headline` rather than only appearing after a narrate click, each member row grew a
+fourth count badge and expanded section (Yesterday / Today / Overdue / Urgent, using `PlayCircle`
+for "today" and `Flame` for "urgent" — distinct icons from the existing done/overdue ones so a
+four-badge row still scans at a glance), and the "Narrate" panel shrank to a single paragraph with
+no per-person list. `MemberRow`'s "nothing to report" check now looks at all four buckets.
+
+**`StandupCardRow` packed reference + title + due date into one horizontal flex line, and inside
+the four-column bucket grid that left the title almost no width — found from a real screenshot, not
+a layout review: a title like "Audit WIP limits under concurrent edits" wrapped to one or two words
+per line for a dozen lines.** The row's remaining width after two `shrink-0` metadata spans (a
+mono-font reference and a due date) is generous at the page's full width (the top-level
+urgent-sprint list, where this row is also used) and often under 100px inside a bucket column — the
+same title text, two very different outcomes, from the same component. Fixed by stacking the row
+into two lines instead of one: a compact metadata line (priority dot, reference, due date) above,
+the title on its OWN full-width line below. The title now always gets the whole row's width to wrap
+into regardless of how narrow the surrounding column is, so the fix holds at both the wide
+top-level list and the narrow bucket grid without a media query telling it which one it's in.
+
+**§6 (new-org Docs bootstrap) and §8 (onboarding/offboarding automation) are both real, verified
+gaps in DISCOVERABILITY, not incomplete features — checked against the actual code, not assumed.**
+§6 has a real trigger (`org-picker-page.tsx`'s `markOrgForBootstrap`, fired the moment `orgs.create`
+succeeds) but it is a one-shot `sessionStorage` flag by design (`bootstrap-flag.ts`'s own header —
+"§6 is an OFFER, not a state machine"), so it is only ever seen once, in the same browser tab, at
+the moment a NEW org is created — an existing org will never show it, and there is no menu item to
+summon it again. §8 is a step further: a search across `apps/web/src` for every one of its six new
+automation action types (`channel.add_member`, `channel.remove_member`, `docs.grant_space_access`,
+`member_grant.revoke_all`, `identity.revoke_sessions`, `cards.bulk_reassign`) and for
+`startOffboarding`/`offboarding_started` returns ZERO matches. `apps/web/src/features/automation/
+vocabulary.ts`'s `TRIGGER_OPTIONS` has no `member.added` or `member.offboarding_started` entry, and
+its `ACTION_LABELS`/`ActionValue`/`ARGUMENTS` have none of the six new action types — the rule
+builder cannot construct a rule using any of them. There is also no button anywhere that calls the
+new `tenancy.members.startOffboarding` route. This is the identical "shipped backend, no consumer"
+gap this file's own Phase 15 §4/AI-Models-tab entries already document twice — found here a third
+time, by the same kind of direct code check rather than trusting the spec's own account of what
+shipped. **Fixed in a follow-up pass — see the §8 UI wiring section, right after the §4.3 sprint
+planning entry below, for what shipped.**
+
+### Phase 15 — §8's UI wiring: the trigger, the six actions, and the offboarding button (SHIPPED)
+
+`apps/web/src/features/automation/{vocabulary,action-pickers}.tsx` ·
+`apps/web/src/features/admin/settings-page.tsx` · `apps/mobile/src/lib/automation.ts`. Closes the
+gap the paragraph directly above this section documents: §8 (`ai/phase-15-ai-copilot-and-
+permissions.md` §8) had shipped a trigger, six automation actions, and a member-facing route with
+zero UI path to any of them — a rule using one could only ever be written by hand against the raw
+API, and nothing could ever fire `member.offboarding_started` at all.
+
+**`member.added`/`member.offboarding_started` join `TRIGGER_OPTIONS` as a SECOND card-less
+exception, the same shape the Wave 4 slice 3 connector events already are.** Both carry a `userId`,
+never a `cardId` — every one of §8's six actions is written against that instead
+(`apps/worker/src/automation/executor.ts`'s own `userIdOf`, the identical discipline `cardIdOf`
+already applies to every card trigger). No new filtering mechanism needed: the builder already
+offers every action regardless of the selected trigger and lets a mismatched combination fail
+honestly at runtime (`trigger_not_evaluable`) — the same accepted shape a card action paired with a
+connector event already has, extended one trigger pair further.
+
+**The six actions needed one new `ArgumentKind`, `'space'`, and nothing else structurally new.**
+`channel.add_member`/`channel.remove_member` reuse the existing `channel` picker unchanged;
+`cards.bulk_reassign`'s `toUserId` reuses `member`; `identity.revoke_sessions` and
+`member_grant.revoke_all` take zero arguments, which `ARGUMENTS`' own empty-array entries already
+make `actionsComplete` treat as complete with nothing to render underneath — the two-arg-and-fewer
+shapes this table already had covered every case but one. `docs.grant_space_access`'s `spaceId` is
+the exception: `SpacePicker` (`action-pickers.tsx`) is a new, small component reusing
+`spacesQuery(orgId)` from the Docs feature, org-scoped like `ChannelPicker` right above it in the
+same file — a Docs space belongs to the org directly, never to a project, so (unlike
+`list`/`status`/`label`) it needed no entry in `PROJECT_SCOPED` and no project-choice step first.
+
+**None of the six carries a `userId` field of its own — a rule always acts on the member the
+TRIGGER named, never one a rule author could type in.** This mirrors the server-side refusal
+`action-schema.test.ts` already proves (a `.strict()` Zod schema with no `userId` key), so the
+absence here is not merely cosmetic: even if a picker offered one, the server would reject the
+saved rule. `cards.bulk_reassign`'s `toUserId` is the one field naming a second person, and it is
+labelled "Reassign to" rather than left to read as the trigger's own subject, since it names the
+REPLACEMENT assignee, not who the rule is about.
+
+**"Start offboarding" (`settings-page.tsx`'s `MemberRow`) is the first and only thing in the
+product that can fire `member.offboarding_started` at all — without it, every rule built on the
+trigger above would sit forever unfired.** Gated on `member:remove`, the same permission `Remove`
+already floors on and the identical capability (`removeMembers`) already read from
+`SettingsCapabilities` — flagging someone as leaving is a strictly smaller action than removing
+them outright, so reusing the permission rather than inventing a narrower one is deliberate, not
+a shortcut. Not a `ConfirmButton` like Remove: the route itself carries no step-up and writes no
+column at all (`member.service.ts`'s own header — "nothing here is destructive or hard to undo"),
+and calling it twice is explicitly harmless by design, so a confirm step would be friction over a
+control this codebase's own contract already treats as safe to click twice. Feedback is a toast
+(`useToast`), not a visible row change, because there genuinely is no row change to show —
+`startOffboarding` writes an event and nothing else — and a silently-successful button invites a
+confused second click the toast is what actually prevents.
+
+**`apps/mobile` gets the DISPLAY half only, not a matching editor — a deliberate, narrower scope
+consistent with a boundary that already existed before this pass.** Mobile's own
+`automation.ts`/`automation-editor.tsx` already draws a line between what it can EDIT and what it
+can only READ: `call_webhook` and the two connector actions have real labels in `ACTION_LABELS`
+but no entry in mobile's own (smaller) `ARGUMENTS` table, so `EDITABLE_ACTION_TYPES` excludes them
+and `canEditOnMobile` refuses "Edit" for a rule holding one, while the rule list and run history
+still describe them correctly. The six §8 actions get the identical treatment — labelled for
+`describeAction`/`actionOutcomeOf`, absent from `ARGUMENTS` — rather than a second native `space`
+picker and a full parallel builder: without the label entries, a rule built on WEB using any of
+the six would have shown its bare type string ("channel.add_member") instead of a sentence the
+moment someone opened it on a phone, a real regression this pass caught and closed rather than
+shipped alongside the web changes. Building a native space picker and full edit support for these
+six, matching web exactly, is real, separate work this pass does not attempt.
+
+**Deliberately not built in this pass: any UI surface for §8's four still-deferred checklist
+items** (starter cards, notify-the-manager, default permission bundles, connector-access
+revocation) — see this file's own §8 section for why each needed a real design decision rather
+than more wiring. This pass closes the gap for the SIX ACTIONS AND TRIGGER that already existed
+in the engine with nothing pointing at them; it does not expand §8's own scope.
+
+### Phase 15 — §8's four deferred items, closed (SHIPPED)
+
+`apps/worker/src/automation/{types,executor,loop-protection}.ts` · `apps/api/src/automation/
+{automation.service,router}.ts` · `apps/api/src/tenancy/{events,audit.projection,role-default-grant.service,router}.ts`
+· `apps/web/src/features/{automation/vocabulary,admin/settings-page,org/api}.ts` ·
+`apps/mobile/src/lib/automation.ts` · migrations 0102–0103. Spec: same file, §8's own checklist —
+the four items this file's own account of §8 (above) named as deliberately deferred, each needing
+a real design decision rather than more wiring.
+
+**Prompted by the project owner directly, in the identical spirit that motivated the earlier
+five-tool-registry-gaps pass: "find a better way... but first proper search checking... we can't
+afford to do tweaks later as it will touch some sensitive areas."** That instruction changed the
+METHOD — research and a written plan before any code, with one `AskUserQuestion` for the single
+genuine design fork, rather than the usual one-report-at-a-time cadence — not the bar for what
+counts as real work. All three items below trace to the exact deferral reasoning this file's own
+§8 section already gave; none is speculative scope beyond what that section named.
+
+**Item 4 (offboarding: revoke connector access) needed no code and stays closed — confirmed, not
+assumed.** Telephony access (`call:place`/`sms:send`/`phoneNumber:read`) is an ordinary
+`member_grants` permission, already revoked by `member_grant.revoke_all`. Slack/GitHub connector
+rows are ORG-scoped credentials (`apps/worker/src/automation/integration-action.service.ts`), not
+per-member, so there is nothing per-departing-member to revoke there. The research pass re-verified
+this rather than trusting the original deferral note's own account of it.
+
+**Item 1 (onboarding: starter checklist cards) turned out smaller than its own deferral text
+implied, once actually researched — the blocker was believed to be "no card-creation action, no
+template concept," and neither half of that was really true.** `createCard(actor, {listId, title,
+description})` was already a plain, fully-authorized (`card:create` on the board) service call with
+its own test coverage, and the automation engine already lets one rule hold several actions on one
+trigger — so a three-card starter checklist is three `card.create` actions on one `member.added`
+rule, with no template/cloning subsystem needed at all. Ships as a new `card.create` action, no
+description field (a title is enough for a checklist item, the same plain-string shape `sms.send`'s
+`body` already has), following the established three-place-plus pattern (the `AutomationAction`
+union and executor switch in `apps/worker`, the mirrored union and `EVENTS_EMITTED_BY` self-trigger
+table in `apps/api/src/automation/automation.service.ts`, the write boundary's Zod schema, and the
+builder vocabulary in `apps/web` plus a display-only label in `apps/mobile`).
+`loop-protection.test.ts`'s own "every card action emits `card.updated`" assertion needed a genuine
+carve-out rather than a workaround: `card.create` is the one `card.*` action that does not mutate
+an EXISTING row — it inserts a new one and emits only `card.created`.
+
+**Item 2 (onboarding: notify the manager) was the real blocker its deferral text described —
+`notification.projection.ts`'s `plan*` functions are deliberately pure, and "who is this new hire's
+manager" needs a database read (`people.membership_profiles.manager_user_id`, Phase 11.5).**
+Resolved by the CALLER (`drainNotifications`), exactly like `actorLabel` already is (migration
+0087's own precedent), never inside the pure planning layer. `planManagerNotified` is a THIRD role
+none of this file's other notification kinds have needed: the recipient is neither the actor (who
+added the new member) nor the event's own subject (who was added) — they are looked up from a
+separate table entirely. `resolveManagerUserIds` mirrors `resolveActorLabels`' batched-lookup and
+fail-open shape on purpose, including the 0087/0088 lesson it was built from: an unhandled error
+here would abort `drainNotifications`' whole transaction and silently stop every consumer scheduled
+after it in the same tick, so a missing manager notification degrades quietly rather than causing
+an outage. Keyed by `${orgId}:${userId}`, not a bare `userId` — the same user id can be a member of
+more than one org with a different manager in each, a possibility this file's own account of
+multi-org membership elsewhere already establishes as real, not hypothetical.
+
+**Migration 0102's own first draft would have shipped a silent bug — caught by re-reading 0071's
+precedent rather than by a failing test.** `resourceOf` (the audit projection's own resource-mapper)
+reads its `key` field out of the event's PAYLOAD, never off the outbox row's own `orgId` column —
+confirmed by checking `member.ownershipTransferred`'s payload, which carries `orgId` explicitly
+for exactly this reason. The new `role_default_grant.set`/`.removed` events (see item 3, next) were
+first drafted without an `orgId` field at all, on the assumption that `RESOURCE_OF`'s `key: 'orgId'`
+mapping would fall back to the envelope — it does not, and would have produced audit entries with a
+null `resource_id` forever. Fixed by adding `orgId` to both event payloads before anything shipped.
+
+**Item 3 (onboarding: apply the role's default permission-grant bundle) was the one place the
+project owner's own choice mattered — a genuine fork the deferral text had already flagged
+("there is no 'role -> default `member_grants`' config table anywhere in this codebase yet...
+deserves its own review"), put to `AskUserQuestion` rather than guessed.** Two shapes existed: (a)
+a new automation action a rule author adds to their own `member.added` rule, consistent with every
+other §8 item's architecture, opt-in by construction, and (b) a standalone "default permissions per
+role" admin screen applied directly and unconditionally by `member.service.ts`'s own join path —
+closer to the literal spec wording, but a bigger, more magic-feeling change reaching into identity/
+tenancy code that has never needed to know about this concept. **The project owner chose (a).**
+
+**`authz.role_default_grants` (migration 0103) is a THIRD authorization mechanism, not
+`authz.member_grants` reused with a null `membershipId`.** It is pure CONFIGURATION ("what does a
+new Member get by default"), never itself consulted by `can()` — only the new automation action
+reads it, to decide which REAL `member_grants` rows to stamp for the member its trigger named.
+Folding this into `member_grants` would make every reader of that table's own
+`member_grants_membership_idx` handle a resource-less-AND-membership-less case that isn't really
+about one membership at all — a config template and a granted capability are different things with
+different lifecycles, the identical reasoning that kept `member_grants` a second mechanism rather
+than folding into `relationship_tuples` in the first place (0097's own header). Real DELETE, unlike
+`member_grants`' `revoked_at`: this table has no history to preserve, it is standing config, the
+same shape `platform.flag_overrides` already has — changing an org's bundle for the `member` role
+is an edit, not an event worth remembering forever. `role`, unlike `permission`, DOES get a CHECK
+constraint (the identical closed list `identity.memberships.role` already has) — the role catalog
+is stable in a way the grantable-permission list is not, so constraining it in the schema costs
+nothing. No separate `taskflow_app` grant was needed at all: migration 0001's `ALTER DEFAULT
+PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA authz` already covers full CRUD on every table this
+schema gets, this one included — only the RLS policy needed writing, mirroring `member_grants`'
+own migration 0097 exactly.
+
+**The executor's new `member_grant.apply_role_defaults` case re-resolves the TARGET member's own
+CURRENT role, never trusting the trigger event's own `role` field and never letting a rule author
+name one — the union has no field for it at all.** The identical "a demotion takes effect
+immediately" reasoning this file's `execute()` already applies one level up for the RULE OWNER,
+applied here one level down for the person the rule acts on: a stale or rule-author-supplied role
+would let a rule apply a bundle configured for a role the member does not actually hold. It then
+loops the real, already-idempotent `memberGrants.grant` once per configured permission — a member
+with an empty bundle (the common case, since most orgs will never configure one) loops zero times
+and the action is a no-op, and re-running it (a retried rule, or two rules both applying defaults)
+never duplicates a grant.
+
+**Settings gained a "Role defaults" section — a small `member`/`guest` × `GRANTABLE_PERMISSIONS`
+toggle matrix, deliberately excluding `owner` and `admin` as configurable rows.** Both already hold
+every individually-grantable permission BY ROLE (`packages/policy`'s `ROLE_PERMISSIONS`), so a
+checkbox for either would be either always-checked-and-inert or, worse, a control that reads as
+doing something it cannot. Gated on the same `manageMembers` capability the Individual permissions
+section beside it already uses — no new capability field needed, since the underlying routes are
+gated on the identical `member:manage` permission. `apps/mobile` gets the DISPLAY-only label for
+the new action, the same treatment every other §8 action already has there: no native picker
+needed, since the action takes no arguments at all.
+
+**No dedicated DB-backed integration test was written for either migration's grant/RLS wiring —
+a real, acknowledged gap, not an oversight.** Both follow an already-proven, previously-tested
+pattern (0037's column-limited-grant-plus-permissive-policy shape for migration 0102; 0097's
+ordinary-tenant-policy shape for migration 0103) rather than inventing a new one, and this sandbox
+has no Postgres to verify against locally — consistent with this session's own established
+practice of relying on CI's real-Postgres run for DB-backed correctness while local coverage
+proves everything provable without one: the pure planning/lookup logic (`planManagerNotified`,
+`planManagerNotifications`, `resolveManagerUserIds`'s fail-open behavior against a fake `tx`, the
+identical shape `resolveActorLabels`' own tests already use), the write-boundary Zod schemas, the
+executor's target-resolution discipline, and `audit.projection.test.ts`'s own "every registered
+event is mapped" invariant, which the new `role_default_grant.*` events had to satisfy to pass at
+all.
+
+### Phase 15 §7 Wave 1 — GitHub/PR read tools for the AI assistant (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` · `apps/api/src/ai/tools/pr.ts` ·
+`apps/web/src/features/ai/tool-results.tsx`'s three new renderers. Spec: same file, §7 ("GitHub/PR
+integration — separate wave — larger, needs its own review pass"). §7's own text asks for four new
+permissions, read tools, write tools (comment/request-changes/merge/close, the last two
+confirmation-gated), an inbound-webhook extension for `pr.merged`, and a card↔PR link table. This
+wave ships exactly the read tools and one permission — everything else named above is real,
+separable follow-up work, not built here.
+
+**The webhook piece §7 itself calls "the largest single piece, needs its own human-review pass" —
+already existed, shipped in Phase 10 Wave 4, and §7's own text never noticed.** `apps/api/src/
+automation/integration-webhooks.ts` already verifies inbound GitHub webhook signatures
+(`packages/security/github-signature.ts`, also already built) following the identical
+order-of-operations the telephony webhook established: resolve the org from the UNVERIFIED
+`repository.full_name`, load THAT org's stored secret, verify, only then trust the payload. It's
+already a CLAUDE.md ⚠ human-review surface (Phase 10's own review pass covered it) and already
+replay-deduped (`platform.integration_deliveries`). Every inbound event becomes one generic
+`integration.github_event` domain event (`providerEvent` = the `X-GitHub-Event` header,
+`payload` = the raw body), and the automation engine's condition evaluator
+(`apps/worker/src/automation/engine.ts`) already matches rules on `provider_event`/`provider_scope`
+for it. What's genuinely still missing for "auto-move the card to Done when its PR merges" isn't a
+webhook at all — GitHub sends every `pull_request` sub-action (opened, closed, merged,
+synchronize...) as the identical `providerEvent: 'pull_request'`, and the condition evaluator has
+no payload-field matching to tell a merge from a synchronize; separately, this generic
+connector-event trigger was never exposed in the web rule-builder's `TRIGGER_OPTIONS` vocabulary at
+all — the same "shipped backend, no UI" gap this file documents for §8's six actions and the AI
+Models tab. Both are real, scoped follow-up work for a later wave, not something this wave needed
+to touch.
+
+**Scope precedent, checked rather than assumed: `ai:use` was introduced ALONE, one permission with
+one caller in the same wave — not bundled with siblings that had no caller yet.** That's the closer
+precedent than the Wave 2 `GRANTABLE_PERMISSIONS` addition (`automation:manage`/`webhook:manage`/
+`integration:manage`/`apiToken:create`/`apiToken:revoke`), which made permissions ALREADY IN the
+catalog and ALREADY CHECKED individually grantable — a different situation from registering a
+brand-new permission ahead of any code that checks it. So this wave adds exactly one permission,
+`pr:view` — not `pr:review`/`pr:merge`/`repo:connect`, §7's other three, which gate tools that don't
+exist yet. Registering all four now would reproduce the exact "flag/permission registered ahead of
+its first caller, then nobody comes back to wire it" gap this file already documents twice
+(`aiAssistant` granted to no plan for a release cycle; `analytics` checked by no route for a release
+cycle). `pr:view` follows `ai:use`'s own five-place pattern exactly: `PERMISSIONS`,
+`ORG_LEVEL_PERMISSIONS` (the connector is org furniture — `platform.integrations` has no
+per-resource tuple target), `GRANTABLE_PERMISSIONS`, `roles.ts`'s `ADMIN` array only (not
+`MEMBER`/`GUEST` — an org grants it to one trusted Member individually instead of promoting them),
+and `matrix.test.ts`'s hand-written `EXPECTED.admin`.
+
+**`GRANTABLE_PERMISSIONS`'s own test file, `member-grants.test.ts`, turned out to be a HAND-
+MAINTAINED enumeration with a hardcoded `.size` assertion, not generic coverage — found by actually
+checking rather than assuming a plan note was right.** The plan going into this wave assumed the
+member-grant write path generically covered every entry in `GRANTABLE_PERMISSIONS`, the same way
+`matrix.test.ts`'s parametrized role × permission loop covers every entry in `PERMISSIONS` for
+free. It doesn't: `member-grants.test.ts` asserts `isGrantable('pr:view')` in one explicit new test
+case, one per wave, exactly like `matrix.test.ts`'s `EXPECTED.admin` — and `expect(
+GRANTABLE_PERMISSIONS.size).toBe(11)` would have kept passing at 11 forever, silently proving
+nothing about the twelfth entry, had it not been bumped to 12 alongside the new case.
+
+**`connectedGithubRepo` (new, `integration.service.ts`) is the first "the org's connector" lookup —
+every existing read (`connectorFor`) takes a specific `integrationId`, because the AI tool registry
+never hands a tool an opaque connector id at all; the model only ever knows "the org's GitHub
+repo."** Owns no decrypt logic itself — it resolves the row id, then delegates to `connectorFor` for
+the actual unwrap, so an AAD or key-handling change still has exactly one call site. `ORDER BY
+created_at DESC LIMIT 1` is a documented tie-break, not a proof of uniqueness: nothing in the schema
+stops an org ending up with two simultaneously-`'connected'` GitHub rows (`selectRepo` only
+revives/retires a row sharing the SAME `provider_scope`; connecting a second, different repo without
+disconnecting the first isn't refused at that layer) — preventing that is a future
+`integration:manage`-route concern, not something this read-only lookup can fix by picking
+differently, so it's tested and documented rather than silently assumed impossible.
+
+**Every function in `pr-read.service.ts` checks `pr:view` itself, mirroring
+`integration-action.service.ts`'s own `assertMayManage` exactly, for the identical reason: these
+functions have no tRPC route of their own — only the AI tool registry reaches them — so a route-level
+floor doesn't exist to lean on.** `repoPath` (the path-traversal guard `createGithubIssue` already
+used before interpolating a stored `provider_scope` into a GitHub URL) is exported and reused rather
+than reimplemented a third time.
+
+**`get_pr_diff` is the one tool in this whole registry whose GitHub response isn't JSON — a diff is
+raw text — and it still comes back as a JSON-enveloped `ToolResult.content`, not raw text passed
+through.** Every other tool and `tool-results.tsx`'s own `parseJson` helper assume JSON; wrapping the
+diff as `{prNumber, truncated, diff}` keeps that assumption true end to end rather than special-
+casing one tool's transport shape. Capped at 20,000 characters — "real input-size hygiene," the same
+role `search.query`'s own limit and `ChatSendInput.messages`'s 40-cap play elsewhere — with both a
+structural `truncated: boolean` and a human-readable marker appended to the text itself, so the model
+can tell the person their diff was cut off without reasoning about the boolean alone.
+
+**`get_pr_comments` merges GitHub's two genuinely separate comment endpoints** — the Issues API's
+conversation thread and the Pulls API's inline review comments — tagged `kind: 'general' | 'review'`
+and sorted by time, because "what did reviewers say" needs both and GitHub itself never merges them.
+
+**`tool-results.tsx` gained its first renderer linking OUTSIDE TaskFlow entirely.** Every prior
+renderer's `<Link>` opens a real `apps/web` route; a GitHub PR has none, so `renderListPrs` is the
+first plain `<a target="_blank" rel="noopener noreferrer">` in this file. `renderGetPrDiff` is
+likewise the first renderer showing preformatted TEXT (a scrollable `<pre>`) rather than a
+structured list — a diff has no natural row-per-item shape the way every other tool result here
+does.
+
+### Phase 15 §7 Wave 2 — PR write tools: comment, request changes, merge, close (SHIPPED)
+
+`apps/api/src/automation/pr-write.service.ts` · four new `integration.pr_*` events
+(`integration-events.ts`) · `apps/api/src/ai/tools/pr.ts`'s four write tools ·
+`apps/web/src/features/ai/tool-results.tsx`'s `prWriteRenderer` factory. Spec: same file, §7.2
+("post a review comment, request changes. Merge and close require the confirm step from §4.2").
+Closes the write half of §7's read/write split; still not built: the webhook trigger's
+payload-level filtering, the `work.card_pull_requests` link table, and "create a branch from this
+card" (`repo:connect`, still unregistered — no caller yet).
+
+**Two new permissions, not one, following the identical alone-with-its-own-caller precedent Wave 1
+used for `pr:view`.** `pr:review` (posting a comment, requesting changes) and `pr:merge` (merge,
+close) both land in this wave because both get real callers in it — unlike Wave 1, which shipped
+only `pr:view` because `pr:review`/`pr:merge` had no caller yet. Kept as TWO permissions rather than
+one, deliberately: an org can let one Member review PRs without letting them merge or close —
+reviewing is a normal part of contributing, merging is materially more consequential, and folding
+both into one permission would remove that distinction with no way to get it back short of a new
+migration. Both are `ORG_LEVEL_PERMISSIONS` and `GRANTABLE_PERMISSIONS`, Owner/Admin by role, same
+shape as `ai:use`/`pr:view`.
+
+**All four write tools require confirmation — including the two §7.2's own text never explicitly
+demanded it for.** §7.2 only names merge/close as needing "the confirm step from §4.2"; posting a
+comment or requesting changes could have been read as auto-executable. This registry has been here
+before: `chat_post_message` and `docs_create_page` both shipped confirmation-gated despite the
+spec's own text calling them "cheap to undo... can execute directly once permitted," on the
+reasoning that one uniform rule is simpler to reason about and audit than deciding tool-by-tool
+which risk is low enough to skip — and a PR comment is exactly the same shape as a chat message:
+visible to the whole GitHub org, and anyone subscribed, the instant it posts, read before a human
+could undo it. `pr.ts`'s own header states this explicitly rather than leaving it to be inferred
+from the diff.
+
+**Every write function checks its own permission, mirroring `integration-action.service.ts`'s
+`assertMayManage` exactly, for the identical reason `pr-read.service.ts`'s functions do: no tRPC
+route protects any of these, only the AI tool registry reaches them.** `postPrComment`/
+`requestPrChanges` check `pr:review`; `mergePr`/`closePr` check `pr:merge` — refused before any
+network call, the same "provider never reached" property this codebase proves for every gate.
+
+**Every event is written to the outbox AFTER GitHub's own effect succeeds, never before — identical
+discipline to `postSlackMessage`/`createGithubIssue`, and for the identical reason: the effect is on
+a platform this deployment does not control, so it cannot share the caller's own transaction the way
+a card mutation can, and an event claiming an effect that GitHub actually refused would be a false
+entry in a hash-chained log that can never be corrected.** Four new events —
+`integration.pr_comment_posted`, `integration.pr_review_submitted`, `integration.pr_merged`,
+`integration.pr_closed` — following `integration-events.ts`'s own "OUTBOUND effects" rule to the
+letter: no comment text, no review text, ever. A test in `pr-write.service.test.ts` asserts this
+directly (`expect(JSON.stringify(payload)).not.toContain('looks good')`) rather than trusting the
+schema alone, since a schema only proves the FIELD isn't declared, not that nobody ever widens it
+later without re-reading this rule.
+
+**Every function also returns `providerScope`, a real departure from how a card write tool
+behaves.** `card_update`/`card_assign`'s own renderers deliberately read `cardId` from the tool
+CALL's `input`, never the service's OUTPUT, specifically to avoid enriching four backend services
+just for a frontend convenience the model already gave them. A PR write tool cannot follow the same
+rule: `providerScope` (`owner/repo`) is resolved entirely server-side and never appears anywhere in
+the model's own input, so there is nothing for a renderer to read off the call — returning it is
+what makes a working `https://github.com/<scope>/pull/<n>` link possible at all, not optional
+enrichment. `prWriteRenderer(verb)` in `tool-results.tsx` is the shared factory reading `prNumber`
+from `call.input` (the model already has it, same as `cardWriteRenderer`) and `providerScope` from
+the result (the one field this tool family cannot get any other way).
+
+**`mergePr`'s Zod-optional `mergeMethod` field tripped `exactOptionalPropertyTypes` the first time
+it was wired into the tool's `execute()`.** Zod's own `.optional()` inference produces
+`mergeMethod?: T | undefined`, not merely "optional" — passing that object straight through to a
+service function whose own parameter declares `mergeMethod?: T` (no explicit `| undefined`) is
+refused under this codebase's strict tsconfig, the identical trap `apps/web`'s own
+`description={condition ? text : undefined}` pattern hits and the fix documented there for. The fix
+is the same: build the object conditionally so the key is ABSENT when unset, never
+present-with-`undefined`.
+
+### Phase 15 §7 Wave 3 — the card↔PR link (SHIPPED)
+
+`packages/db/migrations/0105_card_pull_requests.*` · `apps/api/src/work/card-pull-request.service.ts`
+· `apps/api/src/work/detail.router.ts`'s `pullRequests:` block · `apps/api/src/ai/tools/pr.ts`'s
+`list_card_prs`/`card_link_pr`. Spec: same file, §7.2 ("a new small table linking a card to a
+PR... and a new action, 'create a feature branch from this card'"). This wave ships only the link
+table and the two tools that read/write it — still not built: `repo:connect`, "create a feature
+branch from this card," and the inbound `pr.merged` trigger the link table exists to serve (see
+below for why that trigger needed real research before it could even be scoped, let alone built).
+_(`repo:connect`/"create a feature branch from this card" shipped in the very next §7 pass below;
+the inbound `pr.merged` trigger — as `card.pull_request_merged`, paired with auto-link-by-branch-
+name — shipped later still; see "Phase 15 §7.2 — auto-move on merge, auto-link by branch name" for
+what actually closed both of §7.2's remaining named gaps.)_
+
+**§7.2's own text calls the inbound webhook piece "the largest single piece" and separately says
+`pr.merged` becomes "a new domain event... a new trigger name plus the already-existing `card.move`
+action, not new engine work." Both turned out to need the SAME missing piece to actually mean
+anything: a way to know WHICH card a merged PR is even about.** Before this wave, nothing recorded
+that relationship anywhere — an org's automation could react to "a `pull_request` webhook arrived"
+but had no way to turn "PR #42 merged" into "move card WEB-142." §7.1's own "what exists today"
+already correctly named this gap ("no card↔PR link"); this wave closes it. The merge-trigger itself
+is still not built — seeing this dependency only became clear from actually researching the existing
+automation engine (see the next two paragraphs), not assumed going in.
+
+**`packages/filter/src/fields.ts`'s own connector field set (`provider_event`/`provider_scope`,
+exactly two fields) turns out to be the WRONG place to add "was this a merge" filtering, and its own
+header already explains why, unprompted: "the provider's own body stays `unknown`... a field set
+over it would be this repo asserting a schema it does not own and cannot keep current." Generic
+payload-field filtering (`action = 'closed' AND merged = true`) was the first idea considered for
+"auto-move on merge" and rejected on rereading that file's own reasoning — it would mean this
+package owning a slice of GitHub's webhook schema, the exact thing that file's two-field design
+deliberately refuses to do. §7.2's own text agrees independently: `pr.merged` is a NEW, SPECIFIC
+domain event, the identical shape every other trigger in this system already is (`member.added`,
+`card.created`), not a generic catch-all filtered by payload condition. Building the merge trigger
+is therefore real, separate work — parsing GitHub's raw `pull_request` payload for
+`action === 'closed' && pull_request.merged === true` inside the inbound webhook handler and
+emitting a distinct event from it — deliberately deferred out of this wave rather than rushed in
+alongside the link table it depends on.
+
+**The link is `card:update`, not a new permission, and deliberately NOT also gated on `pr:view`.**
+`card-pull-request.service.ts`'s own header states why: linking is filling in a fact about ONE
+card, the identical `card:update` shape `checklist.service.ts` already gives "a checklist is part
+of its card, not a resource anyone grants access to separately" — and nothing about linking reads
+from GitHub at all (no fetch, no token use beyond resolving which repo the org connected), so
+requiring a SECOND permission would refuse a Member who can already edit the card from recording a
+fact they already know via other means (their own branch name, a Slack mention) for no real
+authorization reason.
+
+**No existence check against GitHub — a deliberate, narrower scope than `card_add_labels`'s own
+label-id handling, not an oversight.** A label id is checked against a local table and a fabricated
+one fails a real foreign key; a PR number has no local row to validate against, and verifying it
+would mean a second permission (`pr:view`) plus a real network call just to record a claim. The
+link is exactly that: a claim a person or the assistant can make and later correct, not a
+synchronized mirror of GitHub's own state.
+
+**Modeled directly on `comms.recording_cards` (migration 0034), the closest existing precedent for
+"attach an external thing to a card": a composite FK back to `work.cards(org_id, id)` so a link can
+never point at another tenant's card even if application code got it wrong, and MANY on both sides
+for the identical reason `recording_cards` is — one card can span several PRs (a large feature), and
+in principle one PR could reference more than one card. The "PR" side is plain columns
+(`provider_scope` + `pr_number`), not a foreign key: there is no local table for a GitHub pull
+request to reference. A second index, ordered PR-first rather than card-first, exists for the
+reverse lookup a future merge-trigger action will need ("given this PR, which cards name it") —
+added now, while the migration was already being written, since the need is already certain from
+§7.2's own text, not speculative.**
+
+**`providerScope` is caller-supplied to the SERVICE, unlike every PR read/write tool — a deliberate
+asymmetry, not an inconsistency.** `pr-read.service.ts`/`pr-write.service.ts` always resolve the
+repo via `connectedGithubRepo`, never from caller input, because they use it to build a real GitHub
+API URL, where a caller-supplied scope would be a path-traversal-shaped redirection risk
+(`repoPath`'s own doc comment). This service makes no such call — `providerScope` is inert data
+written to one row, so an arbitrary string here is not unsafe the way it would be in a URL. The one
+caller today (`card_link_pr`) still resolves it from the org's own connector before calling the
+service, for a different reason: consistency with what a person sees when they open the PR (the
+same `owner/repo` the read tools already show), not because the service itself needs the
+guarantee.
+
+**`linkCardPullRequest` is idempotent via `onConflictDoNothing` on the composite primary key, the
+identical shape `memberGrants.grant`/`revoke` already use for a retried batch** — linking a PR that
+is already linked is not a different fact, and a second `card_link_pr` call for the same reference
+should not fail or duplicate the row. Idempotency is at the ROW level only, not the event: each
+call still emits its own `card.pull_request_linked`, the same "every call is a real attempt worth
+recording" reasoning the identity/tenancy idempotent routes already accept, proven directly in
+`card-pull-request.service.test.ts`'s own idempotency case (one row, two events).
+
+**The audit projection's two new entries (`card.pull_request_linked`/`.unlinked`, both mapped to
+`{type: 'card', key: 'cardId'}`) were added in the SAME change that registers the events, not a
+follow-up pass — the identical gap CI had just caught one commit earlier for Wave 2's four
+`integration.pr_*` events (see this file's own "Two bugs CI found on PR #134" section, directly
+below), deliberately not repeated here.**
+
+Both surfaced from the CI run §7 Wave 2's own push triggered, not from anything Wave 1 or Wave 2
+changed — pre-existing, unrelated to GitHub/PR work, fixed because this PR's author is responsible
+for its CI regardless of which change exposed the failure.
+
+**`chat_post_message`'s `dmUserIds` path failed "Not found." on every call, whether the DM was new
+or already existed.** `openDirectMessage` writes a fresh membership tuple when it opens a DM, but
+`chat.ts`'s `execute()` kept calling `sendMessage` with the same `ToolContext.subject` snapshot
+captured before the tool ran — so `actor.subject.tuples` never reflected the tuple `openDirectMessage`
+had just written. A DM is a CLOSED authorization target (`chat/shared.ts`'s `isClosedChannel`), and
+`decide.ts`'s own rule for a closed target is an unconditional deny when no applicable tuple is
+found — not even an Owner/Admin bypass reaches it — so the very next `sendMessage` in the same tool
+call was refused on the channel the caller had just been added to. Fixed by reloading tuples via
+`loadTuples(orgId, userId)` (`tenancy/resolve.ts`, the same function `chat/membership.ts` already
+uses) immediately after `openDirectMessage` returns, before building the `actor` passed to
+`sendMessage`.
+
+**`orgs_self_read` (identity.orgs' RLS policy, migration 0004) still hard-coded `m.status =
+'active'`, silently reintroducing a bug the app layer had already fixed once.** `org.service.ts`'s
+`listMyOrgs` was earlier corrected to report a suspended membership rather than omitting it (this
+file's own Phase 3 section: "narrowing to 'active' used to happen here... a suspended membership
+was indistinguishable from no membership at all") — but that function's `INNER JOIN` against
+`identity.orgs` runs inside `withUserScope`, where `orgs_self_read` is what actually admits the org
+row, and the policy itself was never updated to match. A suspended membership's org row stayed
+invisible under RLS regardless of what the app-level query intended, so the join silently dropped
+it and the fix never took effect end-to-end — caught only by CI running the real test against real
+Postgres, not by anything a mocked check could see. Migration 0104 widens the policy's `EXISTS` to
+`m.status IN ('active', 'suspended')`. `resolveOrgMembership` (`resolve.ts`) is unaffected by the
+widening: it throws `membershipSuspended()` on a non-active membership before it ever queries
+`identity.orgs`, so this only changes the one caller, `listMyOrgs`, that genuinely needs to see a
+suspended membership's own org row.
+
+### Phase 15 §7 — multi-repo resolution, `pr_approve`/`get_pr_files`/branch creation, a diff viewer (SHIPPED)
+
+`packages/policy/src/{permissions,roles}.ts` (`repo:connect`) ·
+`apps/api/src/automation/integration.service.ts` (`connectedGithubRepos`, `connectedGithubRepo`'s
+ambiguity refusal) · `apps/api/src/automation/{pr-read,pr-write}.service.ts` (`repoScope` on every
+existing function, `getPullRequestFiles`, `approvePr`) · `apps/api/src/automation/branch.service.ts`
+(new) · `apps/api/src/ai/tools/pr.ts` (`list_repos`, `get_pr_files`, `pr_approve`,
+`create_branch_from_card`) · `apps/web/src/features/ai/diff-view.tsx` (new). Prompted directly by
+the project owner, in four parts: what happens with more than one connected repo, a way to create a
+branch from a card, more GitHub capability generally ("these looks very basic"), and a genuinely
+readable diff ("very tricky to read... not presentable... if we go with the diff of a pr it should
+be proper way").
+
+**Multi-repo: the old silent "most recently connected" tie-break is gone, replaced by an explicit
+refusal the model can recover from.** `connectedGithubRepo` used to pick a repo with no signal to
+anyone that a repo other than the intended one was now in use — a real, silent-wrong-answer risk
+the moment a second repo got connected, not a hypothetical one. It now takes an optional
+`repoScope`: given, it is checked against the org's own connected rows (never trusted blind — a
+value naming a repo this org never connected is refused with `NOT_FOUND`, identical to an omitted
+scope on a single-repo org); omitted with exactly one repo connected, resolution is unchanged;
+omitted with more than one connected, it throws `VALIDATION_FAILED` naming `list_repos` as the
+recovery path, with zero network calls made — the same "refused before any external effect"
+property this codebase proves for every access gate. `list_repos` (`connectedGithubRepos`, no
+GitHub call — reads `platform.integrations` directly) is what turns that refusal into "ask the
+user which one, then reuse the answer" per the project owner's own stated design: `router.ts`'s
+system prompt tells the model explicitly to call `list_repos` on that refusal, ask once, and reuse
+the chosen `repoScope` for the rest of THIS conversation unless told otherwise — a conversation-
+scoped choice, not a server-side one, since `ai.chat.send` is stateless (§4 Wave 1) and has nothing
+durable to remember it in. Every existing PR tool (`list_prs`, `get_pr_diff`, `get_pr_comments`,
+`pr_post_comment`, `pr_request_changes`, `pr_merge`, `pr_close`, `card_link_pr`) gained the
+identical optional `repoScope` field via a shared `RepoScopeField`/`RepoScopeProperty` fragment in
+`pr.ts`, rather than each tool inventing its own copy of the same three lines.
+
+**`create_branch_from_card` closes the last item on §7.2's original four-permission list —
+`repo:connect` — the one that went the longest without a caller.** Gated on `repo:connect`
+specifically, not `pr:review`/`pr:merge`: a fresh ref on the default branch is visible to the whole
+GitHub org the instant it exists, a bigger blast radius than commenting on or even merging a PR
+someone else already reviewed, so it is not something every reviewer/merger should be able to do
+without a separate grant. The branch name is `<reference>-<slug>` — e.g. `web-142-fix-login-
+redirect` — built entirely server-side from the card's own reference and title, never asked of the
+model, the identical "classification stays deterministic" instinct this codebase applies everywhere
+a name could otherwise be guessed (`standup.service.ts`'s bucketing, `card_move`'s rank derivation).
+Unlike `card_link_pr` (which records a claim with no GitHub round trip at all, by design), this
+tool creates a REAL ref, so "does a branch with this name already exist" has a real, cheap answer —
+`GET .../git/ref/heads/<name>` before ever attempting `POST .../git/refs` — and an existing branch
+is reported back (`alreadyExisted: true`) rather than treated as a failure, the same reasoning
+`linkCardPullRequest`'s own idempotency exists for: a retried confirmation should not error for no
+reason. The event (`integration.branch_created`) is written only after GitHub's own ref creation
+succeeds, identical discipline to every other PR write tool in this registry, and its audit
+projection mapping was added in the SAME change that registers the event — the exact gap CI caught
+once already for Wave 2's `integration.pr_*` events, deliberately not repeated here.
+
+**`pr_approve` closes an asymmetry: the registry could formally reject a PR (`pr_request_changes`)
+but never approve one.** Shares `pr:review` — an approval is a review, the same permission tier
+`pr_request_changes`/`pr_post_comment` already sit at — and the identical "GitHub refuses a formal
+review on the connector's own PR" 422 hint, naming `pr_post_comment` as the working alternative.
+
+**`get_pr_files` answers "what does this PR touch" without `get_pr_diff`'s truncation risk.** A
+large PR's diff routinely blows past `MAX_DIFF_CHARS` before a person learns the SHAPE of the
+change at all; the files endpoint (path, status, additions/deletions per file) is one page
+regardless of PR size, and is never truncated.
+
+**The diff viewer replaces one undifferentiated `<pre>` block of raw unified-diff text — found
+directly "very tricky to read... not presentable" — with real per-file, per-hunk structure, colored
+additions/deletions, modeled on GitHub's own diff view.** `apps/web/src/features/ai/diff-view.tsx`'s
+`parseUnifiedDiff` is exported and pure specifically so it can be tested directly against real diff
+text (`diff-view.test.ts`), the same "test the pure half" split `markdown-lite.tsx`/`api.test.ts`
+already establish for this feature — a unified diff has enough real edge cases (renames, added/
+deleted files via `/dev/null`, a file with no trailing newline, `\ No newline at end of file`
+annotations) that eyeballing the component's output is not enough to trust the parser. It never
+throws: an unrecognized line inside a hunk is treated as context rather than aborting the whole
+parse, since `get_pr_diff`'s own `MAX_DIFF_CHARS` truncation can cut a diff off mid-hunk — a real,
+expected input, not a malformed one. One real bug the test suite itself caught before this shipped:
+`text.split('\n')` produces a spurious trailing `''` whenever the diff text ends with a newline (the
+common case for real diff text), which the parser's context-line fallback was turning into a fake
+blank line appended to the last hunk — fixed by dropping exactly that one trailing artifact before
+the main parsing loop runs, never any non-trailing blank line, since a genuine blank line in the
+middle of a diff must still render as real context. `tool-results.tsx`'s `renderGetPrDiff` renders
+`DiffView` in place of the old `<pre>`; a diff `parseUnifiedDiff` cannot recognize at all still
+falls back to the raw text, so nothing renders worse than before.
+
+### Phase 15 §7.2 — direct "create branch from card" UI, and a card identity bar (SHIPPED)
+
+`packages/db/migrations/0106_card_branches.*` · `apps/api/src/work/card-branch.service.ts` ·
+`apps/api/src/automation/branch.service.ts`'s `branchName` override · `apps/api/src/work/
+detail.router.ts`'s `branches:` block · `apps/web/src/features/work/detail/{card-identity-bar,
+development-section,branch-name}.tsx`. Prompted directly: a way to create a branch from a card
+without going through the assistant, with the name pre-filled and editable; then, separately, a
+request to show both the linked PR and the linked branch prominently next to the card's own id,
+each clickable in a new tab, with the id itself copyable "like ClickUp."
+
+**`create_branch_from_card` had shipped as an AI tool only — this is the same "shipped backend,
+no consumer for a person not talking to the assistant" gap this file's own account of this
+codebase's history already names for `card_link_pr`/`list_card_prs` before their own direct UI,
+and for `ai.chat.send` before `apps/web/src/features/ai` existed at all.** `createBranchFromCard`
+itself needed no new capability to be reachable directly — it already took a real `WorkActor` and
+`BranchWriteDeps` — so the fix is almost entirely wiring: a new `work.branches.create` tRPC
+mutation (`detail.router.ts`), floored on `repo:connect` since that is the org-level permission a
+route with no resource context can meaningfully check, with the resource-aware `card:update` check
+staying inside `createBranchFromCard` itself exactly as it already was for the AI tool's caller.
+
+**Until now, nothing recorded which branch belongs to which card at all — `createBranchFromCard`
+created a real GitHub ref and emitted `integration.branch_created`, and that was the entire
+record.** A person (or the assistant) asking "what's the branch for this card" a second time, in a
+different session, had no way to find out. Migration 0106's `work.card_branches` is modeled
+directly on 0105's `work.card_pull_requests` — a composite FK back to `work.cards(org_id, id)`
+so a link can never point at another tenant's card even if application code got it wrong, MANY on
+both sides for the same reason `card_pull_requests` is (a card can reasonably span more than one
+branch over its life; a branch name could in principle be reused after a card is deleted and
+recreated), and a second, PR-scope-first index for a reverse lookup a future feature might need.
+`card-branch.service.ts` (`listCardBranches`/`linkCardBranch`/`unlinkCardBranch`) is the identical
+shape `card-pull-request.service.ts` already established one entity type over — `card:read`/
+`card:update`, no second permission for the read/unlink half, idempotent inserts, its own
+`card.branch_linked`/`card.branch_unlinked` events mapped into the audit projection the same
+change that registers them (`{type: 'card', key: 'cardId'}`) — the exact gap CI had already caught
+once for Wave 2's `integration.pr_*` events, deliberately not repeated here.
+
+**`linkCardBranch` is called from INSIDE `createBranchFromCard`, in both outcomes, not left to
+each caller to remember.** A branch that already existed on GitHub still gets linked to the card —
+recording the association is the same intent whether GitHub had to create the ref or already had
+it — but only the newly-created path also emits `integration.branch_created`; recording that event
+for a branch GitHub did not actually create this call would be a false "created" claim in a
+hash-chained log, the identical discipline this file's own account of every other PR/branch write
+tool already states. The permission check inside `createBranchFromCard` was upgraded from
+`card:read` to `card:update` at the same time, checked while loading the card — BEFORE any GitHub
+call — so an actor who holds `repo:connect` but cannot update this specific card (a relationship
+tuple can restrict `card:update` on one board and not another) is refused before a branch is
+created that nothing would ever end up recording as belonging to it, rather than creating an
+orphan ref on GitHub and then failing to link it.
+
+**The pre-filled, editable name is a client-side computation, never a round trip.** The
+`<reference>-<slug>` default `branch.service.ts` already computes deterministically needed no new
+server capability to preview — `apps/web/src/features/work/detail/branch-name.ts` duplicates the
+identical `slugify`/join logic locally (the same trade `apps/mobile/src/lib/org-picker.ts`'s own
+`slugify` already accepts for not sharing code across the `apps/api`/`apps/web` boundary), used
+ONLY to show a live "will be created as…" preview beneath the input as a person types — the actual
+name is decided server-side regardless, by the SAME `slugify` `branch.service.ts` already runs on
+whatever text arrives, so drift between the two would be a cosmetic preview bug, never a
+correctness one. `createBranchFromCard` gained an optional `branchName` field: given, it is
+slugified and used verbatim in place of the deterministic default; an edit that slugifies to
+nothing (clearing the field, typing only punctuation) falls back to the default rather than
+attempting to create a branch literally named `""`.
+
+**The card identity bar (`card-identity-bar.tsx`) is a NEW header-level component, not an
+expansion of the existing "Pull requests" section — the two requests were different, and the fix
+for one is not the fix for the other.** "Create a branch, editable" is a WRITE workflow, real
+enough to need its own form, its own pending/error state, and enough room that it belongs in the
+panel body. "Show me what's already linked, prominently, next to the id" is a READ/navigation
+need, answered by a compact, always-visible row in the header — the same two queries
+(`cardPullRequestsQuery`/`cardBranchesQuery`) the body section already uses, React Query
+deduplicating by key so mounting both costs no extra request. `card-detail-panel.tsx`'s
+`ModalTitle` (the dialog's accessible name) is now `sr-only`: the identity bar already renders the
+reference as its own copy-button element, and painting the same text twice — once as the
+accessible-only heading, once as the visible copy button — would be pure duplication, not
+redundancy worth keeping.
+
+**The copyable reference button is `navigator.clipboard.writeText`, a local `copied` boolean, and
+a 1.5s timeout — no toast, no tooltip primitive, because this app has no `Tooltip` component to
+reach for.** A `Copy`/`Check` icon swap in place, styled as a small mono badge, is the entire
+feedback surface; it does not depend on `useToast` (reserved for mutation outcomes elsewhere in
+this file, not a plain client-side clipboard write that cannot itself fail in a way worth
+reporting).
+
+**Every chip — PR or branch — is a real `<a target="_blank" rel="noopener noreferrer">`, never a
+button that opens a new tab via `window.open`, and each carries its own icon (`GitPullRequest`/
+`GitBranch`) so the two are never confused at a glance the way an undifferentiated list could
+be.** This mirrors `tool-results.tsx`'s own precedent for the first renderer in that file linking
+outside TaskFlow entirely — nothing about a GitHub PR or branch has a real `apps/web` route to
+open with `<Link>`.
+
+### Phase 15 §7.2 — a repo picker for the PR-link and branch-create forms (SHIPPED)
+
+`apps/api/src/work/detail.router.ts`'s `githubRepos:` block ·
+`apps/web/src/features/work/{api,detail/development-section}.tsx`. Prompted directly, from a
+screenshot: the branch-create form failing outright with
+`repoScope: required — more than one GitHub repository is connected` — `connectedGithubRepo`'s own
+deliberate ambiguity refusal (§7's own text), reachable the moment a second org connects a second
+repo, with no UI path to resolve it. "Same goes to pr" extended the identical fix to the PR-link
+form in the same request.
+
+**The fix is two bugs, not one — a missing picker, and the wrong permission gating its data
+source.** Both forms' only source of "which repo is connected" was `integrationsQuery`
+(`automation.integration.list`, gated on `integration:manage` — Owner/Admin, or an individually
+granted Member) via a bare `.find()`, which both picks silently wrong the moment a second repo
+exists AND is the wrong floor for who should be able to link a PR (`card:update`) or create a
+branch (`repo:connect`) in the first place — neither of which implies `integration:manage`. Fixing
+only the picker would still 403 a Member who holds `repo:connect` but not `integration:manage`.
+
+**`work.githubRepos.list` is a new, deliberately narrower route — `card:read`-gated, not
+`integration:manage` or `pr:view`.** Its own header states why: repo names are non-sensitive data
+(the identical reasoning the AI tool's own `list_repos` already relies on), and both real callers
+of this route — the PR-link form (`card:update`) and the branch-create form (`repo:connect`) — are
+only ever reachable from a card detail panel a caller already opened, which is itself `card:read`.
+Gating the LIST on the loosest permission any of its callers could need, rather than the strictest
+action behind it, is the same "gate on what the caller actually needs, not a stricter unrelated
+permission" instinct this codebase already applies elsewhere (`standup.service.ts`'s
+`project:read` floor vs. Analytics's narrower one). It wraps the existing `connectedGithubRepos`
+(`automation/integration.service.ts`) unchanged — no new service logic, only a new, correctly-
+scoped door to it.
+
+**The repo choice is lifted to `DevelopmentSection`, the shared parent, not duplicated per
+form.** `githubReposQuery` is fetched ONCE there; `selectedRepoScope` lives there too, so picking a
+repo while linking a PR is remembered for creating a branch in the same card session without
+asking twice — the identical "ask once, reuse for the rest of the session" shape the AI
+assistant's own multi-repo conversation handling already established (§7's own account of
+`list_repos`), just scoped to one open card instead of one conversation. `effectiveRepoScope`
+collapses the single-repo case back to today's zero-friction behavior (the sole repo is implied,
+no picker rendered at all) and only asks when there is a genuine choice to make; both forms' submit
+controls disable on an unmade choice (`repoScope === undefined`) the same way they already disable
+on `!reposLoaded`.
+
+### Phase 15 §7 — transparent GitHub OAuth token refresh (SHIPPED)
+
+`packages/db/migrations/0109_integrations_token_refresh.*` ·
+`apps/api/src/automation/{connector-aad,token-refresh}.ts` (both new) ·
+`apps/api/src/automation/integration.service.ts`'s `connectorFor`/`loadConnector`/
+`completeGithub`/`reviveRetiredRepo`/`disconnectIntegration` · the widened `PrReadDeps`/
+`PrWriteDeps`/`BranchWriteDeps`/`AiRouterDeps`. Prompted directly, from a real transcript: `show me
+the pr 134` failing with `Tool "get_pr_diff" failed: GitHub answered 401 — the connector token is
+invalid or was revoked`, and the project owner's own diagnosis leading the report — "it is auto
+resetting the token after some time or the token is TTL not good."
+
+**The diagnosis was right, and this codebase had no way to see it.** `completeGithub` (the OAuth
+code-exchange handler) has, since the connector shipped, stored only `access_token` from GitHub's
+`POST /login/oauth/access_token` response — never `expires_in`, `refresh_token`, or
+`refresh_token_expires_in`. Those three fields are not always absent: GitHub OAuth Apps (as
+opposed to GitHub Apps) carry an opt-in, per-App setting — "expire user tokens" — that this
+deployment has no visibility into or control over, since it belongs to whoever owns the connecting
+OAuth App's registration on GitHub's side. Migration 0056's own header assumed the credential was
+"non-expiring by construction" — true for an App with that setting off, silently false the moment
+it's on. With the setting on, the access token this codebase stored genuinely stops working on its
+own schedule, and the only recovery path was the manual "reconnect the repository" flow — which is
+exactly the loop the report describes.
+
+**Five new nullable columns on `platform.integrations`, expand-only, migration 0109**:
+`refresh_token_ciphertext`/`refresh_token_wrapped`/`refresh_token_master_id` (the identical
+envelope-encryption shape the access token already has — its own data key, never a new one, since
+a data key is not being rotated, only a second plaintext it protects) plus `token_expires_at`/
+`refresh_token_expires_at` (plain, unencrypted timestamps — an expiry instant is not a secret).
+Every column reads NULL for Slack (which never expires by GitHub's mechanism) and for any GitHub
+connection whose App has the expiry setting off — the overwhelming majority of existing rows —
+and `connectorFor`'s whole refresh path is a no-op for exactly that case, unchanged from before
+this capability existed.
+
+**`connectorFor` is the one chokepoint every real caller already went through, so it is the one
+place that needed to change.** `pr-read.service.ts`, `pr-write.service.ts`, `branch.service.ts`,
+and the AI tool registry's GitHub tools all resolve their token through `connectedGithubRepo` ->
+`connectorFor` — none of them decrypt a token themselves. `connectorFor` now: loads the row
+(`loadConnector`, decrypting both the access and, if present, the refresh token under the row's
+own AAD); if the row is GitHub, has a real `tokenExpiresAt` within `TOKEN_REFRESH_MARGIN_MS` (5
+minutes — a request that started against a token with 30 seconds left could easily outlive it
+mid-flight to GitHub) or already past, and holds a refresh token, calls GitHub's refresh grant
+(`grant_type=refresh_token`, the SAME endpoint and same `client_id`/`client_secret` pair the
+initial code exchange uses); on success, re-encrypts under the SAME data key (no re-wrap — the key
+itself isn't rotating) and persists in a short, separate transaction; and returns the fresh token
+to the caller. Every other combination — Slack, a non-expiring GitHub row, a token that isn't near
+expiry yet — returns the stored token exactly as before, in one combined early-return guard.
+
+**A refresh call happens OUTSIDE any open `withOrgScope` transaction, and the write is a separate,
+short one afterward — the identical discipline `pr-write.service.ts`'s own header already states
+for every GitHub-touching function in this module: "the effect is on a platform this deployment
+does not control... an event claiming an effect that GitHub actually refused would be a false
+entry."** `loadConnector` reads and decrypts inside its own transaction and returns; the network
+call to GitHub happens with no transaction open at all; `persistRefreshedGithubToken` (in the new
+`token-refresh.ts`) opens a fresh, short `withOrgScope` only once the new token is already in hand,
+guarded on the row still holding a credential (`token_wrapped IS NOT NULL`) so a disconnect that
+raced the refresh wins outright rather than being silently undone by a refresh that read the row
+before the disconnect committed.
+
+**Corrected after shipping, found from a real CI run rather than a hypothesis: the guard was
+originally `status = 'connected'`, and that silently discarded every refresh triggered during the
+'pending_repo' picker phase.** `selectRepo`'s and `listReposForIntegration`'s own `tokenForRow`
+calls read a row that is still `status = 'disconnected'` — awaiting a repo choice, credentials very
+much present — right up until `selectRepo`'s own later UPDATE flips it. A refresh triggered by
+either of those reads matched zero rows under the old guard, so the API call to GitHub happened for
+nothing and the very next read saw the same stale expiry and refreshed again — `integration.service
+.test.ts`'s own "transparent refresh" cases caught this the first time they actually ran against
+real Postgres, each expecting exactly one refresh call and observing two or three.
+`disconnectIntegration`'s wipe (which NULLs every credential column in the same UPDATE that flips
+`status`) is what the guard was actually protecting against, so checking that the credential is
+still present (`isNotNull(schema.integrations.tokenWrapped)`) expresses the identical race
+protection without also refusing the picker-phase case that never disconnected at all.
+
+**A failed refresh — network error, a dead refresh token, GitHub down — never throws a new error
+class. It falls back silently to the stale token already in hand**, and the REAL caller's own
+GitHub request surfaces the exact same honest 401 with its existing "reconnect the repository"
+hint, exactly as it always has. `parseGithubTokenGrant` treats GitHub's own documented failure
+shape for this endpoint — a 200 response carrying an `error` field rather than a non-2xx status —
+identically to a network failure or a non-2xx response: all three return `null`, and `connectorFor`
+treats `null` the same as "no refresh attempted." A refresh mechanism that turned a transient
+GitHub hiccup into a new 500 would be a regression, not a fix — the acceptance bar mirrors Phase
+7's spend gate for the identical reason: the case that matters most is not that a refresh
+succeeds, it's that a failed one degrades to exactly today's behavior.
+
+**`ConnectorForDeps` makes the OAuth App's `client_id`/`client_secret` an OPTIONAL field on the
+type `connectorFor` takes — deliberately, to preserve `integration-action.service.ts`'s own
+standing boundary that `apps/worker` must never hold OAuth client secrets at all.**
+`IntegrationActionDeps` (unchanged) stays `Pick<IntegrationDeps, 'keys' | 'fetchImpl'>`, so the
+worker's `github.create_issue` automation action falls through to the stale token exactly as every
+caller did before this capability existed — a real, accepted scope narrowing, not an oversight:
+only `apps/api`-only callers (`PrReadDeps`, `PrWriteDeps`, `BranchWriteDeps`, `AiRouterDeps`, all
+widened to include `providers`) gain transparent refresh.
+
+**`token-refresh.ts` and `connector-aad.ts` are both new files, deliberately NOT named
+`*.service.ts` — the `rebalance.ts`/`counters.ts` precedent CLAUDE.md's own layout section already
+documents ("repositories mutate by design").** `persistRefreshedGithubToken`'s own DB write has no
+product-level domain event of its own to emit: the event belongs to whatever the REAL caller was
+doing (posting a PR comment, reading a diff), not to the credential bookkeeping that happened to
+make it possible — guardrail 11's `**/*.service.ts` scope is what makes that a legitimate omission
+rather than a silent one. `connector-aad.ts` holds only `integrationTokenAad`, extracted into its
+own zero-dependency file so `token-refresh.ts` can use the identical AAD without an `import-x/
+no-cycle` violation: `token-refresh.ts` already imports from `integration.service.ts`
+(structurally, not by name — see below), so a value import running the other direction would be a
+cycle the linter refuses. `integration.service.ts` re-exports the function under its original
+name, so `integration-webhooks.ts` (the only other importer) needed no change.
+
+**`token-refresh.ts` never imports a TYPE from `integration.service.ts` either, even though
+`import-x/no-cycle` would otherwise refuse it for a type-only import too — it uses a small, local,
+structurally-identical interface instead.** `GithubOAuthCredentials` (`{clientId, clientSecret}`)
+and an inline `{fetchImpl?: typeof fetch}` deps shape mirror `ConnectorProviderCredentials`/
+`Pick<IntegrationDeps, 'fetchImpl'>` exactly; TypeScript's structural typing means
+`integration.service.ts` can pass its real objects straight through with no import needed in
+either direction, and no third file's imports needed touching.
+
+**Tested in `integration.service.test.ts`'s new "transparent refresh (migration 0109)" describe
+block**, extending the existing fake-`fetch`-based fixture (a `FakeProviderOptions.onRefresh`
+hook, distinguishing `grant_type=refresh_token` from the ordinary code exchange by parsing the
+POST body): a credential with no `tokenExpiresAt` is never refreshed, for both Slack and a
+non-expiring GitHub row, with zero extra network calls made; a near-expiry token refreshes
+transparently and a SECOND call against the new, far-future expiry does not refresh again; a
+network failure and a GitHub error-body response both fall back to the stale token with no throw;
+`apps/worker`'s deps shape (no `providers`) never attempts a refresh even when a row is due;
+and `reviveRetiredRepo` carries a refresh token across a repo revive, proven by refreshing through
+the REVIVED row's own id afterward — not merely that the pending row's credentials decrypted, but
+that the SURVIVING row's re-encrypted copy actually works.
+
+### Phase 15 §7 — a missing 401 hint on every GitHub call site (SHIPPED)
+
+`apps/api/src/automation/{branch,pr-read,pr-write,integration-action}.service.ts`. Prompted
+directly, from a real local server log: `work.branches.create` failing with a bare
+`GitHub answered 401.` — no hint, no next step, on the one status code this codebase's own
+established "name the GitHub status code that has a real explanation" pattern had never covered.
+
+**403, 404, 405, 409, 410 and 422 all had actionable hints already — `pr-read.service.ts`'s
+`githubReadError`, `pr-write.service.ts`'s `githubWriteError`, and
+`integration-action.service.ts`'s `createGithubIssue` each name at least one of them — and 401 was
+absent from every one of them, including `branch.service.ts`, which had no hint mapping at ALL
+across its four GitHub call sites.** 401 is not a variant of 403: 403 means a live, valid token
+that merely lost scope or is being rate-limited (worth retrying, or waiting out); 401 means the
+token itself is dead — revoked at GitHub, or the connected OAuth App's own client secret rotated —
+which no retry will ever recover from. Collapsing the two into one generic
+`GitHub answered ${status}.` message left a person staring at a permanently-failing action with no
+signal that the fix is "reconnect the repository," not "try again."
+
+**Every one of the four files gets the identical hint text, phrased to match each file's own
+existing 403 wording rather than sharing one new helper across files.** This follows the
+codebase's own existing convention here — the near-identical 403 hint ("the connector token no
+longer has \[write \]access, or GitHub is rate limiting") is already duplicated, worded slightly
+differently, across `pr-read.service.ts`, `pr-write.service.ts`, and
+`integration-action.service.ts`, rather than factored into one shared function; a fourth
+near-duplicate for `branch.service.ts` (which needed a genuinely new local `githubErrorHint`
+helper, since it had none before) matches that precedent rather than introducing a shared
+abstraction none of the other three ever adopted. The hint names the actual recovery path —
+"reconnect the repository (Settings → Automation)" — the identical phrase
+`development-section.tsx`'s own empty-state text already uses for the same action.
+
+**No new test was added for the hint text itself, matching the existing gap rather than papering
+over it.** None of the four files' existing 403/404/410/422 hints have dedicated test coverage
+either — `pr-read.service.test.ts`/`pr-write.service.test.ts` assert error `code`
+(`NOT_FOUND`/etc.), never the hint string inside a `SERVICE_UNAVAILABLE` message, and
+`branch.service.test.ts`/`integration-action.service.test.ts` have never covered any non-2xx
+GitHub response at all. Inventing string-content assertions for one status code while every
+sibling hint stays untested would be inconsistent scope for what is, in every file it touches, a
+message-wording fix — not a behavior change to the error `code` a caller can already branch on.
+
+### Phase 15 §7.2 — card-panel PR polish: checkout copy, live state/CI dot, view diff (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` (`getPullRequestStatus`) ·
+`apps/api/src/work/detail.router.ts`'s `pullRequests.status`/`.diff` ·
+`apps/web/src/features/work/detail/{development-section,card-identity-bar,pr-status-badge,
+pr-diff-dialog}.tsx`. Prompted directly, from a list of options put to the project owner after the
+repo-picker fix — four picked ("UI polish first"): a copy-checkout-command action on branch chips,
+a colored PR-state icon plus a CI pass/fail dot, and a "view diff" button reachable from the card
+panel with no assistant detour. Deliberately not built in this pass: auto-move-on-merge,
+auto-link-by-branch-name, "create PR from card," and branch/PR cleanup on archive — bigger-scope
+items the project owner chose to defer, all still real, separate follow-up work. _(The first two —
+auto-move-on-merge and auto-link-by-branch-name — have since shipped; see "Phase 15 §7.2 —
+auto-move on merge, auto-link by branch name.")_
+
+**Copy checkout command needed no backend at all — it composes
+`git fetch origin <branch> && git checkout <branch>` from data the branch row already has.**
+`CopyCheckoutButton` (`development-section.tsx`) reuses `card-identity-bar.tsx`'s own
+`CopyableReference` click-to-copy shape (a `Check`/`Copy` icon swap, 1.5s timeout, no toast, no
+tooltip primitive this app doesn't have) rather than inventing a second feel for the identical
+interaction. `git fetch` runs first, deliberately: a branch this session just created (or one a
+teammate pushed) is not necessarily in a local clone's remote-tracking refs yet, and a bare
+`checkout` would 404 on it.
+
+**Live PR state and a CI dot needed a genuinely new backend call — `getPullRequestStatus`
+combines two real GitHub calls into one (`GET .../pulls/{n}` for state/merged/draft plus the head
+sha, `GET .../commits/{sha}/check-runs` for the rollup), because the checks call needs a sha the
+PR call is the only source of.** `merged` is a THIRD fact layered on `state: 'closed'` (a merged
+PR is always closed, a closed PR is not always merged) — the card chip needs to color the two
+distinctly, so `PrStatus` keeps `merged` as its own boolean rather than widening `state` to a
+three-value enum. The checks rollup is computed server-side, deterministically, from the real
+`check_runs[]` array (`status`/`conclusion` pairs) — `'pending'` if anything is not `completed`,
+`'failure'` if anything completed with a conclusion in `FAILING_CONCLUSIONS`
+(`failure`/`timed_out`/`cancelled`/`action_required` — `neutral`/`skipped` deliberately excluded,
+matching GitHub's own PR-merge-check behavior of not blocking on either), `'none'` for zero check
+runs, `'success'` otherwise — the identical "classification stays deterministic" instinct this
+codebase applies everywhere a raw status could otherwise be guessed at by a caller. A failed checks
+call degrades to `'none'` rather than failing the whole request: the PR's own state/merged/draft
+facts are already in hand, and a repo with no Checks API access (an older integration scope, or
+GitHub itself degraded) should still show a colored state icon, just with no CI dot.
+
+**`work.pullRequests.status`/`.diff` are gated on `pr:view`, deliberately UNLIKE their
+`list`/`link`/`unlink` siblings on the same router.** Those three touch only the org's own
+link-table row and never call GitHub at all (`card-pull-request.service.ts`'s own header explains
+why `pr:view` is not required there); `status` and `diff` both call GitHub for live content — the
+identical data `pr-read.service.ts`'s AI tools already gate behind `pr:view` — so a caller who can
+link a PR (`card:update`) but holds no `pr:view` grant still sees the plain chip, just without the
+live decoration. `PrStatusBadge`/`PrDiffButton` render nothing at all on ANY query error, FORBIDDEN
+included — `retry: false` so React Query does not hammer a permission refusal — rather than
+plumbing a new `SettingsCapabilities` field through props to pre-check the grant: Phase 15 §1's
+"hide, don't disable" rule was written for ACTION controls (a button that would do something you
+can't do), and there is nothing to disable on a decorative status dot that either answers or
+silently doesn't.
+
+**`work.githubRepos.list`'s own precedent (this file's own §7.2 "repo picker" section) does NOT
+apply here, and the difference is worth naming: that route deliberately floors on the LOOSEST
+permission any of ITS callers need, because it touches no GitHub data of its own.** `status`/`diff`
+touch live GitHub content directly, the same shape `pr-read.service.ts`'s own functions already
+gate — reusing that precedent (gate on the loosest caller need) would mean gating live PR content
+on `card:update`, which is not what `pr:view` exists to control.
+
+**No `cardId` on either new route, unlike their siblings — a deliberate scope narrowing, not an
+oversight.** `list`/`link`/`unlink` all name a card because they read or write the card's own
+link-table row; `status`/`diff` ask GitHub about a `repoScope`+`prNumber` pair and nothing about
+the card at all, the identical scope `pr-read.service.ts`'s own functions already have. Both reuse
+`deps.branch` (`Pick<IntegrationDeps, 'keys' | 'fetchImpl'>`) — structurally identical to
+`PrReadDeps`, so no new dependency wiring was needed in `router.ts`'s composition root at all.
+
+**"View diff" reuses the exact `DiffView` component and `getPullRequestDiff` service function the
+AI assistant's `get_pr_diff` tool already calls — a new tRPC door to the same pipeline, not a
+second implementation.** `PrDiffButton`/`PrDiffDialogBody` (`pr-diff-dialog.tsx`) mount the dialog
+body ONLY while open, so the (up to 20,000-character, per `MAX_DIFF_CHARS`) diff query never runs
+until someone actually clicks the button — the same "fetch on demand, never eagerly for every
+linked PR a card happens to show" instinct `pullRequestDiffQuery`'s own header states. A trigger
+button plus its own small dialog, not a route: a diff is scratch viewing, not a destination worth
+its own URL. Every dialog in this codebase carries a `ModalDescription` (here `sr-only`, matching
+`card-detail-panel.tsx`'s own precedent) — Radix's `Dialog.Content` warns without one, and this is
+the first new dialog added since `modal.tsx`'s own audit standardized the pattern, so it follows
+that standard rather than reinventing it.
+
+**No dedicated `getPullRequestStatus` router-level test — service-level coverage only, matching
+this file's existing convention.** `detail.router.ts` has no dedicated test file at all; every
+route in it (including the `status`/`diff` additions) is a thin pass-through to a real,
+already-tested service function, and `pr-read.service.test.ts` gained five new cases for
+`getPullRequestStatus` directly: open/not-merged/not-draft with a successful checks rollup, merged
+as a fact distinct from closed, a still-running check rolling up to `'pending'` and a failed one to
+`'failure'`, the checks-endpoint-failure degrading to `'none'` without failing the call, and the
+`pr:view` refusal with zero network calls made — the same "refused before the network call"
+property every access gate in this codebase proves the same way.
+
+### Phase 15 §4 — assistant page polish: a lighter capabilities panel, real markdown (SHIPPED)
+
+`apps/web/src/features/ai/{assistant-page,markdown-lite,markdown-lite.test}.tsx`. Prompted
+directly: the capabilities sidebar was "too much text… hard to read," with the actually-actionable
+"Try one" example prompts buried underneath all of it, and the assistant's own replies still looked
+"raw" — visible markdown syntax, messy formatting — despite `markdown-lite.tsx` already existing to
+prevent exactly that for lists.
+
+**The capabilities panel is reordered, not rewritten — nothing in `CAPABILITIES`/
+`EXAMPLE_PROMPTS`/`REFERENCE_HINTS` was cut.** The original layout painted all four capability
+groups, in full sentences, before ever reaching the example prompts — backwards for what a person
+actually does with the panel (skim for "can it do X," then click something to try). Renamed to
+"Try asking" and moved to the TOP, `EXAMPLE_PROMPTS`' own chip styling untouched. The full
+capability list — the wall of text that prompted the report — moved behind a single `<details>`
+disclosure ("Everything it can do"), collapsed by default: the native, JS-free collapsible
+`calls-panel.tsx`'s own transcript expander already established in this codebase, not a new
+pattern. `ChevronRight` rotates via Tailwind's `group-open:` variant; the browser's own default
+disclosure triangle is hidden (`[&_summary::-webkit-details-marker]:hidden`) since a second
+indicator next to a custom chevron would be redundant. Every text size/weight in the panel stepped
+down one notch (`text-xs font-semibold` → `text-[11px]`/`text-[12px]` `font-medium`) — the literal
+"lighter" the report asked for, not just a reorganization.
+
+**`markdown-lite.tsx` gained inline code, links, and fenced code blocks — the exact three
+constructs a code-adjacent assistant reply reaches for that bold+lists never covered.** A reply
+mentioning a command or a PR link showed literal backticks/brackets, the identical "syntax visible,
+not rendered" complaint the original bold/list fix already solved once for markdown. `InlineSegment`
+widened from `{text, bold}` to a real discriminated union (`text` / `code` / `link`) so a single
+ordered scan (`INLINE_TOKEN`, one regex with three alternatives) produces segments in the order they
+actually appear — resolving one construct at a time and re-scanning the leftovers would let a later
+pass corrupt an earlier one's output (e.g. bolding text that sits inside a code span). Still
+deliberately NOT a general markdown parser: no headings, no tables, no nested lists — the system
+prompt still caps the model's own commentary at one short sentence, so the added surface is exactly
+what a short, code-adjacent answer needs, not a step toward full CommonMark.
+
+**A link's `href` is checked against `isSafeUrl` before it ever renders as a real, clickable
+anchor — the identical scheme whitelist `work/richtext.ts` already enforces for a TipTap `link`
+mark, applied here for the identical reason.** A `[text](url)` pair reaching this renderer can
+originate from content the model merely ECHOED (a PR description, a doc) rather than composed
+itself, so `javascript:`/`data:` reached through a link is script execution through otherwise-plain
+chat text, not a hypothetical rule 4 already exists to close everywhere else. A link that fails the
+check renders as its own literal `[text](url)` text instead of a dead or dangerous anchor.
+
+**`isSafeUrl`'s first draft used a base URL (`new URL(url, 'https://placeholder.invalid')`), and a
+test written directly against it — not assumed — caught why that was wrong before it shipped.**
+The WHATWG `URL` constructor resolves ANY non-absolute text as a relative PATH against a supplied
+base, so `isSafeUrl('not a url at all')` returned `true` — the base's own `https:` scheme silently
+inherited by text that was never a URL at all, defeating the entire check for exactly the
+malformed input it exists to catch. Fixed by dropping the base entirely: with none, only a real
+absolute URL (a real scheme, `javascript:`/`data:` included, which is what the check is FOR) ever
+parses at all. `markdown-lite.test.ts` keeps the case (`isSafeUrl('not a url at all')` →
+`false`) as the regression proof, not just the two `javascript:`/`data:` cases the security
+property itself needed.
+
+**`PendingActions`' confirmation row rendered a tool's `input` as one run-on
+`` `key: "value", key2: "value2"` `` string — exactly the "raw JSON" look the report named.**
+`formatCallValue` drops `JSON.stringify`'s quote marks for a plain string (the overwhelming
+majority of a real tool's input — a title, a name, an id) while still stringifying anything else
+(a number, boolean, array, or object, none of which has an unambiguous bare rendering of their
+own); each field now renders as its own small segment in a wrapped row, dimmed key next to a
+legible value, rather than one long string a person has to parse themselves.
+
+**The assistant's chat bubble gained a small avatar mark — the same "who's speaking" cue Claude and
+ChatGPT both use — because a left-aligned, unmarked bubble read as just another block of page text,
+not a reply.** A 24px circle (`bg-accent/10` with a `Bot` glyph) sits beside every assistant bubble
+and the "Thinking…" indicator alike, so the loading state and the eventual reply share one visual
+identity rather than the icon-plus-text row the "Thinking…" state used before. The user's own bubble
+gets no such mark — right-aligned in solid accent color is already unambiguous, and a mark on both
+sides would be visual noise for no disambiguation gained. Bubble padding and line-height both grew
+slightly (`py-2` → `py-2.5`, explicit `leading-relaxed`) for the same "reads like a real reply, not
+a cramped notification" polish, and the user bubble gained `whitespace-pre-wrap` so a genuinely
+multi-line question — the composer already supports Shift+Enter — displays its own line breaks
+instead of collapsing them.
+
+**Not verified in a live browser — this sandbox has no Postgres, and the assistant page needs a
+real org session, an AI provider config, and a live model to render past its own empty state.**
+Verified instead by what a sandbox WITHOUT Docker can prove for certain: `tsc`, `eslint`, a real
+`vitest run` of `markdown-lite.test.ts` (pure logic, no database — 19 passing cases including the
+`isSafeUrl` regression above), `pnpm check:encoding`, and the guardrail selftest. A person should
+confirm the actual rendering looks right before calling this done, per this file's own standing
+rule that a green non-visual check is not the same claim as "this works when you look at it."
+
+### Phase 15 §7.2 — auto-move on merge, auto-link by branch name (SHIPPED)
+
+`apps/api/src/work/events.ts` (`cardPullRequestMerged`) ·
+`apps/api/src/work/card-pull-request.service.ts` (`notifyPullRequestMerged`,
+`autoLinkPullRequestFromBranchName`) · `apps/api/src/automation/integration-webhooks.ts`'s
+`handlePullRequestPayload` · `apps/api/src/tenancy/audit.projection.ts` ·
+`apps/web/src/features/automation/vocabulary.ts` · `apps/mobile/src/lib/automation.ts`. Prompted
+directly, naming both of §7.2's own remaining documented gaps by name: "auto-move card on PR
+merge" and "auto-link PR to card by branch name."
+
+**Both features share one missing piece, and it was already closed before this pass started —
+Wave 3's `work.card_pull_requests` link table, plus the PR-first reverse index that table's own
+migration comment already named as built "for a future 'PR merged -> move its linked cards'
+trigger."** Neither feature needed a migration; both are read/write logic over a table and index
+that already existed, closing the dependency §7 Wave 3's own account of this gap described.
+
+**Auto-move is a genuinely NEW domain event, `card.pull_request_merged`, not a payload-filter
+condition on the existing generic `integration.github_event` trigger — exactly the design §7.2's
+own text called for and Wave 3's account of researching this gap rejected the alternative for.**
+`packages/filter/src/fields.ts`'s two-field connector set (`provider_event`/`provider_scope`) was
+the first idea considered and rejected on rereading that file's own header: filtering on
+`action = 'closed' AND merged = true` would mean this repo asserting a schema slice of GitHub's
+own webhook body it does not own. A specific event is the same shape every other trigger in this
+system already is (`member.added`, `card.created`) — and because it carries a real `cardId`, it
+needed no `connector`-set special case in `resourceForTrigger` at all: it is an ORDINARY card
+trigger as far as the engine's `evaluableRowFor`/`cardIdOf` are concerned, so `apps/worker` needed
+zero code changes — the existing generic "a card trigger re-reads the card row" path just works,
+proven by reusing the identical mechanism `card.moved`/`card.assigned`/etc. already exercise.
+
+**One event per linked card, never a single event naming several — `cardIdOf`'s own doc comment
+states the property this design preserves: "a rule cannot name a DIFFERENT card than the event
+that fired it... 'this card' keeps the blast radius of a rule equal to the blast radius of its
+trigger."** A PR linked to two cards (the many-to-many shape migration 0105 was built for) fires
+the SAME rule twice, once per card, each execution acting only on the card its own event named —
+not a batch action reaching across every card a PR happens to touch. `notifyPullRequestMerged`
+does the fan-out: one query over the reverse index, one `card.pull_request_merged` per row.
+
+**"Move to Done" needed no new ACTION at all — `card.move` (Wave 1) already takes a `listId`, and
+a rule author already picks the target list directly when building the rule, independent of
+whatever fired it.** The only web/mobile change either platform needed was one new
+`TRIGGER_OPTIONS` entry pairing with that already-existing action — exactly what §7.2's own text
+predicted ("a new trigger name plus the already-existing `card.move` action, not new engine
+work"). Placed in the MAIN trigger list, not the card-less connector/§8 exceptions section, since
+it carries a real `cardId` and is — unlike those two pairs — fully editable on mobile too, with no
+`EDITOR_TRIGGER_OPTIONS` exclusion needed.
+
+**Auto-link parses a card reference off the PR's own HEAD BRANCH name, matching only a LEADING
+`<key>-<number>` prefix — the exact inverse of `branch.service.ts`'s own `<reference>-<slug>`
+naming, not a scan for a reference anywhere in the string.** `web-142-fix-login-redirect` names
+`WEB-142`; a key that happened to appear mid-branch-name unrelated to a real reference would be a
+false positive a full-string scan risks and a prefix anchor does not. Deliberately scoped to the
+convention this codebase's own `create_branch_from_card`/the UI branch-create button already
+produce, not every naming convention a person might invent by hand.
+
+**Auto-link fires on `action: 'opened'` only, not every `pull_request` delivery** — the literal
+shape of the ask ("if someone OPENS a PR from..."), and the one point in a PR's life the branch
+name is decided; a later `synchronize` (a new push) cannot rename the branch a PR already opened
+from. Running it on more events would find nothing new, just spend more no-op queries.
+
+**Both new functions in `card-pull-request.service.ts` take an already-open `tx: TenantDb`
+directly, never a `WorkActor`, and neither calls `enforceOn` — there is no human on the other end
+of an inbound webhook delivery to authorize.** `integration-webhooks.ts` calls both from INSIDE
+its own existing `withOrgScope` block, the SAME transaction that claims the delivery-dedupe row
+and appends `integration.github_event` — so a card gets linked or notified of a merge in the same
+atomic unit as the delivery being recorded (a rolled-back delivery rolls these back with it), and
+a replayed delivery never reaches either function at all, since the dedupe check runs first and
+returns before either is called. This mirrors `emitSlackTrigger`/`loadGithubVerify`'s own precedent
+of a system function taking a transaction rather than opening a second one, applied one level
+lower — an actual card mutation, not just a trigger emission.
+
+**`autoLinkPullRequestFromBranchName` deliberately does NOT reuse `linkCardPullRequest`'s own
+looser "emit unconditionally, even on an existing row" behavior — it checks `.returning()` and
+only emits when a row was actually inserted.** `linkCardPullRequest`'s own test proves it emits a
+fresh event on every call regardless of conflict, which is safe there because a human clicking
+"Link" twice is a rare, deliberate retry. This function runs on every `opened` delivery for every
+PR an org receives; emitting unconditionally would produce a duplicate `card.pull_request_linked`
+the moment GitHub redelivers (rare, but real) rather than only when something genuinely changed.
+
+**The audit projection's new entry (`card.pull_request_merged` -> `{type: 'card', key: 'cardId'}`)
+was added in the SAME change that registers the event, not a follow-up pass — the identical gap
+CI already caught once for Wave 2's `integration.pr_*` events, deliberately not repeated a third
+time.**
+
+**Tests split the same way the service/webhook boundary does: `card-pull-request.service.test.ts`
+covers both new functions' own edge cases directly (multi-card fan-out, no-match no-ops, the
+idempotency contrast with `linkCardPullRequest`), and `integration-webhooks.test.ts` gained four
+END-TO-END wiring cases proving a real POST through the route actually reaches them in the same
+transaction as the delivery claim — not re-testing the business logic a second time, since the
+service-level suite already owns that.**
+
+### Phase 15 §1 — the Individual permissions list, regrouped one row per person (SHIPPED)
+
+`apps/web/src/features/admin/settings-page.tsx`'s `PermissionsSection`/`PermissionGrantChip`.
+Prompted directly, from a screenshot: a member holding two grants (`call:place`, `sms:send`)
+showed as two separate, near-identical rows — same avatar, same name, same role, differing only
+in one `Badge` — and the request was one row per person with every permission they hold, the
+grant date visible rather than buried, and a less "generic" look than the flat list this section
+shipped with in §1's own original Wave 2 sweep.
+
+**The mutation and selection logic needed no change at all — only how `visibleGrants` is
+RENDERED.** `selectedGrants` is still a flat `Set<string>` keyed `${userId}:${permission}`, and
+`runGrantBatch`/`runRevokeBatch` still call the existing single-pair `memberGrants.grant`/`.revoke`
+routes once per pair in sequence, exactly as this section's own Wave 2 header already documents.
+Grouping is a pure display transform applied to the same filtered array the flat list already
+computed (`visibleGrants`), so a search still narrows at the GRANT level — a query matching one of
+someone's three permissions shows a person's row with just that one chip, not all three, since
+grouping happens strictly after filtering.
+
+**`Map<userId, group>` rather than an index-tracked array, so building the groups needs no
+indexed-access fallback under `noUncheckedIndexedAccess`.** Each grant in `visibleGrants` either
+finds its person's existing group object and pushes into its (mutable, unlike the rest of this
+codebase's usual `readonly`) `items` array, or creates one — no `array[index]!` non-null assertion
+anywhere, and `Map`'s own insertion-order iteration is exactly the order `visibleGrants` was
+already in, so `[...groupsByUserId.values()]` needs no separate order-tracking array either.
+
+**The per-person row's own checkbox is a real tri-state control, not a second, disconnected
+selection mechanism.** `allSelected`/`someSelected` are computed from the SAME `selectedGrants` set
+each permission chip's own checkbox already reads — checking the person-level box adds or removes
+every one of their grant keys at once, and the DOM's native `indeterminate` property (set via a ref
+callback; React has no declarative prop for it) shows the "some but not all selected" state a plain
+`checked` boolean cannot express on its own.
+
+**The grant date moved INTO the chip as visible text, not a `title` hover tooltip** — the literal
+ask ("the time as well but with better UI"), and consistent with this app having no `Tooltip`
+primitive to reach for anywhere else (`card-identity-bar.tsx`'s copy button, `development-section
+.tsx`'s checkout-copy button both already accept the same constraint). `PermissionGrantChip`'s own
+per-permission revoke stays a two-step confirm — the identical shape `ConfirmButton` already gives
+every other destructive-enough action in this codebase — built inline rather than by reusing
+`ConfirmButton` directly, since that component's `label` is sized for a whole button's text, not a
+compact pill that also has to hold a mono permission name and a date on one line.
+
+### Phase 15 §7 — a 406 hint, and `get_pr_file_content` (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts` (`getPullRequestFileContent`,
+`fitFileContentToBudget`) · `apps/api/src/ai/tools/pr.ts`'s `get_pr_file_content` ·
+`apps/web/src/features/ai/tool-results.tsx`'s `renderGetPrFileContent`. Prompted directly, from a
+real transcript: `get_pr_diff` failing with a bare "GitHub answered 406", and — in the same
+exchange — "show me the content of apps/api/src/ai/complete.ts" getting a fabricated answer
+("this file wasn't part of the repository before this PR") instead of either real content or an
+honest refusal, because no tool in the registry could ever show a file's own text at all. The
+same message also asked, more broadly, for the assistant to do "whatever a team lead can do from
+GitHub by opening the PR" — a real, large ambition; this pass closes the two concrete gaps the
+transcript actually hit, not that whole surface at once.
+
+**406 is a real, distinct GitHub answer, not a variant of an existing hint.** `githubReadError`
+already distinguished 401 (dead token) from 403 (live token, lost scope) with different recovery
+advice; 406 means neither — GitHub refused to render the requested MEDIA TYPE for this specific
+resource, which happens on `get_pr_diff`'s own diff media type when a PR is too large to diff that
+way, and (once `get_pr_file_content` existed to hit it) on the raw content media type for a binary
+file. No reconnect or permission change fixes either case, so the hint names the real alternative
+— `get_pr_files`, or opening the PR/file on GitHub directly — instead of implying a retry would
+help.
+
+**`get_pr_file_content` needed a second round trip for the PR's own HEAD sha before it could ask
+for anything** — "the file at this PR" means the file on the PR's branch, not whatever the default
+branch currently holds, and GitHub's Contents API takes a `ref`. The same extra round trip
+`getPullRequestStatus` already pays for its own checks-rollup sha, for the identical reason.
+`application/vnd.github.raw` on the Contents API request is what returns the file's actual bytes
+directly as the response body, rather than a JSON envelope with the content base64-encoded inside
+it — the same "ask GitHub for the shape actually wanted" choice `get_pr_diff` already makes for
+`application/vnd.github.v3.diff`. A binary file (an image, a compiled asset) answers 406 under this
+media type, surfaced by the hint above rather than decoded into garbage text.
+
+**`fitFileContentToBudget` is `fitDiffToBudget`'s own binary-search shape, repeated rather than
+factored into one shared generic** — a second near-duplicate, matching how `githubReadError`
+itself already writes each status hint out per-case rather than building a lookup table for two.
+The property is identical either way: `JSON.stringify({..., content})` — the exact string
+`execute()` hands back as `ToolResult.content` — has to fit under `MAX_TOOL_RESULT_CONTENT_CHARS`,
+not just the raw content's own length, for the same JSON-escape-inflation reason the diff fix
+directly above this section documents finding on a real PR.
+
+**Each path segment is percent-encoded on its own, `/` separators preserved, before it ever
+reaches a GitHub URL** — a path containing `@`, `#`, or a literal `..` segment is neutralized the
+same way `encodeURIComponent` already neutralizes it everywhere else this codebase builds a URL
+from caller-shaped input; there is no local filesystem underneath this call for a `..` to
+traverse, only a GitHub API path, so no `repoPath`-style dedicated guard was needed on top of the
+encoding itself. `pr-read.service.test.ts` asserts the exact encoded URL directly rather than only
+that the call succeeds.
+
+**The frontend renderer is a scrollable code block with the path and a truncation flag in its own
+header row — the same "show real preformatted text, not a structured list" shape `renderGetPrDiff`'s
+own `<pre>` fallback already established, not a second implementation of it.** No "view on GitHub"
+link: unlike every other PR write-tool renderer, `PrFileContentResult` carries no `providerScope`
+(nothing needed one before this tool), and inventing one purely to build a link was out of scope
+for closing the immediate gap.
+
+**Deliberately not attempted in this pass: the broader "do whatever a team lead can do from
+GitHub" ambition the same message named.** Browsing the repository tree beyond one PR's changed
+files, viewing commit history, or anything resembling edit-and-push access are each real, separate
+features with their own authorization questions — `get_pr_file_content` closes the one concrete
+"show me this file" gap the transcript actually hit, not the whole surface a person browsing
+GitHub directly would have.
+
+### Phase 15 §7 — `get_pr_diff` could 500 the whole assistant turn on a real PR (FIXED)
+
+`apps/api/src/automation/pr-read.service.ts`. Found from a real report — "tell me the diff for pr
+135" answered "The assistant could not reply" — traced to a server log showing `ai.chat.send`
+throwing on its own OUTPUT validation: `messages[14].content` (the `tool_result` for that exact
+`get_pr_diff` call) failed `String must contain at most 20000 character(s)`. This looked, at
+first, like it could be the same dead-GitHub-token 401 this file documents finding and fixing
+elsewhere in this phase — it was not; `getPullRequestDiff` reached GitHub fine and returned 200.
+
+**The old `MAX_DIFF_CHARS = 20_000` capped the wrong string.** It bounded the RAW diff text
+fetched from GitHub, chosen — the comment said so explicitly — to match `router.ts`'s own
+`ChatMessage` `tool_result` variant's `content: z.string().max(20_000)` ceiling exactly. But
+`execute()` never sends the raw diff as `content` — it sends
+`JSON.stringify({prNumber, truncated, diff})`, and `JSON.stringify` turns every real newline in
+the diff into the two characters `\n`. A unified diff is mostly newlines, so a diff already
+sitting at the raw 20,000-character cap routinely serialized to well over router.ts's own
+ceiling — the exact PR in the report never needed truncating by the old rule (its raw diff was
+under 20,000 characters) and still blew the budget once JSON-encoded. **No test in this file
+caught it because none of them ever asserted the SERIALIZED size of a large diff** — the existing
+truncation test only checked `result.diff.length`, never `JSON.stringify(result).length`, which
+is the number that actually crosses the wire and the number `router.ts`'s schema actually
+validates.
+
+**The fix, `fitDiffToBudget`, binary-searches the actual serialized size instead of guessing a
+raw-text cap.** `MAX_TOOL_RESULT_CONTENT_CHARS = 19_500` — a little under router.ts's 20,000, as
+headroom for the `{"prNumber":...,"truncated":...,"diff":"..."}` wrapper's own overhead and for
+the truncation notice appended to a cut diff — is checked against
+`JSON.stringify({prNumber, truncated, diff: candidate}).length` directly, not against
+`candidate.length`. A fixed divisor (e.g. "assume JSON escaping adds 20%") was considered and
+rejected: escape expansion is content-dependent — a diff full of quotes and backslashes (a JSON
+file, a Windows path, a regex) escapes far more per character than a plain-prose one — so no
+single ratio is safe for every diff a real PR could contain. The search is valid because
+`size(mid)` is monotonically non-decreasing in `mid`: every additional raw character can only add
+characters to the JSON-encoded output, never remove any.
+
+**`pr-read.service.test.ts` gained the regression case the original bug needed and the old test
+suite didn't have**: a diff built from 1,900 short lines (19,000 raw characters — under the OLD
+flat cap, so the old code would have returned `truncated: false` and still overflowed the wire)
+now asserts `JSON.stringify(result).length <= 20_000` directly, the real contract, rather than
+trusting the raw diff's own length as a proxy for it. The existing truncation test was widened
+the same way rather than left checking the old, wrong invariant.
+
+### Phase 15 §7 — inline file-diff browsing in the assistant transcript (SHIPPED)
+
+`apps/web/src/features/ai/tool-results.tsx`'s `useResolvedRepoScope`/`InlineFileDiff`/`PrFileRow`/
+`GetPrDiffResult`/`GetPrFilesResult` · `ToolResultRenderContext`'s new `orgId` field ·
+`assistant-page.tsx`'s `MessageBubble`. Prompted directly, alongside the token-refresh fix above,
+in the same message: "on card detail where we can select a file to see its diff for large diff in
+pr lets do same in assistant as well instead of us calling the assistant to get diff for specific
+file but not in modal incase of assistant."
+
+**The card panel already had this — `pr-diff-dialog.tsx`'s `PrDiffButton` lets a person click a
+file from a PR's file list and see just that file's diff, with no detour back through anything
+that has to re-decide what to fetch.** It reaches that through two plain queries,
+`work.pullRequests.files`/`.fileDiff` — `pr:view`-gated, and deliberately carrying no `cardId` at
+all (unlike their `list`/`link`/`unlink` siblings on the same router), since both ask GitHub about
+a `repoScope`+`prNumber` pair and nothing about the card. That statelessness is exactly what makes
+them reachable from the assistant transcript too: nothing about either route assumes a card is
+open, so the identical queries the card panel already calls work here unchanged — this is a
+frontend-only fix, no new backend route, no new permission, no new service function.
+
+**"But not in modal incase of assistant" is the one real design difference from the card panel's
+own version.** `PrDiffButton` opens `PrDiffDialogBody` inside a `ModalRoot` because a diff there is
+scratch viewing triggered from a small icon button with no room of its own. A tool result in the
+assistant transcript already renders inside its own bordered `ResultPanel`, in the flow of the
+conversation — wrapping THAT in a second, floating dialog would be a modal inside what already
+reads as a self-contained panel. `GetPrDiffResult`/`GetPrFilesResult` render everything inline,
+toggling between diff/file-list/single-file-diff views within the same panel the tool result
+already occupies, mirroring `PrDiffDialogBody`'s own state machine (`browseFiles`/`selectedPath`)
+one level flatter — no `ModalRoot`, no `ModalContent`, no `ModalTitle`.
+
+**Neither `get_pr_diff` nor `get_pr_files`' own JSON ever carried a `providerScope`** — no caller
+needed one before this file could query anything of its own, the identical "no backend enrichment
+for a frontend convenience" reasoning `cardWriteRenderer`'s own header already gives for reading a
+card's identity off the tool CALL rather than enriching the SERVICE's output. A click here needs a
+real repo to ask `work.pullRequests.fileDiff` about, so `useResolvedRepoScope` resolves it from
+what IS available without touching the backend at all: the call's own `repoScope` input when the
+model named one explicitly (a multi-repo org — see §7's own `list_repos`/`connectedGithubRepo`
+disambiguation), or, the common case, the org's single connected repo via `githubReposQuery` (the
+identical `work.githubRepos.list` route the card panel's own repo picker already uses). More than
+one connected repo and no explicit scope in this call resolves to `null`, and the drill-down stays
+non-interactive rather than guessing which repo a click should ask about — the same "refuse rather
+than guess" instinct `connectedGithubRepo`'s own ambiguity refusal already applies server-side, one
+layer up in the frontend.
+
+**`GetPrDiffResult` offers "Browse by file" whenever a repo resolves, not only when the diff came
+back truncated — matching `PrDiffDialogBody`'s own always-available toggle exactly**, while the
+truncation NOTE beneath the diff stays conditional on `truncated`, since that sentence is only true
+then. `GetPrFilesResult` needs no such toggle at all: every row is already the file list, so a
+click goes straight to `InlineFileDiff` with nothing to switch between first.
+
+**`InlineFileDiff` is this file's own `PrSingleFileDiff` — the identical component
+`pr-diff-dialog.tsx` already has, reimplemented here rather than exported and shared.**
+`features/work/detail/pr-diff-dialog.tsx` already imports `DiffView`/`singleFileDiffText` from
+`features/ai/diff-view.tsx`; this fix adds a cross-feature import running the OTHER direction —
+`tool-results.tsx` (in `features/ai`) importing `githubReposQuery`/`pullRequestFilesQuery`/
+`pullRequestFileDiffQuery` from `features/work/api.ts` — the identical precedent
+`card-quick-view.tsx`'s own move from `features/standup` to `features/work` already set for
+reusing a component across a feature boundary in this codebase. A third shared module for one
+25-line component was not worth it for what is, in both places, a thin wrapper around one query
+and a `DiffView`.
+
+**`ToolResultRenderContext` gained its one new field, `orgId`, because these are the first two
+renderers in this file to query anything beyond what the tool result itself already carried** —
+every renderer before this either parsed the tool's own JSON or (`onOpenCard`) opened UI already
+mounted elsewhere. `assistant-page.tsx` already holds `orgId` (`useSession((state) => state.orgId)`,
+line 234) for its own routing needs, so threading it into `MessageBubble` and then into `ctx` was
+the entire wiring change on that side.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app to run
+against**, the identical caveat every UI-only pass in this session already states. Verified by what
+a sandbox without one can prove: `tsc`, `eslint`, and the guardrail selftest, all clean. A person
+should open the assistant, ask about a PR with `get_pr_diff`/`get_pr_files`, and click a file
+before calling this done.
 
 **The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every
 document row in the tenant, including a message in a DM between two other people — and
@@ -660,7 +3826,8 @@ their UI inside their own phase, and this phase's spec never said Wave 5 would c
 shipped in the same session that found the gap — `apps/web/src/features/telephony` (numbers, calls,
 messages, spend) behind a new `/calls` sidebar item, and `recording-section.tsx` for attaching a
 recording to a Work card. See `ai/phase-7-voice.md`'s own Wave 5 note for the two API-surface gaps
-this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search).
+this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search —
+_the second half of that is closed; see "Org-wide recordings browser" below_).
 
 ### Phase 7 — Voice & Messaging: Waves 1–3 complete, Wave 4 split
 
@@ -759,12 +3926,1418 @@ an agent asked to find "what's next" confidently answered Phase 4 while Wave 3 w
 same staleness recurred at the end of 3.5. If you are reading this to decide what to build, open the
 newest `ai/phase-*.md` and read its header first.
 
-Deferred deliberately from Phase 3, and NOT bugs: passkey sign-in is wired on the API but the
-browser ceremony (`@simplewebauthn/browser`) is not in this build, so the login page says so
-rather than showing a button that does nothing. Calendar and timeline views are §10.4 surfaces
-the plan does not schedule until later. `packages/ui` is still unbuilt on purpose — §6 says
-extract a component only once the same pattern appears three times, and `components/primitives.tsx`
-is where that will be measured from.
+Deferred deliberately from Phase 3, and NOT bugs: Calendar and timeline views are §10.4 surfaces
+the plan does not schedule until later _(the calendar half has since shipped — see its own section
+further down)_. `packages/ui` is still unbuilt on purpose — §6 says extract a component only once
+the same pattern appears three times, and `components/primitives.tsx` is where that will be
+measured from.
+
+**The line that used to stand here — "passkey sign-in is wired on the API but the browser ceremony
+is not in this build" — was stale, not corrected in place until this pass found it by actually
+checking, the identical failure mode this file's own "a status marker is a claim, not a fact"
+discipline exists to catch.** `apps/web/src/features/auth/passkey.ts` (`signInWithPasskey`,
+`enrollPasskey`, both wrapping `@simplewebauthn/browser`'s `startAuthentication`/`startRegistration`
+with a closed `PasskeyCeremonyReason` set rather than surfacing the raw `WebAuthnError`) has been
+fully built and wired for some time: `login-page.tsx` renders a real "Sign in with a passkey"
+button behind a `browserSupportsWebAuthn()` check, and `account-page.tsx`'s `PasskeySection`
+(enroll-then-confirm, mirroring TOTP's own shape) is what actually lets someone add one. Both carry
+real test coverage (`login-page.test.tsx`, `passkey-section.test.tsx`). Nothing here needed
+building; the deferral note itself was the only thing behind.
+
+### Calendar view (SHIPPED) — the §10.4 surface's due-date half
+
+`apps/web/src/features/work/calendar-view.tsx` · `board-page.tsx`'s `ViewToggle` and render switch ·
+`view-match.ts`'s `BoardArrangement.type` · `router.tsx`'s `boardRoute` search schema. The Phase 3
+deferral note above named "Calendar and timeline views" together as one un-scheduled §10.4 surface;
+this ships the calendar half — a month grid over due dates — and deliberately not the timeline half.
+
+**A due-date calendar, not a Gantt-style timeline — a real scope decision, not half a feature.**
+`cardsQuery`'s summary shape (the same one `board-view.tsx`/`list-view.tsx`/`table-view.tsx` all
+already read) carries `dueDate` but not `startDate` — Phase 3's own note on `cards.update` states
+why the table/list views never fetch it either. A timeline over a start/end SPAN would need a
+different query shape and a materially bigger rendering surface (overlapping bars, drag-to-resize);
+"what's due when" is the question a due-date calendar answers with the data already on screen, and
+is what was actually missing.
+
+**A fifth renderer alongside board/list/table/insights, not a new subsystem.** `'calendar'` joins
+`BoardArrangement['type']` and `boardRoute`'s `view` search-param enum exactly the way `'insights'`
+already did — client-only, never sent to `work.views.create` (whose server-side enum is still just
+board/table/list), so `view-tabs.tsx`'s `SaveViewDialog` falls a calendar arrangement back to
+`'board'` the identical way it already does for insights. `board-page.tsx` fetches `cardsQuery`
+exactly ONCE regardless of which view is showing — the calendar reads the SAME cards array board/
+list/table already render, so switching to it is instant and can never disagree with the other
+views about which cards match the current filter.
+
+**Grouping and sorting are hidden for calendar, the same way they already are for table** — a
+month grid is inherently grouped by day, and `groupBy`/`sortBy` have no meaning to give it.
+
+**The visible month is local component state, not the URL.** Unlike `view`/`filter`/`groupBy`/
+`sortBy` (§10.5, which the URL owns so a filtered, arranged board is one shareable link), which
+month someone happens to be scrolled to is not part of "what this board shows" — `table-view.tsx`'s
+own scroll position is the closest existing precedent for state that stays local. A pasted link
+opens on the current month, not wherever the last viewer navigated to.
+
+**`useState(() => new Date())`, a lazy initializer, never a bare `new Date()` in the render body**
+— the same React Compiler purity constraint `lib/format.ts`'s own header already states as the
+reason `hasPassed`/`oooStatus` read the clock in a plain function rather than inline in a
+component. The initializer runs once, to seed which month opens first; the "Today" button reads
+the clock again, but from inside an event handler, which is not render and needs no such care.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+actually run against.** Verified by what a sandbox without one can prove: `tsc`, `eslint`, and the
+guardrail selftest, all clean, following this file's own standing rule that a green non-visual
+check is not the same claim as "this works when you look at it." A person should open a board and
+switch to Calendar before calling this done.
+
+**Deliberately not built in this pass: a true start/end timeline (the other half of §10.4's
+name), drag-to-reschedule from the grid (rescheduling still goes through opening the card, same as
+every other card-detail edit), and a My Tasks / cross-board calendar** — `home-page.tsx` has no
+view switcher at all today, board-scoped or otherwise, and adding a calendar there is a separate,
+real piece of work rather than a natural extension of this one.
+
+### Calendar view — day popover, overdue cue, a real small-screen layout (SHIPPED)
+
+`apps/web/src/features/work/calendar-view.tsx`. Prompted directly: "very basic, not good... need
+more features" and "the small screen view is not good, fully responsive." Both real, and both
+about the SAME first version — a fixed 7-column grid with no way to see a day's full card list and
+no responsive behavior at all below desktop width.
+
+**Three additions, not a rewrite — the same `byDay` bucketing this view already built stays the
+one data model both renderers now read.** A day cell's "+N more" used to be dead, static text —
+the report the calendar's own dead-end complaint traces to directly. It is now a real
+`PopoverRoot`/`PopoverTrigger`/`PopoverContent` (the identical primitive `card-tile.tsx`'s own
+quick-assign popover already uses, not a new pattern) opening the day's FULL card list, scrollable,
+each row still opening the real card via the same `onOpenCard` the truncated inline rows already
+call. A day strictly before today with at least one card gets its date number tinted `text-danger`
+— `isOverdueDay`, the same date-only definition `lib/format.ts`'s `formatDueDate` already uses for
+a card tile's own overdue badge (never accounting for the card's own completion status — matched
+to that existing precedent rather than inventing a stricter one). Neither addition needed a second
+query or a second bucketing pass; both read the one `byDay` map the component already built.
+
+**The responsive fix is two renderers over the identical `byDay` data, not one grid trying to
+survive every width.** A cramped `min-h-24` cell with three lines of truncated titles does not
+hold up on a phone — found from a real report, not a design review, and confirmed by the fact that
+nothing in the original component had ANY breakpoint logic at all. Below `md:` (`useIsDesktop`,
+the SAME 768px breakpoint the rest of this app already coordinates its own responsive layouts
+against — not a new number invented for this one view), the grid is replaced entirely by an
+`AgendaList`: one row per day that actually has a card, chronological, full untruncated titles,
+each card showing its reference alongside the title the way a list view already does. Days with
+nothing due are simply absent — the identical instinct mobile calendar apps already apply to an
+agenda view, and the one that actually answers "what's coming up" on a screen too narrow for a
+grid to mean anything. A month with zero cards gets one plain empty state rather than an agenda of
+nothing.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+run against**, the identical caveat this feature's own first section already states. Verified by
+what a sandbox without one can prove: `tsc`, `eslint`, both clean. A person should open a board,
+resize below 768px, and click a day's "+N more" before calling this done.
+
+**Deliberately not built in this pass: multi-select/bulk actions from the popover, drag-to-
+reschedule (unchanged from the original scope note above), and per-priority filtering inside the
+calendar itself** — the three additions above are what the report actually asked for; widening the
+surface further belongs in its own pass if wanted.
+
+### Standup email subscriptions (SHIPPED) — the "later" Phase 15 §5 deferred
+
+`packages/db/migrations/0108_standup_subscriptions.*` · `platform.standup_subscriptions` ·
+`apps/api/src/standup/{subscription.service,standup-mail,digest-sweep,events}.ts` ·
+`standup.subscribe`/`.unsubscribe`/`.subscription` routes · `apps/web/src/features/standup/
+standup-page.tsx`'s "Email me daily" toggle. Closes the deferral Phase 15 §5's own section names
+explicitly: "an optional emailed copy can reuse the existing notification-mail path later if
+wanted, but is not required for this wave." This is that later.
+
+**Opt-in, per project, per person — never an org-wide default or an admin-set enrollment.** A
+subscription is a self-referential choice about one's own inbox, the same shape
+`identity.notification_prefs` already is: nobody can subscribe someone ELSE, and the toggle only
+appears where `query`'s own `project:read` floor already applies — `subscribe`/`unsubscribe`/
+`subscription` all reuse that identical permission, since reaching the standup page at all already
+proves it and there is no narrower thing "may receive this by email" could mean beyond "may see
+this screen."
+
+**A second cross-org sweep, deliberately NOT built on `platform/digest.ts`'s own machinery.** That
+sweep batches DELIVERY of `notification_deliveries` rows the projection already wrote — one row
+per event, marked `sent` once mailed. A standup subscription describes no event to batch; it is a
+standing preference, and what gets mailed each day is computed FRESH from `queryStandup`, never
+accumulated, so there is nothing to mark `sent` — the subscription row itself never changes on a
+successful send, the same way an alarm clock is not "consumed" by going off. `digest-sweep.ts`'s
+own header states this distinction plainly rather than forcing the new sweep to pretend it fits
+the old one's shape.
+
+**The identical cross-org-read-then-per-org-authorize split `platform/digest.ts` already uses.**
+`collectStandupSubscriptions` runs as `taskflow_audit` (migration 0108's own grant, mirroring
+0027's identical shape for `notification_deliveries` — a second permissive policy alongside the
+ordinary tenant-isolation one, read-only since `taskflow_audit` never writes a subscription) to see
+every org's subscriptions in one pass. Everything after that — `resolveOrgMembership`,
+`queryStandup` — runs as the ordinary `taskflow_app` role inside that ONE subscription's own org
+scope. `withGlobalScope` is never called from `apps/api/src/standup` at all; the cross-org read is
+entirely the audit role's job, exactly as designed, so guardrail 8's "`withGlobalScope` outside the
+identity module" check has nothing to catch here.
+
+**`resolveOrgMembership` re-resolves the subscriber's CURRENT role and access on every run** — the
+identical "a demotion takes effect immediately" property `apps/worker`'s automation executor
+already relies on for a rule's owner, reused here rather than trusting whatever access existed the
+day someone subscribed. A member removed from the org, or from the project's own tuple-granted
+access since subscribing, is silently skipped for that day — caught by a per-item `try`/`catch`
+around `sendOneDigest`, the same per-item resilience `sprint_add_cards`/`bulkReassignCards` already
+apply to a batch where one bad item must not sink the rest. The subscription row itself is left
+alone: this sweep only ever sends mail, never deletes a subscription, so a temporary access loss
+(a tuple edited back) resumes on its own the next day with no re-subscribe needed.
+
+**The digest is built entirely from the real `StandupResult`, never the AI narration.**
+`narrate.ts`'s `callout` is spend-gated (`ai:use` + `aiAssistant`) and a subscriber may hold
+neither — the emailed digest reuses exactly the deterministic Yesterday/Today/Overdue/Urgent data
+`query` already returns with no AI call, capped to the first 15 members in the email itself (an
+email is read scrolling, not scanning a UI grid) with an "...and N more" line rather than growing
+unboundedly for a large project.
+
+**An eighth `setInterval` sweep in `apps/api`, on purpose — not a reason to wait for
+`apps/worker`.** This file's own Layout section already accepts seven such timers as the standing
+placeholder until Phase 4's `apps/worker` migration happens for background jobs generally;
+`startStandupDigestSweep` follows the identical shape (daily, `unref()`'d, stopped alongside every
+other sweep on SIGTERM/SIGINT) rather than inventing a different pattern for one more one-a-day
+job. It reuses `main.ts`'s own `notificationMail.queue` — the same `MailQueue` instance the
+notification digest sweep and relay already send through — rather than opening a fourth queue in
+the process for no reason.
+
+### Org-wide recordings browser (SHIPPED) — the gap `recording-section.tsx`'s own header named
+
+`apps/api/src/telephony/recording.service.ts`'s `listOrgRecordings` · `recordings.browse` route ·
+`apps/web/src/features/telephony/recordings-panel.tsx` — a new "Recordings" tab on `/calls`.
+Closes the gap `recording-section.tsx`'s own header comment names explicitly: only a per-call list
+(`recordings.list`, needs a `callId` in hand) and a per-card list (`cards.recordings`, needs a
+`cardId`) existed, so a reviewer with neither — someone doing a compliance pass, say — had no way
+to see what the org has recorded at all.
+
+**`recording:read` alone, same permission as the two lists it complements — no new permission, no
+new capability field.** Admin-and-Owner by role, exactly like `listRecordings`; `readRecordings`
+(`SettingsCapabilities`, added in Phase 15 §1's sweep) already gates the card section and the
+Spend tab's itemized report, and now gates this tab too — one boolean, one meaning, reused rather
+than a second field for the identical question.
+
+**The counterparty is decrypted here exactly as `listCalls` decrypts it for the call log — one key
+unwrap for the whole page, not one per row.** `recording:read` is the same permission that already
+lets an Admin see every call's counterparty in the call log; a recordings browser that could not
+say who a recording is a recording OF would be a strictly worse version of a screen this org can
+already open. The join is `recordings INNER JOIN calls` — every recording's `callId` always names
+a real call (the only writer, `registerRecording`, requires one) — so an inner join costs nothing
+an outer join would have bought.
+
+**Cursor-paginated on `createdAt`, not a numeric sequence — recordings have none, unlike the audit
+log's `seq`.** `tenancy.audit.list`'s own `before` cursor is the closer precedent than a page
+number: newest first, `lt(recordings.createdAt, before)` for the next page, `useInfiniteQuery` on
+the client (`people-page.tsx`'s own "Load more" shape) rather than a numbered pager — the row count
+is unbounded and a person reviewing recordings is scrolling back in time, not jumping to a page.
+
+**Which cards a recording is attached to is a second, batched query per page — not a second round
+trip per row.** `comms.recording_cards` is many-to-many (one recording can, in principle, be
+attached to more than one card, the same shape `recording-card.service.ts`'s own precedent already
+allows); `listOrgRecordings` fetches every attachment for the page's recording ids in one
+`inArray` query and folds them into a `Map`, the identical "one lookup for the whole page" shape
+the counterparty key unwrap already uses one function up. The row links to `CardQuickView` — the
+same "open the real card panel with no board in hand" mechanism the standup view and the AI
+assistant's `my_cards` renderer already established — rather than a third bespoke way to jump to a
+card.
+
+**No test file existed for `recording.service.ts` at all before this — a real, previously
+documented gap** (this file's own Phase 7 status header: "`number.service.ts`, `recording.service.ts`
+and `transcript.service.ts` still have no dedicated test file"). `recording.service.test.ts` is new,
+proving the property only real Postgres can: the JOIN's counterparty decryption round-trips
+correctly, the `attachedCardIds` batch join is correct against a real `recording_cards` row, the
+`before` cursor genuinely excludes what came at or after it, and a Member — who holds no
+`recording:read` — is refused before any row is read.
+
+### Standup email digest — team roster vs. personal-only, decided per subscriber (SHIPPED)
+
+`apps/api/src/standup/standup-mail.ts`'s `StandupDigestScope` · `digest-sweep.ts`'s `scopeFor`.
+Prompted directly, as a real question rather than a bug report: "if we have a member or guest we
+cant and should not email him all others task but for admin or others we can... how can we decide
+this."
+
+**The interactive standup PAGE was never in question, and stays exactly as it was — every project
+Member can already open it and see the whole roster, and that is correct.** `standup.service.ts`'s
+own header states why: a standup answers "what is my team doing right now," a question every
+Member already needs the board for, so `query` floors on `project:read`, not `analytics:read`. The
+question this pass actually answers is a DIFFERENT one: a daily EMAIL pushed into an inbox is a
+different kind of exposure than a page someone chooses to open — mailing a Member or Guest the
+whole team's task list every morning is real, unsolicited noise about colleagues who are not that
+person's concern to track, even though nothing about the PAGE's own permission model calls that
+disclosure wrong.
+
+**`scopeFor` decides per SUBSCRIBER, reusing `analytics:read` rather than inventing a new
+permission or a role string comparison.** `can(actor.subject, 'analytics:read').allowed` is the
+identical Admin/Owner-only, "answers a management question" floor `apps/api/src/analytics` already
+uses — re-read here, not reinvented, and the one clean answer to "how do we decide": whoever
+already clears the bar for a management report gets the full team digest; everyone else (Member,
+Guest) gets a personal-only one. This also sidesteps guardrail 7 entirely — `role === 'admin'`
+outside `packages/policy` is a lint error, and routing the decision through `can()` is the
+sanctioned way to ask this kind of question rather than comparing `actor.subject.role` inline.
+
+**`sendStandupDigest` gained exactly one new required field, `scope`, plus `recipientUserId` to
+know which `StandupMember` is "you" — no new subsystem, no new table.** `scope: 'team'` is the
+UNCHANGED original rendering (headline, every member capped at `MAX_MEMBER_ROWS`). `scope:
+'personal'` filters `standup.members` down to the one row matching `recipientUserId`, drops the
+headline entirely (a team-wide aggregate has nothing to say about one person), and needs no member
+cap (there is only ever one row). A member the query returns nothing for — reachable only if the
+subscriber's own row is somehow absent from `queryStandup`'s result — gets "Nothing to report
+today." rather than an empty table, the same "say something, never render blank" instinct this
+codebase applies to every other digest.
+
+**The subscribe TOGGLE on the standup page now says which shape it will actually send, reusing the
+exact SAME capability field the server used to decide it.** `willGetTeamDigest` reads
+`orgDetailQuery`'s existing `capabilities.viewAnalytics` (already computed from `analytics:read`
+for the Analytics nav item) rather than a second client-side check — so the button's own tooltip
+text ("Email me the whole team's standup daily" vs. "Email me my own tasks from this standup
+daily") can never drift from what the sweep will actually mail, because both read the identical
+permission.
+
+### Board page toolbar collapse on small screens (SHIPPED)
+
+`apps/web/src/features/work/board-page.tsx`. Prompted directly, from a screenshot of the board
+page at a phone-width viewport: the header (view tabs, saved views, filter/sprint, standup link,
+group-by/sort-by, presence, Archived/Share/Import-Export) is one `flex-wrap` row that reads fine
+at desktop width and, wrapped across five or six stacked lines below `md:`, pushed the actual
+board content off the first screenful entirely. Explicitly a pure UI change — no permission, data,
+or behavior differs from before it; every control inside the row is the exact same component with
+the exact same props.
+
+**Scoped to small screens only, via the same `useIsDesktop()` hook `calendar-view.tsx`'s own
+responsive swap already established this session — never a second breakpoint mechanism.**
+`useIsDesktop()` (`lib/use-media-query.ts`, Tailwind's `md:` 768px) gates the toggle's very
+existence: at desktop width `isDesktop` is `true`, the compact bar never renders, and the full
+toolbar row renders exactly as it did before this change, unconditionally — there is no way for a
+desktop viewer to see anything different, and no toggle exists for them to accidentally hit.
+
+**Below `md:`, a compact bar (the current view name plus a "Tools" toggle button) is what's
+always visible, and the full row — the same JSX, same components, same props, entirely
+unmodified — is what collapses.** `toolbarExpanded` is local, unpersisted `useState(false)`: the
+identical "no server representation" reasoning this same file's own `selection` state already
+gets, just for a UI disclosure instead of a bulk-action selection. Collapsed by default on a
+narrow viewport, since that is the actual complaint (too much chrome before any content); expanded
+reveals the identical row a desktop viewer always sees, with a `border-t` separating it from the
+compact bar above. The toggle button carries `aria-expanded` and a state-reflecting `aria-label`
+("Show board tools" / "Hide board tools"), and the chevron rotates via the same
+`transition-transform duration-[var(--motion-fast)]` timing token `card-identity-bar.tsx`'s own
+copy-button and `PermissionGrantChip`'s disclosure already use elsewhere in this codebase, rather
+than a hand-picked duration.
+
+**Not a `<details>`/`<summary>` disclosure, unlike `calls-panel.tsx`'s transcript expander or the
+AI assistant's "Everything it can do" panel — deliberately.** Both of those precedents are
+single-axis (open below a breakpoint, or always collapsible) with no third "never even offer this
+control" state to express. This needed exactly that third state at desktop width, which a bare
+`<details>` cannot express without either hiding the whole disclosure in CSS (leaving a dead,
+unstyled default triangle reachable via keyboard nav) or duplicating the toolbar's markup once per
+breakpoint. Gating on the JS-evaluated `isDesktop` boolean, the same mechanism the Calendar view
+fix already used to choose between `MonthGrid` and `AgendaList`, was the smaller, more consistent
+change.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres/MinIO for the app to
+run against**, the identical caveat this session's Calendar-view work already states for the same
+reason. Verified by what a sandbox without one can prove: `tsc`, `eslint`, and the guardrail
+selftest, all clean. A person should open a board at a narrow viewport and click "Tools" before
+calling this done.
+
+### Phase 15 §7 — `get_pr_file_diff`, one file's own change within a large PR (SHIPPED)
+
+`apps/api/src/automation/pr-read.service.ts`'s `getPullRequestFileDiff`/`fitFilePatchToBudget` ·
+`apps/api/src/ai/tools/pr.ts`'s `get_pr_file_diff` · `apps/web/src/features/ai/tool-results.tsx`'s
+`renderGetPrFileDiff`. Prompted directly: `get_pr_diff` truncates on a genuinely large PR (this
+session's own real example, PR #134), and once truncated there was no way to ask for just one
+file's own change — `get_pr_files` already lists every path with no truncation risk, but had
+nothing to hand back once a person picked one.
+
+**GitHub's `/pulls/{n}/files` response — the same endpoint `getPullRequestFiles` already calls —
+carries a per-file `patch` field the plain listing never surfaced: the unified-diff HUNKS for
+just that one file, with none of the `diff --git`/`---`/`+++` header lines a whole-PR diff has
+one of per file.** There is no "give me just this file" query GitHub accepts on that endpoint, so
+`getPullRequestFileDiff` pages through the same listing (`per_page=100`, GitHub's own max) and
+scans for a filename match — bounded at `MAX_FILE_DIFF_LOOKUP_PAGES = 5` (500 files), the
+identical real-input-size-hygiene role `MAX_FILES` already plays for the plain listing: a PR that
+large has bigger problems than this lookup being unable to find one file in it.
+
+**A path that matches no changed file is refused BY NAME, pointing at `get_pr_files` for the real
+list — never a bare "Not found."** — the exact failure mode this file's own Phase 15 §4 Wave 1
+section already documents finding and fixing once for `card_add_labels` (a model fabricating a
+plausible-looking id that fails a foreign key with no indication which call even failed). A PR
+number and a file path are both caller-supplied here with nothing local to validate them against
+until the real GitHub response comes back, so the refusal is written explicitly rather than
+inherited from a generic error path.
+
+**When GitHub itself omits `patch` — a binary file, one too large to diff that way, or a pure
+rename with no content change — the result carries a plain-English explanation in `patch` instead
+of an empty string or a thrown error**, naming `get_pr_file_content` as the working alternative for
+seeing the file's own text. The file DID match; there is simply nothing GitHub will show as a diff
+for it, which is a different, non-error outcome from the path not matching at all.
+
+**Truncation is `fitDiffToBudget`'s own binary-search shape, a third near-duplicate rather than a
+shared generic — matching this file's own `githubReadError` precedent of writing each case out
+per-status rather than building an abstraction for two.** A single file's own patch is rarely
+anywhere near `MAX_TOOL_RESULT_CONTENT_CHARS` — the whole reason this tool exists is that one
+file's diff is normally far smaller than the whole PR's — but a single file can still be huge, so
+the same defensive truncation applies rather than assuming it never will be.
+
+**The frontend reuses `DiffView`/`parseUnifiedDiff` wholesale, synthesizing a minimal `diff --git`
+header around the raw per-file `patch` — but ONLY when the patch actually looks like real hunk
+syntax (`trimStart().startsWith('@@')`).** Wrapping GitHub's explanatory "no diff available"
+sentence in that same synthetic header would have been a real bug caught before shipping: with a
+header but no `@@` line, `parseUnifiedDiff` opens a file with zero hunks and `DiffView` renders an
+empty box, silently swallowing the explanation. Left unwrapped, that same text has no `diff --git`
+line for the parser to find, `parseUnifiedDiff` returns zero files, and `DiffView`'s own
+no-files-parsed fallback renders it as plain preformatted text — exactly right for a sentence, and
+free, since that fallback already existed for a diff shape the parser could not otherwise
+recognize.
+
+**The service's own `patch` field stays exactly what GitHub gave it — no header synthesized
+server-side.** The synthetic wrapping is a presentation-only transformation that belongs in the
+renderer alone; a raw per-file patch is also the more useful shape for anything else that might
+read this result later, the model's own reasoning about it included.
+
+**The system prompt tells the model explicitly: on a `get_pr_diff` truncation, call `get_pr_files`
+for the untruncated list, then `get_pr_file_diff` once per file the user actually wants — never
+tell the user the rest of the change cannot be shown.** This is the concrete workflow the feature
+exists to enable, stated directly in `router.ts` rather than left for the model to infer from the
+tool's own description.
+
+**Tests prove the pagination bound directly** (`pr-read.service.test.ts`'s own cap-boundary case:
+six full pages of filler files, five real requests made, the sixth never fetched) **alongside the
+match/no-match/no-patch/truncation/refused-before-network-call properties every other tool in this
+registry is held to.** `pr.test.ts`'s own drift — its `requiresConfirmation` test still said "all
+five PR read tools" after `get_pr_file_content` shipped with no update to that count — was
+corrected in the same pass rather than left to compound a second time.
+
+### Phase 15 §7.2 — the same file-diff fallback, reached directly from the card panel (SHIPPED)
+
+`apps/api/src/work/detail.router.ts`'s `pullRequests.files`/`.fileDiff` · `apps/web/src/features/
+work/{api,detail/pr-diff-dialog}.tsx` · `apps/web/src/features/ai/diff-view.tsx`'s exported
+`singleFileDiffText`. Prompted directly, immediately behind `get_pr_file_diff`'s own AI-tool
+version shipping: "lets do it for in card diff view as well... it shows just the error incase of
+large commit diff in a pr." `PrDiffButton`'s dialog (`pr-diff-dialog.tsx`) had exactly the failure
+mode this file's own `get_pr_file_diff` section already fixed for the assistant — `diff.isError`
+rendered a bare `ErrorView` and nothing else, on the identical GitHub 406 ("too large to diff that
+way") a genuinely large PR hits.
+
+**Two new routes, not a new pipeline — `work.pullRequests.files`/`.fileDiff` wrap the exact same
+`getPullRequestFiles`/`getPullRequestFileDiff` the AI tool registry already calls, `pr:view`-gated
+like `status`/`diff` on the same router.** No new service code, no new authorization question:
+these are the identical live-GitHub-content routes `status`/`diff`'s own header already explains
+the gating for, just two more doors onto functions that already existed for a different caller.
+
+**The dialog's fallback is one derived boolean, not two render paths.** `showFiles =
+browseFiles || diff.isError` folds "the whole diff genuinely could not be fetched" and "someone
+clicked Browse by file on a diff that DID load" into the same branch — the file-browsing UI has no
+separate copy of itself for the error case, it just also renders `fallbackError` (the original
+diff query's own error) above the file list when that's why the person is looking at it, rather
+than silently discarding the reason and leaving them to guess. `canShowFullDiff = !diff.isError`
+hides the toggle button entirely once there is truly nothing to toggle back to — Phase 15 §1's
+"hide, don't disable" rule applied to a dialog control rather than a permission-gated one.
+
+**A truncated (but not errored) diff gets an inline nudge, not a silent gap.** `diff.data.truncated
+=== true` renders a sentence directly under the (partial) `DiffView` output — "This diff was too
+large to show in full. Browse by file to see any one file's own change in full." — rather than
+leaving someone to notice the cutoff on their own and wonder whether the file-browsing option even
+exists for this case.
+
+**`singleFileDiffText` moved out of `tool-results.tsx`'s `renderGetPrFileDiff` into `diff-view.tsx`
+itself, exported, and both callers now share it** — the exact synthetic-`diff --git`-header logic
+(and its "only wrap real hunk syntax, or a plain-English 'no patch available' explanation gets
+silently swallowed into an empty box" guard) that section's own entry already documents finding a
+bug in before shipping, now proven once and reused rather than risking a second, subtly different
+copy the day this card-panel version was written. `diff-view.test.ts` gained three direct cases for
+the extracted function — wraps real hunk syntax into a parseable file, passes non-hunk text through
+unwrapped (and asserts `parseUnifiedDiff` of the result is still empty, the actual property that
+matters), and confirms leading whitespace before `@@` doesn't defeat the check — the same "test the
+pure half directly" split this codebase already holds `parseUnifiedDiff` itself to.
+
+**Drill-down, not a two-pane layout — `PrFileBrowser` renders EITHER the file list OR one selected
+file's diff, never both at once.** The dialog's own height is already capped (`max-h-[85vh]`,
+`overflow-y-auto`), and splitting it into a side-by-side file-list-plus-diff layout would mean two
+independently-scrolling regions inside an already-constrained modal; a single "← All files" backlink
+(`ChevronLeft`, matching `card-identity-bar.tsx`'s own back-navigation icon choice) is the simpler
+interaction and reuses the identical vertical space `DiffView` already expects.
+
+**No dedicated component test — matching this file's own established gap for `detail.router.ts`
+("every route in it is a thin pass-through to a real, already-tested service function") and for
+every other card-panel dialog in this directory.** `getPullRequestFiles`/`getPullRequestFileDiff`
+already have full service-level coverage from the AI-tool version of this same feature;
+`pr-diff-dialog.tsx`'s own new branching (`showFiles`, `canShowFullDiff`, the drill-down) is thin
+enough — and heavy enough on live React Query/tRPC wiring — that this codebase's own established
+line (component-level tests only for files with no comparable precedent already accepting the same
+gap) was followed rather than introducing a new pattern for one dialog.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app to run
+against, the identical caveat every UI-only pass this session already states.** Verified by what a
+sandbox without one can prove: `tsc`, `eslint`, the guardrail selftest, and a real `vitest run` of
+the three new pure-function cases, all clean. A person should open a card with a linked PR whose
+diff is large enough to hit GitHub's own 406, click "View diff," and confirm the file browser
+appears with the original error shown above the list, before calling this done.
+
+### Phase 15 §7 — `pr_comment_on_file`, a review comment scoped to one file (SHIPPED)
+
+`apps/api/src/automation/integration-events.ts` (`integrationPrFileCommentPosted`) ·
+`apps/api/src/tenancy/audit.projection.ts` · `apps/api/src/automation/pr-write.service.ts`
+(`postPrFileComment`, `githubWriteError`'s new `invalidPositionHint`) ·
+`apps/api/src/ai/tools/pr.ts` (`createPrCommentOnFileTool`) · `apps/api/src/ai/tools/index.ts` ·
+`apps/api/src/ai/router.ts` · `apps/web/src/features/ai/tool-results.tsx` (`renderPrCommentOnFile`).
+Prompted directly, right behind `get_pr_file_diff` shipping (this file's own account of that
+feature): once a person could ask the assistant to look at one specific file's own change, the
+natural next ask was to leave feedback ON that file — not possible before, since `pr_post_comment`'s
+only target is the PR's general conversation thread.
+
+**A genuinely new mutation shape, not a variant of `postPrComment` — GitHub answers the two with
+different endpoints and a different required payload.** The general-thread comment is
+`POST /issues/{n}/comments`, no `commit_id` needed. A file-scoped review comment is
+`POST /pulls/{n}/comments`, and it requires `commit_id` (the PR's own HEAD sha, fetched via a real
+extra round trip — `GET /pulls/{n}` — the identical "pay for an extra request to name the real
+commit" pattern `getPullRequestStatus`/`getPullRequestFileContent` already established for the same
+reason) plus `path`. `postPrFileComment` is a new function, not a `path`-optional branch bolted
+onto `postPrComment`.
+
+**Defaults to a file-level comment, not a line — the opposite of what "review comment" usually
+implies, and a deliberate choice.** `line` is optional; when omitted, the request carries
+`subject_type: 'file'` (GitHub's own file-level review comment, no line at all). A line is only
+valid if it is genuinely part of the diff GitHub is currently showing, and the model has no
+reliable way to confirm that without a prior `get_pr_file_diff` call — while "comment on this file"
+always succeeds and is what a person asks for the overwhelming majority of the time. When `line` IS
+given, `side: 'RIGHT'` pins it to the new (post-change) version of the file, the side a comment
+about the CURRENT code almost always means; there is no tool-level way to comment on a removed
+line's own old content, a deliberate, narrower scope than GitHub's own web UI offers.
+
+**`line` is deliberately excluded from the event payload, even though it is part of the write's own
+input.** `integrationPrFileCommentPosted`'s own doc comment states why: a line number is not the
+STABLE fact an access review asks about a comment months later, since GitHub's own line-vs-diff
+mapping shifts as a PR gets new commits — the file it was about does not. Like every other
+`integration.pr_*` event, no comment text is ever stored (proven directly in
+`pr-write.service.test.ts`, the same `JSON.stringify(payload)).not.toContain(...)` assertion
+`postPrComment`'s own test already makes). The audit projection mapping
+(`'integration.pr_file_comment_posted': {type: 'integration', key: 'integrationId'}`) was added in
+the SAME change that registers the event — the exact gap CI caught twice already for earlier
+`integration.pr_*` events, deliberately not repeated a third time.
+
+**Reuses `pr:review`, no new permission.** Posting a comment scoped to one file is the same
+authorization tier as posting one to the general thread — `pr_post_comment`/`pr_request_changes`/
+`pr_approve` all already sit behind `pr:review`, and inventing a narrower permission for a
+narrower-scoped comment would be a distinction with no real difference in blast radius. Confirmed
+before any network call, mirroring every other PR write tool's own refusal test.
+
+**Requires confirmation, no exception** — the same uniform rule every write tool in this registry
+has followed since Wave 2: one rule everywhere is simpler to audit than deciding tool-by-tool which
+risk is low enough to skip.
+
+**A new 422 hint, distinct from `requestPrChanges`'s "reviewing your own PR" hint.** `githubWriteError`
+gained a third boolean parameter, `invalidPositionHint` — an out-of-range `line` (not part of this
+PR's actual diff) is by far the most likely 422 here, unlike a "reviewing your own PR" refusal,
+which GitHub applies only to a formal approve/request-changes, never a plain review comment. The
+hint names the real recovery path — `get_pr_files`/`get_pr_file_diff` to confirm the exact path and
+a real changed line number, or omit `line` entirely — rather than a generic "GitHub answered 422."
+
+**The system prompt tells the model explicitly when to reach for this tool over `pr_post_comment`,
+and to confirm a line is real before pinning to one** — the identical "nothing about a tool's own
+existence tells the model when to use it" instinct this file's own `find_card` entry already states,
+applied here to a second tool with an easy-to-confuse sibling.
+
+**The frontend renderer is a small, distinct function, not a reuse of `prWriteRenderer`.** Unlike
+the general-thread write-tool renderers, this one has a `path` (read from `call.input`, the model
+already put it there — the identical reasoning `cardWriteRenderer`/`prWriteRenderer` both give for
+reading identity off the call rather than the service's own output) worth showing alongside the PR
+number, and it links to GitHub's own "Files changed" tab rather than the bare PR page, since that
+is where the comment actually lives.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`, all
+clean; both new/extended test files collect and run to the expected DB-connection failure in this
+sandbox (no Docker here, the same standing limitation every DB-backed suite in this session hits) —
+CI is the real signal, as with every prior Phase 15 wave.** Backend tests cover: the file-level
+default (asserting the real request body carries `subject_type: 'file'` and neither `line` nor
+`side`), a given line (asserting `line`/`side: 'RIGHT'` and no `subject_type`), the permission
+refusal before any network call, the 422 hint naming both recovery tools, and a failed head-sha
+lookup refusing before any comment POST is attempted. Tool-wrapper tests cover
+`requiresConfirmation`, the guest-refusal sweep, and the success-path JSON shape the frontend
+renderer expects.
+
+### Guest access into Work (SHIPPED) — a dedicated invite flow, and a real listing leak it closes
+
+`apps/api/src/work/guest-access.service.ts` · `apps/api/src/work/project.service.ts`'s `listProjects`
+· `packages/policy/src/assignment.ts`'s `isGuestRole` · `apps/api/src/tenancy/grant.service.ts`'s
+`isGuest` field · `apps/web/src/features/work/guest-access-section.tsx`. Prompted directly, from a
+product brainstorm naming a real gap against traditional PM tools: Guest access existed for Chat
+(`chat/compliance.service.ts`'s `setGuestAccess`) with no Work equivalent — a contractor or external
+stakeholder could not be looped into a single project without promoting them to Member, which hands
+them the whole org.
+
+**A guest is a tuple, not a role — the identical design chat's own guest access already
+established, one level up.** `GUEST` grants nothing from the role alone
+(`packages/policy/src/roles.ts` has it as an empty list, by design). Guest access to a project IS a
+`viewer`/`commenter`/`editor` relationship tuple naming that project, marked `is_guest` only for
+review — `authz.relationship_tuples.is_guest` has existed since the schema shipped and chat was its
+only writer until now. There is no `if (isGuest)` branch anywhere in `guest-access.service.ts`, the
+same absence `chat/guest.test.ts` already proves for channels.
+
+**A dedicated flow, chosen explicitly over extending the generic Share dialog, after the tradeoff
+was put to the project owner directly.** `share-board.tsx` already calls the generic
+`tenancy.grants.grant`/`.revoke`/`.list` (gated `member:manage` + step-up) for sharing a board with
+ANY member. Two real differences justify a second, narrower door rather than reusing that one:
+inviting an external guest is conceptually a different action than sharing with a colleague, and —
+the one the project owner picked when asked — guest grants here are refused for anyone whose
+membership role is not already `'guest'`, a restriction the generic dialog has no reason to carry
+(it can share with anyone). `work.guests.{list,invite,revoke}` is `project:update`-gated, no
+step-up — the same floor every other project-vocabulary route on this page already uses, since
+inviting a guest changes who can reach the project exactly like renaming it or editing its labels
+does.
+
+**The prerequisite fix this feature needed, found by re-deriving `docs/space.service.ts`'s own
+`listSpaces` bug for Work: `listProjects` returned every row in the org, unfiltered.** It computed
+per-row `capabilities` via `manageCapabilitiesFor` but never called `can()`/`allowed()` to decide
+whether a row belonged in the result set at all — harmless only because every non-guest role holds
+`project:read` flatly by role. `route({ permission: 'project:read' })`'s floor is `couldGrant`,
+which passes on a relationship tuple as well as on a role, and `member`'s grant set covers every
+`:read` permission by action-suffix match — so the moment a Guest holds a real project-level tuple
+(which this feature is the first thing to ever grant), that same Guest would have received every
+OTHER project's name and key in the org too, having no Work relationship to them at all. Fixed
+identically to `listSpaces`: a bounded `.filter()` calling `can(actor.subject, 'project:read', ...)`
+per row, not a join — projects are org furniture, tens of them, not thousands.
+`guest-access.service.test.ts`'s `sees only the invited project in listProjects` is the regression
+test that would have failed against the pre-fix code.
+
+**`listBoards` needed no equivalent fix — checked, not assumed, and the reason is the scope
+decision below, not an oversight.** It already calls `requireProject(tx, actor, input.projectId,
+'project:read')` as a hard precondition, and its query is already scoped to that one `projectId` —
+so nothing about the row it returns could ever leak a SIBLING project's boards; a caller must
+already hold `project:read` on the exact project named. Project-scoped-only guest grants are what
+make this argument airtight rather than merely convenient (see below).
+
+**Guest grants are project-scoped only, deliberately, not per-board.** A tuple at the project level
+already flows down to every board and card beneath it via `ancestorsOfBoard`/`ancestorsOfCard` — one
+grant gives a guest everything under the project, which is the actual use case ("loop in a
+contractor on this project"). This also sidesteps a real asymmetry a per-board grant would hit: a
+board-only guest (no project-level access) could open a board via a direct link but never discover
+it through `boards.list`, since that route requires `project:read` as a precondition before
+returning anything at all. Per-board guest grants are real, deliberately deferred follow-up work,
+not a gap this pass closes.
+
+**`grant()`/`revoke()` in `tenancy/grant.service.ts` are reused, not duplicated — the identical
+idempotency, subject-validation and event-emission logic chat's own `setGuestAccess` would otherwise
+drift from.** `GrantInput` gained one new optional field, `isGuest` (default `false`), threaded into
+the insert and into `grantCreated`'s Zod schema — every existing caller is unaffected. This is the
+first production caller of `grant()`/`revoke()` from OUTSIDE `tenancy/`; the precedent for a small,
+generic tenancy service being called cross-module already existed for `resolveOrgMembership`
+(`identity/api-token-auth.ts`, `standup/digest-sweep.ts`), just not for this one specifically.
+
+**Two transactions, not one nested inside the other — a real mistake caught before it shipped, not
+a theoretical concern.** The first draft of `inviteGuestToProject`/`revokeGuestAccess` called
+`grant()`/`revoke()` from INSIDE an already-open `withOrgScope` block. Both functions open their own
+`withOrgScope`, which calls `requireDb().transaction()` on the top-level pool client — nesting that
+inside an already-open transaction grabs a second, independent connection rather than a savepoint
+within the first, which is not the atomic-transaction shape guardrail 6 assumes. Fixed by splitting
+each function into a read-and-validate transaction (project reachability, target's membership role,
+any existing guest tuple to replace) followed by sequential top-level calls to the already-idempotent
+`grant()`/`revoke()` — the identical "chain several real service calls, each under its own `can()`
+check, at the orchestration layer rather than nested inside one transaction" shape this file's own
+Phase 15 `card_create` section already established for composing several service calls behind one
+confirmation.
+
+**Re-inviting at a different relation replaces the old grant rather than adding a second — a project
+holds at most one active guest relation per person at a time.** `inviteGuestToProject` revokes any
+existing `is_guest` tuple this user holds on this project before granting the new one, so "change
+this guest's access" is simply inviting them again; there is no separate update method.
+
+**`target.role !== 'guest'` tripped guardrail 7's `roleMember` rule — the identical name-not-
+authorization collision this file documents elsewhere for `AiMessage.role`/`ChatMessageWire`'s
+`role`, except this one genuinely IS an org role, just not an authorization decision about the
+ACTOR.** The check is a business rule about who this flow is FOR (refusing to grant a redundant
+tuple to a Member through the wrong door), not a `can()` decision — but the lint rule is correctly
+blunt about the shape regardless of intent, and CLAUDE.md's own account of `packages/policy/src/
+assignment.ts` (`isIndispensableRole`/`isDirectlyAssignable`/`sameRole`) already states the answer:
+move the comparison where the matrix test can see it, never disable the rule. `isGuestRole(role:
+string): boolean` joins that file for the identical reason, taking a plain `string` rather than the
+branded `Role` (unlike its siblings) because its one caller reads `role` straight off a
+`memberships` row, which Drizzle types as `text`, with nothing to validate-and-narrow first.
+
+**The frontend candidate list filters to Guest-role members client-side, using the same
+`isGuestRole` the server enforces — real precedent for importing a `@taskflow/policy` helper into
+`apps/web` already exists (`settings-page.tsx`, `share-board.tsx`).** This is purely so a caller
+never sees an option the server would refuse; the real check still happens server-side regardless of
+what the client filtered. `GuestAccessSection` (`apps/web/src/features/work/guest-access-section.tsx`)
+mirrors `channel-details.tsx`'s own `GuestAccessSection` shape (search-to-invite, a relation picker,
+a revoke button per row) and is gated on `project.capabilities.update` in `project-settings-page.tsx`
+— hidden entirely rather than disabled, Phase 15 §1's "hide, don't disable" rule, since a caller who
+cannot manage the project has no use for a control the server would just refuse.
+
+**`apps/mobile`: out of scope for this pass**, matching this codebase's own repeated precedent of
+shipping a new Work-module surface web-first (email invitations' own mobile scope note is the
+closest one) — a mobile "Invite guest" screen is real, separate, deliberately deferred work, not an
+oversight.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`, all
+clean; the new DB-backed test suite (`guest-access.service.test.ts`) could not be run locally in
+this sandbox (no Docker/Postgres here, the same standing limitation this file states for every
+DB-backed suite written in this session) — CI is the real signal.** Covers: an unfiltered guest
+sees an empty project list and cannot reach a project directly; an invited guest sees only that
+project in `listProjects` (the regression test for the leak fix above) and can read its boards;
+containment against a sibling project holding no tuple; access lost immediately on revoke; the
+`is_guest` marker on the tuple, for review; re-inviting at a different relation replacing rather than
+duplicating the grant; relation validation rejecting anything outside viewer/commenter/editor; and
+refusing a target whose membership role is not Guest.
+
+### Guest access into Work — one door, not two (SHIPPED)
+
+`packages/db/migrations/0111_invitation_pending_grants.*` ·
+`identity.invitation_pending_grants` · `apps/api/src/tenancy/invitation.service.ts`'s
+`pendingGrant` · `apps/api/src/work/guest-access.service.ts`'s `inviteGuestByEmail` ·
+`apps/web/src/features/work/guest-access-section.tsx`. Prompted directly, from a screenshot and
+a real question: "do we need to add them in org first as guest and then they can join the
+project? ... can we create a simple flow for guests if possible." The honest answer, before this
+pass, was yes — a genuinely two-step admin flow this section itself never disclosed as two steps,
+and someone with no TaskFlow account at all had no path through it from the project side at all.
+
+**One email box, one button — the server decides which of the two real cases applies, not the
+admin.** `GuestAccessSection`'s "Invite a guest by email" label used to be misleading: it was a
+client-side FILTER against members who already held the Guest role, never an actual invite-by-
+email action, which is exactly why "No Guest-role member matches" was the only thing anyone
+typing a fresh email ever saw. The rewritten section calls one route,
+`work.guests.inviteByEmail`, unconditionally — no more "find them in a list first."
+
+**`inviteGuestByEmail` (`guest-access.service.ts`) resolves the two cases server-side:** an
+address already belonging to a Guest-role member of THIS org grants immediately, exactly as
+`inviteGuestToProject` always did; anything else — no account yet, or an account that has simply
+never joined this particular org — sends a real, mailed org invitation with `role: 'guest'`
+through the existing `tenancy/invitation.service.ts`'s `createInvitation`, carrying a
+`pendingGrant` for this exact project. An address belonging to an existing member with a role
+OTHER than Guest still refuses, naming the Share dialog — this door was never, and still is not,
+a way to hand a Member or Admin project access.
+
+**The pending grant is what collapses the two admin steps into one — applied automatically the
+instant the invitee accepts, not on a second visit to this page.** `identity
+.invitation_pending_grants` (migration 0111) is deliberately generic — `objectType`/`objectId`/
+`relation`, the same shape `authz.relationship_tuples` itself already uses — rather than a
+`projectId` column naming Work specifically: grants are already a cross-module primitive
+(`tenancy/grant.service.ts`'s `grant()` is called from Work, Chat and Docs alike), so the table
+stays inside identity's own schema and needs no FK into a resource table it does not own. Work's
+`guest-access.service.ts` is simply the first caller to populate it, with `objectType: 'project'`.
+
+**`acceptInvitation` reads and deletes the pending row inside its OWN membership-creating
+transaction — consumed once, whether or not the follow-up grant ever succeeds — then calls the
+real `grant()` AFTER that transaction commits, the identical "two transactions, not one nested
+inside the other" discipline `guest-access.service.ts`'s own header already documents for
+`inviteGuestToProject`/`revokeGuestAccess`.** `grant()` opens its own `withOrgScope`; nesting it
+inside the accept transaction would grab a second, independent connection rather than a
+savepoint within the first. The post-commit `grant()` call is wrapped in a `try`/`catch` with no
+rethrow: by that point the person has already, successfully, become a member, and a secondary
+effect failing (the target project was deleted in the meantime, say) must not turn a successful
+accept into an error the caller has no way to recover from.
+
+**Email verification is not skippable, and was never the actual gap — the report's other half
+("so need to verify their email and all") answers itself once the flow is seen end to end.** A
+brand-new address still goes through the exact account-creation path every invitation does
+(register, verify, then accept) — this feature does not, and should not, create an unverified
+account on someone's behalf. What it removes is the SEPARATE admin step that used to sit after
+that: accepting the invite now grants project access in the same motion, rather than leaving the
+new guest in the org with nothing to see until an admin came back to this section a second time.
+
+**Tested at two layers, mirroring this codebase's own precedent for a mechanism used by more than
+one caller: `invitation.service.test.ts` proves the pending-grant WRITE/APPLY/rotate cycle
+directly, with no dependency on Work at all (`objectType: 'project'` names no real project row —
+`grant()`'s own `assertSubjectBelongsHere` only checks the SUBJECT's membership, never that the
+object exists); `guest-access.service.test.ts` proves the end-to-end property against a real
+project — instant grant for an existing Guest-role member, refusal for a non-Guest member, and a
+full invite-then-accept round trip (via a real `MailQueue`/`MemoryMailer`, the same
+`tokenFromMail` pattern `invitation.service.test.ts` already established) landing the invitee in
+`listProjectGuests` with no second call.** Verified with `tsc`, `eslint`, `prettier`, the
+guardrail selftest, `pnpm check:encoding`, and `scripts/check-migration-rls.mjs`, all clean; both
+DB-backed suites could not be run locally in this sandbox (no Docker/Postgres here) — CI is the
+real signal.
+
+### Guest access into Work — hide edit/comment controls a relation can't use (SHIPPED)
+
+`apps/api/src/work/card.service.ts`'s `getCard`/`CardDetail.capabilities` ·
+`apps/api/src/work/router.ts`'s `cards.get` output schema ·
+`apps/web/src/features/work/detail/{card-detail-panel,label-section,location-section,
+checklist-section,attachment-section,status-priority-section,sprint-section,assignee-section,
+custom-field-section,comment-section,development-section}.tsx`. Prompted directly, right behind
+the "one door, not two" fix above: "since i have shared access with person as viewer they should
+not be able to see options to edit or comment like why show them anything when they cant do it
+for the whole project they are being invited to same goes to if we gave them editor or comment
+access."
+
+**A real instance of the exact bug class Phase 15 §1's own "full sweep" already found and fixed
+across a dozen other surfaces — found here a second time, for the one surface that sweep never
+reached: the Work card detail panel.** `cards.get` carried exactly one capability,
+`moderateComments`, and every other control in `card-detail-panel.tsx` — the title input, the
+description editor, dates, priority, status, sprint, assignee picker, label toggles, custom field
+inputs, checklist checkboxes, attachment upload, the PR/branch Link and Unlink buttons, and the
+comment composer — rendered unconditionally for anyone who could open the panel at all.
+`label-section.tsx`'s own header used to say so in plain words: "The UI shows both controls to
+everyone and lets the server answer." That was tolerable while every role that could reach the
+panel also held `card:update` by role; it stopped being tolerable the moment a project-level guest
+tuple (viewer/commenter/editor) made those permissions genuinely resource-scoped and, for a
+viewer or commenter, false.
+
+**`getCard`'s `capabilities` grew four fields, each a direct `can()` call against the card's own
+target — never re-derived by the client, per this codebase's own standing rule that a UI
+reimplementing `can()` produces two models that drift.**
+
+- `update` (`card:update`) — gates every field-editing control this panel has, including
+  `card:move` (Location) and `attachment:upload` (the file input): `RELATION_GRANTS` puts both of
+  those on `editor` alongside `update` and on neither `viewer` nor `commenter`, so one boolean
+  already answers all three for every guest relation — no role/tuple combination in this codebase
+  splits them, so no fourth/fifth field was added for a distinction that cannot currently occur.
+- `archive` (`card:delete`) — deliberately its OWN field, not folded into `update`. `RELATION_
+GRANTS.editor.actions` is `['read', 'download', 'create', 'update', 'move']` — `delete` is not in
+  it, for any guest relation. Gating Archive on `update` would have shown it to an editor-relation
+  guest whose click the server would still refuse.
+- `comment` (`comment:create`) — gates the comment composer, Reply, and (alongside the existing
+  author check) Edit; reading comments stays open to anyone with `card:read`, unchanged.
+- `manageProjectVocabulary` (`project:update`, checked against the PROJECT directly, distance 0 —
+  not inherited through `card:update`) — gates the create-a-new-label and define-a-custom-field
+  forms, which are `project:update` on the server, not `card:update`. This is the one capability
+  that is NOT simply `update` reused: `roles.ts`'s `MEMBER` role holds `card:update` by role and
+  has NO `project:update` at all, so a plain Member reusing `update` here would have been shown a
+  create-label form whose submit comes back FORBIDDEN — the identical bug this whole capability
+  set exists to close, just for a different actor than the guest the report named. An
+  editor-relation guest DOES reach `manageProjectVocabulary: true` too, and that is deliberate, not
+  a leak: `decide.ts`'s `relationGrants` matches an action by SUFFIX regardless of which resource
+  type the tuple sits on, so a project-scoped `editor` tuple grants `project:update` on that exact
+  project the same way it grants `card:update` beneath it — consistent with this codebase's own
+  stated design that an org may hand a guest up to full `editor` access with "no default relation
+  restriction."
+
+**Every section component either hides its mutating controls entirely or disables them, and which
+of the two depends on whether the control is ALSO the read display.** A toggleable label chip, an
+assignee avatar with a remove-on-click, the "New label"/"Add field" forms, the checklist's Delete
+and Add-item controls, the attachment upload input, and the PR/branch Link/Unlink buttons are all
+HIDDEN outright — Phase 15 §1's "hide, don't disable" rule, since a control with no legitimate
+outcome should not announce it exists. The Status/Priority/Sprint SELECTS and the Start/Due date
+inputs are DISABLED, not hidden — each one is simultaneously the read display of the card's
+current value, so removing it would also remove information a viewer-relation guest is entitled
+to see; `disabled:opacity-50` is the same visual language `location-section.tsx`'s own board
+select already used for its own busy state. `LocationSection` (the board/list move controls) is
+the one section hidden ENTIRELY rather than disabled — no guest relation ever grants `card:move`,
+and a person who opened this card already knows which board/list they browsed to reach it, so
+there is nothing a disabled pair of selects would add.
+
+**`TitleAndDescription` renders a plain `<h2>` and a `RichTextView` instead of the `Input`/
+`RichTextEditor`/Save row when `!canEdit`** — reusing `RichTextView`, the same read-only renderer
+`comment-section.tsx` already uses for a comment's body, rather than a third way to render a
+TipTap document as read-only text.
+
+**The Archive button moved from the header's own unconditional render into a check against
+`card.data?.capabilities.archive`**, guarded on the query having resolved rather than assuming a
+loading state means "no permission" for any other reason — there is simply nothing to archive yet
+either way while the card is still loading.
+
+**Backend test coverage (`detail.service.test.ts`) proves the three real guest-relation shapes
+directly against a real database, not a stand-in:** a viewer-relation guest gets every capability
+`false`; a commenter-relation guest gets `comment: true` and everything else `false`; an
+editor-relation guest gets `update`/`comment`/`manageProjectVocabulary` all `true` and `archive`
+still `false` — the one case that would have silently passed if `archive` had been folded into
+`update`. A fourth case proves the reverse gap this pass also closed: a plain Member holds
+`update` but not `manageProjectVocabulary`, the exact combination a shared boolean would have
+gotten wrong. A fifth confirms the Owner holds every capability, as a sanity baseline.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app or the
+new backend test to run against**, the identical standing caveat every UI-only pass in this
+session states. Verified by what a sandbox without one can prove: `tsc`, `eslint`, `prettier`, and
+the guardrail selftest, all clean. A person should share a project with a guest at each of the
+three relations and open a card as that guest before calling this done.
+
+### Combined spend view for an org owner (SHIPPED) — AI spend, previously operator-only
+
+`apps/api/src/billing/org-billing.service.ts`'s `getOverview` · `apps/api/src/billing/router.ts` ·
+`apps/web/src/features/admin/billing-section.tsx`. Prompted directly, from the same product
+brainstorm as guest access: telephony spend, AI spend, and billing each lived on a different
+screen/permission — AI spend specifically was **platform-operator-only**
+(`apps/api/src/ai/provider-config.service.ts`'s `aiSpendReport`, gated `withPlatformAdminScope`), so
+an org owner could see what their org spends on telephony but had no way to see what it spends on
+the AI assistant at all.
+
+**Extends the existing owner-facing billing overview rather than building a new page or route.**
+`org:billing` (Owner-only, ORG_LEVEL, no tuple can ever satisfy it) already gates the one screen an
+owner reads to answer "what does my org pay" — `getOverview`'s `usage` object already answered this
+for telephony, so AI spend is two more fields on the same object (`aiSpentCents`/`aiCapCents`),
+not a second capability or a second query the client has to remember to call.
+
+**AI cap resolves through the SAME four-tier entitlement chain the budget gate itself uses
+(`getEntitlements(orgId).limits.aiTokenBudgetMonthlyCents`), reused for DISPLAY rather than
+enforcement — the identical relationship `telephonyCapCents` already has to `checkOutboundAllowed`.**
+No new resolution logic, no risk of the displayed cap ever disagreeing with the one actually
+enforced.
+
+**AI spend is a small, DELIBERATE duplicate of `ai/spend-gate.ts`'s own `readAiSpendState` query,
+not a cross-module import of it — importing would create a real cycle, not a hypothetical one.**
+`spend-gate.ts` already imports `getEntitlements` FROM `billing/entitlement-resolver.ts`; having
+`org-billing.service.ts` import back from `apps/api/src/ai` would close that loop. The duplicated
+piece is small on purpose (a `SUM(cost_cents)` over the current UTC calendar month, with the
+identical `Number.parseInt(... ?? '0', 10) || 0` guard against Postgres's bigint-as-string and the
+`Number(undefined) === NaN` trap `readAiSpendState`'s own header already documents) — the same
+"a duplicate this small is the accepted trade" precedent `apps/mobile`'s own `slugify` already sets
+for not sharing code across a boundary that would otherwise cost more than the duplication.
+Calendar-month, not telephony's rolling 30-day window — `aiTokenBudgetMonthlyCents`'s own name is
+the contract, matching `readAiSpendState`'s own reasoning for the same choice.
+
+**The frontend panel mirrors telephony's own spend-bar block verbatim rather than being extracted
+into a shared component — two occurrences, and this file's own §6 rule ("extract a component only
+once the same pattern appears three times") says not yet.** Same "only shown where there is a
+ceiling to compare against" rule telephony's own panel already follows — `null` is unlimited, and
+"spent $12 of unlimited" is noise. No "included in your plan" sub-line, unlike telephony's: AI has
+no overage-billing concept to explain, it is a hard monthly ceiling the spend gate itself enforces.
+
+**`org-billing.service.test.ts` gained a case proving the RLS boundary directly** — real
+`ai.usage_ledger` rows inserted for two different orgs, asserting `getOverview`'s `aiSpentCents`
+sums only the caller's own org's rows, the same "real Postgres, not a mock that could agree with a
+wrong implementation" standard every other spend-boundary test in this codebase is held to.
+
+**`apps/mobile`'s billing screen: out of scope for this pass**, matching Feature 1's own deferral —
+a real, separate follow-up rather than an oversight.
+
+### Duplicate-card detection at creation time (SHIPPED) — entirely client-side
+
+`apps/web/src/features/work/duplicate-detect.ts` · `apps/web/src/features/work/list-column.tsx`'s
+`AddCard`. Prompted directly, from the same product brainstorm: `search.query` already indexes
+every card with trigram-backed `ILIKE` substring matching, and nothing surfaced "this might already
+exist" at the moment a title is typed — a real source of the sprawl teams complain about in
+Jira/Asana.
+
+**No backend changes at all — the entire feature is a debounce, a client-side TQL query, and a
+dropdown wired onto `AddCard`'s existing title input.** `search.query` already indexes cards,
+already enforces `search:query` (a permission every Member holds), and already does its own
+per-hit `can()` filtering server-side — reusing it exactly as `search-page.tsx` calls it, rather
+than inventing a second search path, means this feature inherits that authorization for free and
+can never show a title the caller could not otherwise see.
+
+**`buildDuplicateQuery` is the one pure function, exported and tested directly** — the "test the
+pure half" split this codebase already holds `neighbours.ts`/`markdown-lite.tsx` to, since the
+component itself is mostly wiring around this one decision. Fires at 3+ characters (`type:card
+<trimmed title>`, bare text desugaring to `text contains <term>` automatically — no manual
+escaping or AST-building), below which a partial title matches too broadly to be useful.
+
+**Gated on the client's own `parse()` check before firing, mirroring `search-page.tsx`'s own
+`sendable` gate exactly** — a title whose literal text happens to break TQL syntax (an unbalanced
+quote, a bare `AND`) simply shows no dropdown rather than sending a query the server would refuse
+with a validation error the person never asked for.
+
+**Purely advisory, matching this codebase's own stated WIP-limit philosophy applied to the
+identical shape of problem: "blocking someone from recording work already in progress makes people
+stop using the board, not stop the work."** The dropdown never blocks or intercepts submission —
+clicking a match opens the real `CardQuickView` (the same "load a card with no board in hand"
+mechanism the standup view and the assistant's `my_cards` renderer already established) in front of
+the form, and the person still decides whether to create a new card regardless. Dismissed
+synchronously on submit (both `title` and the debounced copy are cleared together, not left to
+drift apart for the length of one debounce window) or once the title is edited below the 3-character
+floor.
+
+**Reuses `searchResultsQuery`/`keys.search` verbatim** — the exact query function and cache key the
+search page itself uses, so a duplicate check and an open search page never disagree about what a
+title currently matches, and there is no second search implementation to keep in sync with the
+first.
+
+**The dropdown opens UPWARD, not downward — a one-line fix, found from a screenshot.** `AddCard`
+sits at the very BOTTOM of the list, so the original `top-full` positioning floated the match
+list into the empty space below the column (or past its bottom edge entirely), disconnected from
+the cards it was actually claiming to match — "disturbs the UI of the workflow," as reported.
+`bottom-full`/`mb-1` overlays it on the cards already in view immediately above the input
+instead, the same direction a chat composer's mention picker opens for the identical "anchored
+near the bottom edge of its container" reason. No other behavior changed — still purely advisory,
+still dismissed on submit or once the title drops below the 3-character floor.
+
+### Per-card calendar sync (SHIPPED) — a live ICS feed, opt-in per card
+
+`packages/db/migrations/0110_card_calendar_sync.*` · `platform.card_calendar_subscriptions` ·
+`identity.calendar_feed_tokens` · `apps/api/src/work/card-calendar.service.ts` ·
+`apps/api/src/identity/calendar-feed.service.ts` · `apps/api/src/identity/calendar-feed-tokens.ts`
+· `apps/api/src/work/calendar-feed.service.ts` · `apps/api/src/work/ics.ts` ·
+`apps/api/src/identity/calendar-feed-route.ts` · `apps/web/src/features/work/detail/
+card-identity-bar.tsx`'s `CalendarSyncToggle` · `apps/web/src/features/auth/
+calendar-feed-section.tsx`. Prompted directly, from the same product brainstorm as the other three
+features in this pass: due dates never show up where people actually look for their day, and
+nothing in this codebase synced one anywhere external. ⚠ Human-review surface — see below.
+
+**Opt-in per card, never a blanket "everything assigned to me" sync — the shape confirmed with the
+project owner directly before writing any code, over the alternative (a default scope with
+exclusions).** A small calendar icon on the card's own identity bar
+(`CalendarSyncToggle`, next to the PR/branch chips) is the entire interaction: click it once to add
+that one card's due date to your personal feed, click again to remove it.
+`work.cards.calendarSync.{status,toggle}` are `card:read`-gated, not `card:update` — the identical
+"the read permission you already need already answers this" reasoning
+`standup/subscription.service.ts` established for its own per-project email opt-in: deciding to put
+a card you can already see onto your own calendar needs no extra permission beyond that.
+Self-referential by construction — nobody can opt someone else's calendar into anything from this
+route, since `userId` is always read off `ctx.principal`, never accepted as input.
+
+**`platform.card_calendar_subscriptions` follows `work.card_pull_requests`/`work.card_branches`'s
+own composite-FK shape exactly** — `(org_id, card_id)` referencing `work.cards (org_id, id)`, so a
+subscription row can never point at another tenant's card even if application code got it wrong.
+Unlike those two, it is `UNIQUE (org_id, card_id, user_id)`, not many-to-many on the card side: one
+person subscribes to one card at most once, toggled off by deleting the row rather than by a
+status flag — there is no history worth keeping for "I used to have this on my calendar."
+`toggleCalendarSync` (`card-calendar.service.ts`) is a plain insert-or-delete under
+`onConflictDoNothing`, idempotent either direction, emitting `card.calendar_sync_toggled` per
+guardrail 6.
+
+**The feed itself needed a genuinely new kind of credential this codebase has never issued
+before — a long-lived, no-session bearer token — and that is the one deliberate, disclosed
+exception in this whole feature.** `docs.public.getPage`'s own design (Phase 6 Wave 4) argues
+explicitly against exactly this shape for a public read: it re-checks `published_version_id IS NOT
+NULL` on every request rather than trusting a separate opaque capability, because a bearer token
+has no way to observe a later revocation. A calendar app's own "subscribe by URL" mechanism gives
+this feature no other option — Google/Outlook/Apple all poll a plain URL on their own schedule,
+with no room for this deployment's session cookies, refresh rotation, or step-up flow to
+participate. The trade is accepted and bounded rather than ignored: `identity.calendar_feed_tokens`
+holds only a hash (`issueToken('shareLink')`/`hashToken`, the exact primitives every other bearer
+token in this codebase already uses — the first real caller of `TOKEN_PREFIX.shareLink`, reserved
+in `packages/security/src/tokens.ts` since that table was written), at most one active token per
+user (a partial unique index, `WHERE revoked_at IS NULL`), and every resolution re-checks
+`card:read` per card at request time (see below) rather than trusting the opt-in row alone — so a
+leaked URL discloses only due dates and titles for cards the token's owner can _currently_ read,
+never a static snapshot immune to a later permission change.
+
+**"Mint" and "rotate" are the same operation, not two — `mintFeedUrl` always issues a fresh token
+and revokes whatever was active before, in one transaction.** The plan's original two-function
+design (`getOrCreateFeedToken`/`rotateFeedToken`) collapsed once it became clear a second "get my
+existing token back" function has nothing honest to return: the raw token is never stored, only its
+hash, so there is no "existing URL" to hand back a second time — only ever a new one. `auth.
+calendarFeed.mint` is `selfRoute` with `stepUp: true` (mirrors TOTP enroll/disable — minting a
+long-lived bearer credential is credential-adjacent by the same reasoning); `auth.calendarFeed.
+status` is `selfRoute` with no step-up, the identical "cheap probe" precedent `auth.totp.status`
+already sets for "is this already turned on."
+
+**`resolveUserByFeedToken`'s own `last_used_at` bump lives in a SEPARATE file from `mintFeedUrl`,
+`calendar-feed-tokens.ts` rather than `calendar-feed.service.ts` — not a style choice, a guardrail-11
+escape hatch used correctly.** Minting a token is a real, security-relevant, audit-worthy mutation
+(a new bearer credential exists) and keeps its own domain event, `user.calendar_feed_token_minted`.
+Bumping `last_used_at` on an anonymous calendar app's routine poll is not — the identical "housekeeping,
+not a decision" reasoning `identity/repository.ts`'s own session `lastSeenAt` bump already
+establishes for the same guardrail-11 exemption. Since the custom ESLint rule scopes to files whose
+name or path signals a service (a suffix and a directory pattern, not literally the two characters
+this sentence is avoiding writing out consecutively inside a comment — that exact sequence closes a
+block comment early, a real parse error hit and fixed while writing this file's own header), moving
+the housekeeping-only function to a plain, non-service-named sibling file is the sanctioned fix,
+matching `token-refresh.ts`/`repository.ts`/`rebalance.ts`/`counters.ts`'s own precedent — never a
+`// eslint-disable`.
+
+**The public route is a raw Fastify route, not a tRPC one — deliberately, because none of the five
+existing tRPC route kinds are shaped for "zero session, by design."** `GET /calendar/:tokenFile`,
+registered in `server.ts` alongside the webhook/health routes, before the tRPC plugin. No
+distinguishing 404: an unknown token and a revoked one answer identically, so a probing request
+learns nothing about which is which — matching every other unauthenticated-lookup route in this
+codebase's own stated discipline.
+
+**`buildCalendarFeed` re-derives cross-org membership from `tenancy/org.service.ts`'s existing
+`listMyOrgs`, not a new `withGlobalScope` query — avoiding a real import cycle, not a hypothetical
+one.** The natural reuse candidate, `ai/spend-gate.ts`'s own cross-module pattern, was considered
+and rejected for the identical reason `org-billing.service.ts`'s own AI-spend duplication (this
+file's "Combined spend view" section, above) already gives: `spend-gate.ts` imports FROM
+`billing/entitlement-resolver.ts`, so importing back from `apps/api/src/work` would close the loop.
+`listMyOrgs` already answers exactly "which orgs does this user belong to, and is each membership
+and org still active" — reused as-is, with both `membershipStatus`/`orgStatus` checked `=== 'active'`
+before a single org is trusted, the identical discipline this file's own Phase 3 section documents
+finding necessary the hard way for the org switcher.
+
+**Every card in the feed is re-checked against `can()` at REQUEST time, per row, never trusted
+from the opt-in row alone — the same discipline `listMyCards` already applies for the identical
+reason, restated here because a bearer token makes it load-bearing rather than merely careful.** A
+subscription row only proves someone opted in once; it says nothing about whether they can still
+read the card today. `loadTuples(orgId, userId)` is re-loaded fresh per org, per feed request — an
+access grant revoked since the opt-in still silently drops that card from the very next feed
+refresh, with the subscription row itself left alone (matching `standup` digest subscriptions' own
+"a temporary access loss resumes on its own, no re-subscribe needed" precedent). Cards with no due
+date are skipped entirely — nothing to put on a calendar.
+
+**The ICS body is deliberately minimal — no `DESCRIPTION`, ever.** `formatIcsFeed` (`ics.ts`, a
+pure function, tested directly with 7 cases covering escaping, all-day `DTSTART`, and multi-card
+ordering — the "test the pure half" split this file already holds `neighbours.ts`/`markdown-lite
+.tsx` to) emits only `SUMMARY` (reference + title) and a `URL` deep link back into the app. This
+URL sits in infrastructure this deployment does not control — Google's, Outlook's, or Apple's own
+calendar-subscription storage — so the same reasoning that keeps a search result's transcript title
+blank (this file's own account of the search index's `recording:read` handling) applies here: keep
+what a third party stores to the minimum that is actually useful.
+
+**The plan's own suggested `OPERATION_RULES` rate-limit entry does not fit this route, and the
+route's own header comment says so rather than silently deviating.** `OPERATION_RULES` is keyed by
+tRPC procedure name and wired into the tRPC adapter's own middleware — structurally inapplicable to
+a raw Fastify route with no procedure name at all. The real defense is what already exists: the
+GLOBAL per-IP volumetric limiter (300/min, applies to every request including raw routes) plus the
+token's own 256 bits of entropy from `issueToken`, the identical strength every other bearer token
+in this codebase already relies on.
+
+**The UI is split across two places on purpose, matching the two different questions it
+answers.** "Which cards are on MY calendar" is answered per-card, from the card's own identity bar
+— genuinely new UI with no existing per-viewer icon-toggle precedent in this codebase to copy
+structurally, styled only to match the surrounding hover-icon-button visual language. "What is MY
+feed URL, and how do I get it into my calendar app" is answered once, in Settings
+(`CalendarFeedSection`), mirroring `TotpSection`/`PasskeySection`'s enroll-and-show-once shape
+exactly: the raw URL is shown exactly once right after minting, then masked forever — the same
+"shown once, never again" contract TOTP recovery codes and the GitHub connector's verify secret
+already use in this codebase, extended here to a URL rather than a code.
+
+**Detail-panel-only, not a per-tile icon on the board — a deliberate scope narrowing from the
+plan's literal text, matching the existing PR/branch-chip precedent.** `cardPullRequestsQuery`/
+`cardBranchesQuery` are already fetched only when a card is opened, never per-tile on the board, to
+avoid an N+1 batch-loading query for every card a board renders at once; `cardCalendarSyncQuery`
+follows the identical rule for the identical reason, rather than inventing a new batch-fetch
+mechanism a board tile has never needed before.
+
+**`apps/mobile`: out of scope for this pass**, matching every other feature in this brainstorm's
+own mobile deferral (guest access, the combined spend view) and this codebase's repeated precedent
+of shipping a new surface web-first.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, `pnpm check:encoding`, and
+`scripts/check-migration-rls.mjs`, all clean; the pure `ics.test.ts` suite (7 cases) runs and passes
+locally with no database.** The three DB-backed suites — `card-calendar.service.test.ts`,
+`calendar-feed.service.test.ts`, and `identity/calendar-feed.service.test.ts` — could not be run
+locally in this sandbox (no Docker/Postgres here, the same standing limitation this file states for
+every DB-backed suite written in this session); CI is the real signal. Coverage: toggling sync is
+idempotent and self-only (one row, one event, regardless of how many times the same viewer toggles
+it on); the feed includes only synced, due-dated, currently-readable cards and excludes a synced
+card with no due date; per-viewer isolation (one person's opt-in never appears in another's feed
+even when both can read the card); a card whose `card:read` access was revoked after opting in
+drops out of the very next feed build; minting a token resolves the raw URL back to the minting
+user and emits `user.calendar_feed_token_minted`; an unknown or revoked token resolves to
+`undefined`; and minting again revokes the previous token outright (the old URL stops resolving,
+the new one works) rather than leaving two active at once.
+
+**Follow-up (SHIPPED): the panel named the destination apps but never said where the option lives
+inside each one, and a real report confirmed that was the actual gap** — "i cant see the option
+in calendar to add url i got from account screen." `calendar-feed-section.tsx`'s minted-URL panel
+gained a "Where do I paste this?" `<details open>` block (the identical native, JS-free
+disclosure `calls-panel.tsx`'s own transcript expander already established in this codebase) with
+concrete navigation for the three named apps: Google Calendar's sidebar `+` → _From URL_,
+Outlook's _Add calendar_ → _Subscribe from web_, and Apple Calendar's _File_ → _New Calendar
+Subscription…_ on Mac plus the _Settings → Calendar → Accounts_ path on iOS — each ending in the
+literal button/menu label a person is looking for, not a generic "subscribe by URL" phrase that
+assumes they already know where that control is. Open by default, not collapsed: this is exactly
+the information needed the moment the link is on screen. A closing line sets the expectation that
+the card will not appear instantly — every calendar app polls a subscription URL on its own
+schedule, typically hours, not seconds, which a person watching for it to show up immediately
+would otherwise read as broken.
+
+### Guest access into Work — a Guest's own standup row, and the structural gap behind every "backend error" a Guest hit (SHIPPED)
+
+`apps/api/src/standup/standup.service.ts` · `apps/api/src/tenancy/{org.service,router}.ts`'s
+`viewDirectory`/`viewTeams` · `apps/api/src/trpc/builder.ts`'s `memberRoute` (reused, not new) ·
+`apps/web/src/{router,components/sidebar,components/capability-gate,features/admin/settings-page}
+.tsx` · `apps/mobile/app/(app)/{account,people,org-settings,person/[userId]}.tsx`. Prompted
+directly, in three parts, from a real report: "why he can see standup where he can see other
+members data we should restrict it to that as well, he must not share the project, and on people
+he see error thats from backend... this is must have rule we cant show backend msg to someone on
+frontend where we need to restrict them or they cant perform that action."
+
+**Part 1 — the standup leak.** `queryStandup` builds and returns the FULL project roster to any
+caller holding `project:read` on the target project — the deliberate, unchanged design for every
+non-guest role (`standup.service.ts`'s own header: "a standup answers 'what is my team doing right
+now', which every Member holding `project:read` by role already needs"). That design became a real
+leak the moment "Guest access into Work" (this file's own earlier sections) made a project-level
+Guest tuple possible: a Guest with `viewer` on one project could open its standup and see every
+OTHER member's Yesterday/Today/Overdue/Urgent buckets, not just their own. `isGuestRole` (already
+exported from `@taskflow/policy`) is the fix — `queryStandup` filters `members` down to the
+caller's own `userId` when `isGuestRole(actor.subject.role)`, with a computed `headline` string
+("Showing only your own tasks — other members are not shown to guests.") replacing the real
+aggregate for that one case, since an aggregate over a roster the caller cannot see the rest of
+would itself leak a shape of the hidden data. Every other role's own behavior is byte-for-byte
+unchanged — this is a Guest-specific narrowing, not a redesign of `queryStandup`'s own floor.
+`standup-page.tsx` needed no change at all: it already handles a one-row (or zero-row) `members`
+array correctly.
+
+**Part 2 — the People page's "backend error," traced to its real, structural cause, not
+patched at the symptom.** The wording itself was not the problem — `messageFor`'s `FRIENDLY` table
+already maps `FORBIDDEN` to "You do not have permission to do that," so nothing here was literal
+backend text. The actual bug was presentational AND structural: `sidebar.tsx`'s `/people` entry was
+the one nav item in the whole file with no `capability` field at all (every sibling —
+`/analytics`, `/calls`, `/automations` — has one), so a Guest saw the link, clicked it, and landed
+on `people-page.tsx`/`person-page.tsx`'s generic `ErrorView` — a red alert box — for what is really
+an access boundary. Fixed with the pattern this codebase already built for exactly this shape
+(`CapabilityGate`, `apps/web/src/components/capability-gate.tsx`, and its mobile counterpart
+`apps/mobile/src/lib/capability-gate.tsx`) rather than inventing a new one: a new
+`viewDirectory: boolean` field on `SettingsCapabilities` (`member:read`, computed via `can()`
+exactly like `viewAnalytics`/`viewAuditLog`), read by `sidebar.tsx` to hide the "People" nav item
+entirely, and by a NEW route-level wrap — `peopleRoute`/`personRoute` in `router.tsx` now render
+inside `<CapabilityGate capability="viewDirectory">`, matching `/analytics`'s own two-layer
+precedent (hide the link, AND wrap the route, since a direct URL/bookmark/back-button reaches the
+page regardless of what the nav hides). `apps/mobile` got the identical two-layer fix:
+`account.tsx`'s "People" link (previously unconditional, with a comment claiming — wrongly — "the
+roster itself is `member:read` (every role)") is now gated on `capabilities?.viewDirectory`, and
+both `people.tsx` and `person/[userId].tsx` wrap their real content in
+`CapabilityGate capability="viewDirectory"`, the exact `insights.tsx`/`billing.tsx` shape this
+codebase already established for "a deep link must not reach a raw FORBIDDEN."
+
+**The root cause behind Part 2 turned out to be one level deeper than the People page itself, and
+fixing only `/people` would have left it live everywhere else `tenancy.orgs.get` is called.**
+`org:read` is an `ORG_LEVEL_PERMISSIONS` entry (`packages/policy/src/permissions.ts`), and
+`GUEST`'s role list is empty (`packages/policy/src/roles.ts` — `const GUEST: readonly Permission[]
+= []`, proven by the matrix test's own "gives the guest nothing from the role alone"). An
+org-level permission has no per-resource layer for a tuple to narrow back down — `couldGrant`
+refuses it outright for any subject whose role alone doesn't already hold it — so a Guest could
+NEVER call `tenancy.orgs.get` at all, under any grant, full stop. That route is not a niche one:
+`sidebar.tsx`, `CapabilityGate` itself, and every settings section on both platforms call it to
+learn which UI to show — so a Guest's session had this query erroring in the background from the
+moment the app shell first rendered, long before anyone opened Standup or People specifically.
+`getOrg()` (the service function) never checked `org:read` internally — every `capabilities` field
+is computed through its own real, specific `can()` call — so the ONLY thing `org:read` ever gated
+here was the route's own `couldGrant` floor, and removing it changes nothing about what a Guest may
+actually DO, only whether they can learn their own answers to "may I do X." Fixed by swapping
+`route({ permission: 'org:read' })` for `memberRoute({ memberReason: ... })` — a primitive this
+codebase already built for exactly this shape (`platform.notifications`' own routes: "no single
+Permission describes this, and every role needs it"), membership-only, no permission floor at all.
+
+**A second, larger instance of the identical symptom was found by re-deriving the People fix's
+logic rather than by another report — checked directly, not assumed.** `/settings`'s own
+`MemberSection` unconditionally fires `tenancy.members.list` (`member:read`) and `TeamSection`
+fires `tenancy.teams.list` (`team:read`, also `ORG_LEVEL_PERMISSIONS`, also empty for Guest), both
+rendered unconditionally on a page reached from the top-bar's persistent, ungated "Settings"
+NavLink — present on every page, for every role. A Guest visiting Settings hit TWO raw
+`ErrorView`s, one below the other, on the page this whole app's shell makes hardest to avoid,
+not the page the original report happened to name. Closed with the identical `capability` pattern:
+a new `viewTeams: boolean` field (`team:read`) alongside `viewDirectory`, and `SettingsPage` now
+renders `MemberSection`/`TeamSection` only when `capabilities.viewDirectory`/`viewTeams` are true —
+the same conditional-render shape `BillingSection`/`PermissionsSection` already use on the same
+page. `apps/mobile`'s `org-settings.tsx` — a single ~1000-line screen combining org rename,
+members, and teams, reached from `account.tsx`'s always-shown "Manage organization" link — gets no
+usable content for a Guest at all (every action on it needs at least `viewDirectory`), so its
+default export now wraps the whole screen in `CapabilityGate capability="viewDirectory"` rather
+than gating individual sub-sections, the smaller, more consistent change for a screen with no
+Guest-usable content left once the roster and every action on it are excluded.
+
+**The standing rule the report closed with — "we cant show backend msg to someone on frontend
+where we need to restrict them... instead use UI we have for this purpose or create one" — did
+not need a new component.** `CapabilityGate` (web) and its mobile counterpart already exist,
+already documented, already used by `/analytics`/`/automations`/`insights.tsx`/`billing.tsx` for
+precisely this shape ("hide, don't disable," Phase 15 §1's own rule, extended to the route level so
+a direct URL gets the same treatment as a hidden nav link). Every fix in this section reuses that
+existing mechanism rather than inventing a parallel one — the gap was that `/people` and
+`/settings` had never been wired into it, not that the mechanism was missing.
+
+**Test coverage split across the two things this session actually changed.** `standup.service
+.test.ts` gained a case granting a real project-level `viewer` tuple to a Guest (via
+`guestAccess.inviteGuestToProject`, the exact mechanism "Guest access into Work" itself shipped)
+and asserting `queryStandup`'s result contains only that Guest's own `userId`, with the owner's own
+call to the identical project still seeing both members — proving the narrowing is Guest-specific,
+not a regression for anyone else. A new `apps/api/src/tenancy/router.test.ts` — this router had no
+dedicated test file before — proves the `memberRoute` swap through the REAL route rather than the
+bare service function (which was never broken): a Guest with no tuples at all now gets a real
+answer from `tenancy.orgs.get`, capabilities correctly all `false`, where the route used to answer
+FORBIDDEN before `getOrg` ever ran; a second case proves an Owner's answer is unchanged. Every
+existing `toEqual` capability-object assertion in `tenancy.service.test.ts` (three of them, one per
+role already covered there) was updated with the two new fields — `viewDirectory`/`viewTeams` true
+for Owner and Admin (both hold `member:read`/`team:read` by role), and, notably, `viewDirectory:
+true`/`viewTeams: true` for a plain MEMBER too, since `MEMBER`'s own role list already includes
+both permissions directly — only Guest reads either one `false`.
+
+**Deliberately not touched: `GUEST`'s empty role list itself, and the matrix test that pins it at
+zero.** Adding `org:read` (or anything else) to `GUEST` directly was considered and rejected —
+`matrix.test.ts`'s own dedicated case, "gives the guest nothing from the role alone," is not
+incidental coverage, it is the stated design invariant this whole role exists to prove: "everything
+a guest can do must arrive as a tuple." `memberRoute` respects that invariant exactly — it grants
+no PERMISSION at all, only confirms membership, the same category `tenancy.orgs.list` (a
+`selfRoute`) already sits in for the identical "spans/precedes any org-scoped permission" reason.
+
+**Not verified in a live browser — this sandbox has no Docker, so no Postgres for the app or the
+new backend tests to run against**, the identical standing caveat every UI/backend pass in this
+session states. Verified by what a sandbox without one can prove: `tsc`, `eslint`, `prettier`, the
+guardrail selftest, `pnpm check:encoding`, and a real `vitest run` of `packages/policy`'s full
+330-case suite (unaffected, confirming the `memberRoute` swap touches no role×permission decision
+at all — only which route KIND a caller must pass through to reach a query that was never itself
+permission-gated). A person should invite a Guest to one project, open Standup as that Guest, open
+`/people` and `/settings` as that Guest, and confirm each renders correctly (a single own-row
+standup, a hidden People link, an empty-but-not-erroring Settings page) before calling this done.
+
+### A clickable "Reconnect" link on a dead-GitHub-token tool error (SHIPPED)
+
+`apps/web/src/features/ai/tool-results.tsx`'s `ErrorNote`/`DEAD_GITHUB_TOKEN_MARKER`. Prompted
+directly, from a live 401 hitting every PR tool in a real assistant transcript
+(`list_prs`/`get_pr_diff` all failing with "the connector token is invalid or was revoked").
+Investigating it found no code bug — `connectorFor`'s transparent refresh (migration 0109, this
+file's own section above) only ever applies to a token GitHub itself tracks an expiry for, and
+this deployment's connected OAuth App has no such tracking, so a token GitHub actually revoked
+answers 401 with no way for this codebase to see it coming or recover without a real reconnect.
+That diagnosis was given directly rather than assumed away — this file's own "verify before you
+claim a fix" habit applied to an incident report, not just to code — and the one real, actionable
+gap it left was UI: the error text already named the fix ("reconnect the repository (Settings →
+Automation)"), but as plain, unclickable text a person had to act on by memory and navigation.
+
+**Matched on the error MESSAGE text, not a structured error code, because every tool failure in
+this registry already IS a plain string by design.** `defineTool`'s own wrapper turns a thrown
+error into `{ content, isError: true }` — there is no error taxonomy for `ErrorNote` to switch on
+instead. `DEAD_GITHUB_TOKEN_MARKER` ('the connector token is invalid or was revoked') is the exact
+substring `pr-read.service.ts`/`pr-write.service.ts`/`branch.service.ts`/
+`integration-action.service.ts` all independently emit for a 401 — CLAUDE.md's own "a missing 401
+hint" section already establishes these four are worded identically on purpose, which is what
+makes one substring check reliable across every GitHub tool in the registry rather than needing a
+per-tool special case.
+
+**One change, one call site — `ErrorNote` is the function every renderer in this file already
+calls FIRST on `result.isError === true` (this file's own header: "every renderer below checks it
+FIRST"), so this reaches `list_prs`, `get_pr_diff`, `get_pr_files`, `get_pr_comments`,
+`get_pr_file_content`, `get_pr_file_diff`, `pr_post_comment`/`pr_request_changes`/`pr_merge`/
+`pr_close`/`pr_approve` (`prWriteRenderer`), `pr_comment_on_file`, `list_repos`,
+`create_branch_from_card`, and `card_link_pr`/`list_card_prs` without touching any of their own
+~20 call sites.** The link reuses `integrations-callback-page.tsx`'s own exact
+`<Link to="/automations" search={{ tab: 'integrations' }}>` shape — the real route the
+"Integrations" tab's Connect/reconnect flow already lives on, not a new page.
+
+**No dedicated test file, matching this file's own established gap for `tool-results.tsx`** — no
+renderer in this file has component-level coverage today (this file's own precedent, cited
+verbatim in an earlier section: "component-level tests only for files with no comparable precedent
+already accepting the same gap"). Verified with `tsc`, `eslint`, and `prettier`, all clean; a
+person should trigger a real GitHub 401 (or temporarily edit `DEAD_GITHUB_TOKEN_MARKER`'s check to
+force it) and confirm the "Reconnect the repository" link opens `/automations?tab=integrations`
+before calling this done.
+
+**Explicitly not attempted: making a dead OAuth-App token self-heal.** A personal (non-org-owned)
+GitHub OAuth App has no token-expiration setting exposed anywhere, on GitHub's own side, for this
+codebase's transparent-refresh mechanism to ever have something to refresh — that is a real,
+external limit stated directly to the person reporting this rather than papered over with a false
+promise of an automatic fix. This change closes the discoverability gap in RECOVERING from that
+limit, not the limit itself.
+
+### Phase 15 §7 — a caught GitHub fetch timeout, not Node's raw exception text (FIXED)
+
+`apps/api/src/automation/pr-read.service.ts`'s `githubFetch`. Found from a real transcript on this
+PR's own repo: `get_pr_diff` refused correctly with its 406 hint ("try get_pr_files for the file
+list"), the model followed that advice, and `get_pr_files` itself then failed with a bare
+`The operation was aborted due to timeout` — Node's own internal `DOMException` message, not
+anything this codebase wrote — leaving the model with nothing actionable to relay and no path
+left to try.
+
+**Every fetch in this file already had explicit, hint-bearing handling for every STATUS GitHub
+can answer with (`githubReadError`'s 401/403/404/406 hints) — and NONE of them ever caught a
+THROWN fetch error, only an unsuccessful RESPONSE.** `AbortSignal.timeout(TIMEOUT_MS)` firing is
+exactly a thrown error, not a response, so it skipped every hint this file had ever built and
+reached the model as raw Node/undici exception text — the identical class of gap this file's own
+"missing 401 hint" section already closed once for a different failure shape (a status code with
+no hint), just one layer earlier: a request that never got a response at all.
+
+**`githubFetch` is one small wrapper, used at all ten fetch call sites in this file, catching a
+thrown error and giving it the same actionable treatment `githubReadError` already gives every
+non-2xx status.** A `TimeoutError`-named `DOMException` — what `AbortSignal.timeout()` produces
+per the WHATWG spec Node's own `fetch` implements — gets its own specific hint ("this can happen
+on a large pull request... try again, or view it directly on GitHub"); any other thrown error
+(DNS failure, connection reset) gets a generic "could not reach GitHub" rather than whatever raw
+message the underlying transport happened to produce.
+
+**`TIMEOUT_MS` doubled from 10s to 20s in the same pass, not a separate decision — the same
+reasoning `packages/ai/src/timeout.ts`'s own 90-second `COMPLETION_TIMEOUT_MS` already states for
+a much larger number: a much tighter bound risks misclassifying a legitimately slow-but-working
+GitHub response (computing per-file stats across many changed files, on a genuinely large PR) as
+wedged.** This does not make the timeout unreachable — it makes it less likely to fire on exactly
+the case this report was about, while still bounding every call to something well short of the
+model's own 90-second per-completion budget it is nested inside.
+
+**`getPullRequestStatus`'s own "best-effort, not fatal" checks-rollup call is unaffected by this
+fix in the one way that matters: a thrown error on that call still aborts the whole status fetch,
+exactly as it did before.** Only a non-2xx RESPONSE degraded gracefully to `checksStatus: 'none'`
+before this change; a THROWN error on that same call was never caught either, so `githubFetch`
+changes what the resulting error SAYS, not whether the call still throws.
+
+**Regression-tested directly against the real failure shape, not a stand-in**:
+`pr-read.service.test.ts`'s new `getPullRequestFiles` case supplies a `fetchImpl` that throws the
+exact `DOMException('The operation was aborted due to timeout', 'TimeoutError')` a real
+`AbortSignal.timeout()` firing produces, and asserts the resulting error is `SERVICE_UNAVAILABLE`
+with a message naming the real recovery path — not the bare internal text the original report
+pasted verbatim.
+
+**Verified with `tsc`, `eslint`, `prettier`, the guardrail selftest, and `pnpm check:encoding`,
+all clean; the new DB-backed test case could not be run locally in this sandbox (no Docker/
+Postgres here, the same standing limitation every DB-backed suite in this session states) — CI is
+the real signal.** Scoped to `pr-read.service.ts` only, where the report happened — `pr-write.
+service.ts`, `branch.service.ts`, and `integration-action.service.ts` share the identical
+uncaught-thrown-fetch-error gap and are real, deliberately deferred follow-up work, not something
+this pass silently assumed fixed everywhere.
+
+### Two CI-only compile errors, unrelated to each other, both closed in one pass (FIXED)
+
+`packages/seed/src/modules/{authz.tuples,docs.spaces}.ts` · `packages/seed/src/docs.test.ts` ·
+`apps/mobile/src/lib/card-patch.test.ts`. Found from a real `turbo run typecheck` failure on this
+PR's own CI, in code neither of this session's own two immediately-preceding commits touched —
+root-caused and fixed directly rather than deferred, per this PR's own standing rule that a
+CI-red wake ends in a pushed fix or a documented reason it is not this PR's to fix.
+
+**`packages/seed`'s two `grantCreated` call sites were never updated when that event's own Zod
+schema gained a required `isGuest` field — "Guest access into Work" (this file's own section)
+threaded `isGuest` into `GrantInput` and `grantCreated`'s schema, and two hand-constructed event
+payloads elsewhere in the codebase were simply never revisited.** `authz.tuples.ts`'s random
+board-grant simulator has no guest concept at all, so it gets `isGuest: false` outright.
+`docs.spaces.ts`'s `buildGrants` needed a real fix, not a blanket `false`: its one `grant()`
+helper is shared between an ordinary demo tuple AND the deliberate "the guest, whose role grants
+nothing at all" illustration this file's own header already names as one of three shapes placed
+on purpose — and neither the emitted event NOR the actual `is_guest` database column was ever set
+for that one real guest tuple, silently relying on the column's own `false` default to look
+correct by coincidence. Fixed by threading an `isGuest` parameter through `grant()` (default
+`false`), widening the INSERT's own column list to include `is_guest`, and passing `true` at the
+one call site that is genuinely a guest. `docs.test.ts`'s existing "grants the guest exactly one
+page" case gained a direct assertion that the tuple is actually marked `is_guest: true` — the
+regression test for the real gap, not just the compile error.
+
+**`apps/mobile/src/lib/card-patch.test.ts`'s `CardDetail` fixture predates "Guest access into
+Work — hide edit/comment controls a relation can't use" (this file's own section) by a wide
+margin, and that feature widened `cards.get`'s `capabilities` object — a type `CardDetail`
+mirrors exactly, being a generated `Wire<...>` inference over the same router output, never
+hand-declared.** The fixture's own `capabilities: { moderateComments: false }` stopped
+satisfying that type the moment `comment`/`update`/`archive`/`manageProjectVocabulary` joined it,
+and nothing about this test (`mergePatch`'s own patch-forwarding logic) ever reads
+`capabilities` — the fixture only needs to type-check, not assert anything about the new fields,
+so the fix is the four missing booleans added as plain `true` literals.
+
+**Verified with a full `pnpm turbo run typecheck` and `pnpm turbo run lint` across all 24
+packages, `pnpm prettier --check .`, the guardrail selftest, and `pnpm check:encoding`, all
+clean — not just the two files each error named.** The `docs.test.ts`/`card-patch.test.ts` suites
+themselves also ran directly (`vitest run`, no database needed for either) and pass in full.
+
+### Four unrelated `@taskflow/api#test` failures, all real, all pre-existing (FIXED)
+
+`apps/api/src/tenancy/audit.projection.test.ts` · `apps/api/src/trpc/guardrails.test.ts` ·
+`apps/api/src/automation/pr-write.service.test.ts` · `apps/api/src/standup/standup.service.test.ts`.
+Found from the very next CI run — the one triggered by the seed/mobile compile-error fix two
+sections up — on `@taskflow/api#test`, the one Turbo task those two prior fixes never touched (both
+were pure compile errors; this run was the first time this session's own commits let the real,
+DB-backed API suite actually run to completion). All four are genuine, pre-existing gaps this PR's
+own earlier commits did not introduce — none touches `pr-read.service.ts`, `packages/seed`, or
+`apps/mobile` — fixed together per this PR's standing "never end a CI-red wake without a pushed fix
+or a documented reason" rule, since leaving any one of the four red would still fail the whole task.
+
+**Two are the identical "shipped code, no updated ledger entry" gap this file already documents
+twice for `aiAssistant`/`analytics` — surfacing here for the calendar-feed feature's own two new
+`selfRoute`s and its one new domain event, none of which had ever actually been run through this
+suite before this session's fixes let it reach that far.** `audit.projection.test.ts`'s own
+"accounts for every registered event" test failed with `expected ['user.calendar_feed_token_minted']
+to deeply equal []` — the event (`identity/events.ts`) was registered and already emitted by
+`calendar-feed.service.ts`, but the test's own `UNMAPPED` ledger, which every registered event must
+appear in exactly one of (`RESOURCE_OF`/`NEVER_AUDITED`/`UNMAPPED`), had never been told about it.
+Added alongside its closest siblings — `user.passkey_registered`/`user.totp_enrolled`/
+`user.oauth_linked` — with the identical reasoning: the fact names the account that minted its own
+token, already in `actor_id`, and a bearer token has no resource type of its own for `resource_id`
+to name instead. Separately, `guardrails.test.ts`'s "keeps passkey enrollment and management behind
+authentication" test — the one that pins the exact sorted list of every `selfRoute` path, so a route
+moving off `selfRoute` is a visible diff here rather than a silent widening — was missing
+`auth.calendarFeed.mint`/`auth.calendarFeed.status` entirely; added in their correct sorted position
+with the same step-up-vs-cheap-probe reasoning `identity/router.ts`'s own comment on those two
+routes already states.
+
+**A third is a genuine test-fixture bug in `pr-write.service.test.ts`'s `fakeGithub` helper, present
+since the commit that added `pr_comment_on_file` (`948533e`) — `bodies.push` tried to
+`JSON.parse` the request body of every fetch call unconditionally, including the OAuth code-exchange
+call `connectedGithub` runs first in every test to set up a connected repo.** That one call
+(`exchangeGithubCode` in `integration.service.ts`) sends `application/x-www-form-urlencoded` via
+`URLSearchParams` — GitHub's own token-endpoint contract, not JSON — so `JSON.parse('code=c&cli...')`
+threw `SyntaxError: Unexpected token 'c'...` on the very first line of every test that calls
+`connectedGithub`, which is nearly all of them. This had no chance to surface before this session:
+`bodies` was added in the same commit as the bug, and nothing in this PR's own commits had
+previously gotten far enough into a real `@taskflow/api#test` run to hit it. Fixed with a small
+`parseJsonBody` helper that returns `undefined` for a body that isn't valid JSON — the identical
+"record something at this index rather than crash" treatment the array already gives a bodyless
+`GET` — rather than skipping the push (which would desync `bodies`' parallel indexing against
+`calls`, silently breaking every existing assertion that reads `fake.bodies[postIndex]`).
+
+**The fourth is a real test-authoring gap in the newest case added to `standup.service.test.ts`
+("shows a project-invited guest only their own row, never a colleague's") — it assigns a card to
+`MEMBER` without ever adding `MEMBER` to the org first, unlike every earlier test in the same file
+that assigns a card to that same constant.** `cards.assignCard` refused with
+`VALIDATION_FAILED: assigneeIds — Not a member of this organization`, correctly — `MEMBER` really
+was not a member of that test's freshly-scaffolded org, since the test's own `members.addMember`
+call only ever added `GUEST`. Fixed by adding the identical `members.addMember(..., { role:
+'member' })` call every other test in this file already makes before assigning a card to `MEMBER`,
+placed before the existing guest-invite call so both members exist before either is used.
+
+**Verified with a full `pnpm turbo run typecheck` and `pnpm turbo run lint` across all 24 packages,
+`pnpm prettier --check .`, the guardrail selftest, and `pnpm check:encoding`, all clean.** The four
+DB-backed/fixture-dependent test files themselves could not be run locally in this sandbox (no
+Docker/Postgres here, the same standing limitation every DB-backed suite in this session states) —
+CI is the real signal, as with every other DB-backed fix in this session.
 
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
@@ -881,6 +5454,93 @@ changes nothing, which is exactly why it used to be a dead end. The recovery is 
 `orgId === null` so a board's dozen simultaneous failures act once. `OrgSwitcher` also renders
 with an empty list now: it used to return null, which hid the only route to `/orgs` from the one
 caller who needed it.
+
+**A SUSPENDED membership hit the identical silent-drop path a STALE selection does, and the two
+needed to be told apart — found from a real report, not a hypothesis.** `resolveOrgMembership`
+(`apps/api/src/tenancy/resolve.ts`) used to collapse "no such org", "never a member", "membership
+suspended", and "role unrecognized" into one NOT_A_MEMBER, on the reasoning that distinguishing
+them would let an outsider probe which orgs exist. That reasoning holds for the first two — a
+missing row, for any reason — and does NOT hold for a row that DOES exist: the query is always
+`WHERE user_id = <the caller's own id>`, so telling someone their OWN membership is suspended
+leaks nothing about anyone else's, only a fact they already know (they were once let into this
+org, or they would hold no stored selection naming it at all). `identity.memberships.status` is
+`'active' | 'suspended'` (migration 0004's own CHECK) and had been reachable in the schema since
+then with no code path ever reading the difference — a member whose row this codebase's own
+platform console (`org-detail.service.ts`'s `getUserDetail`) showed as `status: suspended` still
+got a bare "you are not a member," which `apps/web/src/lib/query.ts`'s `recoverFromLostOrg` then
+read as a stale selection and silently cleared, landing them on the picker with nothing on screen
+explaining why — exactly the confusing shape `orgSuspended`'s own header had already argued
+against for the ORG-level case, just never extended one level down to the membership row.
+
+**`MEMBERSHIP_SUSPENDED` is a new, distinct error code (`packages/contracts/src/errors.ts`),
+thrown by `resolveOrgMembership` only when a membership ROW EXISTS and its status is not
+`'active'` — a missing row still returns null, so "no such org" and "never a member" stay
+collapsed exactly as before.** `tenancy.orgs.list` (`org.service.ts`'s `listMyOrgs`) changed to
+match on the READ side: it used to filter to `status = 'active'`, which made a suspended
+membership indistinguishable from a stale selection naming an org the caller was never in — both
+simply vanished from the list. It now returns EVERY membership with a `membershipStatus` field per
+row, and the two UI surfaces that consume it decide what a non-active row means to show, rather
+than the query deciding by omission.
+
+**`OrgGate` (`apps/web/src/features/org/org-gate.tsx`) renders a direct explanation with a
+"Choose a different organization" button INSTEAD OF the router for a matched-but-suspended row,
+never the silent `selectOrg(null)` + redirect a genuinely missing row still gets.** The two cases
+look identical from `requireOrg`'s own perspective (both end with `orgId === null` and a bounce to
+`/orgs`) but are reached differently on purpose: a missing row has nothing true and useful to say
+beyond "that selection no longer means anything," which the redirect itself communicates by simply
+not finding the org on the picker; a suspended row has a real fact to state, so the gate states it
+BEFORE clearing anything, and only drops the selection on the person's own click. `OrgPickerPage`
+gained the identical fix independently for the same reason a stale-vs-suspended distinction needs
+to hold on BOTH surfaces: a suspended org used to simply not appear in the list at all (identical
+to never having existed); it now renders as a dashed, unclickable row labelled "Your membership is
+suspended," so someone who navigates to `/orgs` directly — not just someone bounced there by the
+gate — sees the same explanation. `apps/mobile` got the equivalent fix in `app/(app)/_layout.tsx`
+(filtering to `membershipStatus === 'active'` before resolving a remembered selection — a widened
+server contract that would otherwise have let a suspended org be silently auto-selected, a
+regression this pass caught and closed rather than shipped) and `app/org-picker.tsx` (the identical
+dashed, unpressable row `OrgPickerPage` renders on web).
+
+**As of this pass, nothing in the product actually WRITES `identity.memberships.status =
+'suspended'`** — a full search of `apps/api/src` found no service function setting it; `removeMember`
+deletes the row outright rather than suspending it, and Phase 15 §8's onboarding/offboarding
+actions revoke sessions and grants, never touch this column. The column and its CHECK constraint
+have existed since migration 0004 with no writer ever built for them. This pass fixes how the
+system BEHAVES when the value is `'suspended'` — found reachable by direct inspection, not by any
+in-product flow — without adding a way to reach it; a "suspend one member" admin action is real,
+separate, unrequested work.
+
+**A follow-up report clarified the original bug was about the ORG being suspended, not the
+membership — a DIFFERENT column this pass had left completely unsurfaced.** `resolveOrgMembership`
+has thrown a distinct `ORG_SUSPENDED` for `identity.orgs.status = 'suspended'` since Phase 12 Wave
+1's org directory shipped, long before this session — but `tenancy.orgs.list` never reported the
+org's own status at all, only the caller's membership status, so neither `OrgGate` nor the picker
+had anything to check. An org an operator suspended from the platform console still showed as a
+perfectly ordinary, clickable row; choosing it passed `OrgGate` cleanly (the caller's own
+membership was still `'active'`), and the FIRST org-scoped query on the next screen threw
+`ORG_SUSPENDED` into a query-error path built for nothing in particular — the exact "redirects
+back to the org list with no explanation" complaint the membership fix had already been built to
+prevent, just for the sibling case nobody had extended it to.
+
+**`OrgSummary`/`listMyOrgs` (`org.service.ts`) gained a second field, `orgStatus`, read alongside
+`membershipStatus` rather than folded into it — they answer different questions and a caller of
+either surface needs to tell them apart.** `'deleted'` is filtered OUT of the query rather than
+reported, mirroring `resolveOrgMembership`'s own privacy answer for that status (collapsing to "as
+if never a member") — real cascading org deletion (Phase 12 Wave 2) should make this unreachable
+in practice, but the filter keeps the two functions' answer identical rather than letting them
+accidentally diverge if that ever changes. `orgs.list`'s output schema widened to match.
+
+**`OrgGate` and `OrgPickerPage` both now check `orgStatus` FIRST, before `membershipStatus`** — an
+org suspension is the bigger fact (it refuses every member, not just the caller), so if a row
+somehow carries both at once, the org-level explanation ("This organization has been suspended" /
+suspended by a platform administrator) is the one shown, not the personal one ("Your membership is
+suspended"). `apps/mobile` got the identical two fixes: `(app)/_layout.tsx`'s remembered-org
+resolution now filters on `orgStatus === 'active'` alongside `membershipStatus === 'active'` before
+ever auto-selecting a stored id — without it, a suspended org's id, remembered from before an
+operator acted, would auto-select straight past the picker and land the caller on guarded screens
+where every query would throw `ORG_SUSPENDED` with nothing to catch it, the identical regression
+class the membership-status filter was added to prevent one paragraph earlier in this file, just
+for the column nobody had thought to filter on yet. `org-picker.tsx` renders the same
+distinguishing row text as web's picker.
 
 **The access token is in memory and the refresh is single-flight.** `localStorage` survives the
 tab and is readable by any script, so one XSS is a token an attacker keeps; a module variable
@@ -1151,8 +5811,9 @@ disable the rule.
 and claim/write/mark are one transaction, which makes the audit projection exactly-once. Later
 consumers get at-least-once and must be idempotent.
 
-Deferred deliberately: email invitations (`members.add` requires an existing account), and the
-permission debug **page** — the `tenancy.authz.explain` endpoint ships now, its UI with `apps/web`.
+Deferred deliberately: email invitations (`members.add` requires an existing account — _shipped
+later, see "Email invitations" below_), and the permission debug **page** — the
+`tenancy.authz.explain` endpoint ships now, its UI with `apps/web`.
 
 ### Phase 1 — identity
 

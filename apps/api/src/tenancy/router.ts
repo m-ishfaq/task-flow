@@ -1,12 +1,16 @@
 import { z } from 'zod';
-import { OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
-import { route, router, selfRoute } from '../trpc/builder.js';
+import { InvitationIdSchema, OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
+import { memberRoute, publicRoute, route, router, selfRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import type { Actor } from './org.service.js';
 import * as orgs from './org.service.js';
 import * as members from './member.service.js';
+import * as invitations from './invitation.service.js';
+import type { InvitationServiceDeps } from './invitation.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
+import * as memberGrants from './member-grant.service.js';
+import * as roleDefaultGrants from './role-default-grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 
@@ -40,6 +44,14 @@ const Role = z.enum(['owner', 'admin', 'member', 'guest']);
 export interface TenancyRouterDeps {
   /** Phase 12 Wave 3 §3.4 — how long a newly created org's trial runs. */
   readonly trialDays: number;
+  /**
+   * Where invitation email goes. Optional, the same shape `billing.mail` and
+   * `platformAdmin`'s reuse of it already establish: without a queue,
+   * invitations still WRITE (the row, the token, the event) but nothing is
+   * sent — a test or a mailer-less instance gets a working invitation record
+   * with no delivery, rather than a crash.
+   */
+  readonly invitationMail?: InvitationServiceDeps['mail'];
 }
 
 export function createTenancyRouter(deps: TenancyRouterDeps) {
@@ -72,13 +84,43 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 name: z.string(),
                 slug: z.string(),
                 role: z.string(),
+                membershipStatus: z.string(),
+                orgStatus: z.string(),
               }),
             )
             .readonly(),
         )
         .query(({ ctx }) => orgs.listMyOrgs(ctx.principal.userId)),
 
-      get: route({ permission: 'org:read' })
+      /* `memberRoute`, not `route({ permission: 'org:read' })` — found from a
+         real report: `org:read` is `ORG_LEVEL_PERMISSIONS`, and `GUEST`
+         holds nothing by role at all (`packages/policy/src/roles.ts`'s own
+         empty list, and the matrix test's explicit "gives the guest nothing
+         from the role alone" — everything a Guest can do must arrive as a
+         tuple). An org-level permission has no per-resource layer for a
+         tuple to satisfy, so a Guest could never call this route, ever,
+         under any grant — and `sidebar.tsx`, `capability-gate.tsx`, and
+         every settings section on both platforms call this route to learn
+         which UI to show, so a Guest's session left it permanently erroring
+         in the background the moment the org shell rendered.
+
+         This is the identical shape `memberRoute`'s own doc comment already
+         names for `platform.notifications`: the data is genuinely per-org,
+         but no single `Permission` describes "read your own org's name and
+         your own resolved capabilities" — every role, Guest included, needs
+         this to render correctly, the same way every role needs to read its
+         own notifications regardless of which product they came from.
+         `getOrg()` itself never checked `can(subject, 'org:read')`
+         internally — the route's `couldGrant` floor was the ONLY thing this
+         permission ever gated, and every `capabilities` field is still
+         computed through its own real `can()` check per permission, so
+         nothing about what a Guest may actually DO changed — only whether
+         they can learn their own answers to "may I do X" without a request
+         that always failed first. */
+      get: memberRoute({
+        memberReason:
+          "Reading your own org's name/slug and your own resolved capabilities — every role, Guest included, needs this to render its own UI correctly.",
+      })
         .output(
           z.object({
             orgId: z.string(),
@@ -93,9 +135,31 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 updateOrg: z.boolean(),
                 inviteMember: z.boolean(),
                 manageMembers: z.boolean(),
+                viewDirectory: z.boolean(),
                 removeMembers: z.boolean(),
                 manageTeams: z.boolean(),
+                viewTeams: z.boolean(),
                 createProject: z.boolean(),
+                viewAnalytics: z.boolean(),
+                viewAuditLog: z.boolean(),
+                readPhoneNumbers: z.boolean(),
+                placeCalls: z.boolean(),
+                readCalls: z.boolean(),
+                sendSms: z.boolean(),
+                readSms: z.boolean(),
+                manageAutomations: z.boolean(),
+                manageWebhooks: z.boolean(),
+                manageIntegrations: z.boolean(),
+                createApiTokens: z.boolean(),
+                revokeApiTokens: z.boolean(),
+                viewBilling: z.boolean(),
+                purchaseNumbers: z.boolean(),
+                releaseNumbers: z.boolean(),
+                manageSavedSearches: z.boolean(),
+                readRecordings: z.boolean(),
+                createSpace: z.boolean(),
+                useAi: z.boolean(),
+                createBranches: z.boolean(),
               })
               .strict(),
           }),
@@ -155,6 +219,22 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         ),
 
       /**
+       * Flags a member as leaving, distinct from `remove` above (§8 of
+       * ai/phase-15-ai-copilot-and-permissions.md). Writes nothing to the
+       * membership — it exists to give an org's `member.offboarding_started`
+       * automation rules something to run against (session revocation, card
+       * reassignment, grant cleanup) before the person is actually removed.
+       * No step-up: unlike `remove` and `transferOwnership`, nothing here is
+       * destructive or hard to undo.
+       */
+      startOffboarding: route({ permission: 'member:remove' })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ started: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          members.startOffboarding(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
        * The single, atomic ownership handoff (Phase 12 Wave 1, §3.5).
        *
        * `member:manage` is Owner-only in the role matrix, so this route is
@@ -170,6 +250,92 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .mutation(({ input, ctx }) =>
           members.transferOwnership(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
+    }),
+
+    /**
+     * Email invitations (migration 0107) — the door `members.add` was never
+     * built to cover: an address with no TaskFlow account yet. See
+     * `invitation.service.ts`'s own header for why this is a second flow
+     * rather than a change to `add`'s existing, instant, known-account-only
+     * contract.
+     */
+    invitations: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                invitationId: z.string(),
+                email: z.string(),
+                role: z.string(),
+                invitedBy: z.string().nullable(),
+                createdAt: z.date(),
+                expiresAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => invitations.listInvitations(ctx.principal.org.orgId)),
+
+      /**
+       * Same permission `members.add` already uses. Resending an existing
+       * pending invitation goes through this identical route — see
+       * `createInvitation`'s own header on why a resend rotates the row
+       * rather than creating a second one.
+       */
+      send: route({ permission: 'member:invite' })
+        .input(z.object({ email: z.string().trim().email().max(254), role: Role }).strict())
+        .output(z.object({ status: z.literal('invited') }))
+        .mutation(({ input, ctx }) =>
+          invitations.createInvitation(ctx.principal.org.orgId, input, actorOf(ctx), {
+            mail: deps.invitationMail,
+          }),
+        ),
+
+      revoke: route({ permission: 'member:invite' })
+        .input(z.object({ invitationId: InvitationIdSchema }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          invitations.revokeInvitation(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
+       * `publicRoute` — no session, the token itself is the proof, same
+       * trust model as `auth.verifyEmail`. Lets `/login`, `/register` and
+       * `/invite/accept` say "You're invited to join {orgName}" and
+       * pre-fill the invited address BEFORE anyone signs in, closing the
+       * onboarding gap for someone with no account yet: see
+       * `previewInvitation`'s own header.
+       */
+      preview: publicRoute({
+        publicReason:
+          "Read from the invite link itself, before any session exists — the token is the proof, the same reason auth.verifyEmail is public. Reveals only what the invited address's own inbox already received.",
+      })
+        .input(z.object({ token: z.string().min(1).max(200) }).strict())
+        .output(z.object({ orgName: z.string(), email: z.string(), role: z.string() }))
+        .query(({ input }) => invitations.previewInvitation(input)),
+
+      /**
+       * `selfRoute`, like `orgs.create`/`orgs.list` above and for the
+       * identical reason: the caller is, by definition, not yet a member of
+       * the org the token names, so no org permission can describe this —
+       * `acceptInvitation` itself resolves which org from the token and
+       * checks the invitation is addressed to the caller's own account.
+       */
+      accept: selfRoute({
+        selfReason:
+          'Redeeming an invitation cannot require membership of the org it grants — the whole point is that the caller is not yet a member. acceptInvitation resolves the org from the token itself and verifies it was addressed to the authenticated caller.',
+      })
+        .input(z.object({ token: z.string().min(1).max(200) }).strict())
+        .output(
+          z.object({
+            orgId: z.string(),
+            orgName: z.string(),
+            role: z.string(),
+            alreadyMember: z.boolean(),
+          }),
+        )
+        .mutation(({ input, ctx }) => invitations.acceptInvitation(actorOf(ctx), input)),
     }),
 
     teams: router({
@@ -260,6 +426,96 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .input(z.object({ tupleId: z.string().uuid() }).strict())
         .output(z.object({ revoked: z.literal(true) }))
         .mutation(({ input, ctx }) => grants.revoke(ctx.principal.org.orgId, input, actorOf(ctx))),
+    }),
+
+    /**
+     * Individual, org-level permission grants (§1 of
+     * ai/phase-15-ai-copilot-and-permissions.md) — distinct from `grants`
+     * above, which writes relationship TUPLES on a specific resource. There
+     * is no resource here: this is "give this one person `call:place`
+     * org-wide", which is exactly the shape `grants` cannot express.
+     */
+    memberGrants: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                grantId: z.string(),
+                userId: z.string(),
+                permission: z.string(),
+                grantedBy: z.string().nullable(),
+                grantedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => memberGrants.listGrants(ctx.principal.org.orgId)),
+
+      /**
+       * Step-up authenticated, same as `changeRole` and the tuple `grant`
+       * route above — this changes what a specific person may do, which is
+       * exactly what an attacker with a stolen session reaches for first.
+       */
+      grant: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ userId: UserIdSchema, permission: z.string().max(60) }).strict())
+        .output(z.object({ grantId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          memberGrants.grant(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      revoke: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ userId: UserIdSchema, permission: z.string().max(60) }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          memberGrants.revoke(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+    }),
+
+    /**
+     * Role default grants (Phase 15 §8 checklist item 3) — one org's
+     * configuration of which individually-grantable permissions a role
+     * gets automatically, applied by the `member_grant.apply_role_defaults`
+     * automation action rather than by anything here. This is CONFIG, not
+     * itself a capability grant — see `role-default-grant.service.ts`'s own
+     * header for why it is a third mechanism rather than `memberGrants`
+     * reused with no membership.
+     */
+    roleDefaultGrants: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                grantId: z.string(),
+                role: z.string(),
+                permission: z.string(),
+                createdBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => roleDefaultGrants.list(ctx.principal.org.orgId)),
+
+      /**
+       * Step-up, same as `memberGrants.grant` above — a role's default
+       * bundle applies to every FUTURE member of that role, so the blast
+       * radius of a mistake here is broader than one individual grant.
+       */
+      set: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ role: z.string().max(30), permission: z.string().max(60) }).strict())
+        .output(z.object({ grantId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          roleDefaultGrants.set(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      remove: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ role: z.string().max(30), permission: z.string().max(60) }).strict())
+        .output(z.object({ removed: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          roleDefaultGrants.remove(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
     }),
 
     authz: router({

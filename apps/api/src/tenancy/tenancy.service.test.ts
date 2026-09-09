@@ -15,10 +15,12 @@ import * as orgs from './org.service.js';
 import * as members from './member.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
+import * as memberGrants from './member-grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 import { drainOutboxFully } from './audit.projection.js';
-import { loadTuples, resolveOrgMembership } from './resolve.js';
+import { loadMemberGrants, loadTuples, resolveOrgMembership } from './resolve.js';
+import { can } from '@taskflow/policy';
 
 /**
  * The tenancy slice, end to end, against real Postgres (`docker compose up -d`).
@@ -72,6 +74,7 @@ async function removeOrg(orgId: string): Promise<void> {
   await admin.query(`DELETE FROM audit.chain_heads WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM authz.member_grants WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.team_members WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.teams WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
@@ -196,28 +199,84 @@ describe('settings capabilities', () => {
       updateOrg: true,
       inviteMember: true,
       manageMembers: true,
+      viewDirectory: true,
       removeMembers: true,
       manageTeams: true,
+      viewTeams: true,
       createProject: true,
+      viewAnalytics: true,
+      viewAuditLog: true,
+      readPhoneNumbers: true,
+      placeCalls: true,
+      readCalls: true,
+      sendSms: true,
+      readSms: true,
+      manageAutomations: true,
+      manageWebhooks: true,
+      manageIntegrations: true,
+      createApiTokens: true,
+      revokeApiTokens: true,
+      viewBilling: true,
+      purchaseNumbers: true,
+      releaseNumbers: true,
+      manageSavedSearches: true,
+      readRecordings: true,
+      createSpace: true,
+      useAi: true,
+      createBranches: true,
     });
 
-    // A plain Member holds none of the six — card:create and friends do not
-    // touch org, member, team, or project administration at all.
+    // A plain Member holds none of these — card:create and friends do not
+    // touch org, member, team, project, analytics, automation, billing, or
+    // audit administration at all, and (Phase 15 §1) the telephony five and
+    // (Wave 2) the five automation permissions are no longer role defaults
+    // either: this Member has no `authz.member_grants` row, so all ten read
+    // false too. `viewDirectory`/`viewTeams` are the two exceptions: a
+    // Member holds `member:read`/`team:read` directly by role
+    // (`packages/policy/src/roles.ts`'s `MEMBER` array), the same
+    // permissions that gate `/people` and the Settings page's members/team
+    // lists — only Guest, whose role grants nothing at all, reads either
+    // one false too.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
       manageMembers: false,
+      viewDirectory: true,
       removeMembers: false,
       manageTeams: false,
+      viewTeams: true,
       createProject: false,
+      viewAnalytics: false,
+      viewAuditLog: false,
+      readPhoneNumbers: false,
+      placeCalls: false,
+      readCalls: false,
+      sendSms: false,
+      readSms: false,
+      manageAutomations: false,
+      manageWebhooks: false,
+      manageIntegrations: false,
+      createApiTokens: false,
+      revokeApiTokens: false,
+      viewBilling: false,
+      purchaseNumbers: false,
+      releaseNumbers: false,
+      manageSavedSearches: false,
+      readRecordings: false,
+      createSpace: false,
+      useAi: false,
+      createBranches: false,
     });
   });
 
   it('gives an Admin invite/team capabilities but not the Owner-only ones', async () => {
     /* The role matrix's own asymmetry (packages/policy/src/roles.ts): Admin
-       gets member:invite and team:manage, but org:update, member:manage, and
-       member:remove stay Owner-only. A capabilities object that collapsed
-       these into one "isAdmin" flag would be wrong for exactly this role. */
+       gets member:invite and team:manage, but org:update, member:manage,
+       member:remove, org:billing, and phoneNumber:purchase/release stay
+       Owner-only — Admin holds phoneNumber:read (below) but not the two
+       that spend money or give a number up. A capabilities object that
+       collapsed these into one "isAdmin" flag would be wrong for exactly
+       this role. */
     const orgId = await newOrg('capabilities-two');
     await members.addMember(
       orgId,
@@ -232,10 +291,67 @@ describe('settings capabilities', () => {
       updateOrg: false,
       inviteMember: true,
       manageMembers: false,
+      viewDirectory: true,
       removeMembers: false,
       manageTeams: true,
+      viewTeams: true,
       createProject: true,
+      viewAnalytics: true,
+      viewAuditLog: true,
+      readPhoneNumbers: true,
+      placeCalls: true,
+      readCalls: true,
+      sendSms: true,
+      readSms: true,
+      manageAutomations: true,
+      manageWebhooks: true,
+      manageIntegrations: true,
+      createApiTokens: true,
+      revokeApiTokens: true,
+      viewBilling: false,
+      purchaseNumbers: false,
+      releaseNumbers: false,
+      manageSavedSearches: true,
+      readRecordings: true,
+      createSpace: true,
+      useAi: true,
+      createBranches: true,
     });
+  });
+
+  it('reflects an individual automation grant, and only that one permission', async () => {
+    /* Wave 2 (ai/phase-15-ai-copilot-and-permissions.md §1): a Member can
+       now be granted one of the four automation permissions individually,
+       the same mechanism telephony already used. `getOrg`'s capabilities
+       must show EXACTLY the one granted, not "has automation access" as a
+       single flag — someone with only webhook:manage still cannot build
+       rules or connect an integration. */
+    const orgId = await newOrg('capabilities-automation-grant');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'webhook:manage' },
+      actorOf(OWNER),
+    );
+
+    const memberSubject: Subject = {
+      orgId,
+      userId: COLLEAGUE,
+      role: 'member',
+      tuples: [],
+      memberGrants: ['webhook:manage'],
+    };
+    const result = await orgs.getOrg(orgId, memberSubject);
+
+    expect(result.capabilities.manageWebhooks).toBe(true);
+    expect(result.capabilities.manageAutomations).toBe(false);
+    expect(result.capabilities.manageIntegrations).toBe(false);
+    expect(result.capabilities.createApiTokens).toBe(false);
+    expect(result.capabilities.revokeApiTokens).toBe(false);
   });
 });
 
@@ -247,11 +363,65 @@ describe('the org switcher', () => {
 
     const mine = await orgs.listMyOrgs(OWNER);
     expect(mine.map((org) => org.orgId).sort()).toEqual([first, second].sort());
+    expect(mine.every((org) => org.membershipStatus === 'active')).toBe(true);
   });
 
   it('shows nothing to someone who belongs to no org', async () => {
     await newOrg('switch-three');
     expect(await orgs.listMyOrgs(OUTSIDER)).toEqual([]);
+  });
+
+  /* The read half of the fix `resolveOrgMembership`'s own suspension test
+     proves for the write side: a suspended row must still be REPORTED here,
+     not filtered out, or the caller (OrgGate, the picker) has no way to tell
+     "you have no access here any more" apart from "you were never here" —
+     see org.service.ts's own header on `listMyOrgs`. */
+  it('reports a suspended membership rather than omitting it', async () => {
+    const orgId = await newOrg('switch-suspended');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE identity.memberships SET status = 'suspended' WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+
+    const mine = await orgs.listMyOrgs(COLLEAGUE);
+    expect(mine).toEqual([expect.objectContaining({ orgId, membershipStatus: 'suspended' })]);
+  });
+
+  /* The identical gap one level up: `resolveOrgMembership` has answered a
+     suspended ORG with a distinct `ORG_SUSPENDED` since before this field
+     existed, but with no `orgStatus` reported here, neither the picker nor
+     `OrgGate` had anything to check — a suspended org read as an ordinary
+     one right up until the first org-scoped query after choosing it threw
+     an error nothing on either surface was built to catch. */
+  it("reports the org's own suspension, distinct from the membership's", async () => {
+    const orgId = await newOrg('switch-org-suspended');
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'suspended' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    const mine = await orgs.listMyOrgs(OWNER);
+    expect(mine).toEqual([
+      expect.objectContaining({ orgId, membershipStatus: 'active', orgStatus: 'suspended' }),
+    ]);
+  });
+
+  it('omits a deleted org entirely, the same privacy answer resolveOrgMembership gives', async () => {
+    const orgId = await newOrg('switch-org-deleted');
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'deleted' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    expect(await orgs.listMyOrgs(OWNER)).toEqual([]);
   });
 });
 
@@ -387,6 +557,49 @@ describe('membership management', () => {
 
     await members.removeMember(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
     expect(await loadTuples(orgId, COLLEAGUE)).toHaveLength(0);
+  });
+
+  describe('startOffboarding (ai/phase-15-ai-copilot-and-permissions.md §8)', () => {
+    it('writes an event and nothing else — the membership is untouched', async () => {
+      const orgId = await newOrg('offboarding-one');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'member' },
+        actorOf(OWNER),
+      );
+
+      const result = await members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
+      expect(result).toEqual({ started: true });
+
+      // Still an ordinary, active member — only `removeMember` ends that.
+      const roster = await members.listMembers(orgId);
+      expect(roster.find((member) => member.userId === COLLEAGUE)?.status).toBe('active');
+
+      await drainOutboxFully();
+      const entries = await audit.listAuditEntries(orgId, { limit: 50, before: null });
+      expect(entries[0]).toMatchObject({ action: 'member.offboarding_started' });
+    });
+
+    it('can be called more than once — there is no state here a second call could corrupt', async () => {
+      const orgId = await newOrg('offboarding-two');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'member' },
+        actorOf(OWNER),
+      );
+
+      await members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
+      await expect(
+        members.startOffboarding(orgId, { userId: COLLEAGUE }, actorOf(OWNER)),
+      ).resolves.toEqual({ started: true });
+    });
+
+    it('404s for someone who was never a member here', async () => {
+      const orgId = await newOrg('offboarding-three');
+      await expect(
+        members.startOffboarding(orgId, { userId: OUTSIDER }, actorOf(OWNER)),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
   });
 });
 
@@ -766,6 +979,39 @@ describe('suspension enforcement', () => {
 
     expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
   });
+
+  /* The report this pass fixes: a member whose OWN row was suspended got a
+     bare NOT_A_MEMBER, indistinguishable from having never joined at all —
+     `resolveOrgMembership`'s own header has the full story. Mirrors the
+     org-suspension suite above exactly, one level down: the row, not the
+     org, is what changed. */
+  it('refuses a suspended MEMBERSHIP with a distinct code, never NOT_A_MEMBER', async () => {
+    const orgId = await newOrg('membership-suspend-enforce');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE identity.memberships SET status = 'suspended' WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+
+    await expect(resolveOrgMembership(COLLEAGUE, orgId)).rejects.toMatchObject({
+      code: 'MEMBERSHIP_SUSPENDED',
+    });
+    // The OWNER's own, still-active row is untouched by the colleague's
+    // suspension — this is a per-row fact, never an org-wide one.
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+  });
+
+  it('still returns null for a row that never existed at all, not the suspended code', async () => {
+    const orgId = await newOrg('membership-never-existed');
+    expect(await resolveOrgMembership(OUTSIDER, orgId)).toBeNull();
+  });
 });
 
 describe('billing enforcement (Phase 12 Wave 3 §3.2, superseded by Wave 4)', () => {
@@ -929,5 +1175,232 @@ describe('ownership transfer', () => {
     expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
     expect((await resolveOrgMembership(OUTSIDER, orgId))?.role).toBe('owner');
     expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('admin');
+  });
+});
+
+describe('member grants (ai/phase-15-ai-copilot-and-permissions.md §1)', () => {
+  it('gives a Guest an org-level permission their role alone denies, and the full stack agrees', async () => {
+    /* The end-to-end property: a service write is visible to
+       resolveOrgMembership's read, which is what subjectOf feeds the policy
+       engine — not just that the row exists, but that `can()` on the real
+       decision path changes its answer because of it. */
+    const orgId = await newOrg('member-grant-one');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    const before = await resolveOrgMembership(COLLEAGUE, orgId);
+    expect(before?.memberGrants).toEqual([]);
+    expect(can({ ...before!, userId: COLLEAGUE }, 'call:place').allowed).toBe(false);
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    const after = await resolveOrgMembership(COLLEAGUE, orgId);
+    expect(after?.memberGrants).toEqual(['call:place']);
+    expect(can({ ...after!, userId: COLLEAGUE }, 'call:place').allowed).toBe(true);
+    // A grant for one permission does not leak to a neighbouring one.
+    expect(can({ ...after!, userId: COLLEAGUE }, 'sms:send').allowed).toBe(false);
+  });
+
+  it('revoking sets revoked_at rather than deleting the row, and the loader stops returning it immediately', async () => {
+    const orgId = await newOrg('member-grant-two');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+    await admin.setOrg(orgId);
+    const membershipRows = await admin.query(
+      `SELECT id FROM identity.memberships WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+    const membershipId = (membershipRows.rows[0] as { id: string } | undefined)?.id;
+    if (membershipId === undefined) throw new Error('membership not found');
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    expect(await loadMemberGrants(orgId, membershipId)).toEqual(['call:place']);
+
+    await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    expect(await loadMemberGrants(orgId, membershipId)).toEqual([]);
+
+    // The row is still there, marked revoked — history, not deletion.
+    await admin.setOrg(orgId);
+    const rows = await admin.query(
+      `SELECT revoked_at FROM authz.member_grants WHERE membership_id = $1 AND permission = $2`,
+      [membershipId, 'call:place'],
+    );
+    await admin.setOrg(null);
+    const revokedRows = rows.rows as { revoked_at: Date | null }[];
+    expect(revokedRows).toHaveLength(1);
+    expect(revokedRows[0]?.revoked_at).not.toBeNull();
+  });
+
+  it('is idempotent, so granting something already granted returns the same row', async () => {
+    const orgId = await newOrg('member-grant-three');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    const first = await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    const second = await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    expect(second.grantId).toBe(first.grantId);
+  });
+
+  it('is idempotent on revoke too, so revoking an already-revoked grant no-ops rather than 404ing', async () => {
+    // The property `permissions.tsx` (mobile) and `settings-page.tsx`'s bulk
+    // revoke sheet (web) both depend on: a batch that retries the WHOLE
+    // remaining selection after a step-up interruption must not fail on a
+    // pair it already revoked earlier in the same batch.
+    const orgId = await newOrg('member-grant-revoke-idempotent');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    const first = await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    const second = await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    expect(first.revoked).toBe(true);
+    expect(second.revoked).toBe(true);
+
+    // Never-granted-at-all takes the identical no-op path.
+    await expect(
+      memberGrants.revoke(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER)),
+    ).resolves.toEqual({ revoked: true });
+
+    // A missing MEMBERSHIP is still a real 404 — that is not the same
+    // failure as "already revoked".
+    await expect(
+      memberGrants.revoke(orgId, { userId: OUTSIDER, permission: 'call:place' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses a permission that is not on the eligible list, even a real one', async () => {
+    // `org:update` is a real permission in the catalog — the refusal is
+    // `isGrantable`, not `isPermission`, and a caller must not be able to
+    // hand out ownership-adjacent capability through this door.
+    const orgId = await newOrg('member-grant-four');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await expect(
+      memberGrants.grant(orgId, { userId: COLLEAGUE, permission: 'org:update' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('refuses a grant to someone outside the organization', async () => {
+    const orgId = await newOrg('member-grant-five');
+    await expect(
+      memberGrants.grant(orgId, { userId: OUTSIDER, permission: 'call:place' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('lists every active grant in the org, and only the active ones', async () => {
+    const orgId = await newOrg('member-grant-six');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER));
+    await memberGrants.revoke(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER));
+
+    const list = await memberGrants.listGrants(orgId);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ userId: COLLEAGUE, permission: 'call:place' });
+  });
+
+  describe('revokeAll (offboarding automation, §8)', () => {
+    it('revokes every active grant a member holds, and reports which', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-one');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'guest' },
+        actorOf(OWNER),
+      );
+      await memberGrants.grant(
+        orgId,
+        { userId: COLLEAGUE, permission: 'call:place' },
+        actorOf(OWNER),
+      );
+      await memberGrants.grant(
+        orgId,
+        { userId: COLLEAGUE, permission: 'sms:send' },
+        actorOf(OWNER),
+      );
+
+      const result = await memberGrants.revokeAll(orgId, COLLEAGUE, actorOf(OWNER));
+      expect([...result.revoked].sort()).toEqual(['call:place', 'sms:send']);
+      expect(await memberGrants.listGrants(orgId)).toEqual([]);
+    });
+
+    it('is a no-op, not an error, for a member holding zero grants', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-two');
+      await members.addMember(
+        orgId,
+        { email: 'colleague@tenancy.test', role: 'guest' },
+        actorOf(OWNER),
+      );
+
+      await expect(memberGrants.revokeAll(orgId, COLLEAGUE, actorOf(OWNER))).resolves.toEqual({
+        revoked: [],
+      });
+    });
+
+    it('404s for someone outside the organization', async () => {
+      const orgId = await newOrg('member-grant-revoke-all-three');
+      await expect(memberGrants.revokeAll(orgId, OUTSIDER, actorOf(OWNER))).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
   });
 });

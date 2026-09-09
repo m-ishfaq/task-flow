@@ -25,22 +25,34 @@ import {
   updateMembershipProfile,
   type DirectoryDetail,
 } from './api.js';
+import { orgDetailQuery } from '../org/api.js';
 
 /**
  * One person in the org (Phase 11.5 Wave 2, ai/phase-11.5-people.md §3.6).
  *
  * The org chart: who they report to, who reports to them, plus the org-scoped
  * facts (job title, department, out-of-office state as the directory shows
- * it). Edit affordances for ANOTHER member's membership facts are shown and
- * the server answers (§8.2 — the UI never re-derives authorization): a caller
- * without `member:manage` gets an honest FORBIDDEN toast and the row stays as
- * it was. Self-service on one's OWN job title happens on `/account` through
+ * it). Self-service on one's OWN job title happens on `/account` through
  * `people.profile.update`, which is why this page hides the edit controls for
  * yourself — editing yourself here would be a second, redundant path.
+ *
+ * A caller without `capabilities.manageMembers` gets `PersonFactsSummary`
+ * instead of `AdminSection` for another member's job facts and reporting
+ * line — the same fields, presented read-only rather than as input fields
+ * with a Save button that would answer FORBIDDEN. This is a narrower fix
+ * than the "hide entirely" pattern used elsewhere in Phase 15 §1's sweep:
+ * job title/department/work phone/manager are not privileged the way
+ * billing figures or another member's individual permission grants are —
+ * job title and department are already visible as badges in the "Job"
+ * section above, and the manager is already reachable via the "Reports to"
+ * card, so nothing new is disclosed by also presenting them here, just
+ * without edit controls a plain Member could never use anyway.
  */
 export function PersonPage({ userId }: { readonly userId: string }) {
   const orgId = useSession((state) => state.orgId) ?? '';
   const me = useSession((state) => state.userId);
+  const canManageMembers =
+    useQuery(orgDetailQuery(orgId)).data?.capabilities.manageMembers === true;
 
   const detail = useQuery(directoryMemberQuery(orgId, userId));
 
@@ -96,9 +108,10 @@ export function PersonPage({ userId }: { readonly userId: string }) {
               <>
                 <span className="font-mono text-xs text-ink-muted">{member.workPhone}</span>
                 {/* Click-to-call from a contact — PLAN.md §3.4's second of the
-                    three surfaces it names. The button renders for everyone and
-                    the server decides; a member without `call:place` gets a real
-                    FORBIDDEN rather than a control that quietly is not there. */}
+                    three surfaces it names. `CallButton` hides itself for a
+                    member without `call:place` (Phase 15 §1) — see its own
+                    doc comment for why that changed from "render for
+                    everyone and let the server decide". */}
                 <CallButton orgId={orgId} to={member.workPhone} variant="primary" />
               </>
             )}
@@ -108,7 +121,12 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && <AdminSection member={member} orgId={orgId} />}
+      {member.userId !== me &&
+        (canManageMembers ? (
+          <AdminSection member={member} orgId={orgId} />
+        ) : (
+          <PersonFactsSummary member={member} />
+        ))}
     </div>
   );
 }
@@ -189,6 +207,56 @@ function OutOfOfficeSection({ member }: { readonly member: DirectoryDetail }) {
 }
 
 /* -------------------------------------------------------------------------- *
+ * Read-only presentable form (no member:manage)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `AdminSection`'s read-only counterpart for a caller who cannot use it.
+ * Same four fields, same "Manage member" shape, no inputs and no Save
+ * button — presented rather than hidden, because none of the four is
+ * privileged information a plain Member couldn't already piece together
+ * from this same page.
+ */
+function PersonFactsSummary({ member }: { readonly member: DirectoryDetail }) {
+  return (
+    <Section title="Manage member" description="Job facts and the reporting line.">
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <Fact label="Job title" value={member.jobTitle} />
+        <Fact label="Department" value={member.department} />
+        <Fact label="Work phone" value={member.workPhone} />
+        <div>
+          <dt className="text-xs font-medium text-ink-muted">Manager</dt>
+          <dd className="mt-1 text-sm text-ink">
+            {member.manager === null ? (
+              <span className="text-ink-faint">No manager</span>
+            ) : (
+              <Link
+                to="/people/$userId"
+                params={{ userId: member.manager.userId }}
+                className="text-accent hover:underline"
+              >
+                {displayName({ name: member.manager.displayName, email: member.manager.email })}
+              </Link>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </Section>
+  );
+}
+
+function Fact({ label, value }: { readonly label: string; readonly value: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink">
+        {value ?? <span className="text-ink-faint">Not set</span>}
+      </dd>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * Admin: job facts + reporting line (Wave 2)
  * -------------------------------------------------------------------------- */
 
@@ -244,10 +312,7 @@ function AdminSection({
   const directory = useQuery({ ...directoryQuery(orgId, null, 100) });
 
   return (
-    <Section
-      title="Manage member"
-      description="Job facts and the reporting line. Needs member:manage — the server answers if not."
-    >
+    <Section title="Manage member" description="Job facts and the reporting line.">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Job title" htmlFor="person-job-title">
           <Input

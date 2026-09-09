@@ -28,8 +28,13 @@ import { membersQuery } from '../org/api.js';
  * ## Why it is behind `audit:read`
  *
  * It reports another user's access, which is precisely what an attacker wants
- * before choosing a target. Owner and Admin only. The route is enforced on the
- * server; this page will simply show the FORBIDDEN it gets back.
+ * before choosing a target. Owner and Admin only, enforced on the server
+ * regardless of anything below. `router.tsx` wraps this route in
+ * `CapabilityGate capability="viewAuditLog"` (Phase 15 §1's sweep) rather
+ * than leaving it reachable for every role and showing the FORBIDDEN this
+ * component would otherwise get back — a page whose entire purpose is
+ * inspecting a COLLEAGUE's access is not the place to advertise "this tool
+ * exists, you may just not use it" to someone who never will.
  */
 
 const LAYER_NAMES: Readonly<Record<number, string>> = {

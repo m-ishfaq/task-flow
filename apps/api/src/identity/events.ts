@@ -263,4 +263,17 @@ export const oauthUnlinked = defineEvent(
   z.object({ userId: z.string(), provider: z.enum(['google', 'github']) }).strict(),
 );
 
+/**
+ * A calendar feed URL was minted — the same "credential-adjacent change"
+ * standard `totpEnrolled`/`passkeyRegistered` already get an event for,
+ * applied to a NEW kind of bearer credential (migration 0110). Fires
+ * whether this is the first URL ever minted for this user or a rotation of
+ * an existing one; the caller cannot tell the difference from outside, and
+ * neither event carries the token itself — only that one now exists.
+ */
+export const calendarFeedTokenMinted = defineEvent(
+  'user.calendar_feed_token_minted',
+  z.object({ userId: z.string() }).strict(),
+);
+
 export { userRef };

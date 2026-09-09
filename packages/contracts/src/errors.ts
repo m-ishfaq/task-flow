@@ -28,6 +28,21 @@ export const ERROR_CODES = [
   /* --- Authorization (§8.2) -------------------------------------------- */
   'FORBIDDEN',
   'NOT_A_MEMBER',
+  // Distinct from NOT_A_MEMBER on purpose, for the identical reason
+  // ORG_SUSPENDED is distinct from it one line down: "your OWN membership was
+  // suspended" is not "you were never in this org", and collapsing the two
+  // told a legitimately-still-a-member person the same confusing, unactionable
+  // thing an outsider guessing a random org id would see — a real report,
+  // not a hypothetical one (a member whose row this codebase's own platform
+  // console showed as `status: suspended` got a bare "you are not a member",
+  // silently lost their org selection, and landed back on the picker with no
+  // idea why). Safe to split out for the same reason ORG_SUSPENDED already
+  // is: `resolveOrgMembership` only ever asks about the CALLER'S OWN
+  // membership row, so telling them its status leaks nothing about anyone
+  // else's — the enumeration concern this file's own NOT_A_MEMBER comment
+  // warns about only applies to "does this org exist", which stays collapsed
+  // into NOT_A_MEMBER exactly as before (no row at all, for any reason).
+  'MEMBERSHIP_SUSPENDED',
   // Distinct from NOT_A_MEMBER on purpose: "the org itself is suspended" is
   // not "you were never in this org", and a member who is still legitimately
   // a member deserves to be told what happened and what to do next (Phase 12
@@ -114,6 +129,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
 
   FORBIDDEN: 403,
   NOT_A_MEMBER: 403,
+  MEMBERSHIP_SUSPENDED: 403,
   ORG_SUSPENDED: 403,
   ORG_BILLING_LAPSED: 403,
   PLAN_REQUIRED: 403,
@@ -229,6 +245,17 @@ export const errors = {
 
   forbidden: (message = 'You do not have permission to perform this action.') =>
     new AppError('FORBIDDEN', message),
+
+  /**
+   * The caller's OWN membership row in this org exists but is not
+   * `'active'` — distinct from `notAMember` for the reason `ERROR_CODES`'
+   * own comment on `MEMBERSHIP_SUSPENDED` gives. Thrown by
+   * `resolveOrgMembership` only when a membership row is found; a missing
+   * row still returns null (NOT_A_MEMBER), collapsing "no such org" and
+   * "never a member" exactly as before.
+   */
+  membershipSuspended: (message = 'Your membership in this organization has been suspended.') =>
+    new AppError('MEMBERSHIP_SUSPENDED', message),
 
   orgSuspended: (message = 'This organization has been suspended.') =>
     new AppError('ORG_SUSPENDED', message),

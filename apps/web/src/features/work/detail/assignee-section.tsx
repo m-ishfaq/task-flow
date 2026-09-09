@@ -43,9 +43,17 @@ export interface AssigneeSectionProps {
   readonly boardId: BoardId;
   readonly cardId: CardId;
   readonly assigneeIds: readonly string[];
+  /** `card:update` — a viewer/commenter-relation guest sees who is assigned, never the picker or a way to remove one. */
+  readonly canEdit: boolean;
 }
 
-export function AssigneeSection({ orgId, boardId, cardId, assigneeIds }: AssigneeSectionProps) {
+export function AssigneeSection({
+  orgId,
+  boardId,
+  cardId,
+  assigneeIds,
+  canEdit,
+}: AssigneeSectionProps) {
   const optimistic = useOptimistic();
   const { people, peopleOf } = useMembers();
   const [query, setQuery] = useState('');
@@ -94,94 +102,106 @@ export function AssigneeSection({ orgId, boardId, cardId, assigneeIds }: Assigne
       <div className="flex flex-wrap items-center gap-1.5">
         {assigned.length === 0 && <span className="text-xs text-ink-faint">Unassigned</span>}
 
-        {assigned.map((person) => (
-          <button
-            key={person.userId}
-            type="button"
-            /* Clicking an assigned chip removes it — the same "toggle by
-               clicking the chip" gesture `label-section.tsx` already uses, so
-               this does not need a second, unlearned interaction just for
-               people already on the card. */
-            onClick={() => {
-              toggle(person.userId);
-            }}
-            title={`Remove ${person.label}`}
-            className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted hover:text-danger"
-          >
-            <Avatar userId={person.userId} label={person.label} size="xs" />
-            <span className="max-w-32 truncate">{person.label}</span>
-          </button>
-        ))}
-
-        <PopoverRoot
-          onOpenChange={(open) => {
-            // Cleared on close, not on each keystroke's own render — reopening
-            // the picker should not still be filtered from the last time.
-            if (!open) setQuery('');
-          }}
-        >
-          <PopoverTrigger asChild>
+        {assigned.map((person) =>
+          canEdit ? (
             <button
+              key={person.userId}
               type="button"
-              aria-label="Add assignee"
-              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
+              /* Clicking an assigned chip removes it — the same "toggle by
+                 clicking the chip" gesture `label-section.tsx` already uses, so
+                 this does not need a second, unlearned interaction just for
+                 people already on the card. */
+              onClick={() => {
+                toggle(person.userId);
+              }}
+              title={`Remove ${person.label}`}
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted hover:text-danger"
             >
-              +
+              <Avatar userId={person.userId} label={person.label} size="xs" />
+              <span className="max-w-32 truncate">{person.label}</span>
             </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-56 space-y-1.5 p-2">
-            {people.length === 0 ? (
-              <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
-            ) : (
-              <>
-                {/* Only worth the row past a handful of members — see the
-                    header note on why the picker exists at all. */}
-                {people.length > 8 && (
-                  <Input
-                    aria-label="Search members"
-                    placeholder="Search members…"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                    }}
-                    className="h-7 text-xs"
-                  />
-                )}
+          ) : (
+            <span
+              key={person.userId}
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted"
+            >
+              <Avatar userId={person.userId} label={person.label} size="xs" />
+              <span className="max-w-32 truncate">{person.label}</span>
+            </span>
+          ),
+        )}
 
-                {filtered.length === 0 ? (
-                  <p className="p-1 text-xs text-ink-faint">No matches.</p>
-                ) : (
-                  <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-                    {filtered.map((member) => {
-                      const on = selected.has(member.userId);
-                      return (
-                        <li key={member.userId}>
-                          <button
-                            type="button"
-                            aria-pressed={on}
-                            onClick={() => {
-                              toggle(member.userId);
-                            }}
-                            className={cn(
-                              'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
-                              on
-                                ? 'bg-accent text-accent-ink'
-                                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-                            )}
-                          >
-                            <Avatar userId={member.userId} label={member.email} size="xs" />
-                            <span className="truncate">{member.email}</span>
-                            {on && <span className="ml-auto">✓</span>}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </>
-            )}
-          </PopoverContent>
-        </PopoverRoot>
+        {canEdit && (
+          <PopoverRoot
+            onOpenChange={(open) => {
+              // Cleared on close, not on each keystroke's own render — reopening
+              // the picker should not still be filtered from the last time.
+              if (!open) setQuery('');
+            }}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Add assignee"
+                className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
+              >
+                +
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 space-y-1.5 p-2">
+              {people.length === 0 ? (
+                <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
+              ) : (
+                <>
+                  {/* Only worth the row past a handful of members — see the
+                    header note on why the picker exists at all. */}
+                  {people.length > 8 && (
+                    <Input
+                      aria-label="Search members"
+                      placeholder="Search members…"
+                      value={query}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                      }}
+                      className="h-7 text-xs"
+                    />
+                  )}
+
+                  {filtered.length === 0 ? (
+                    <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                  ) : (
+                    <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                      {filtered.map((member) => {
+                        const on = selected.has(member.userId);
+                        return (
+                          <li key={member.userId}>
+                            <button
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => {
+                                toggle(member.userId);
+                              }}
+                              className={cn(
+                                'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                                on
+                                  ? 'bg-accent text-accent-ink'
+                                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                              )}
+                            >
+                              <Avatar userId={member.userId} label={member.email} size="xs" />
+                              <span className="truncate">{member.email}</span>
+                              {on && <span className="ml-auto">✓</span>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </>
+              )}
+            </PopoverContent>
+          </PopoverRoot>
+        )}
       </div>
     </section>
   );

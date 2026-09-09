@@ -1,0 +1,711 @@
+import { z } from 'zod';
+import {
+  BoardIdSchema,
+  CardIdSchema,
+  LabelIdSchema,
+  ListIdSchema,
+  Priority,
+  SprintIdSchema,
+  StatusIdSchema,
+  unsafeAsId,
+  UserIdSchema,
+  type UserId,
+} from '@taskflow/contracts';
+import {
+  assignCard,
+  createCard,
+  getCard,
+  updateCard,
+  setCardStatus,
+  listCards,
+  moveCard,
+} from '../../work/card.service.js';
+import { listCardLabels, setCardLabels } from '../../work/label.service.js';
+import { assignSprint } from '../../work/sprint.service.js';
+import { createComment } from '../../work/comment.service.js';
+import { plainParagraph, RichTextDocument, type RichTextNode } from '../../work/richtext.js';
+import type { WorkActor } from '../../work/shared.js';
+import { defineTool, type ToolContext, type ToolDefinition } from './registry.js';
+import { MessageSegment, SEGMENT_JSON_SCHEMA, segmentsToRichText } from './segments.js';
+
+/**
+ * The single-card write tools (§4.1's table: `card_create`, `card_update`,
+ * `card_assign`, `card_set_status` — `card.set_priority` folds into
+ * `card_update` below, since there is no separate `setCardPriority` SERVICE
+ * to wrap; priority "rides" `updateCard` for the identical reason
+ * `card.service.ts`'s own doc comment gives a human editor no separate
+ * route for it either). `card_add_labels`, added later from a real request
+ * to "tag" a card by name, wraps `setCardLabels` the same ADDITIVE way
+ * `card_assign` wraps `assignCard` — see that tool's own comment below for
+ * why the real service's full-replace semantics would be a mistake here.
+ *
+ * **Every one of these requires confirmation (§4.2), including create and
+ * update** — the spec draft's own §4.2 illustrative text says single-card
+ * create/update "can execute directly once permitted," but §4.3's Wave 2
+ * ordering says the opposite for the exact same tools ("always confirmed
+ * inline"). Rather than resolve a genuine self-contradiction in a document
+ * marked DRAFT by guessing, this ships the more conservative reading:
+ * nothing writes without an explicit human confirmation in this wave.
+ * Loosening create/update to auto-execute later is a real, separate,
+ * reviewable decision — the same posture §4.3 itself takes toward PR
+ * merge/close ("loosening that later is a deliberate, separate decision").
+ *
+ * Every tool here builds a `WorkActor` from the SAME `Subject` the calling
+ * member's own clicks would use, and calls the SAME service function a
+ * human-facing route calls — so `enforceOn`'s `can()` check inside each one
+ * is not duplicated, only reached from a second caller. A member who
+ * cannot update a card cannot get the assistant to update it either; the
+ * failure surfaces as a normal `ToolResult.isError`, not a crash.
+ *
+ * `card_unassign` and `card_remove_labels` — the subtractive counterparts
+ * to `card_assign` and `card_add_labels` — were added later, from a real
+ * conversation ("remove the first assignee we had") where the model could
+ * only explain that removal was unsupported rather than do it. Both mirror
+ * their additive sibling exactly: read the current set, drop the named
+ * ids, write the remainder back through the same full-replace service call.
+ */
+
+function actorOf(ctx: ToolContext): WorkActor {
+  return { subject: ctx.subject, requestId: ctx.requestId };
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_create
+ * ---------------------------------------------------------------------- */
+
+const CardCreateInput = z
+  .object({
+    listId: ListIdSchema,
+    title: z.string().trim().min(1).max(500),
+    description: z.string().trim().max(10_000).optional(),
+    assigneeIds: z.array(UserIdSchema).max(20).optional(),
+    labelIds: z.array(LabelIdSchema).max(20).optional(),
+    priority: Priority.optional(),
+    dueDate: z.string().datetime().optional(),
+    sprintId: SprintIdSchema.optional(),
+  })
+  .strict();
+
+/**
+ * One tool call, every field the model was given — not "create, then a
+ * separate confirmation to assign, then another to tag, then another for
+ * the due date." Found from a real request to create a fully-specified
+ * card ("project X, assign Y, tag Z, due Friday") in one prompt: the real
+ * `createCard` SERVICE only ever took `listId`/`title`/`description` (a
+ * limitation `apps/web`'s own card creation UI shares — a card is created
+ * bare and edited after), and this tool inherited that limitation even
+ * though nothing about `requiresConfirmation` requires it to. Confirmation
+ * happens at the TOOL boundary, not the service boundary, so nothing stops
+ * one tool from calling `createCard` and then `assignCard`/
+ * `setCardLabels`/`updateCard`/`assignSprint` in sequence behind that SAME
+ * single confirmation — each still runs through its own real `can()` check,
+ * so bundling them changes nothing about what the caller is allowed to do,
+ * only how many times a human has to click "Approve" to do it.
+ *
+ * `assigneeIds`/`labelIds` use `assignCard`/`setCardLabels` directly rather
+ * than reading-then-unioning (`card_assign`/`card_add_labels`'s own
+ * additive fix) — a card that was just created has nothing to accidentally
+ * drop, so the real services' full-replace semantics are exactly what is
+ * wanted here.
+ *
+ * A failure partway through is reported, not thrown — the card already
+ * exists by the time `assigneeIds` or `labelIds` could fail (an id the
+ * model resolved wrong, most commonly), and throwing at that point would
+ * leave a real card behind while telling the model — and the person
+ * reading its reply — that nothing happened. `warnings` names exactly what
+ * did not apply, the identical "report per-item outcome, do not pretend
+ * nothing happened" reasoning `sprint_add_cards` already uses for a batch.
+ */
+export function createCardCreateTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_create',
+    description:
+      'Creates a new card in a list, optionally in the same call setting assignees, labels, ' +
+      'priority, due date, and sprint — everything a person could set on the card-create form. ' +
+      'The list, assignees, labels, and sprint must all be given by id, never by name; use ' +
+      '`list_boards`, `list_members`, `list_labels`, and `list_sprints` first to resolve them.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        listId: { type: 'string', description: 'The id of the list to create the card in.' },
+        title: { type: 'string', description: 'The card title.' },
+        description: { type: 'string', description: 'Optional plain-text description.' },
+        assigneeIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional user ids to assign, from `list_members`.',
+        },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional label ids to tag with, from `list_labels`.',
+        },
+        priority: {
+          type: 'string',
+          enum: Priority.options,
+          description: 'Optional priority: urgent, high, normal, or low.',
+        },
+        dueDate: { type: 'string', description: 'Optional ISO 8601 date-time.' },
+        sprintId: {
+          type: 'string',
+          description: 'Optional sprint id to add the card to, from `list_sprints`.',
+        },
+      },
+      required: ['listId', 'title'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardCreateInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const created = await createCard(actor, {
+        listId: input.listId,
+        title: input.title,
+        description: input.description === undefined ? null : plainParagraph(input.description),
+      });
+
+      const warnings: string[] = [];
+
+      if (input.assigneeIds !== undefined) {
+        try {
+          await assignCard(actor, { cardId: created.cardId, assigneeIds: input.assigneeIds });
+        } catch (error) {
+          warnings.push(`Could not set assignees: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.labelIds !== undefined) {
+        try {
+          await setCardLabels(actor, { cardId: created.cardId, labelIds: input.labelIds });
+        } catch (error) {
+          warnings.push(`Could not set labels: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.priority !== undefined || input.dueDate !== undefined) {
+        try {
+          const current = await getCard(actor, { cardId: created.cardId });
+          await updateCard(actor, {
+            cardId: created.cardId,
+            version: current.version,
+            title: current.title,
+            description: descriptionOf(current.description),
+            dueDate: input.dueDate === undefined ? current.dueDate : new Date(input.dueDate),
+            startDate: current.startDate,
+            priority: input.priority ?? current.priority,
+          });
+        } catch (error) {
+          warnings.push(`Could not set priority/due date: ${messageOf(error)}`);
+        }
+      }
+
+      if (input.sprintId !== undefined) {
+        try {
+          await assignSprint(actor, { cardId: created.cardId, sprintId: input.sprintId });
+        } catch (error) {
+          warnings.push(`Could not add to sprint: ${messageOf(error)}`);
+        }
+      }
+
+      return {
+        content: JSON.stringify({
+          cardId: created.cardId,
+          reference: created.reference,
+          ...(warnings.length > 0 ? { warnings } : {}),
+        }),
+      };
+    },
+  });
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : 'an unknown error';
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_update — title/description/dates/priority, read-then-patch
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `updateCard` is a full replace (CLAUDE.md's own documented trap for the
+ * web client's `cards.update`). The fix here is the identical one
+ * `apps/worker`'s automation executor already uses for `card.set_priority`:
+ * read the card first, and pass every field back unchanged except the ones
+ * the caller actually named. `'x' in patch` rather than `??`, because
+ * clearing a date is `{ dueDate: null }` and `??` would treat that as "not
+ * supplied" — the same reasoning `apps/web`'s own `useUpdateCard` documents.
+ */
+const CardUpdateInput = z
+  .object({
+    cardId: CardIdSchema,
+    title: z.string().trim().min(1).max(500).optional(),
+    description: z.string().trim().max(10_000).optional(),
+    dueDate: z.string().datetime().nullable().optional(),
+    startDate: z.string().datetime().nullable().optional(),
+    priority: Priority.nullable().optional(),
+  })
+  .strict();
+
+function descriptionOf(stored: unknown): RichTextNode | null {
+  if (stored === null || stored === undefined) return null;
+  const parsed = RichTextDocument.safeParse(stored);
+  if (!parsed.success) {
+    throw new Error("This card's description is not valid rich text, so it cannot be rewritten.");
+  }
+  return parsed.data;
+}
+
+export function createCardUpdateTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_update',
+    description:
+      'Updates a card. Only the fields provided are changed; everything else is left as-is. Also used to set or clear a card’s priority.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card to update.' },
+        title: { type: 'string' },
+        description: { type: 'string', description: 'Plain text; replaces the description.' },
+        dueDate: { type: ['string', 'null'], description: 'ISO 8601 date-time, or null to clear.' },
+        startDate: {
+          type: ['string', 'null'],
+          description: 'ISO 8601 date-time, or null to clear.',
+        },
+        priority: {
+          type: ['string', 'null'],
+          enum: [...Priority.options, null],
+          description: 'One of urgent, high, normal, low; or null to clear.',
+        },
+      },
+      required: ['cardId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardUpdateInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const current = await getCard(actor, { cardId: input.cardId });
+
+      const result = await updateCard(actor, {
+        cardId: input.cardId,
+        version: current.version,
+        title: 'title' in input && input.title !== undefined ? input.title : current.title,
+        description:
+          'description' in input && input.description !== undefined
+            ? plainParagraph(input.description)
+            : descriptionOf(current.description),
+        dueDate:
+          'dueDate' in input && input.dueDate !== undefined
+            ? input.dueDate === null
+              ? null
+              : new Date(input.dueDate)
+            : current.dueDate,
+        startDate:
+          'startDate' in input && input.startDate !== undefined
+            ? input.startDate === null
+              ? null
+              : new Date(input.startDate)
+            : current.startDate,
+        priority:
+          'priority' in input && input.priority !== undefined ? input.priority : current.priority,
+      });
+      return { content: JSON.stringify({ version: result.version }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_assign — ADDITIVE, never a replace
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `assignCard`'s real signature REPLACES the whole assignee list.
+ * Additive here for the identical reason `apps/worker`'s automation
+ * executor's own `card_assign` action is additive: "assign this to Bob"
+ * spoken in a chat means ADD Bob, and a tool that silently unassigned
+ * everyone else because the model did not enumerate them would do quiet
+ * damage no confirmation step would even show clearly (the confirmation
+ * prompt would need to say "and unassign these N people," which the model
+ * was never asked to consider). A separate "unassign" tool is future work,
+ * not a gap in this one's contract.
+ */
+const CardAssignInput = z
+  .object({
+    cardId: CardIdSchema,
+    assigneeIds: z.array(UserIdSchema).min(1).max(20),
+  })
+  .strict();
+
+export function createCardAssignTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_assign',
+    description:
+      'Adds one or more people as assignees on a card, without removing anyone already assigned.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        assigneeIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'User ids to add as assignees.',
+        },
+      },
+      required: ['cardId', 'assigneeIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardAssignInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const current = await getCard(actor, { cardId: input.cardId });
+      const existing = new Set<UserId>(current.assigneeIds.map((id) => unsafeAsId<'UserId'>(id)));
+      for (const id of input.assigneeIds) existing.add(id);
+
+      const result = await assignCard(actor, {
+        cardId: input.cardId,
+        assigneeIds: [...existing],
+      });
+      return { content: JSON.stringify({ assigneeIds: result.assigneeIds }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_unassign — the subtractive counterpart to card_assign
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `card_assign`'s own comment called an unassign tool "future work, not a
+ * gap in this one's contract" — found to be exactly the gap it named the
+ * first time a real conversation needed it: "remove the first assignee we
+ * had" had no tool to call, and the model could only explain the
+ * limitation rather than act on it. This is the mirror image of
+ * `card_assign`: reads the current set, REMOVES the named ids, and writes
+ * the remainder back through the same full-replace `assignCard` — never a
+ * blind subtraction that could race a concurrent assignment the same way a
+ * blind overwrite could, since both tools resolve against a freshly read
+ * `current.assigneeIds` rather than a stale one the model might be holding
+ * from an earlier turn.
+ */
+const CardUnassignInput = z
+  .object({
+    cardId: CardIdSchema,
+    assigneeIds: z.array(UserIdSchema).min(1).max(20),
+  })
+  .strict();
+
+export function createCardUnassignTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_unassign',
+    description:
+      "Removes one or more people from a card's assignees, without affecting anyone else " +
+      'still assigned. Use `list_members` first to resolve a name to a user id.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        assigneeIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'User ids to remove from the assignees.',
+        },
+      },
+      required: ['cardId', 'assigneeIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardUnassignInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const current = await getCard(actor, { cardId: input.cardId });
+      const toRemove = new Set<UserId>(input.assigneeIds);
+      const remaining = current.assigneeIds
+        .map((id) => unsafeAsId<'UserId'>(id))
+        .filter((id) => !toRemove.has(id));
+
+      const result = await assignCard(actor, { cardId: input.cardId, assigneeIds: remaining });
+      return { content: JSON.stringify({ assigneeIds: result.assigneeIds }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_set_status
+ * ---------------------------------------------------------------------- */
+
+const CardSetStatusInput = z
+  .object({
+    cardId: CardIdSchema,
+    statusId: StatusIdSchema.nullable(),
+  })
+  .strict();
+
+export function createCardSetStatusTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_set_status',
+    description: 'Moves a card to a different status column, or clears it with a null statusId.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        statusId: {
+          type: ['string', 'null'],
+          description: 'The id of the target status, or null to clear it.',
+        },
+      },
+      required: ['cardId', 'statusId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardSetStatusInput,
+    async execute(ctx, input) {
+      const result = await setCardStatus(actorOf(ctx), {
+        cardId: input.cardId,
+        statusId: input.statusId,
+      });
+      return { content: JSON.stringify({ statusId: result.statusId }) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_add_labels — ADDITIVE, never a replace
+ * ---------------------------------------------------------------------- */
+
+const CardAddLabelsInput = z
+  .object({
+    cardId: CardIdSchema,
+    labelIds: z.array(LabelIdSchema).min(1),
+  })
+  .strict();
+
+export function createCardAddLabelsTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_add_labels',
+    description:
+      'Adds one or more labels to a card, keeping any labels already on it. Use `list_labels` ' +
+      "first to find a label's id from the name the user gave — this tool takes only ids, " +
+      'never label names.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ids of the labels to add, from `list_labels`.',
+        },
+      },
+      required: ['cardId', 'labelIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardAddLabelsInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      // The real service REPLACES the whole set (`setCardLabels`'s own doc
+      // comment: concurrent editors sending deltas would fight). "Add this
+      // label" spoken in chat means ADD, exactly like `card_assign` below —
+      // reading the current set first and union-ing is what makes silently
+      // stripping every other tag on the card impossible.
+      const existing = await listCardLabels(actor, { cardId: input.cardId });
+      const union = [
+        ...new Set([
+          ...existing.map((label) => unsafeAsId<'LabelId'>(label.labelId)),
+          ...input.labelIds,
+        ]),
+      ];
+      const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: union });
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_remove_labels — the subtractive counterpart to card_add_labels
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The identical subtractive mirror `card_unassign` is to `card_assign`,
+ * applied to labels: reads the current set via `listCardLabels`, drops the
+ * named ids, and writes the remainder back through the real full-replace
+ * `setCardLabels`. Added in the same pass as `card_unassign` — a
+ * conversation that can add a label but never remove one has exactly the
+ * same "explain the limitation, cannot act on it" gap in miniature.
+ */
+const CardRemoveLabelsInput = z
+  .object({
+    cardId: CardIdSchema,
+    labelIds: z.array(LabelIdSchema).min(1),
+  })
+  .strict();
+
+export function createCardRemoveLabelsTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_remove_labels',
+    description:
+      'Removes one or more labels from a card, keeping any other labels already on it. Use ' +
+      "`list_labels` first to find a label's id from the name the user gave.",
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card.' },
+        labelIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ids of the labels to remove, from `list_labels`.',
+        },
+      },
+      required: ['cardId', 'labelIds'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardRemoveLabelsInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const existing = await listCardLabels(actor, { cardId: input.cardId });
+      const toRemove = new Set(input.labelIds);
+      const remaining = existing
+        .map((label) => unsafeAsId<'LabelId'>(label.labelId))
+        .filter((id) => !toRemove.has(id));
+
+      const result = await setCardLabels(actor, { cardId: input.cardId, labelIds: remaining });
+      return { content: JSON.stringify(result) };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_move — a different LIST, possibly a different BOARD, never a status
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Found missing from a real transcript: "move it to Bug Triage" (a board
+ * name) had no tool to reach at all. The model tried `card_set_status`
+ * (wrong concept — a card's STATUS, per `card.service.ts`'s own
+ * `setCardStatus`, is a project-level field entirely separate from which
+ * LIST/BOARD it sits on) and `sprint_add_cards` (wrong entity — a board is
+ * not a sprint), both failing with a bare "Not found." This wraps the real
+ * `moveCard`, which — per its own doc comment — CAN cross boards within the
+ * same project (never across projects; the service itself refuses that).
+ *
+ * `boardId` is a required input alongside `listId` rather than looked up
+ * inside the tool, because the model already has both from `list_boards`'
+ * own nested `{boardId, lists: [{listId}]}` shape — asking for it here
+ * avoids a second lookup this tool would otherwise need just to find the
+ * target list's own board.
+ *
+ * There is no `beforeCardId`/`afterCardId` input — a human dragging a card
+ * has a drop position in mind; a model does not, and asking it to guess
+ * neighbours would produce an arbitrary, unreviewable position. This always
+ * appends to the END of the target list: `moveCard` derives the new rank as
+ * `between(rankOf(beforeCardId), rankOf(afterCardId))` — the LOWER bound is
+ * `beforeCardId`, so the current LAST card (by rank, read via `listCards`)
+ * becomes `beforeCardId` and `afterCardId` stays null (no upper bound),
+ * putting the moved card after every existing one. Passing the last card as
+ * `afterCardId` instead — the more intuitive-sounding name for "goes after
+ * this" — is backwards and was caught by a real test asserting the actual
+ * resulting order, not just that the move succeeded.
+ */
+const CardMoveInput = z
+  .object({
+    cardId: CardIdSchema,
+    boardId: BoardIdSchema,
+    listId: ListIdSchema,
+  })
+  .strict();
+
+export function createCardMoveTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_move',
+    description:
+      'Moves a card to a different list, appending it to the end. This can move a card to a ' +
+      'different BOARD within the same project (e.g. from one board\'s "In Progress" to ' +
+      'another board\'s "To Do"), but never to a different project. This is NOT the same as ' +
+      "a card's priority or status — use `card_update`/`card_set_status` for those. Use " +
+      '`list_boards` first to find the target board and list ids.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card to move.' },
+        boardId: { type: 'string', description: "The target list's own board id." },
+        listId: { type: 'string', description: 'The id of the list to move the card into.' },
+      },
+      required: ['cardId', 'boardId', 'listId'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardMoveInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const onBoard = await listCards(actor, { boardId: input.boardId });
+      const inTargetList = onBoard
+        .filter((card) => card.listId === input.listId)
+        .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0));
+      const last = inTargetList.at(-1);
+
+      const result = await moveCard(actor, {
+        cardId: input.cardId,
+        targetListId: input.listId,
+        beforeCardId: last === undefined ? null : unsafeAsId<'CardId'>(last.cardId),
+        afterCardId: null,
+      });
+      return {
+        content: JSON.stringify({ listId: result.listId, wipExceeded: result.wipExceeded }),
+      };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * card_add_comment
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Found missing from a real transcript: "add a comment to the card...and
+ * tag @Rosa" had no tool for it at all, and the model reached for
+ * `chat_post_message` instead — a completely different subsystem (a card
+ * comment is Work's own `comment:create`, never a Chat channel message).
+ * Wraps `createComment` the identical way `chat_post_message` wraps
+ * `sendMessage`: the model composes ordered text/mention SEGMENTS
+ * (`segments.ts`, shared with that tool) rather than a markup string, and a
+ * mentioned person is notified through the SAME path a human's own comment
+ * box would use — there is no second, assistant-only notification
+ * mechanism.
+ */
+const CardAddCommentInput = z
+  .object({
+    cardId: CardIdSchema,
+    segments: z.array(MessageSegment).min(1).max(50),
+  })
+  .strict();
+
+export function createCardAddCommentTool(): ToolDefinition {
+  return defineTool({
+    name: 'card_add_comment',
+    description:
+      'Adds a top-level comment to a card, optionally @mentioning people by user id. Provide ' +
+      'the comment as an ordered list of text and mention segments. Use this for a comment on ' +
+      'a card — never `chat_post_message`, which posts to a chat channel, not a card.',
+    jsonSchema: {
+      type: 'object',
+      properties: {
+        cardId: { type: 'string', description: 'The id of the card to comment on.' },
+        segments: SEGMENT_JSON_SCHEMA,
+      },
+      required: ['cardId', 'segments'],
+      additionalProperties: false,
+    },
+    requiresConfirmation: true,
+    inputSchema: CardAddCommentInput,
+    async execute(ctx, input) {
+      const actor = actorOf(ctx);
+      const result = await createComment(actor, {
+        cardId: input.cardId,
+        body: segmentsToRichText(input.segments),
+      });
+      return { content: JSON.stringify({ commentId: result.commentId }) };
+    },
+  });
+}

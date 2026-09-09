@@ -1,7 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Ban } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
-import { Spinner } from '../../components/primitives.js';
+import { Button, Empty, Spinner } from '../../components/primitives.js';
 import { orgsQuery } from './api.js';
 
 /**
@@ -34,12 +35,50 @@ import { orgsQuery } from './api.js';
  * under the same key, so TanStack serves it from cache the moment the router
  * mounts.
  *
+ * ## A row that IS there, just not active, is a DIFFERENT case from no row at all
+ *
+ * `tenancy.orgs.list` returns every membership, active or suspended (see that
+ * function's own header) — it used to filter to `'active'` only, which made a
+ * suspended membership indistinguishable from a stale selection naming an org
+ * the caller was never in: both simply vanished from the list, and this gate
+ * treated both the same way, silently clearing the selection and letting
+ * `requireOrg` bounce to the picker with nothing on screen explaining why. A
+ * real report: a member whose row the platform console itself showed as
+ * `status: suspended` got exactly that silent bounce and had no way to tell
+ * "your access here ended" apart from "you typed the wrong URL."
+ *
+ * The fix is the same split `resolveOrgMembership` makes server-side: a row
+ * that matches `orgId` but whose `membershipStatus` is not `'active'` renders
+ * a direct explanation INSTEAD of the router, with a button back to the
+ * picker — never silently dropped and redirected. Only a genuinely MISSING
+ * row (no such org, or truly never a member) keeps the old silent-drop
+ * behavior, because there — unlike a suspension — there is nothing true and
+ * useful to say beyond "that selection no longer means anything," which
+ * `requireOrg`'s own redirect to the picker already communicates by simply
+ * not finding the org there.
+ *
+ * ## The ORG can be suspended too, and that is a second, distinct reason
+ *
+ * `resolveOrgMembership` has thrown a separate `ORG_SUSPENDED` for a
+ * suspended ORG (Phase 12 Wave 1's org directory) since before this gate
+ * checked anything at all — but with no `orgStatus` in `tenancy.orgs.list`,
+ * this gate had no way to tell a suspended org apart from a perfectly normal
+ * one: it rendered `children`, the router proceeded, and the first
+ * org-scoped query after that threw an error nothing here was built to
+ * catch. A real report: exactly this — an org deactivated from the platform
+ * console still opened, then failed confusingly on the next screen instead
+ * of explaining itself up front. `matched.orgStatus` is checked FIRST, below
+ * — an org suspension is a bigger fact than a personal one (it refuses every
+ * member, not just this caller), so if somehow both are true at once the org
+ * explanation is the one shown.
+ *
  * ## Why it does not decide anything else
  *
- * "Is this id one of mine" is a membership question, not an authorization one.
- * The gate never inspects a role and never decides what the user may do — §8.2's
- * rule that the UI must not re-derive `can()` is untouched. Every route it
- * admits is still enforced by `route({ permission })` on the server.
+ * "Is this id one of mine, and is it active" is a membership question, not an
+ * authorization one. The gate never inspects a role and never decides what the
+ * user may do — §8.2's rule that the UI must not re-derive `can()` is untouched.
+ * Every route it admits is still enforced by `route({ permission })` on the
+ * server.
  */
 export function OrgGate({ children }: { readonly children: ReactNode }) {
   const status = useSession((state) => state.status);
@@ -63,15 +102,42 @@ export function OrgGate({ children }: { readonly children: ReactNode }) {
    */
   const orgs = useQuery({ ...orgsQuery(), enabled: checking, retry: false });
 
+  /* The row matching the stored selection, whatever its status — `undefined`
+     covers both "not checking yet" and "no such row at all". Kept as ONE
+     value, rather than a separate `selected` lookup plus a `suspended`
+     boolean derived from it, so the render below never has to re-assert a
+     fact this already settled (which is what a second `!== undefined` check
+     on the same expression would be). */
+  const matched =
+    checking && orgs.data !== undefined ? orgs.data.find((org) => org.orgId === orgId) : undefined;
+
+  /* Which of the two DISTINCT reasons a matched row is unusable, if either —
+     computed once so the render below and the effect's "still resolvable"
+     check never have to re-derive it differently. Org status wins when both
+     are true: it is the bigger fact (it refuses every member, not just this
+     caller), so that is the explanation shown. */
+  const suspension: 'org' | 'membership' | null =
+    matched === undefined
+      ? null
+      : matched.orgStatus !== 'active'
+        ? 'org'
+        : matched.membershipStatus !== 'active'
+          ? 'membership'
+          : null;
+
   useEffect(() => {
     if (!checking || orgs.data === undefined) return;
-    if (orgs.data.some((org) => org.orgId === orgId)) return;
+    // A row that exists but is not active is handled by rendering an
+    // explanation below, never by silently dropping the selection — see this
+    // file's own header. Only a genuinely MISSING row falls through to the
+    // silent-drop repair.
+    if (matched !== undefined) return;
 
     /* Not an error state and not a message. The selection was a client-side
        memory of something that is no longer true, so forgetting it is the whole
        repair — `requireOrg` sends them to the picker on the next guard. */
     selectOrg(null);
-  }, [checking, orgs.data, orgId, selectOrg]);
+  }, [checking, orgs.data, orgId, selectOrg, matched]);
 
   /* `isPending` is also true when the query is disabled, so `checking` has to
      lead — otherwise the login page renders a spinner forever.
@@ -85,6 +151,41 @@ export function OrgGate({ children }: { readonly children: ReactNode }) {
     return (
       <div className="flex h-full items-center justify-center">
         <Spinner className="size-6" />
+      </div>
+    );
+  }
+
+  if (suspension !== null && matched !== undefined) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <Empty
+          icon={<Ban aria-hidden="true" className="size-5" />}
+          title={
+            suspension === 'org'
+              ? 'This organization has been suspended'
+              : 'Your access to this organization was suspended'
+          }
+          description={
+            suspension === 'org'
+              ? `"${matched.name}" was suspended by a platform administrator. Choose a different organization, or contact support if you believe this is a mistake.`
+              : `Your membership in "${matched.name}" is no longer active. Choose a different organization, or ask an admin there to reactivate your access.`
+          }
+          action={
+            <Button
+              variant="primary"
+              onClick={() => {
+                /* No navigation call needed: dropping the selection is
+                   exactly what `requireOrg`'s own guard already reads as
+                   "route to the picker" the moment the router underneath
+                   this gate gets to render — the identical mechanism the
+                   no-selection case has always used. */
+                selectOrg(null);
+              }}
+            >
+              Choose a different organization
+            </Button>
+          }
+        />
       </div>
     );
   }

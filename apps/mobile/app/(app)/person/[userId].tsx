@@ -31,6 +31,8 @@ import {
   type ResolvedMember,
 } from '../../../src/lib/people.js';
 import { PHONE_CONTACTS_QUERY_KEY } from '../../../src/lib/telephony.js';
+import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
+import { CapabilityGate } from '../../../src/lib/capability-gate.js';
 
 /**
  * One person in the org — `apps/web/src/features/people/person-page.tsx`'s
@@ -41,15 +43,30 @@ import { PHONE_CONTACTS_QUERY_KEY } from '../../../src/lib/telephony.js';
  *
  * The org chart (who they report to, who reports to them), the job facts
  * a directory carries, out-of-office state, and — only when viewing
- * someone ELSE — an admin-edit form for job title/department/work phone
- * and the reporting line. Editing your OWN job title happens self-service
- * on the Account tab through `people.profile.update`
- * (`profile-section.tsx`), which is why this screen hides its own edit
- * controls for yourself: a second path to the same field would drift.
+ * someone ELSE — either the admin-edit form (job title/department/work
+ * phone/manager, `capabilities.manageMembers`) or, for anyone without that
+ * capability, `PersonFactsSummary`: the same four fields, read-only.
+ * Matching web's own `PersonFactsSummary` (`person-page.tsx`) rather than
+ * hiding the section outright — job title and department are already
+ * visible as badges in the "Job" section above and the manager is already
+ * reachable via the "Reports to" card, so nothing new is disclosed by
+ * presenting them here too, just without edit controls a plain Member
+ * could never use anyway. Editing your OWN job title happens self-service
+ * on the Account tab through `people.profile.update` (`profile-section.tsx`),
+ * which is why this screen hides its own edit controls for yourself: a
+ * second path to the same field would drift.
  *
- * Every edit control renders for everyone and the server answers
- * (CLAUDE.md §8.2) — a caller without `member:manage` gets an honest
- * FORBIDDEN via `Alert.alert`, never a hidden section.
+ * The admin-edit section used to render for everyone regardless of role,
+ * pre-filled with the target's current job title/department/work phone,
+ * and rely on the server to answer FORBIDDEN when a plain Member touched
+ * Save (Phase 15 §1's sweep missed this screen the first time through).
+ * Gated the same way `settings-page.tsx`'s own `PermissionsSection` is.
+ *
+ * Also wrapped in `CapabilityGate capability="viewDirectory"`, matching
+ * `people.tsx`'s own fix — `people.directory.get` floors on the identical
+ * `member:read`, and a deep link (or a Guest tapping through an org-chart
+ * card before that fix existed) reached this screen the same way `people
+ * .tsx` did, with the same raw-FORBIDDEN result.
  */
 export default function PersonScreen() {
   const params = useLocalSearchParams<{ userId: string }>();
@@ -64,12 +81,21 @@ export default function PersonScreen() {
     );
   }
 
-  return <PersonContent userId={parsedUserId.data} />;
+  return (
+    <CapabilityGate capability="viewDirectory">
+      <PersonContent userId={parsedUserId.data} />
+    </CapabilityGate>
+  );
 }
 
 function PersonContent({ userId }: { readonly userId: string }) {
   const paddingTop = useTopInset();
   const me = useSession((state) => state.userId);
+  const canManageMembers =
+    useQuery({
+      queryKey: ORG_DETAIL_QUERY_KEY,
+      queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+    }).data?.capabilities.manageMembers === true;
 
   const detail = useQuery({
     queryKey: directoryMemberQueryKey(userId),
@@ -150,7 +176,12 @@ function PersonContent({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && <AdminSection member={member} />}
+      {member.userId !== me &&
+        (canManageMembers ? (
+          <AdminSection member={member} />
+        ) : (
+          <PersonFactsSummary member={member} />
+        ))}
     </ScrollView>
   );
 }
@@ -231,6 +262,48 @@ function dateLabel(date: Date): string {
 }
 
 /* -------------------------------------------------------------------------- *
+ * Read-only presentable form (no member:manage)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `AdminSection`'s read-only counterpart, matching web's own
+ * `PersonFactsSummary` (`person-page.tsx`) — same four fields, no inputs,
+ * no Save button.
+ */
+function PersonFactsSummary({ member }: { readonly member: DirectoryDetail }) {
+  return (
+    <Section label="Manage member" hint="Job facts and the reporting line.">
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Job title</Text>
+        <Text style={styles.factRowValue}>{member.jobTitle ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Department</Text>
+        <Text style={styles.factRowValue}>{member.department ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Work phone</Text>
+        <Text style={styles.factRowValue}>{member.workPhone ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Manager</Text>
+        {member.manager === null ? (
+          <Text style={styles.factRowValue}>No manager</Text>
+        ) : (
+          <Pressable
+            onPress={() => {
+              if (member.manager !== null) router.push(`/person/${member.manager.userId}`);
+            }}
+          >
+            <Text style={styles.factRowLink}>{directoryLabel(member.manager)}</Text>
+          </Pressable>
+        )}
+      </View>
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
  * Admin: job facts + reporting line
  * -------------------------------------------------------------------------- */
 
@@ -302,10 +375,7 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
     workPhone.trim() !== (member.workPhone ?? '');
 
   return (
-    <Section
-      label="Manage member"
-      hint="Job facts and the reporting line. Needs member:manage — the server answers if not."
-    >
+    <Section label="Manage member" hint="Job facts and the reporting line.">
       <Text style={styles.fieldLabel}>Job title</Text>
       <TextInput
         style={styles.input}
@@ -614,6 +684,28 @@ const styles = StyleSheet.create({
   oooMessage: {
     fontSize: 12,
     color: colors.inkMuted.hex,
+  },
+  factRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  factRowLabel: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+  },
+  factRowValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  factRowLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   fieldLabel: {
     fontSize: 12,

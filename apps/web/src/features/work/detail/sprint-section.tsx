@@ -26,9 +26,18 @@ export interface SprintSectionProps {
   readonly cardId: CardId;
   readonly projectId: ProjectId;
   readonly sprintId: string | null;
+  /** `card:update` — disabled, not hidden: the select is also the read display of the current sprint. */
+  readonly canEdit: boolean;
 }
 
-export function SprintSection({ orgId, boardId, cardId, projectId, sprintId }: SprintSectionProps) {
+export function SprintSection({
+  orgId,
+  boardId,
+  cardId,
+  projectId,
+  sprintId,
+  canEdit,
+}: SprintSectionProps) {
   const sprints = useQuery(sprintsQuery(orgId, projectId));
   const optimistic = useOptimistic();
 
@@ -68,6 +77,7 @@ export function SprintSection({ orgId, boardId, cardId, projectId, sprintId }: S
       <select
         aria-label="Sprint"
         value={sprintId ?? ''}
+        disabled={!canEdit}
         onChange={(event) => {
           const next = event.target.value === '' ? null : event.target.value;
           /* Picking the sprint the card is already in is a no-op — keep it
@@ -76,7 +86,7 @@ export function SprintSection({ orgId, boardId, cardId, projectId, sprintId }: S
           if (next === sprintId) return;
           setSprint.mutate(next);
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
       >
         <option value="">Backlog</option>
         {(sprints.data ?? []).map((sprint) => {

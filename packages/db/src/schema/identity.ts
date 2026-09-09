@@ -146,6 +146,34 @@ export const sessions = identity.table(
   ],
 );
 
+/**
+ * A personal ICS-subscription bearer token (migration 0110) — the identical
+ * "no org_id, no RLS" shape `sessions` above already is: a purely
+ * identity-scoped resource with no per-resource question for `can()` to ask.
+ * `TOKEN_PREFIX.shareLink`'s first real caller — see
+ * `apps/api/src/identity/calendar-feed.service.ts`.
+ */
+export const calendarFeedTokens = identity.table(
+  'calendar_feed_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('calendar_feed_tokens_hash_idx').on(table.tokenHash),
+    uniqueIndex('calendar_feed_tokens_active_user_key')
+      .on(table.userId)
+      .where(sql`revoked_at IS NULL`),
+  ],
+);
+
 export const refreshTokens = identity.table(
   'refresh_tokens',
   {

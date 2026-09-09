@@ -26,6 +26,14 @@ export interface GrantInput {
   readonly objectId: string;
   /** ISO timestamp, or null for a grant that does not lapse. */
   readonly expiresAt: string | null;
+  /**
+   * Marks the tuple as issued through a guest-invite flow rather than the
+   * generic Share dialog. Purely a review/audit marker — migration
+   * `authz.relationship_tuples.is_guest`'s own comment states it changes
+   * nothing about how `can()` reads the tuple. Defaults to `false` so every
+   * existing caller of `grant()` is unaffected.
+   */
+  readonly isGuest?: boolean;
 }
 
 function isResourceType(value: string): value is ResourceType {
@@ -93,6 +101,7 @@ export async function grant(
       objectId: input.objectId,
       grantedBy: actor.userId,
       expiresAt,
+      isGuest: input.isGuest ?? false,
     });
 
     await outboxWriter.append(tx, [
@@ -106,6 +115,7 @@ export async function grant(
           objectType: input.objectType,
           objectId: input.objectId,
           expiresAt: expiresAt === null ? null : expiresAt.toISOString(),
+          isGuest: input.isGuest ?? false,
         },
         { orgId, actorId: actor.userId, requestId: actor.requestId },
       ),

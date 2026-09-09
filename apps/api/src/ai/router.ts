@@ -1,0 +1,338 @@
+import { z } from 'zod';
+import { and, eq, schema, withOrgScope } from '@taskflow/db';
+import {
+  errors,
+  unsafeAsId,
+  type AiMessage,
+  type KeyProvider,
+  type MembershipId,
+  type OrgId,
+  type SearchProvider,
+  type UserId,
+} from '@taskflow/contracts';
+import { route, router } from '../trpc/builder.js';
+import { subjectOf } from '../trpc/context.js';
+import type { IntegrationDeps } from '../automation/integration.service.js';
+import { resolveAiProvider } from './provider-resolver.js';
+import { buildToolRegistry } from './tools/index.js';
+import { runAssistantTurn } from './assistant.js';
+
+/**
+ * The assistant chat route (ai/phase-15-ai-copilot-and-permissions.md §4,
+ * §4.3 Wave 1 — read-only tools only).
+ *
+ * Two independent gates, per §2.4: `ai:use` (does THIS member specifically
+ * have the assistant, grantable per §1) and the `aiAssistant` feature flag
+ * (does the org's plan include AI at all). `route()`'s own ordering —
+ * permission, then token scope, then feature — is what makes stacking both
+ * here identical to every other gated module in this router rather than a
+ * bespoke check.
+ *
+ * Stateless by design: the client resends the growing `messages` array
+ * every turn, and this route never persists a conversation. A persistence
+ * layer (multi-conversation history, search over past chats) is real,
+ * separate work this wave does not need to prove the tool-calling loop or
+ * the budget gate — the two things §4.3 says Wave 1 exists to prove.
+ */
+
+const ToolCall = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(128),
+    input: z.record(z.unknown()),
+  })
+  .strict();
+
+/** Mirrors `AiMessage` (packages/contracts) exactly — see that type's own
+    comment for why a tool-calling conversation needs this shape at all. */
+const ChatMessage = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('user'), content: z.string().min(1).max(8_000) }).strict(),
+  z
+    .object({
+      role: z.literal('assistant'),
+      content: z.string().max(8_000),
+      toolCalls: z.array(ToolCall).max(8).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      role: z.literal('tool_result'),
+      toolCallId: z.string().min(1).max(128),
+      content: z.string().max(20_000),
+      isError: z.boolean().optional(),
+    })
+    .strict(),
+]);
+
+/* A bound on conversation length, not a product decision about how long a
+   chat may run — the budget gate is what actually stops an org from
+   spending, this is only sane input-size hygiene, the same role
+   `search.query`'s own `.max()` limit plays. */
+const ChatSendInput = z
+  .object({
+    messages: z.array(ChatMessage).min(1).max(40),
+    /** §4.2: which of the PREVIOUS response's `pendingToolCalls` a human
+        approved. Defaults to none, which is also the correct value for a
+        fresh turn with nothing pending — see `assistant.ts`'s own header on
+        why an id absent from this list is a decline, not an "undecided". */
+    confirmedToolCallIds: z.array(z.string().min(1).max(128)).max(8).default([]),
+  })
+  .strict();
+
+const ChatSendOutput = z
+  .object({
+    content: z.string(),
+    messages: z.array(ChatMessage).readonly(),
+    toolRounds: z.number().int().nonnegative(),
+    /** Present only when the turn stopped on a §4.2 confirmation — the
+        caller must show these to a human and resend `messages` unchanged
+        (it already carries the requesting assistant turn) along with
+        `confirmedToolCallIds` to resume. */
+    pendingToolCalls: z.array(ToolCall).optional(),
+  })
+  .strict();
+
+type ChatMessageWire = z.infer<typeof ChatMessage>;
+
+/**
+ * `AiMessage` (packages/contracts — `readonly` fields, a `readonly` tool-call
+ * array) -> the plain, mutable wire shape `ChatSendOutput` parses. A `switch`
+ * on `message.role` rather than an `if`/`===` chain, deliberately: a `switch`
+ * discriminant is not a `BinaryExpression`, so it does not trip
+ * `packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier`
+ * guardrails the way `message.role === 'assistant'` would — the same
+ * name-not-semantics collision `anthropic.ts`'s own `.has()` fix documents,
+ * solved here by shape instead.
+ *
+ * `runAssistantTurn` never returns a `system` message in its transcript
+ * (its own doc comment states this) — the `default` branch below is what
+ * makes a violation of that contract fail loudly rather than silently
+ * mis-shape the response.
+ */
+function toWireMessage(message: AiMessage): ChatMessageWire {
+  switch (message.role) {
+    case 'user':
+      return { role: 'user', content: message.content };
+    case 'assistant':
+      return {
+        role: 'assistant',
+        content: message.content,
+        ...(message.toolCalls === undefined
+          ? {}
+          : {
+              toolCalls: message.toolCalls.map((call) => ({ ...call, input: { ...call.input } })),
+            }),
+      };
+    case 'tool_result':
+      return {
+        role: 'tool_result',
+        toolCallId: message.toolCallId,
+        content: message.content,
+        ...(message.isError === undefined ? {} : { isError: message.isError }),
+      };
+    case 'system':
+      throw errors.internal(undefined, 'Unexpected system message in assistant transcript.');
+  }
+}
+
+export interface AiRouterDeps {
+  readonly keys: KeyProvider;
+  readonly searchProvider: SearchProvider;
+  /** Threaded into `prReadDeps` below — `connectorFor`'s transparent GitHub
+      token refresh (migration 0109) needs the OAuth App's client_id/secret
+      to authenticate a refresh call, the same reasoning `PrReadDeps`'s own
+      comment gives. */
+  readonly providers: IntegrationDeps['providers'];
+}
+
+/**
+ * The acting member's own membership id, for `ai.usage_ledger`'s "who
+ * triggered it" column (§3.1). Guaranteed to exist by the time this runs —
+ * `route()`'s own `requireOrg` already refused the request otherwise — so a
+ * missing row here means something in that chain broke, not that the
+ * caller did anything wrong.
+ *
+ * Exported for other `completeGated` callers outside this router — the
+ * standup narration (§5) is the first, and every future one-shot completion
+ * caller needs the identical membership id for the same ledger column.
+ */
+export async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<MembershipId> {
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.memberships.id })
+      .from(schema.memberships)
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, userId)))
+      .limit(1);
+
+    const row = rows[0];
+    if (row === undefined) {
+      throw errors.internal(
+        undefined,
+        'Expected an active membership for an authenticated request.',
+      );
+    }
+    return unsafeAsId<'MembershipId'>(row.id);
+  });
+}
+
+export function createAiRouter(deps: AiRouterDeps) {
+  const tools = buildToolRegistry({
+    searchProvider: deps.searchProvider,
+    prReadDeps: { keys: deps.keys, providers: deps.providers },
+  });
+
+  return router({
+    chat: router({
+      send: route({
+        permission: 'ai:use',
+        feature: { flag: 'aiAssistant', display: 'AI Assistant' },
+      })
+        .input(ChatSendInput)
+        .output(ChatSendOutput)
+        .mutation(async ({ input, ctx }) => {
+          const orgId = ctx.principal.org.orgId;
+          const userId = ctx.principal.userId;
+
+          const [{ provider, providerName, model }, membershipId] = await Promise.all([
+            resolveAiProvider(orgId, deps.keys),
+            loadMembershipId(orgId, userId),
+          ]);
+
+          const result = await runAssistantTurn(
+            provider,
+            { orgId, userId, membershipId, requestId: ctx.requestId },
+            { subject: subjectOf(ctx.principal), requestId: ctx.requestId },
+            tools,
+            {
+              feature: 'assistant.chat',
+              providerName,
+              model,
+              systemPrompt:
+                'You are the TaskFlow Assistant. You help the current user find and understand ' +
+                'their work using the tools available to you. You only ever act with the ' +
+                'permissions of the person you are talking to — you cannot see or do anything ' +
+                'they could not do themselves. Some actions require the person to confirm ' +
+                'before they run; when that happens, tell them what you are asking to do and ' +
+                'wait for their answer rather than assuming it. Be concise. ' +
+                `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC) — use this as ` +
+                'the reference point for any relative date the user asks about ("this week", ' +
+                '"overdue", "next month"), since a tool result only ever gives you a raw due ' +
+                'date, never a pre-computed relative answer. ' +
+                'Every tool you can call — search, my_cards, list_projects, list_boards, ' +
+                'list_labels, list_members, list_sprints, list_statuses, list_channels, ' +
+                'list_repos, list_prs, get_pr_diff, get_pr_files, get_pr_file_content, ' +
+                'get_pr_file_diff, get_pr_comments, list_card_prs, and ' +
+                "every write tool's own result — " +
+                'is ALREADY shown to the user as a real, clickable list or confirmation right ' +
+                'below your reply. Do NOT restate what a tool returned as a bullet list, a ' +
+                'numbered list, or a table of your own — that only duplicates what they can ' +
+                'already see and click, in a worse, unclickable form. After a READ tool, reply ' +
+                'with at most one short sentence of genuine commentary (a count, what stands ' +
+                'out, a pattern worth noticing) and nothing else. After a WRITE tool, a brief ' +
+                'confirmation sentence is fine ("Created it and assigned Priya"), but never ' +
+                'repeat the fields back — the confirmation shown to the user already has them. ' +
+                'Every id-shaped field you pass to a tool (projectId, boardId, listId, cardId, ' +
+                'userId, labelId, sprintId, channelId, spaceId) must be a REAL id that a tool ' +
+                'result already in this conversation actually returned — never invent, guess, ' +
+                'or reuse an id from a different kind of entity. When the user names a card by ' +
+                'its reference (e.g. "WEB-142"), call `find_card` to resolve it — `search` does ' +
+                'not index card references, only their content, so it will not find one. For ' +
+                'anything about pull requests or code review, use `list_prs`/`get_pr_diff`/ ' +
+                '`get_pr_files`/`get_pr_file_content`/`get_pr_file_diff`/`get_pr_comments` — ' +
+                'there is no other tool that can see GitHub, ' +
+                'and a PR number (e.g. "PR #42") is not a cardId or any other kind of id in this ' +
+                'app. Use `get_pr_files` for "what files does this PR touch" — cheaper than ' +
+                '`get_pr_diff` and never truncated; reach for `get_pr_diff` only when the actual ' +
+                'line-by-line content matters. If `get_pr_diff` comes back with `truncated: ' +
+                'true` (which happens on large PRs — every real PR has some size where this is ' +
+                'unavoidable), do NOT tell the user you cannot show the rest of the change: call ' +
+                '`get_pr_files` for the full, untruncated list of every changed file, then call ' +
+                '`get_pr_file_diff` once per file the user actually wants to see, passing the ' +
+                "exact `path` from that list — this returns just that one file's own diff, which " +
+                'easily fits even when the whole-PR diff did not. When the user asks to SEE or ' +
+                "SHOW a file's content (not what changed, but the whole current file), use " +
+                '`get_pr_file_content` with the exact path — get it from `get_pr_files` first if ' +
+                'you do not already have it verbatim from earlier in the conversation. If ' +
+                '`get_pr_file_content`/`get_pr_file_diff` or any other GitHub tool fails or ' +
+                'refuses, say plainly that the tool failed and why (using the error message you ' +
+                'were given) — never invent a claim about the file or the PR (e.g. whether a ' +
+                'file is new, what it contains, when it was added) to paper over a failed call; ' +
+                'you only know what a successful tool result actually told you. ' +
+                '`list_prs` defaults to OPEN pull requests only — if the user asks for closed, ' +
+                'merged, or "all" pull requests, you MUST pass `state: "closed"` or ' +
+                '`state: "all"` explicitly; do not assume the default list already covers what ' +
+                'they asked for, and do not silently narrow a request for closed PRs back to ' +
+                'open ones. If any GitHub tool refuses because more than one repository is ' +
+                'connected, call `list_repos`, tell the user the choices, and ask which one they ' +
+                'mean — then pass that exact value as `repoScope` on every GitHub tool call for ' +
+                'the rest of THIS conversation without asking again, unless the user later says ' +
+                'to use a different repo. Never guess which connected repo to use. To act on a ' +
+                'pull request, use `pr_post_comment`/`pr_comment_on_file`/`pr_request_changes`/' +
+                '`pr_approve`/`pr_merge`/`pr_close` — never `card_add_comment` or any Work/Chat ' +
+                'tool, which act on a TaskFlow card or channel, not a GitHub pull request. ' +
+                "`pr_post_comment` posts to the PR's general conversation thread; use " +
+                '`pr_comment_on_file` instead whenever the feedback is about one specific file ' +
+                '(get the exact `path` from `get_pr_files`) — only pass `line` if the user wants ' +
+                'it pinned to one line, and confirm that line is real via `get_pr_file_diff` ' +
+                'first, since GitHub refuses a line not part of the diff. `pr_approve` and ' +
+                '`pr_request_changes` are different, mutually exclusive outcomes of the same ' +
+                'review — never call both for the same request. To connect a card to the pull ' +
+                'request that ' +
+                'implements it, use `card_link_pr` (never a comment or any other tool) — and use ' +
+                '`list_card_prs` to see which PRs are already linked to a card before asking the ' +
+                'user which one they mean. To create a git branch for a card, use ' +
+                "`create_branch_from_card` — its name is derived automatically from the card's " +
+                'own reference and title; never invent a branch name yourself, the tool takes no ' +
+                'name input at all. If you ' +
+                'do not yet have the id ' +
+                'you need, call the right list_* tool for it first and wait for its result ' +
+                'before calling anything that depends on it — do not request both in the same ' +
+                'turn. A card\'s STATUS (use `list_statuses` to resolve a name like "In ' +
+                'Progress" or "Blocked" before `card_set_status`) is a completely different ' +
+                'thing from which LIST or BOARD it sits on (`list_boards`) — never guess one ' +
+                'for the other. To message someone directly with no existing conversation, ' +
+                "pass user ids straight to `chat_post_message`'s `dmUserIds` — do not look for " +
+                'a separate "open DM" tool, there isn\'t one, `chat_post_message` handles it. ' +
+                'You can only do what a tool in your list lets you do; if the user asks ' +
+                'for something with no tool for it (creating a new label, for example — labels ' +
+                'can only be looked up and applied, never created), say so plainly and do not ' +
+                'offer to do it anyway or retry the same failed approach a second time. If a ' +
+                "name the user gave you (a label, a project, a person) isn't in a lookup tool's " +
+                'result, tell them it does not exist rather than guessing an id for it. If the ' +
+                "user's message asks for more than one thing, address every one of them, not " +
+                'just the last — do not silently drop part of a request because you answered ' +
+                'another part of it. Do not re-call a list_* tool for information a result ' +
+                'earlier in this same conversation already gave you; reuse what you already ' +
+                "have instead of fetching it again. The user's own message may contain a " +
+                'reference in the exact form `Label{{type:id}}` (type is one of user, project, ' +
+                'board, sprint, or list) — this is a person or entity they picked from a real ' +
+                'list while composing, and the id is ALREADY the real, correct id. Use it ' +
+                'directly in a tool call exactly as given; never call a list_* tool to ' +
+                'independently resolve it, and never repeat the raw `{{type:id}}` text back ' +
+                'to the user — refer to them only by the label before it. If a request to ' +
+                'create or move something does not say which project, board, or list it goes ' +
+                'in, ASK which one they mean before calling a write tool — do not guess or ' +
+                'silently pick one, even one mentioned earlier in the conversation, unless the ' +
+                "user's most recent message clearly implies it.",
+              messages: input.messages,
+              confirmedToolCallIds: input.confirmedToolCallIds,
+            },
+          );
+
+          return {
+            content: result.content,
+            toolRounds: result.toolRounds,
+            messages: result.messages.map(toWireMessage),
+            ...(result.pendingToolCalls === undefined
+              ? {}
+              : {
+                  pendingToolCalls: result.pendingToolCalls.map((call) => ({
+                    ...call,
+                    input: { ...call.input },
+                  })),
+                }),
+          };
+        }),
+    }),
+  });
+}

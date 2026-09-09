@@ -369,6 +369,7 @@ describe('the operator console routes', () => {
         payments: new FakePaymentProvider(),
         storage: unusedStorage,
         scanner: unusedScanner,
+        ai: { keys },
       }),
     )(context);
 
@@ -389,6 +390,7 @@ describe('the operator console routes', () => {
         payments: new FakePaymentProvider(),
         storage: unusedStorage,
         scanner: unusedScanner,
+        ai: { keys },
       }),
     )(context);
 
@@ -711,6 +713,7 @@ describe('plans.setOrgEntitlements — the route, over a real caller', () => {
         payments: new FakePaymentProvider(),
         storage: unusedStorage,
         scanner: unusedScanner,
+        ai: { keys },
       }),
     )(context);
 

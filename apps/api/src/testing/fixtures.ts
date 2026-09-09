@@ -121,6 +121,7 @@ export function testPrincipal(
       orgId: unsafeAsId<'OrgId'>('018f4d1e-7c3a-7b2e-8f1a-00000000000a'),
       role,
       tuples: [],
+      memberGrants: [],
     },
     tokenScopes: null,
     ...overrides,
@@ -181,6 +182,7 @@ export function testAppRouter(
     router: createAppRouter({
       identity: deps,
       identityDataKey: TEST_IDENTITY_DATA_KEY,
+      webOrigin: TEST_ENV.WEB_ORIGIN,
       passkeys,
       automation: {
         keys: automationKeys,

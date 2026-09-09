@@ -69,6 +69,11 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'member.added': { type: 'member', key: 'userId' },
   'member.role_changed': { type: 'member', key: 'userId' },
   'member.removed': { type: 'member', key: 'userId' },
+  /* §8 (ai/phase-15-ai-copilot-and-permissions.md) — offboarding automation's
+     trigger. Resolves exactly like `member.added`/`member.removed`: the fact
+     is about the account, and "what happened when this person left" is the
+     question a reader of the audit log asks about it. */
+  'member.offboarding_started': { type: 'member', key: 'userId' },
   /* Phase 12 Wave 1. The handoff resolves to the ORG — the fact being
      recorded is "this org changed owners", and the org is what an access
      review asks about. */
@@ -78,6 +83,32 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'team.member_removed': { type: 'team', key: 'teamId' },
   'grant.created': { type: 'member', key: 'subjectId' },
   'grant.revoked': { type: 'member', key: 'subjectId' },
+  /* ai/phase-15-ai-copilot-and-permissions.md §1 — the org-level counterpart
+     to the tuple grants directly above. Resolves to the MEMBER the
+     permission was given to or taken from, keyed on `userId` (the tuple
+     events above use `subjectId`, since a tuple's subject can be a team; a
+     member grant's subject is always one person, so the payload names it
+     the same way `member.role_changed` does). */
+  'member_grant.created': { type: 'member', key: 'userId' },
+  'member_grant.revoked': { type: 'member', key: 'userId' },
+  /* Phase 15 §8 checklist item 3 — config, not a fact about one member (no
+     membershipId/userId in the payload at all), so this resolves to the ORG,
+     the same reasoning `member.ownership_transferred` above already gives
+     for a fact about the org's own standing rather than one person's. */
+  'role_default_grant.set': { type: 'org', key: 'orgId' },
+  'role_default_grant.removed': { type: 'org', key: 'orgId' },
+  /* Email invitations (migration 0107). Only `invitation.accepted` gets a
+     real mapping — it carries a genuine `userId` (the account that just
+     joined) and fires in the same transaction as `member.added`, so
+     resolving it to the identical `{member, userId}` shape lets "what
+     happened to this account" find both events together. `invitation.sent`
+     and `invitation.revoked` are in `UNMAPPED` (audit.projection.test.ts)
+     rather than forced here: neither carries a `userId` yet, and `invitation`
+     is deliberately absent from `RESOURCE_TYPES` (packages/policy) — no
+     relationship tuple can point at one — so inventing a type to satisfy
+     this table would be the tail wagging the policy engine, the identical
+     reasoning that file's own `saved_search.*` entries already give. */
+  'invitation.accepted': { type: 'member', key: 'userId' },
 
   /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
      model: there is no `list` resource type, because a list is not
@@ -100,6 +131,14 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.moved': { type: 'card', key: 'cardId' },
   'card.assigned': { type: 'card', key: 'cardId' },
   'card.archived': { type: 'card', key: 'cardId' },
+  /* Offboarding automation's bulk reassignment (§8) touches MANY cards, so
+     there is no single `cardId` to key on the way every other card.* event
+     does — resolving to the card, plural, would need a resource shape this
+     table does not have. Keyed on `fromUserId` (type `member`) instead: the
+     compliance question this event answers is "what happened to this
+     departing member's work", the same framing `member.removed` already
+     resolves to the account rather than to anything the account touched. */
+  'card.bulk_reassigned': { type: 'member', key: 'fromUserId' },
 
   /* Sprints (Phase 10.5, migration 0054) resolve to their PROJECT, on exactly
      the reasoning `list.*` resolves to its board: there is no `sprint`
@@ -130,6 +169,37 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.labeled': { type: 'card', key: 'cardId' },
   'checklist.created': { type: 'card', key: 'cardId' },
   'checklist.deleted': { type: 'card', key: 'cardId' },
+  /* The card<->PR link (migration 0105, Phase 15 §7.2) — the resource is the
+     CARD, not a `pull_request` type this schema has no concept of: a link
+     changes what one card is annotated with, the identical shape checklist
+     events above already have. Added in the SAME change that registers the
+     event, not a follow-up — the audit projection's own "every registered
+     event is accounted for" test exists precisely to catch a gap like the
+     one this file's Phase 15 §7 Wave 2 section already documents once. */
+  'card.pull_request_linked': { type: 'card', key: 'cardId' },
+  'card.pull_request_unlinked': { type: 'card', key: 'cardId' },
+  /* Auto-move-on-merge (§7.2's last documented automation gap) — emitted by
+     the GitHub webhook itself, not a card mutation route, but the resource
+     is still the CARD it names. Mapped in the same change that registers
+     the event, the identical discipline the two comments above already
+     state the reason for. */
+  'card.pull_request_merged': { type: 'card', key: 'cardId' },
+  /* The card<->branch link (migration 0106) — the identical `card.pull_
+     request_linked` shape directly above, one entity type over: the
+     resource is the CARD, not a `branch` type this schema has no concept
+     of. Added in the same change that registers the event, per the same
+     "every registered event is accounted for" test this file's own
+     `card.pull_request_linked` comment already names. */
+  'card.branch_linked': { type: 'card', key: 'cardId' },
+  'card.branch_unlinked': { type: 'card', key: 'cardId' },
+  'card.calendar_sync_toggled': { type: 'card', key: 'cardId' },
+  /* "Email me this project's standup" (migration 0108) — the resource is
+     the PROJECT the subscription names, not the member who made it (that is
+     already the actor). Added in the same change that registers the event,
+     per this file's own repeated "every registered event is accounted for"
+     discipline. */
+  'standup_subscription.created': { type: 'project', key: 'projectId' },
+  'standup_subscription.removed': { type: 'project', key: 'projectId' },
   'checklist_item.created': { type: 'card', key: 'cardId' },
   'checklist_item.updated': { type: 'card', key: 'cardId' },
   'checklist_item.deleted': { type: 'card', key: 'cardId' },
@@ -331,6 +401,18 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      `integration.github_event`) are NOT mapped here — see NEVER_AUDITED. */
   'integration.message_posted': { type: 'integration', key: 'integrationId' },
   'integration.issue_created': { type: 'integration', key: 'integrationId' },
+  /* Phase 15 §7 Wave 2's four PR write events — same shape as the two
+     above (an outbound effect this deployment took through a connector),
+     found missing here by CI rather than by review: `pr-write.service.ts`
+     shipped these with real `.strict()` schemas and real emission, but this
+     map was never updated to match, which `audit.projection.test.ts`'s own
+     "every registered event is accounted for" invariant exists to catch. */
+  'integration.pr_comment_posted': { type: 'integration', key: 'integrationId' },
+  'integration.pr_review_submitted': { type: 'integration', key: 'integrationId' },
+  'integration.pr_merged': { type: 'integration', key: 'integrationId' },
+  'integration.pr_closed': { type: 'integration', key: 'integrationId' },
+  'integration.pr_file_comment_posted': { type: 'integration', key: 'integrationId' },
+  'integration.branch_created': { type: 'integration', key: 'integrationId' },
 };
 
 /**

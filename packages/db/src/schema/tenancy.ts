@@ -182,3 +182,62 @@ export const teamMembers = identity.table(
     index('team_members_user_idx').on(table.orgId, table.userId),
   ],
 );
+
+/**
+ * An outstanding invitation to join the org by email (migration 0107) — what
+ * `addMember` deliberately does not cover: an address with no TaskFlow
+ * account yet. See `apps/api/src/tenancy/invitation.service.ts`.
+ */
+export const invitations = identity.table('invitations', {
+  id: uuid('id').primaryKey(),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('pending'),
+  tokenHash: text('token_hash').notNull(),
+  invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  acceptedUserId: uuid('accepted_user_id').references(() => users.id, { onDelete: 'set null' }),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The pre-tenant `token -> org` lookup an invitation-accept call needs before
+ * it can open a scope — the identical shape and reasoning as
+ * `comms.subaccount_orgs`/`billing.customer_orgs`. NO RLS: see migration
+ * 0107's own header and `scripts/check-migration-rls.mjs`'s RLS_EXEMPT.
+ */
+export const invitationLookup = identity.table('invitation_lookup', {
+  tokenHash: text('token_hash').primaryKey(),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+});
+
+/**
+ * One relationship grant attached to an invitation (migration 0111) — applied
+ * automatically the instant the invitee accepts. Generic
+ * `objectType`/`objectId`/`relation`, the same shape `authz.relationship
+ * Tuples` itself already uses, rather than a `projectId` naming Work
+ * specifically: grants are already a cross-module primitive, and this table
+ * stays in identity's own schema regardless of who populates it. See
+ * `apps/api/src/work/guest-access.service.ts`'s `inviteGuestByEmail`, its
+ * first and only caller today.
+ */
+export const invitationPendingGrants = identity.table('invitation_pending_grants', {
+  invitationId: uuid('invitation_id')
+    .primaryKey()
+    .references(() => invitations.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+  objectType: text('object_type').notNull(),
+  objectId: uuid('object_id').notNull(),
+  relation: text('relation').notNull(),
+  isGuest: boolean('is_guest').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

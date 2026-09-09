@@ -1,10 +1,15 @@
 # Phase 12, Wave 1 — Org governance & platform admin
 
-**Status: DRAFT, not yet approved for build. Written 2026-08-08; §7's seven open decisions
-answered the same day; corrected against the real codebase (migrations, ESLint config, RLS
-policies) the same day again — see the correction note just below.** Design is settled; this still
-needs a human's go-ahead before implementation starts, the same bar `ai/phase-4-realtime.md` and
-`ai/phase-11.5-people.md` both held before their own Wave 1s began.
+**Status: SHIPPED.** Written 2026-08-08; §7's seven open decisions answered the same day;
+corrected against the real codebase (migrations, ESLint config, RLS policies) the same day again —
+see the correction note just below. This header said "DRAFT, not yet approved for build" long
+after the wave shipped — CLAUDE.md's own Phase 12 Wave 1 section documented the flat operator flag,
+the org directory, flag overrides, the operator audit log, `platformRoute`, ownership transfer, and
+suspension enforcement as built in detail, and a sibling spec
+([phase-12-wave3.md](phase-12-wave3.md)) already called this wave "shipped" in its own text, while
+this file's own header still claimed nothing had been approved. Left corrected in place rather than
+silently rewritten, per this repo's own "a status marker is a claim, not a fact" discipline
+(CLAUDE.md).
 
 Parent: [PLAN.md](../PLAN.md) §13 (Roadmap, row 12).
 

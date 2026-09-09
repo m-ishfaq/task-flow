@@ -1,4 +1,4 @@
-import { and, eq, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
+import { and, eq, inArray, schema, withOrgScope, withUserScope, outboxWriter } from '@taskflow/db';
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -180,6 +180,32 @@ export interface OrgSummary {
   readonly name: string;
   readonly slug: string;
   readonly role: string;
+  /**
+   * The CALLER'S OWN membership status in this org — `'active'` or
+   * `'suspended'` (`memberships_status_valid`). Included, not filtered out,
+   * so the picker and `OrgGate` can tell "you have no access here" apart
+   * from "you never had access here" and say so, instead of a suspended
+   * membership silently vanishing from the list the same way a never-joined
+   * org does. `resolveOrgMembership`'s own header has the full story — this
+   * is the read half of the identical fix.
+   */
+  readonly membershipStatus: string;
+  /**
+   * The ORG'S OWN status — `'active'` or `'suspended'` (`orgs_status_valid`),
+   * set only by a platform operator (Phase 12 Wave 1's org directory), never
+   * by the org itself. A DIFFERENT fact from `membershipStatus` above: a
+   * suspended org refuses every member, not just one row, and
+   * `resolveOrgMembership` has thrown a distinct `ORG_SUSPENDED` for this
+   * since before this field existed — but with no `orgStatus` anywhere in
+   * this list, neither `OrgGate` nor the picker had any way to tell that
+   * apart from an ordinary, fully-accessible org, so a suspended org still
+   * showed as a normal, clickable row until the FIRST org-scoped query after
+   * choosing it threw an error nothing on either surface was built to catch.
+   * `'deleted'` is excluded from the query below rather than surfaced here,
+   * matching `resolveOrgMembership`'s own choice to answer that case as if
+   * the caller had never been a member at all.
+   */
+  readonly orgStatus: string;
 }
 
 /**
@@ -189,6 +215,24 @@ export interface OrgSummary {
  * `withUserScope` exists. It is safe because the two policies keyed on
  * `app.user_id` are SELECT-only and match the caller's own membership rows;
  * everything else still filters on `app.org_id`, which this scope clears.
+ *
+ * Returns EVERY membership, active or suspended — narrowing to `'active'`
+ * used to happen here, which meant a suspended membership was
+ * indistinguishable from no membership at all: it simply disappeared from
+ * this list, `OrgGate` read that as "the stored selection is stale," and
+ * silently dropped it with nothing on screen explaining why. The caller
+ * (`OrgPickerPage`, `OrgGate`) decides what a non-active row means to show;
+ * this function's job is only to report the truth.
+ *
+ * The org's own `status` is reported alongside the membership's for the
+ * identical reason, one level up: a member of a SUSPENDED ORG is still an
+ * active member of it, so `membershipStatus` alone reads that org as
+ * perfectly normal. `status = 'deleted'` is filtered OUT here rather than
+ * reported, matching `resolveOrgMembership`'s own choice to treat that case
+ * as though the caller had never been a member — the org directory's real
+ * cascading delete (Phase 12 Wave 2) means this should be unreachable in
+ * practice, but the filter costs nothing and keeps the two functions'
+ * privacy answer identical rather than accidentally diverging.
  */
 export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]> {
   return withUserScope(userId, async (tx) =>
@@ -198,10 +242,17 @@ export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]>
         name: schema.orgs.name,
         slug: schema.orgs.slug,
         role: schema.memberships.role,
+        membershipStatus: schema.memberships.status,
+        orgStatus: schema.orgs.status,
       })
       .from(schema.memberships)
       .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
-      .where(and(eq(schema.memberships.userId, userId), eq(schema.memberships.status, 'active')))
+      .where(
+        and(
+          eq(schema.memberships.userId, userId),
+          inArray(schema.orgs.status, ['active', 'suspended']),
+        ),
+      )
       .orderBy(schema.orgs.name),
   );
 }
@@ -225,10 +276,41 @@ export interface SettingsCapabilities {
   readonly inviteMember: boolean;
   /** Change a member's role; transfer ownership (both are `member:manage`). */
   readonly manageMembers: boolean;
+  /**
+   * May open `/people` (the org directory) at all, AND may see the member
+   * roster on the Settings page's own `MemberSection` — `member:read`, an
+   * `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly (see
+   * `packages/policy/src/roles.ts`'s empty `GUEST` list). The sidebar reads
+   * this the identical way it already reads `viewAnalytics`/`viewAuditLog`
+   * to hide the "People" nav item entirely, rather than showing it and
+   * letting `people-page.tsx`/`person-page.tsx` answer FORBIDDEN — before
+   * this field existed, `/people` had NO capability gate at all (the one
+   * item in `sidebar.tsx` with none), so a Guest saw the nav item, clicked
+   * it, and landed on a plain error card. There is no plan or grant that
+   * turns `member:read` on for a Guest, so a locked icon would be wrong
+   * here too — hidden entirely is the only honest state, same reasoning as
+   * `viewAnalytics`'s own comment.
+   *
+   * `MemberSection`'s own roster query was the second, larger instance of
+   * the identical gap: unconditionally rendered on `/settings`, which is
+   * reachable from the persistent top-bar nav for every role including
+   * Guest — so a Guest reaching Settings hit the same raw FORBIDDEN one
+   * level up from `/people`, on a page most people reach far more often.
+   */
+  readonly viewDirectory: boolean;
   /** Remove a member from the organization. */
   readonly removeMembers: boolean;
   /** Create a team; add or remove a team's members. */
   readonly manageTeams: boolean;
+  /**
+   * May see the team roster at all — `team:read`, another
+   * `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly. The
+   * same shape as `viewDirectory` immediately above, for the Settings
+   * page's `TeamSection`: unconditionally rendered before this field
+   * existed, so a Guest reaching `/settings` hit a second raw FORBIDDEN
+   * right below the first.
+   */
+  readonly viewTeams: boolean;
   /**
    * Create a project, or duplicate an existing one (`work/project.service.ts`
    * — `duplicate` is floored on the identical `project:create`). Not one of
@@ -242,6 +324,127 @@ export interface SettingsCapabilities {
    * `work/board.service.ts`), because THOSE really do vary by resource.
    */
   readonly createProject: boolean;
+  /**
+   * May open `/analytics` at all — `analytics:read`, Admin-and-Owner-only by
+   * role alone (Phase 11 §5). The sidebar (`sidebar.tsx`) reads this to hide
+   * the nav item entirely for a Member, rather than showing it and letting
+   * the page answer FORBIDDEN — there is no plan upgrade or grant that turns
+   * this on for a Member the way there is for e.g. telephony, so a locked
+   * icon here would advertise a door nothing can open for them.
+   */
+  readonly viewAnalytics: boolean;
+  /** Same reasoning again, for the "Audit log" link and `audit:read`. */
+  readonly viewAuditLog: boolean;
+  /**
+   * The four `/automations` tabs, UNLIKE `viewAnalytics`/`viewAuditLog`
+   * above: `automation:manage`, `webhook:manage`, `integration:manage` and
+   * `apiToken:create`/`apiToken:revoke` joined `GRANTABLE_PERMISSIONS` in
+   * Wave 2 (`packages/policy/src/permissions.ts`), so — exactly like the
+   * five telephony booleans below — these are not all-or-nothing by role.
+   * Admin and Owner hold all five by role; a Member holds each only via an
+   * explicit `authz.member_grants` row, so someone granted only
+   * `webhook:manage` needs `/automations` to open (there is no single
+   * `viewAutomations` flag to gate the route on any more) and land on the
+   * Webhooks tab specifically, not Rules. `readApiTokens` does not exist:
+   * `apiToken.router.ts`'s `list`/`heldScopes` both floor on
+   * `apiToken:create`, matching `createApiTokens` below — reading the list
+   * is bundled with minting, not a third capability.
+   */
+  readonly manageAutomations: boolean;
+  readonly manageWebhooks: boolean;
+  readonly manageIntegrations: boolean;
+  readonly createApiTokens: boolean;
+  readonly revokeApiTokens: boolean;
+  /**
+   * The five telephony permissions (`GRANTABLE_PERMISSIONS`,
+   * `packages/policy/src/permissions.ts`), UNLIKE the three above, are not
+   * all-or-nothing by role: Admin and Owner hold all five by role, but a
+   * Member holds each independently, only via an explicit
+   * `authz.member_grants` row (migration 0097/0098). So these are five
+   * booleans, not one — someone can have `readSms` and nothing else, and the
+   * UI must reflect exactly that, not "has telephony" as a single flag.
+   */
+  readonly readPhoneNumbers: boolean;
+  readonly placeCalls: boolean;
+  readonly readCalls: boolean;
+  readonly sendSms: boolean;
+  readonly readSms: boolean;
+  /**
+   * May open `/settings` → Billing at all, or the mobile Billing screen —
+   * `org:billing`, Owner-only by role alone (no tuple, no member grant: it
+   * is not in `GRANTABLE_PERMISSIONS`). Same reasoning as `viewAnalytics`:
+   * nothing ever turns this on for a non-owner, so a locked icon would
+   * advertise a door nobody but the current owner can open — hide it
+   * entirely rather than show it and let it 403.
+   */
+  readonly viewBilling: boolean;
+  /**
+   * Buying/releasing a phone number on `/calls` → Numbers — `phoneNumber:
+   * purchase`/`phoneNumber:release`, Owner-only (unlike `readPhoneNumbers`
+   * above, NEITHER is in `GRANTABLE_PERMISSIONS`: reading the org's numbers
+   * is delegable, spending money on a new one or giving one up is not).
+   * `numbers-panel.tsx` used to render both buttons for every viewer
+   * holding `readPhoneNumbers` and let a non-owner's click come back
+   * FORBIDDEN — its own doc comment said so explicitly (Phase 15 §1's
+   * sweep).
+   */
+  readonly purchaseNumbers: boolean;
+  readonly releaseNumbers: boolean;
+  /**
+   * Sharing a saved search with the whole org — `search:manage`,
+   * Admin-and-Owner only by role (`packages/policy/src/roles.ts`'s own
+   * comment: "unlike `recording:export` or `phoneNumber:purchase` the
+   * worst case is clutter, not a bill or a leaked conversation" — Admin
+   * gets it for that reason, where telephony spend stays Owner-only).
+   * `search-page.tsx`'s "Share with the organization" checkbox used to
+   * render for every caller and let a Member's tick come back FORBIDDEN.
+   */
+  readonly manageSavedSearches: boolean;
+  /**
+   * The Recordings section on a card, and the Spend tab's itemized report
+   * (`spend-panel.tsx`) — `recording:read`, Admin-and-Owner only by role
+   * alone (in `ORG_LEVEL_PERMISSIONS`, `packages/policy/src/permissions.ts`
+   * — "no route declares this one as its floor... `route()`'s pre-check IS
+   * the whole decision", so unlike the five telephony fields above this is
+   * a flat org-wide boolean, not per-resource). `recording-section.tsx`
+   * used to render on every card unconditionally and let a Member's
+   * interaction come back FORBIDDEN.
+   */
+  readonly readRecordings: boolean;
+  /**
+   * Creating a new Docs SPACE — `space:create`, computed with no target
+   * (like `createProject` above) since a not-yet-created space has no
+   * resource to scope a tuple to. Unlike `createProject`, this permission
+   * genuinely can ALSO be satisfied by a tuple once a space exists
+   * (`space:manage` is per-space, and `docs.spaces.list` already returns
+   * that half in its own `capabilities.manage`); this field only ever
+   * answers the org-wide "create" question, the one place a tuple cannot
+   * help because there is nothing yet to hold one.
+   */
+  readonly createSpace: boolean;
+  /**
+   * The AI assistant nav item and chat page — `ai:use`
+   * (ai/phase-15-ai-copilot-and-permissions.md §2.4), individually granted
+   * exactly like the telephony five and Wave 2's automation four above (in
+   * `GRANTABLE_PERMISSIONS`). This is the FLOOR check the sidebar and the
+   * assistant page both read before rendering anything; the route itself
+   * re-checks the identical permission plus the `aiAssistant` PLAN
+   * entitlement (`useEntitlements`, read separately — a permission and a
+   * plan flag answer different questions and neither substitutes for the
+   * other, same as `/automations`'s nav item and its own plan flag).
+   */
+  readonly useAi: boolean;
+  /**
+   * The "Create branch" button on a card's Development section/header chips
+   * (ai/phase-15-ai-copilot-and-permissions.md §7.2) — `repo:connect`,
+   * individually granted exactly like `useAi` above (in
+   * `GRANTABLE_PERMISSIONS`, Owner/Admin by role). Gates the WRITE action
+   * only: the Development section's list of already-linked PRs/branches
+   * renders for anyone holding `card:read` regardless of this flag, the
+   * identical "reading is cheaper than writing" split `readPhoneNumbers`
+   * draws against `placeCalls`/`sms:send` above.
+   */
+  readonly createBranches: boolean;
 }
 
 export interface OrgDetail {
@@ -284,9 +487,45 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       updateOrg: can(subject, 'org:update').allowed,
       inviteMember: can(subject, 'member:invite').allowed,
       manageMembers: can(subject, 'member:manage').allowed,
+      viewDirectory: can(subject, 'member:read').allowed,
       removeMembers: can(subject, 'member:remove').allowed,
       manageTeams: can(subject, 'team:manage').allowed,
+      viewTeams: can(subject, 'team:read').allowed,
       createProject: can(subject, 'project:create').allowed,
+      /* Nav-visibility capabilities, not settings-page ones — the sidebar
+         reads these too (see sidebar.tsx). Analytics and the audit log are
+         each Admin-and-Owner-only by ROLE ALONE (no per-resource target),
+         with no separate "read" tier a Member could hold — a plan-flag lock
+         icon says "your ORG could have this," which is true and worth
+         showing; nothing about a Member's ROLE ever becomes true by
+         upgrading a plan, so showing the same lock icon for that case would
+         be advertising a door that plan money can never open for them. */
+      viewAnalytics: can(subject, 'analytics:read').allowed,
+      viewAuditLog: can(subject, 'audit:read').allowed,
+      /* Individually granted (Phase 15 §1) — see the interface doc comment.
+         Each reads `subject.memberGrants` through the same `can()` a route
+         floors on, so a grant made in Settings shows up here with no second
+         source of truth. */
+      readPhoneNumbers: can(subject, 'phoneNumber:read').allowed,
+      placeCalls: can(subject, 'call:place').allowed,
+      readCalls: can(subject, 'call:read').allowed,
+      sendSms: can(subject, 'sms:send').allowed,
+      readSms: can(subject, 'sms:read').allowed,
+      /* Wave 2 — see the interface doc comment. Individually granted exactly
+         like the telephony five above, unlike Analytics/audit above them. */
+      manageAutomations: can(subject, 'automation:manage').allowed,
+      manageWebhooks: can(subject, 'webhook:manage').allowed,
+      manageIntegrations: can(subject, 'integration:manage').allowed,
+      createApiTokens: can(subject, 'apiToken:create').allowed,
+      revokeApiTokens: can(subject, 'apiToken:revoke').allowed,
+      viewBilling: can(subject, 'org:billing').allowed,
+      purchaseNumbers: can(subject, 'phoneNumber:purchase').allowed,
+      releaseNumbers: can(subject, 'phoneNumber:release').allowed,
+      manageSavedSearches: can(subject, 'search:manage').allowed,
+      readRecordings: can(subject, 'recording:read').allowed,
+      createSpace: can(subject, 'space:create').allowed,
+      useAi: can(subject, 'ai:use').allowed,
+      createBranches: can(subject, 'repo:connect').allowed,
     },
   };
 }

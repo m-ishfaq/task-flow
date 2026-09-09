@@ -4,6 +4,7 @@ import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { unsafeAsId } from '@taskflow/contracts';
 import { boardsQuery, labelsQuery, listsQuery, projectsQuery, statusesQuery } from '../work/api.js';
 import { channelsQuery } from '../chat/api.js';
+import { spacesQuery } from '../docs/api.js';
 import { membersQuery } from '../org/api.js';
 import { integrationsQuery, webhooksForPickerQuery } from './api.js';
 import { phoneContactsQuery, phoneNumbersQuery } from '../telephony/api.js';
@@ -70,6 +71,8 @@ export function ArgumentPicker(props: PickerProps) {
       return <MemberPicker {...props} />;
     case 'channel':
       return <ChannelPicker {...props} />;
+    case 'space':
+      return <SpacePicker {...props} />;
     case 'webhook':
       return <WebhookPicker {...props} />;
     case 'integration':
@@ -156,6 +159,29 @@ function ChannelPicker({ orgId, value, onChange, label }: PickerProps) {
         .filter((channel) => channel.type !== 'dm' && channel.type !== 'group_dm')
         .map((channel) => ({ id: channel.channelId, name: `#${channel.name ?? 'channel'}` }))}
       emptyText="No channels"
+    />
+  );
+}
+
+/**
+ * §8's `docs.grant_space_access` — org-scoped, like `ChannelPicker` right
+ * above it: a Docs space belongs to the org directly, never to a project,
+ * so there is no project-choice step first the way `ListPicker`/
+ * `StatusPicker`/`LabelPicker` need one. The relation itself is fixed at
+ * `'viewer'` by the executor (`ARGUMENTS`' own comment in vocabulary.ts) —
+ * this picker only ever resolves WHICH space, never what level of access.
+ */
+function SpacePicker({ orgId, value, onChange, label }: PickerProps) {
+  const spaces = useQuery({ ...spacesQuery(orgId), enabled: orgId !== '' });
+
+  return (
+    <Choose
+      value={value}
+      onChange={onChange}
+      label={label}
+      pending={spaces.isPending}
+      options={(spaces.data ?? []).map((space) => ({ id: space.spaceId, name: space.name }))}
+      emptyText="No spaces — create one on the Docs page"
     />
   );
 }

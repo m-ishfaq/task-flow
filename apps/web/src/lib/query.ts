@@ -121,8 +121,12 @@ export const keys = {
   /** Personal, not org-scoped — a passkey signs into the account, not one org. */
   passkeys: () => ['auth', 'passkeys'] as const,
 
+  /** Pre-auth — an invitation link's own preview, read before any session exists. */
+  invitationPreview: (token: string) => ['auth', 'invitationPreview', token] as const,
+
   /** Whether the caller's own account has a confirmed TOTP factor (Phase 12 Wave 2 §3.2). */
   totpStatus: () => ['auth', 'totp', 'status'] as const,
+  calendarFeedStatus: () => ['auth', 'calendarFeed', 'status'] as const,
 
   /** Which OAuth providers this server has credentials for (Phase 12 Wave 2 §3.3). */
   oauthProviders: () => ['auth', 'oauth', 'providers'] as const,
@@ -197,6 +201,9 @@ export const keys = {
     ['org', orgId, 'projects', includeArchived ? 'all' : 'live'] as const,
   boards: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'boards'] as const,
+  /** Guest-invite roster for one project (`work.guests.list`). */
+  projectGuests: (orgId: string, projectId: string) =>
+    ['org', orgId, 'projects', projectId, 'guests'] as const,
 
   lists: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'lists'] as const,
   views: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'views'] as const,
@@ -217,6 +224,21 @@ export const keys = {
   comments: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId, 'comments'] as const,
   attachments: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'attachments'] as const,
+  cardPullRequests: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'pullRequests'] as const,
+  cardBranches: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'branches'] as const,
+  cardCalendarSync: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'calendarSync'] as const,
+  githubRepos: (orgId: string) => ['org', orgId, 'githubRepos'] as const,
+  pullRequestStatus: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestStatus', providerScope, prNumber] as const,
+  pullRequestDiff: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestDiff', providerScope, prNumber] as const,
+  pullRequestFiles: (orgId: string, providerScope: string, prNumber: number) =>
+    ['org', orgId, 'pullRequestFiles', providerScope, prNumber] as const,
+  pullRequestFileDiff: (orgId: string, providerScope: string, prNumber: number, path: string) =>
+    ['org', orgId, 'pullRequestFileDiff', providerScope, prNumber, path] as const,
 
   labels: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'labels'] as const,
@@ -224,6 +246,12 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'statuses'] as const,
   sprints: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'sprints'] as const,
+  /** The standup view's assembled data (Phase 15 §5) — one project, one window. */
+  standup: (orgId: string, projectId: string, sinceHours: number) =>
+    ['org', orgId, 'projects', projectId, 'standup', sinceHours] as const,
+  /** "Email me this project's standup" (migration 0108). */
+  standupSubscription: (orgId: string, projectId: string) =>
+    ['org', orgId, 'projects', projectId, 'standup', 'subscription'] as const,
   /**
    * Every project's active sprint (10.6 D3) — the sidebar's ambient line.
    * Org-scoped, NOT nested under `sprints`, so invalidating one project's
@@ -234,6 +262,12 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 
   members: (orgId: string) => ['org', orgId, 'members'] as const,
+  /** Pending email invitations (migration 0107) — settings-page.tsx's invite panel. */
+  invitations: (orgId: string) => ['org', orgId, 'invitations'] as const,
+  /** Individual, org-level permission grants (ai/phase-15-...md §1) — settings-page.tsx's Permissions section. */
+  memberGrants: (orgId: string) => ['org', orgId, 'member-grants'] as const,
+  /** One org's role default grant bundles (§8 checklist item 3) — settings-page.tsx's Role defaults section. */
+  roleDefaultGrants: (orgId: string) => ['org', orgId, 'role-default-grants'] as const,
   explain: (orgId: string, input: string) => ['org', orgId, 'authz', 'explain', input] as const,
 
   /** Every channel the caller may see (Phase 5, chat/api.ts) — public, private, and DMs alike. */
@@ -291,6 +325,8 @@ export const keys = {
   /** Recordings attached to one Work card (§3.9). */
   cardRecordings: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'recordings'] as const,
+  /** Every stored recording, org-wide — the recordings browser. */
+  orgRecordings: (orgId: string) => ['org', orgId, 'telephony', 'recordings'] as const,
   /**
    * Dialable people — the directory folded down to members who have a work
    * phone (`telephony/api.ts`). Its own key rather than `directory(orgId, …)`:
@@ -442,6 +478,12 @@ export const keys = {
   platformUserDetail: (userId: string) => ['platform', 'users', userId, 'detail'] as const,
   /** The operator chain, filtered to one org. */
   platformOrgHistory: (orgId: string) => ['platform', 'orgs', orgId, 'history'] as const,
+  /** The AI provider catalog (Phase 15 §2.3) — the "AI Models" tab's own list. */
+  platformAiProviders: () => ['platform', 'ai', 'providers'] as const,
+  /** One org's current AI provider override, or null (falls back to the default). */
+  platformAiOrgOverride: (orgId: string) => ['platform', 'ai', 'org-override', orgId] as const,
+  /** Cross-org AI spend, grouped by org and model. */
+  platformAiSpend: (sinceDays: number) => ['platform', 'ai', 'spend', sinceDays] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

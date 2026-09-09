@@ -94,6 +94,19 @@ const ADMIN: readonly Permission[] = [
      would mean scoping each aggregate to the caller's readable boards, which is
      named as the upgrade path, not built. */
   'analytics:read',
+
+  /* Phase 15 §2.4. Owner and Admin get the assistant by role, same tier as
+     `automation:manage` — and for the same reason `GRANTABLE_PERMISSIONS`
+     exists at all: an org that wants ONE trusted Member using it without
+     promoting them to Admin grants `ai:use` individually instead. */
+  'ai:use',
+
+  /* Phase 15 §7. Same tier as `ai:use` directly above — Owner/Admin hold
+     these by role, a Member only via an individual grant. */
+  'pr:view',
+  'pr:review',
+  'pr:merge',
+  'repo:connect',
 ];
 
 const MEMBER: readonly Permission[] = [
@@ -138,11 +151,21 @@ const MEMBER: readonly Permission[] = [
   'attachment:upload',
   'attachment:download',
 
-  'phoneNumber:read',
-  'call:place',
-  'call:read',
-  'sms:send',
-  'sms:read',
+  /* No telephony permissions here — removed by
+     ai/phase-15-ai-copilot-and-permissions.md §1's "contract" step
+     (migration 0098). Every Member held `phoneNumber:read`, `call:place`,
+     `call:read`, `sms:send` and `sms:read` FLAT, with no way to restrict
+     them to specific people — any member could place a call or send an SMS
+     through any of the org's numbers, which is a real cost/abuse surface an
+     org may not want open to everyone by default. `authz.member_grants`
+     (migration 0097) is the replacement: an org grants these individually,
+     per person, through `tenancy.memberGrants.grant`. Migration 0098
+     backfilled an explicit grant for every membership that had these via
+     this role at the time it ran, so removing them here did not silently
+     cut anyone off. Admin is UNCHANGED and keeps all five — a deliberate
+     asymmetry, not an oversight: Admins are fewer and more trusted, and
+     Admin already holds `recording:read`, which Member never did, so
+     telephony access was never role-uniform in this catalog to begin with. */
 
   'search:query',
 ];

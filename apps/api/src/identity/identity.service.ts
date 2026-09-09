@@ -576,18 +576,35 @@ export async function logout(
   return { status: 'ok' };
 }
 
+/**
+ * Ends every one of a user's sessions.
+ *
+ * `reason` defaults to `'logout_all'` — the self-service "sign out of every
+ * device" call this originally shipped for — and takes `'admin'` from
+ * offboarding automation (ai/phase-15-ai-copilot-and-permissions.md §8): a
+ * departing member's own credential should not still work anywhere the
+ * moment an admin starts the process, and this is the one path that already
+ * does that unconditionally rather than one device at a time.
+ *
+ * Takes only `events`/`now` — never the full `IdentityDeps` — because it is
+ * the one identity mutation a caller OUTSIDE this module needs (the
+ * automation executor, which holds none of `config`, `checkBreached`, or
+ * `deliver`, and must not be made to fabricate them just to satisfy a wider
+ * type it does not use).
+ */
 export async function logoutEverywhere(
-  deps: IdentityDeps,
+  deps: Pick<IdentityDeps, 'events' | 'now'>,
   input: { userId: string },
+  reason: 'logout_all' | 'admin' = 'logout_all',
 ): Promise<{ revoked: number }> {
-  const now = clock(deps);
-  const sessionIds = await repo.revokeAllSessions(input.userId, 'logout_all', now);
+  const now = deps.now?.() ?? new Date();
+  const sessionIds = await repo.revokeAllSessions(input.userId, reason, now);
 
   await deps.events.publish(
     sessionIds.map((sessionId) =>
       createEvent(
         identityEvents.sessionRevoked,
-        { userId: input.userId, sessionId, reason: 'logout_all' as const },
+        { userId: input.userId, sessionId, reason },
         { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
       ),
     ),

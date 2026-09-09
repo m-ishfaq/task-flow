@@ -216,7 +216,7 @@ describe('the search route through the real tRPC router', () => {
       testContext({
         principal: testPrincipal('member', {
           userId: MEMBER,
-          org: { orgId, role: 'member', tuples },
+          org: { orgId, role: 'member', tuples, memberGrants: [] },
         }),
       }),
     );
@@ -243,7 +243,7 @@ describe('the search route through the real tRPC router', () => {
       testContext({
         principal: testPrincipal('guest', {
           userId: MEMBER,
-          org: { orgId, role: 'guest', tuples },
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
         }),
       }),
     );
@@ -294,7 +294,10 @@ describe('the search route through the real tRPC router', () => {
     const callerFor = (userId: UserId, role: 'owner' | 'member') =>
       callerFactory(
         testContext({
-          principal: testPrincipal(role, { userId, org: { orgId, role, tuples: [] } }),
+          principal: testPrincipal(role, {
+            userId,
+            org: { orgId, role, tuples: [], memberGrants: [] },
+          }),
         }),
       );
 

@@ -110,9 +110,9 @@ export const CATALOG = [
   {
     id: 'free',
     name: 'Free',
-    description: 'For trying things out. Boards, chat and docs for a small team.',
+    description: 'For trying things out. Boards, chat, docs and the AI assistant for a small team.',
     sortOrder: 0,
-    features: ['chat', 'docs'],
+    features: ['chat', 'docs', 'aiAssistant'],
     withProduct: false,
     monthlyCents: null,
     annualCents: null,
@@ -122,6 +122,12 @@ export const CATALOG = [
       turnIssuancePerDay: 0,
       telephonyIncludedCents: 0,
       telephonyMarkupPct: 0,
+      // A flat fraud backstop, the identical convention as telephonyCapCents
+      // just above it — not a multiple of price, since Free has none. $2 is
+      // enough to try the assistant (a handful of real completions, per
+      // packages/ai/rates.ts's own per-model prices) without leaving a free
+      // tier's AI spend genuinely unbounded.
+      aiTokenBudgetMonthlyCents: 200,
     },
   },
   {
@@ -129,7 +135,7 @@ export const CATALOG = [
     name: 'Starter',
     description: 'For a team that has outgrown spreadsheets. Adds search and voice.',
     sortOrder: 1,
-    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony'],
+    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'aiAssistant'],
     withProduct: true,
     monthlyCents: 1900,
     annualCents: 19_000,
@@ -142,6 +148,7 @@ export const CATALOG = [
       turnIssuancePerDay: 200,
       telephonyIncludedCents: 500,
       telephonyMarkupPct: 20,
+      aiTokenBudgetMonthlyCents: 1000,
     },
   },
   {
@@ -149,7 +156,15 @@ export const CATALOG = [
     name: 'Pro',
     description: 'For teams that run on it. Automation, the public API and higher limits.',
     sortOrder: 2,
-    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'automation', 'publicApi'],
+    features: [
+      'chat',
+      'docs',
+      'tqlTextSyntax',
+      'telephony',
+      'automation',
+      'publicApi',
+      'aiAssistant',
+    ],
     withProduct: true,
     monthlyCents: 4900,
     annualCents: 49_000,
@@ -160,6 +175,7 @@ export const CATALOG = [
       turnIssuancePerDay: 2000,
       telephonyIncludedCents: 2500,
       telephonyMarkupPct: 15,
+      aiTokenBudgetMonthlyCents: 3000,
     },
   },
   {
@@ -180,6 +196,7 @@ export const CATALOG = [
       'automation',
       'publicApi',
       'analytics',
+      'aiAssistant',
     ],
     withProduct: true,
     monthlyCents: 14_900,
@@ -199,9 +216,76 @@ export const CATALOG = [
       turnIssuancePerDay: null,
       telephonyIncludedCents: 10_000,
       telephonyMarkupPct: 10,
+      // Bounded for the IDENTICAL reason telephonyCapCents is bounded on this
+      // tier rather than null/unlimited like automationRunsPerHour/
+      // turnIssuancePerDay above — an LLM completion is real third-party
+      // spend (Anthropic/OpenAI/Gemini), the same unvetted self-serve
+      // checkout risk a phone call is, not an internal cost like an
+      // automation run or a TURN credential issuance. $100 matches
+      // telephonyCapCents's own business-tier number exactly.
+      aiTokenBudgetMonthlyCents: 10_000,
     },
   },
 ] as const;
+
+/**
+ * The non-purchasable trial every new org actually starts on (migration
+ * 0094's own INSERT, `org.service.ts`'s hardcoded `TRIAL_PLAN_ID`) —
+ * reconciled here, separately from `CATALOG` above, for the same reason a
+ * grant added after 0094 shipped needs a real way to reach that
+ * already-seeded row without a second migration.
+ *
+ * Found the hard way: granting `aiAssistant` to `free`/`starter`/`pro`/
+ * `business` above did nothing for a brand-new org, because a brand-new org
+ * is never placed on any of those four — `createOrg` writes `plan_id =
+ * 'trial'` directly, and `trial` is not one of `CATALOG`'s four tiers, so
+ * neither this module's own loop nor `plan-catalog-reconcile.cli.ts` ever
+ * looked at it. The identical class of bug `aiAssistant`'s own flag entry
+ * already caused once (granted nowhere reachable) recurring one tier lower.
+ *
+ * Deliberately NOT folded into `CATALOG`: that array is the OWNER-FACING
+ * catalog — what a person can buy, with a real price and (for three of the
+ * four) a Stripe product — and `trial` is neither. It is also never safe to
+ * run through `createPlan`, which hardcodes `isActive: true` — `trial` must
+ * stay `is_active = false` per 0094's own comment (never shown in the
+ * upgrade picker, never assignable by an operator). So this constant is
+ * only ever passed to `updatePlan`, on the assumption 0094 already created
+ * the row — which every migrated database has, by the time any seed script
+ * runs.
+ */
+export const TRIAL_PLAN = {
+  id: 'trial',
+  name: 'Trial',
+  description:
+    '14-day full-access preview, not sold directly — every new organization starts here.',
+  sortOrder: -1,
+  // Mirrors 0094's own literal feature list, plus aiAssistant — the same
+  // gap CATALOG's four tiers had.
+  features: [
+    'chat',
+    'docs',
+    'telephony',
+    'tqlTextSyntax',
+    'automation',
+    'publicApi',
+    'aiAssistant',
+  ],
+  limits: {
+    // Every number below matches 0094's own INSERT exactly, except the new
+    // AI field — reconciling to anything else here would be this file
+    // silently overriding a deliberate migration decision it was never
+    // asked to revisit.
+    telephonyCapCents: 150,
+    automationRunsPerHour: 15,
+    turnIssuancePerDay: 30,
+    telephonyIncludedCents: 0,
+    telephonyMarkupPct: 0,
+    // Small but real, the identical reasoning 0094's own telephony cap
+    // gives: enough to prove the assistant works during a 14-day preview,
+    // never enough to be worth abusing.
+    aiTokenBudgetMonthlyCents: 100,
+  },
+} as const;
 
 export interface CatalogOutput {
   /** Plan ids that exist and are sellable, in display order. */
@@ -268,7 +352,7 @@ export const catalogModule = defineSeedModule({
        'search' and 'public_api', neither of which the registry has (they are
        'tqlTextSyntax' and 'publicApi'), and the run died three plans in —
        after creating two real Stripe Products. */
-    const unknown = CATALOG.flatMap((tier) =>
+    const unknown = [...CATALOG, TRIAL_PLAN].flatMap((tier) =>
       tier.features.filter((flag) => !FLAG_NAMES.includes(flag)),
     );
     if (unknown.length > 0) {
@@ -282,7 +366,11 @@ export const catalogModule = defineSeedModule({
        pricing table must not be able to hand it out. `createPlan` refuses it
        too; this only says so before anything has been created. */
     const spendFlag = 'telephonyLiveCredentials';
-    if (CATALOG.some((tier) => (tier.features as readonly string[]).includes(spendFlag))) {
+    if (
+      [...CATALOG, TRIAL_PLAN].some((tier) =>
+        (tier.features as readonly string[]).includes(spendFlag),
+      )
+    ) {
       throw new Error(`billing.catalog: ${spendFlag} is not grantable through a plan.`);
     }
 
@@ -347,6 +435,29 @@ export const catalogModule = defineSeedModule({
           currency: 'usd',
         });
       }
+    }
+
+    /* `trial` is not part of the loop above — see `TRIAL_PLAN`'s own header
+       for why. Same `ctx.reseedPlans` gate as every sellable tier, and the
+       same `updatePlan`-only path: `existing` MUST already contain it
+       (migration 0094 seeds it unconditionally, in every migrated database,
+       before any seed script runs), so this deliberately does not fall back
+       to `createPlan` the way the loop above does for a genuinely new tier —
+       a missing row here is a real anomaly worth throwing on, not a case to
+       paper over. No pricing step: `trial` has no Stripe product and is
+       never meant to acquire one through this path. */
+    if (ctx.reseedPlans) {
+      await updatePlan(deps, actor, {
+        planId: TRIAL_PLAN.id,
+        name: TRIAL_PLAN.name,
+        description: TRIAL_PLAN.description,
+        sortOrder: TRIAL_PLAN.sortOrder,
+        features: [...TRIAL_PLAN.features],
+        ...TRIAL_PLAN.limits,
+      });
+      reconciled += 1;
+    } else {
+      reused += 1;
     }
 
     const planIds = CATALOG.map((tier) => tier.id);

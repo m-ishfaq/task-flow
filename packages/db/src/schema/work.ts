@@ -307,6 +307,48 @@ export const cardLabels = work.table(
   ],
 );
 
+/**
+ * A card <-> GitHub PR link (migration 0105, Phase 15 §7.2). `providerScope`
+ * + `prNumber` name the PR — no local table for it to reference, since a
+ * pull request lives on GitHub, not here.
+ */
+export const cardPullRequests = work.table(
+  'card_pull_requests',
+  {
+    orgId: uuid('org_id').notNull(),
+    cardId: uuid('card_id').notNull(),
+    providerScope: text('provider_scope').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    linkedBy: uuid('linked_by'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.cardId, table.providerScope, table.prNumber] }),
+    index('card_pull_requests_pr_idx').on(table.orgId, table.providerScope, table.prNumber),
+  ],
+);
+
+/**
+ * A card <-> GitHub branch link (migration 0106, Phase 15 §7.2). `providerScope`
+ * + `branchName` name the branch — no local table for it to reference, the
+ * identical reasoning `cardPullRequests` above already gives for `prNumber`.
+ */
+export const cardBranches = work.table(
+  'card_branches',
+  {
+    orgId: uuid('org_id').notNull(),
+    cardId: uuid('card_id').notNull(),
+    providerScope: text('provider_scope').notNull(),
+    branchName: text('branch_name').notNull(),
+    linkedBy: uuid('linked_by'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.cardId, table.providerScope, table.branchName] }),
+    index('card_branches_branch_idx').on(table.orgId, table.providerScope, table.branchName),
+  ],
+);
+
 export const checklists = work.table(
   'checklists',
   {

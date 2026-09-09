@@ -20,10 +20,12 @@ import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
 import { FeatureGate } from './components/feature-gate.js';
+import { CapabilityGate } from './components/capability-gate.js';
 import { LoginPage } from './features/auth/login-page.js';
 import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
+import { AcceptInvitePage } from './features/auth/accept-invite-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
 import { OAuthCallbackPage } from './features/auth/oauth-callback-page.js';
 import { AccountPage } from './features/auth/account-page.js';
@@ -47,6 +49,8 @@ import { PlatformAdminPage } from './features/platform-admin/platform-admin-page
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
 import { AnalyticsPage } from './features/analytics/analytics-page.js';
+import { AssistantPage } from './features/ai/assistant-page.js';
+import { StandupPage } from './features/standup/standup-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -106,31 +110,44 @@ function requireOrg(pathname: string) {
   return useSession.getState().orgId === null ? redirect({ to: '/orgs' }) : undefined;
 }
 
+/**
+ * Where to return once authenticated — shared by `/login` and `/register`
+ * so a destination survives either path into a session (sign in directly,
+ * or create an account first). A PATH, never a URL:
+ * `next=https://evil.example` in a link would make the sign-in page a
+ * redirector to an attacker's site carrying our branding — the classic
+ * open-redirect phish. Anything not starting with a single `/` is
+ * discarded, and `//host` is rejected too because browsers read it as
+ * protocol-relative and follow it off-site.
+ */
+const NextSearch = z.object({
+  next: z
+    .string()
+    .refine((value) => value.startsWith('/') && !value.startsWith('//'))
+    .catch('/')
+    .optional(),
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  validateSearch: z.object({
-    /**
-     * Where to return after signing in.
-     *
-     * A PATH, never a URL. `next=https://evil.example` in a link would make the
-     * sign-in page a redirector to an attacker's site carrying our branding —
-     * the classic open-redirect phish. Anything not starting with a single `/`
-     * is discarded, and `//host` is rejected too because browsers read it as
-     * protocol-relative and follow it off-site.
-     */
-    next: z
-      .string()
-      .refine((value) => value.startsWith('/') && !value.startsWith('//'))
-      .catch('/')
-      .optional(),
-  }),
+  validateSearch: NextSearch,
   component: LoginPage,
 });
 
+/**
+ * `next` carries forward from `/login`'s own "Create one" link — see
+ * `pending-next.ts`'s own header for why registration cannot simply pass it
+ * straight through to a redirect: an account isn't usable until its email
+ * is verified, and that click happens from a SEPARATE mail-client
+ * navigation, often a new tab, with no `next` param of its own to read.
+ * `RegisterPage` stashes it in `localStorage` before submitting so it
+ * survives that hop.
+ */
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/register',
+  validateSearch: NextSearch,
   component: RegisterPage,
 });
 
@@ -164,6 +181,31 @@ const resetPasswordRoute = createRoute({
   path: '/reset-password',
   validateSearch: TokenSearch,
   component: ResetPasswordPage,
+});
+
+/**
+ * Where an invitation email's link lands (migration 0107). Fixed by
+ * `apps/api/src/tenancy/invitation-mail.ts` — the same published-contract
+ * reasoning `verifyEmailRoute`/`resetPasswordRoute` state above.
+ *
+ * Unlike those two, this one is `requireSession`, not anonymous — accepting
+ * an invitation is inherently "as someone," and `AcceptInvitePage` needs a
+ * real session to call `invitations.accept` at all. `beforeLoad` carries the
+ * token forward into `next` so a visitor bounced to `/login` lands back here,
+ * still holding it, once they sign in — deliberately NOT `requireOrg`: the
+ * whole point of this page is reaching it with no org selected yet.
+ */
+const acceptInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite/accept',
+  validateSearch: TokenSearch,
+  beforeLoad: ({ search }) =>
+    requireSession(
+      search.token === undefined
+        ? '/invite/accept'
+        : `/invite/accept?token=${encodeURIComponent(search.token)}`,
+    ),
+  component: AcceptInvitePage,
 });
 
 const forgotPasswordRoute = createRoute({
@@ -267,7 +309,7 @@ const boardRoute = createRoute({
   parseParams: (params) => ({ boardId: BoardIdSchema.parse(params.boardId) }),
   stringifyParams: (params) => ({ boardId: params.boardId }),
   validateSearch: z.object({
-    view: z.enum(['board', 'table', 'list', 'insights']).catch('board').optional(),
+    view: z.enum(['board', 'table', 'list', 'calendar', 'insights']).catch('board').optional(),
     card: CardIdSchema.optional().catch(undefined),
     project: ProjectIdSchema.optional().catch(undefined),
     /**
@@ -315,12 +357,26 @@ const boardRoute = createRoute({
  * `requireOrg` — both pages are org surfaces: the directory is `member:read`
  * and the detail page's admin affordances are `member:manage`, neither of
  * which means anything without a membership to scope them.
+ *
+ * Wrapped in `CapabilityGate capability="viewDirectory"` — `member:read` is
+ * an `ORG_LEVEL_PERMISSIONS` entry every role except Guest holds flatly
+ * (`packages/policy/src/roles.ts`'s empty `GUEST` list), so a Guest reaching
+ * either page hit the route's own FORBIDDEN with no capability check ever
+ * having run — `sidebar.tsx`'s `/people` item hides the nav link for the
+ * identical reason, but hiding the link alone left a direct URL or the back
+ * button landing a Guest on a raw error card, the exact "backend message on
+ * the frontend" this codebase's own `CapabilityGate` doc comment already
+ * argues against for `/analytics`.
  */
 const peopleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/people',
   beforeLoad: () => requireOrg('/people'),
-  component: PeoplePage,
+  component: () => (
+    <CapabilityGate capability="viewDirectory">
+      <PeoplePage />
+    </CapabilityGate>
+  ),
 });
 
 const personRoute = createRoute({
@@ -331,7 +387,11 @@ const personRoute = createRoute({
   beforeLoad: () => requireOrg('/people'),
   component: function PersonRoute() {
     const { userId } = personRoute.useParams();
-    return <PersonPage userId={userId} />;
+    return (
+      <CapabilityGate capability="viewDirectory">
+        <PersonPage userId={userId} />
+      </CapabilityGate>
+    );
   },
 });
 
@@ -362,12 +422,24 @@ const chatRoute = createRoute({
  * `router.ts`'s own inputs are — every telephony route takes
  * `z.string().uuid()`, not a branded schema (§6.3: no relationship-tuple or
  * ancestor component to a telephony resource, so nothing here needed one).
+ *
+ * Also wrapped in `CapabilityGate`, `anyOf` rather than a single
+ * `capability` (Phase 15 §1): unlike Analytics/Automations/Audit log, none
+ * of the five telephony permissions are all-or-nothing by role for a
+ * Member — each is its own `authz.member_grants` row, so a Member with only
+ * `sms:read` still needs to reach this route to use it. The page itself
+ * (`telephony-page.tsx`) gates each TAB on its own specific capability;
+ * this route-level gate only refuses someone holding NONE of the five,
+ * matching the sidebar's own `anyOfCapabilities` on the `/calls` nav item.
  */
 const telephonyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/calls',
   validateSearch: z.object({
-    tab: z.enum(['calls', 'numbers', 'messages', 'spend']).optional().catch(undefined),
+    tab: z
+      .enum(['calls', 'numbers', 'messages', 'recordings', 'spend'])
+      .optional()
+      .catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
     /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
        TRANSCRIPT search hit has somewhere to land — a hit whose permalink
@@ -379,7 +451,9 @@ const telephonyRoute = createRoute({
   beforeLoad: () => requireOrg('/calls'),
   component: () => (
     <FeatureGate flag="telephony">
-      <TelephonyPage />
+      <CapabilityGate anyOf={['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms']}>
+        <TelephonyPage />
+      </CapabilityGate>
     </FeatureGate>
   ),
 });
@@ -453,11 +527,28 @@ const publicDocsPageRoute = createRoute({
   },
 });
 
+/**
+ * Behind `audit:read` server-side (`apps/api/src/tenancy/router.ts`'s
+ * `authz.explain` — "because it reports another user's access, which is
+ * exactly the information an attacker would want before choosing a
+ * target"). Wrapped in `CapabilityGate capability="viewAuditLog"` — the
+ * SAME capability the Audit log route already uses, since both are gated
+ * on the identical permission — rather than showing this page to every
+ * role and letting it answer FORBIDDEN: unlike a page reporting the
+ * caller's OWN access, this one exists specifically to inspect someone
+ * ELSE's, so leaving it reachable-but-refused is not a cosmetic miss, it
+ * advertises the existence of a tool for probing a colleague's grants to
+ * people who were never going to be allowed to use it (Phase 15 §1's sweep).
+ */
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
   beforeLoad: () => requireOrg('/admin/permissions'),
-  component: PermissionDebugPage,
+  component: () => (
+    <CapabilityGate capability="viewAuditLog">
+      <PermissionDebugPage />
+    </CapabilityGate>
+  ),
 });
 
 const projectSettingsRoute = createRoute({
@@ -486,6 +577,27 @@ const projectSprintsRoute = createRoute({
   component: SprintsPage,
 });
 
+/**
+ * A project's standup view (ai/phase-15-ai-copilot-and-permissions.md §5).
+ *
+ * No `CapabilityGate`, unlike `/analytics` and `/assistant` — `standup.query`
+ * floors on `project:read`, the same permission a Member already holds to
+ * open the project's boards at all, not an Admin/Owner-only or individually
+ * granted one. The one part of this screen that IS gated (`narrate`, on
+ * `ai:use` + `aiAssistant`) is gated inline, on the button itself, the same
+ * "hide, don't disable" shape Phase 15 §1's sweep already applies everywhere
+ * else — a page-level gate would hide the whole standup from a Member who
+ * simply cannot use the AI summarizer.
+ */
+const standupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/projects/$projectId/standup',
+  parseParams: (params) => ({ projectId: ProjectIdSchema.parse(params.projectId) }),
+  stringifyParams: (params) => ({ projectId: params.projectId }),
+  beforeLoad: ({ params }) => requireOrg(`/projects/${params.projectId}/standup`),
+  component: StandupPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -509,11 +621,22 @@ const accountRoute = createRoute({
   component: AccountPage,
 });
 
+/**
+ * The org audit log. `audit:read` is Admin-and-Owner-only by role, same
+ * shape as analytics/automations above — see `analyticsRoute`'s comment for
+ * why this wraps in `CapabilityGate`: `settings-page.tsx` already hides the
+ * link itself, but a direct URL still reached the real page and surfaced a
+ * raw FORBIDDEN without this.
+ */
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/audit',
   beforeLoad: () => requireOrg('/settings/audit'),
-  component: AuditPage,
+  component: () => (
+    <CapabilityGate capability="viewAuditLog">
+      <AuditPage />
+    </CapabilityGate>
+  ),
 });
 
 /**
@@ -535,20 +658,20 @@ const platformAdminRoute = createRoute({
 });
 
 /**
- * Automation rules (Phase 10 Wave 1).
- *
- * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
- * this page fires needs an org header. The page itself does no permission
- * check — it renders and the server answers, so a member without
- * `automation:manage` gets an honest FORBIDDEN rather than a hidden menu item
- * (§8.2).
- */
-/**
  * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
  *
  * `tab` is a search param — same pattern as telephony and automations — so
- * the open dashboard is shareable and back-button-correct. Admin-and-Owner
- * only on the server; the UI shows the page and lets the server refuse.
+ * the open dashboard is shareable and back-button-correct.
+ *
+ * `analytics:read` is Admin-and-Owner-only by role, with no way for a Member
+ * to earn it via plan upgrade (unlike telephony, which every Member holds by
+ * default) — so unlike most gated routes in this file, this one wraps its
+ * component in `CapabilityGate` as well as `FeatureGate`: a Member reaching
+ * this URL directly (typed, bookmarked, or the back button) sees a plain
+ * "not for your role" page instead of the real dashboard trying to load and
+ * surfacing a raw FORBIDDEN. `CapabilityGate` is still only a COSMETIC
+ * gate — see its own doc comment — every route behind it still declares
+ * `permission: 'analytics:read'` and the server re-checks it regardless.
  */
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -561,12 +684,32 @@ const analyticsRoute = createRoute({
   }),
   beforeLoad: () => requireOrg('/analytics'),
   component: () => (
-    <FeatureGate flag="analytics">
-      <AnalyticsPage />
-    </FeatureGate>
+    <CapabilityGate capability="viewAnalytics">
+      <FeatureGate flag="analytics">
+        <AnalyticsPage />
+      </FeatureGate>
+    </CapabilityGate>
   ),
 });
 
+/**
+ * Automation rules (Phase 10 Wave 1).
+ *
+ * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
+ * this page fires needs an org header.
+ *
+ * Wrapped in `CapabilityGate`, `anyOf` rather than a single `capability` —
+ * the same reasoning `telephonyRoute` above gives, and for the identical
+ * cause: Wave 2 (ai/phase-15-ai-copilot-and-permissions.md §1) made the four
+ * automation permissions individually grantable, so a Member holding only
+ * `webhook:manage` still needs this route to load rather than showing "not
+ * for your role" — the PAGE decides which tab that person actually lands on
+ * (`AutomationsPage`'s own gating, mirroring each tab's floor permission).
+ * A direct URL/bookmark still shows "not for your role" for a caller with
+ * NONE of the five, instead of a raw FORBIDDEN. The server still re-checks
+ * the real floor permission on every route regardless; this only changes
+ * what a Member who cannot use any of it sees on the way there.
+ */
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/automations',
@@ -586,9 +729,40 @@ const automationsRoute = createRoute({
   }),
   beforeLoad: () => requireOrg('/automations'),
   component: () => (
-    <FeatureGate flag="automation">
-      <AutomationsPage />
-    </FeatureGate>
+    <CapabilityGate
+      anyOf={[
+        'manageAutomations',
+        'manageWebhooks',
+        'manageIntegrations',
+        'createApiTokens',
+        'revokeApiTokens',
+      ]}
+    >
+      <FeatureGate flag="automation">
+        <AutomationsPage />
+      </FeatureGate>
+    </CapabilityGate>
+  ),
+});
+
+/**
+ * The AI assistant chat (ai/phase-15-ai-copilot-and-permissions.md §4) — the
+ * one frontend surface every wave of the assistant shipped without, until
+ * now. `CapabilityGate capability="useAi"` mirrors `/analytics`'s own
+ * pairing exactly: `ai:use` is Admin/Owner-by-role but individually
+ * grantable (§2.4), so the ALL-OR-NOTHING `capability` prop is still right
+ * here — unlike `/calls`'s `anyOf`, there is only one permission to hold.
+ */
+const assistantRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/assistant',
+  beforeLoad: () => requireOrg('/assistant'),
+  component: () => (
+    <CapabilityGate capability="useAi">
+      <FeatureGate flag="aiAssistant">
+        <AssistantPage />
+      </FeatureGate>
+    </CapabilityGate>
   ),
 });
 
@@ -598,6 +772,7 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   verifyEmailRoute,
   resetPasswordRoute,
+  acceptInviteRoute,
   forgotPasswordRoute,
   oauthCallbackRoute,
   integrationsCallbackRoute,
@@ -606,6 +781,7 @@ const routeTree = rootRoute.addChildren([
   projectsRoute,
   projectSettingsRoute,
   projectSprintsRoute,
+  standupRoute,
   boardRoute,
   peopleRoute,
   personRoute,
@@ -621,6 +797,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   automationsRoute,
   analyticsRoute,
+  assistantRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

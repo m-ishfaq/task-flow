@@ -66,6 +66,9 @@ interface Entitlements {
     readonly turnIssuancePerDay: number | null | undefined;
     readonly telephonyIncludedCents: number | undefined;
     readonly telephonyMarkupPct: number | undefined;
+    /** Migration 0100 (Phase 15 §3.2) — the AI budget gate's ceiling, resolved
+        through this same chain rather than a second override table. */
+    readonly aiTokenBudgetMonthlyCents: number | null | undefined;
   };
   /** Where each granted feature came from — the console renders this verbatim. */
   readonly sources: Readonly<Partial<Record<FlagName, 'plan' | 'override'>>>;
@@ -79,6 +82,7 @@ const EMPTY: Entitlements = {
     turnIssuancePerDay: undefined,
     telephonyIncludedCents: undefined,
     telephonyMarkupPct: undefined,
+    aiTokenBudgetMonthlyCents: undefined,
   },
   sources: {},
 };
@@ -179,6 +183,10 @@ async function loadEntitlements(orgId: OrgId): Promise<Entitlements> {
           pick(override?.telephonyIncludedCents, plan?.telephonyIncludedCents) ?? undefined,
         telephonyMarkupPct:
           pick(override?.telephonyMarkupPct, plan?.telephonyMarkupPct) ?? undefined,
+        aiTokenBudgetMonthlyCents: pick(
+          override?.aiTokenBudgetMonthlyCents,
+          plan?.aiTokenBudgetMonthlyCents,
+        ),
       },
     };
   });

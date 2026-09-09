@@ -3,6 +3,7 @@ import { formatCents } from '../../lib/format.js';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { orgDetailQuery } from '../org/api.js';
 import { spendCurrentQuery, spendReportQuery } from './api.js';
 
 /**
@@ -13,10 +14,11 @@ import { spendCurrentQuery, spendReportQuery } from './api.js';
  * `phoneNumber:read` (Member) — the same figure `checkOutboundAllowed`
  * enforces against, via `readSpendState` rather than the full gate, so
  * looking at this page never consumes the viewer's own velocity budget
- * (`spend-gate.ts`'s own comment). "report" is `recording:read` (Admin) —
- * the itemized breakdown by kind. A Member sees the first card and a
- * FORBIDDEN, rendered as an ordinary error, on the second — not a hidden
- * section.
+ * (`spend-gate.ts`'s own comment). "report" is `recording:read`
+ * (Admin-and-Owner only by role, no tuple, no member grant) — the itemized
+ * breakdown by kind. Gated on `capabilities.readRecordings` (Phase 15 §1's
+ * sweep, the same field `recording-section.tsx` reads) rather than shown
+ * unconditionally and left to answer FORBIDDEN.
  */
 
 const SINCE_DAYS = 30;
@@ -34,7 +36,9 @@ const KIND_LABELS: ReadonlyMap<string, string> = new Map([
 
 export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const current = useQuery(spendCurrentQuery(orgId));
-  const report = useQuery(spendReportQuery(orgId, SINCE_DAYS));
+  const canReadRecordings =
+    useQuery(orgDetailQuery(orgId)).data?.capabilities.readRecordings === true;
+  const report = useQuery({ ...spendReportQuery(orgId, SINCE_DAYS), enabled: canReadRecordings });
 
   const spentCents = current.data?.spentCents;
   const capCents = current.data?.capCents;
@@ -156,54 +160,56 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
         )}
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">
-            Cost attribution — last {String(SINCE_DAYS)} days
-          </h2>
-        </div>
-
-        {report.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : report.isError ? (
-          <ErrorView error={report.error} title="Could not load the itemized report" />
-        ) : report.data.length === 0 ? (
-          <Empty
-            title="No spend recorded in this window"
-            description="Place a call or send an SMS to see it itemized here."
-          />
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-line/50">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-line bg-surface-raised text-ink-faint">
-                  <th className="px-3 py-2 font-medium">Kind</th>
-                  <th className="px-3 py-2 text-right font-medium">Count</th>
-                  <th className="px-3 py-2 text-right font-medium">Estimated</th>
-                  <th className="px-3 py-2 text-right font-medium">Billed</th>
-                </tr>
-              </thead>
-              <tbody className="bg-surface">
-                {report.data.map((row) => (
-                  <tr
-                    key={row.kind}
-                    className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
-                  >
-                    <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatCents(row.estimatedCents)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatCents(row.billedCents)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {canReadRecordings && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-semibold text-ink">
+              Cost attribution — last {String(SINCE_DAYS)} days
+            </h2>
           </div>
-        )}
-      </section>
+
+          {report.isPending ? (
+            <SkeletonRows rows={3} />
+          ) : report.isError ? (
+            <ErrorView error={report.error} title="Could not load the itemized report" />
+          ) : report.data.length === 0 ? (
+            <Empty
+              title="No spend recorded in this window"
+              description="Place a call or send an SMS to see it itemized here."
+            />
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-line/50">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-line bg-surface-raised text-ink-faint">
+                    <th className="px-3 py-2 font-medium">Kind</th>
+                    <th className="px-3 py-2 text-right font-medium">Count</th>
+                    <th className="px-3 py-2 text-right font-medium">Estimated</th>
+                    <th className="px-3 py-2 text-right font-medium">Billed</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-surface">
+                  {report.data.map((row) => (
+                    <tr
+                      key={row.kind}
+                      className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
+                    >
+                      <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatCents(row.estimatedCents)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {formatCents(row.billedCents)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

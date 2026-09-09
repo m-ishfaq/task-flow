@@ -992,6 +992,179 @@ describe('authorization beyond the role', () => {
   });
 });
 
+describe('bulk reassignment (offboarding automation, ai/phase-15-ai-copilot-and-permissions.md §8)', () => {
+  it('hands every open card MEMBER is carrying to VIEWER, additively', async () => {
+    const fixture = await scaffold('work-bulk-reassign-one');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    await members.addMember(
+      fixture.orgId,
+      { email: 'viewer@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+
+    const shared = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Shared work',
+      description: null,
+    });
+    // Already has a second assignee — reassignment must not remove them.
+    await cards.assignCard(fixture.owner, { cardId: shared.cardId, assigneeIds: [MEMBER, OWNER] });
+
+    const solo = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Solo work',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: solo.cardId, assigneeIds: [MEMBER] });
+
+    const untouched = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Not MEMBER’s',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: untouched.cardId, assigneeIds: [OWNER] });
+
+    const result = await cards.bulkReassignCards(fixture.owner, {
+      fromUserId: MEMBER,
+      toUserId: VIEWER,
+    });
+
+    expect(result.failed).toEqual([]);
+    expect([...result.reassigned].sort()).toEqual([shared.cardId, solo.cardId].sort());
+
+    const sharedAfter = await cards.getCard(fixture.owner, { cardId: shared.cardId });
+    expect([...sharedAfter.assigneeIds].sort()).toEqual([OWNER, VIEWER].sort());
+
+    const soloAfter = await cards.getCard(fixture.owner, { cardId: solo.cardId });
+    expect(soloAfter.assigneeIds).toEqual([VIEWER]);
+
+    const untouchedAfter = await cards.getCard(fixture.owner, { cardId: untouched.cardId });
+    expect(untouchedAfter.assigneeIds).toEqual([OWNER]);
+
+    await admin.setOrg(fixture.orgId);
+    const outbox = await admin.query(
+      `SELECT payload FROM platform.outbox WHERE org_id = $1 AND name = $2`,
+      [fixture.orgId, 'card.bulk_reassigned'],
+    );
+    await admin.setOrg(null);
+    expect(outbox.rows).toHaveLength(1);
+    const payload = (outbox.rows[0] as { payload: { cardIds: string[] } }).payload;
+    expect(payload.cardIds.sort()).toEqual([shared.cardId, solo.cardId].sort());
+  });
+
+  it('leaves an archived card alone', async () => {
+    const fixture = await scaffold('work-bulk-reassign-archived');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    await members.addMember(
+      fixture.orgId,
+      { email: 'viewer@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Done and gone',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: card.cardId, assigneeIds: [MEMBER] });
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+
+    const result = await cards.bulkReassignCards(fixture.owner, {
+      fromUserId: MEMBER,
+      toUserId: VIEWER,
+    });
+
+    expect(result.reassigned).toEqual([]);
+  });
+
+  it('refuses a replacement who is not a member of the organization', async () => {
+    const fixture = await scaffold('work-bulk-reassign-outsider');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+
+    await expect(
+      cards.bulkReassignCards(fixture.owner, { fromUserId: MEMBER, toUserId: VIEWER }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('reports a card the actor cannot touch as failed, without abandoning the rest', async () => {
+    const fixture = await scaffold('work-bulk-reassign-partial');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    await members.addMember(
+      fixture.orgId,
+      { email: 'viewer@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+
+    // A second board the automation rule's owner (VIEWER, holding the plain
+    // `member` role) will be locked OUT of, so one card is reachable through
+    // the ordinary role grant and the other only through a restrictive tuple.
+    const lockedBoard = await boards.createBoard(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Locked',
+    });
+    const lockedList = await lists.createList(fixture.owner, {
+      boardId: lockedBoard.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+
+    const openCard = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Reachable',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: openCard.cardId, assigneeIds: [MEMBER] });
+
+    const lockedCard = await cards.createCard(fixture.owner, {
+      listId: lockedList.listId,
+      title: 'Locked down',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: lockedCard.cardId, assigneeIds: [MEMBER] });
+
+    /* The §8.2 worked example: the `member` role grants `card:update`
+       project-wide, and a restrictive `viewer` tuple on ONE board takes it
+       back for VIEWER there — the rule owner for this test. */
+    await grants.grant(
+      fixture.orgId,
+      {
+        subjectType: 'user',
+        subjectId: VIEWER,
+        relation: 'viewer',
+        objectType: 'board',
+        objectId: lockedBoard.boardId,
+        expiresAt: null,
+      },
+      { userId: OWNER, requestId },
+    );
+
+    const ruleOwner = await actorFor(fixture.orgId, VIEWER, 'member');
+    const result = await cards.bulkReassignCards(ruleOwner, {
+      fromUserId: MEMBER,
+      toUserId: VIEWER,
+    });
+
+    expect(result.reassigned).toEqual([openCard.cardId]);
+    expect(result.failed.map((failure) => failure.cardId)).toEqual([lockedCard.cardId]);
+  });
+});
+
 describe('my tasks (cross-board)', () => {
   it('lists cards assigned to the caller, but only on boards they can still read', async () => {
     const fixture = await scaffold('work-my-tasks');

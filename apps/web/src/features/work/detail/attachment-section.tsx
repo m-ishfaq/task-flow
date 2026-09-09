@@ -41,6 +41,15 @@ import { attachmentsQuery } from '../api.js';
 export interface AttachmentSectionProps {
   readonly orgId: string;
   readonly cardId: CardId;
+  /**
+   * `card:update` — gates uploading a new file and removing an existing one.
+   * `attachment:upload` is technically its own permission in the catalog, but
+   * `RELATION_GRANTS` puts it on `editor` alongside `update` and on neither
+   * `viewer` nor `commenter`, so this one boolean already answers both for
+   * every guest relation. Downloading stays open to anyone here: `viewer`'s
+   * own `actions` list already includes `download` directly.
+   */
+  readonly canEdit: boolean;
 }
 
 /**
@@ -60,7 +69,7 @@ const STATUS_TEXT: ReadonlyMap<string, string> = new Map([
   ['rejected', 'Refused: the contents did not match the declared type, or it could not be scanned'],
 ]);
 
-export function AttachmentSection({ orgId, cardId }: AttachmentSectionProps) {
+export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionProps) {
   const queryClient = useQueryClient();
   const attachments = useQuery(attachmentsQuery(orgId, cardId));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -185,33 +194,37 @@ export function AttachmentSection({ orgId, cardId }: AttachmentSectionProps) {
                 </Button>
               )}
 
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-1.5 text-[11px]"
-                onClick={() => {
-                  remove.mutate(attachment.attachmentId as AttachmentId);
-                }}
-              >
-                Remove
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={() => {
+                    remove.mutate(attachment.attachmentId as AttachmentId);
+                  }}
+                >
+                  Remove
+                </Button>
+              )}
             </li>
           );
         })}
       </ul>
 
-      <input
-        ref={inputRef}
-        type="file"
-        aria-label="Attach a file"
-        accept={ACCEPTED_FILE_TYPES}
-        disabled={upload.isPending}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file !== undefined) upload.mutate(file);
-        }}
-        className="block w-full text-xs text-ink-muted file:mr-2 file:rounded file:border-0 file:bg-surface-hover file:px-2 file:py-1 file:text-xs file:text-ink"
-      />
+      {canEdit && (
+        <input
+          ref={inputRef}
+          type="file"
+          aria-label="Attach a file"
+          accept={ACCEPTED_FILE_TYPES}
+          disabled={upload.isPending}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file !== undefined) upload.mutate(file);
+          }}
+          className="block w-full text-xs text-ink-muted file:mr-2 file:rounded file:border-0 file:bg-surface-hover file:px-2 file:py-1 file:text-xs file:text-ink"
+        />
+      )}
 
       {progress !== null && <p className="text-[11px] text-ink-faint">{progress}</p>}
 

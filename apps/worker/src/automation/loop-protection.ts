@@ -85,6 +85,26 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
      useful rule in the phase while stopping no real loop. */
   'slack.post_message': ['integration.message_posted'],
   'github.create_issue': ['integration.issue_created'],
+  /* §8 — onboarding/offboarding automation. Each emits through the ordinary
+     service layer exactly like every action above, so the same self-trigger
+     reasoning applies: a rule triggered by one of these events whose own
+     action would re-emit it is refused here rather than burning the depth
+     budget. */
+  'channel.add_member': ['channel.member_added'],
+  'channel.remove_member': ['channel.member_removed'],
+  'docs.grant_space_access': ['grant.created'],
+  'identity.revoke_sessions': ['session.revoked'],
+  'member_grant.revoke_all': ['member_grant.revoked'],
+  'cards.bulk_reassign': ['card.bulk_reassigned'],
+  /* §8 checklist item 1 — emits through the ordinary card-creation service
+     layer exactly like every action above, so a rule triggered by
+     `card.created` whose own action creates another card would feed itself. */
+  'card.create': ['card.created'],
+  /* §8 checklist item 3 — loops the real `memberGrants.grant`, which emits
+     `member_grant.created` once per permission applied. Listed the same
+     conservative way `cards.bulk_reassign` lists its own single event: the
+     ACTION emits it, regardless of how many times the loop inside it runs. */
+  'member_grant.apply_role_defaults': ['member_grant.created'],
 };
 
 export interface DepthVerdict {

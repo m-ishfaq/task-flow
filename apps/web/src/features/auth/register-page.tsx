@@ -1,11 +1,13 @@
 import { useForm } from 'react-hook-form';
-import { Link } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
+import { Link, useSearch } from '@tanstack/react-router';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { Button, Field, Input } from '../../components/primitives.js';
 import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 import { fieldError, fieldErrors } from '../../lib/field-errors.js';
+import { inviteTokenFromNext, storePendingNext } from '../../lib/pending-next.js';
+import { invitationPreviewQuery } from './invite-preview.js';
 
 /**
  * Account creation.
@@ -19,6 +21,25 @@ import { fieldError, fieldErrors } from '../../lib/field-errors.js';
  * registered, matching what the API does. A signup form that says "that address
  * is taken" is an account-existence oracle that needs no password guesses at
  * all.
+ *
+ * ## Reached from an invitation link
+ *
+ * When `next` (the router's own carry-forward search param) points at
+ * `/invite/accept?token=`, `inviteTokenFromNext` pulls the token out and
+ * `invitationPreviewQuery` previews it — no session needed, see that
+ * route's own header. A resolved preview locks the email field to the
+ * invited address (`values`, not `defaultValues`, so it re-syncs once the
+ * query resolves after the form has already mounted): the only account
+ * that can ever redeem this invitation is one registered under that exact
+ * address, per `acceptInvitation`'s own email-match check, so letting
+ * someone type a different one here would just be setting up a FORBIDDEN
+ * they hit after already verifying an email for nothing.
+ *
+ * `next` itself cannot survive to the verify-email click the normal way —
+ * that happens from a separate mail-client navigation with no `next` param
+ * of its own. `storePendingNext` stashes it in `localStorage` before
+ * submitting so `VerifyEmailPage` can pick it back up; see that helper's
+ * own header for what this does and does not cover.
  */
 
 interface FormValues {
@@ -28,16 +49,32 @@ interface FormValues {
 }
 
 export function RegisterPage() {
+  const { next } = useSearch({ from: '/register' });
+  const inviteToken = inviteTokenFromNext(next);
+  const invitePreview = useQuery({
+    ...invitationPreviewQuery(inviteToken ?? ''),
+    enabled: inviteToken !== undefined,
+  });
+  const invitedEmail = invitePreview.data?.email;
+
   const { register, handleSubmit } = useForm<FormValues>({
     defaultValues: { name: '', email: '', password: '' },
+    /* Conditionally spread, not `values: possiblyUndefined` —
+       `exactOptionalPropertyTypes` refuses an explicit `undefined` for a
+       key the form's own type declares as required when present. */
+    ...(invitedEmail === undefined
+      ? {}
+      : { values: { name: '', email: invitedEmail, password: '' } }),
   });
 
   const create = useMutation({
     /* Trimmed but always sent — the API requires it now, so the old
        "omit when blank" branch would produce a request the server rejects on
        shape rather than a field error the form can render. */
-    mutationFn: ({ name, ...rest }: FormValues) =>
-      api.auth.register.mutate({ ...rest, name: name.trim() }),
+    mutationFn: ({ name, ...rest }: FormValues) => {
+      if (next !== undefined) storePendingNext(next);
+      return api.auth.register.mutate({ ...rest, name: name.trim() });
+    },
   });
 
   if (create.isSuccess) {
@@ -50,6 +87,8 @@ export function RegisterPage() {
           <p className="text-sm text-ink-muted">
             If that address can be registered, a verification link is on its way. The link is
             single-use and expires.
+            {invitePreview.data !== undefined &&
+              ` Once confirmed, come back to accept your invitation to ${invitePreview.data.orgName}.`}
           </p>
           <Link to="/login" className="text-sm text-accent underline">
             Back to sign in
@@ -68,6 +107,14 @@ export function RegisterPage() {
             Create an account
           </h1>
         </div>
+
+        {invitePreview.data !== undefined && (
+          <div className="rounded-md border border-accent/30 bg-accent/5 p-3 text-sm text-ink">
+            You&apos;re creating an account to join <strong>{invitePreview.data.orgName}</strong> as{' '}
+            {invitePreview.data.role}. The email below is fixed to the address your invitation was
+            sent to.
+          </div>
+        )}
 
         <form
           className="space-y-4"
@@ -98,11 +145,17 @@ export function RegisterPage() {
             />
           </Field>
 
-          <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
+          <Field
+            label="Email"
+            htmlFor="email"
+            error={fieldError(create.error, 'email')}
+            hint={invitedEmail === undefined ? undefined : 'Fixed to your invitation.'}
+          >
             <Input
               id="email"
               type="email"
               autoComplete="username"
+              readOnly={invitedEmail !== undefined}
               aria-describedby={
                 fieldError(create.error, 'email') === undefined ? undefined : 'email-error'
               }

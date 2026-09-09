@@ -8,8 +8,9 @@ import { ErrorView } from '../../../components/error-view.js';
 import { formatDateTime } from '../../../lib/format.js';
 import { api } from '../../../lib/trpc.js';
 import { cardQuery, invalidateCard } from '../api.js';
+import { orgDetailQuery } from '../../org/api.js';
 import { useUpdateCard } from '../use-update-card.js';
-import { RichTextEditor } from './rich-text-editor.js';
+import { RichTextEditor, RichTextView } from './rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from './rich-text.js';
 import { LabelSection } from './label-section.js';
 import { LocationSection } from './location-section.js';
@@ -21,6 +22,8 @@ import { CommentSection } from './comment-section.js';
 import { AttachmentSection } from './attachment-section.js';
 import { AssigneeSection } from './assignee-section.js';
 import { RecordingSection } from './recording-section.js';
+import { DevelopmentSection } from './development-section.js';
+import { CardIdentityBar } from './card-identity-bar.js';
 
 /**
  * The card detail — a centred modal, not a side panel (`ai/phase-3.5-work-ux.md` §4.7).
@@ -74,6 +77,9 @@ export function CardDetailPanel({
   onClose,
 }: CardDetailPanelProps) {
   const card = useQuery(cardQuery(orgId, cardId));
+  const orgCapabilities = useQuery(orgDetailQuery(orgId)).data?.capabilities;
+  const canReadRecordings = orgCapabilities?.readRecordings === true;
+  const canCreateBranches = orgCapabilities?.createBranches === true;
 
   return (
     <ModalRoot
@@ -84,12 +90,16 @@ export function CardDetailPanel({
     >
       <ModalContent size="xl" className="flex max-h-[90vh] flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5">
-          {/* The card's identity line — the reference is what someone
-              pastes into a comment or a ticket, so it is medium-weight
-              rather than the faint it used to be. */}
-          <ModalTitle className="font-mono text-xs font-medium text-ink-muted">
-            {card.data?.reference ?? 'Card'}
-          </ModalTitle>
+          {/* `sr-only`: the VISIBLE identity line is `CardIdentityBar` below,
+              which already renders the reference (as a copy button) plus
+              every linked PR/branch — a second plain-text rendering of the
+              same reference right next to it would be pure duplication.
+              `ModalTitle` still needs real text content for the dialog's
+              accessible name, so it stays, just not painted. */}
+          <ModalTitle className="sr-only">{card.data?.reference ?? 'Card'}</ModalTitle>
+          {card.data && (
+            <CardIdentityBar orgId={orgId} cardId={cardId} reference={card.data.reference} />
+          )}
           {/* Not shown — the two-column body under it says everything a
               sighted user needs, and a visible sentence duplicating that
               would just be noise above the title field. */}
@@ -97,12 +107,20 @@ export function CardDetailPanel({
             Card details: title, description, properties and comments.
           </ModalDescription>
           <div className="ml-auto flex items-center gap-1">
-            <ArchiveCardButton
-              orgId={orgId}
-              boardId={boardId}
-              cardId={cardId}
-              onArchived={onClose}
-            />
+            {/* `card.data?.capabilities.archive` — `card:delete`, never
+                implied by `card:update`: no guest relation grants delete, so
+                an editor-relation guest must not see this even though they
+                can edit everything else. Absent while the card is still
+                loading, which reads the same as "no permission" — correct,
+                since there is nothing to archive yet either way. */}
+            {card.data?.capabilities.archive === true && (
+              <ArchiveCardButton
+                orgId={orgId}
+                boardId={boardId}
+                cardId={cardId}
+                onArchived={onClose}
+              />
+            )}
             <ModalClose asChild>
               <Button size="sm" variant="ghost" aria-label="Close">
                 <X aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -144,11 +162,29 @@ export function CardDetailPanel({
                   orgId={orgId}
                   boardId={boardId}
                   card={card.data}
+                  canEdit={card.data.capabilities.update}
                 />
 
-                <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
-                <AttachmentSection orgId={orgId} cardId={cardId} />
-                <RecordingSection orgId={orgId} cardId={cardId} />
+                <ChecklistSection
+                  orgId={orgId}
+                  boardId={boardId}
+                  cardId={cardId}
+                  canEdit={card.data.capabilities.update}
+                />
+                <AttachmentSection
+                  orgId={orgId}
+                  cardId={cardId}
+                  canEdit={card.data.capabilities.update}
+                />
+                <DevelopmentSection
+                  orgId={orgId}
+                  cardId={cardId}
+                  reference={card.data.reference}
+                  title={card.data.title}
+                  canEdit={card.data.capabilities.update}
+                  canCreateBranches={canCreateBranches}
+                />
+                {canReadRecordings && <RecordingSection orgId={orgId} cardId={cardId} />}
               </div>
 
               {/* The properties rail. Bordered and sunken so the glanceable
@@ -168,6 +204,7 @@ export function CardDetailPanel({
                   listId={card.data.listId}
                   projectId={projectId}
                   onLeaveBoard={onClose}
+                  canMove={card.data.capabilities.update}
                 />
 
                 {projectId !== null && (
@@ -177,6 +214,7 @@ export function CardDetailPanel({
                     cardId={cardId}
                     projectId={projectId}
                     statusId={card.data.statusId}
+                    canEdit={card.data.capabilities.update}
                   />
                 )}
 
@@ -187,6 +225,7 @@ export function CardDetailPanel({
                     cardId={cardId}
                     projectId={projectId}
                     sprintId={card.data.sprintId}
+                    canEdit={card.data.capabilities.update}
                   />
                 )}
 
@@ -195,15 +234,22 @@ export function CardDetailPanel({
                   boardId={boardId}
                   cardId={cardId}
                   priority={card.data.priority}
+                  canEdit={card.data.capabilities.update}
                 />
 
-                <DatesSection orgId={orgId} boardId={boardId} card={card.data} />
+                <DatesSection
+                  orgId={orgId}
+                  boardId={boardId}
+                  card={card.data}
+                  canEdit={card.data.capabilities.update}
+                />
 
                 <AssigneeSection
                   orgId={orgId}
                   boardId={boardId}
                   cardId={cardId}
                   assigneeIds={card.data.assigneeIds}
+                  canEdit={card.data.capabilities.update}
                 />
 
                 {projectId !== null && (
@@ -213,19 +259,29 @@ export function CardDetailPanel({
                       boardId={boardId}
                       cardId={cardId}
                       projectId={projectId}
+                      canTag={card.data.capabilities.update}
+                      canManageVocabulary={card.data.capabilities.manageProjectVocabulary}
                     />
                     <CustomFieldSection
                       orgId={orgId}
                       boardId={boardId}
                       cardId={cardId}
                       projectId={projectId}
+                      canEdit={card.data.capabilities.update}
+                      canManageVocabulary={card.data.capabilities.manageProjectVocabulary}
                     />
                   </>
                 )}
               </div>
 
               <div className="space-y-6 border-t border-line pt-4 md:col-span-2">
-                <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
+                <CommentSection
+                  orgId={orgId}
+                  boardId={boardId}
+                  cardId={cardId}
+                  canModerate={card.data.capabilities.moderateComments}
+                  canComment={card.data.capabilities.comment}
+                />
 
                 <p className="text-xs text-ink-faint">
                   Created {formatDateTime(card.data.createdAt)} · updated{' '}
@@ -317,6 +373,7 @@ function TitleAndDescription({
   orgId,
   boardId,
   card,
+  canEdit,
 }: {
   readonly orgId: string;
   readonly boardId: BoardId;
@@ -329,6 +386,8 @@ function TitleAndDescription({
     description?: unknown;
     version: number;
   };
+  /** `card:update` — a viewer/commenter-relation guest sees plain title text and a read-only description, never the editor or Save. */
+  readonly canEdit: boolean;
 }) {
   const update = useUpdateCard(orgId, boardId);
 
@@ -356,6 +415,15 @@ function TitleAndDescription({
       },
     });
   };
+
+  if (!canEdit) {
+    return (
+      <section className="space-y-2">
+        <h2 className="text-base font-semibold text-ink">{card.title}</h2>
+        <RichTextView value={card.description} />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-2">
@@ -399,10 +467,13 @@ function DatesSection({
   orgId,
   boardId,
   card,
+  canEdit,
 }: {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly card: { cardId: string; dueDate: string | null; startDate: string | null };
+  /** `card:update` — disabled, not hidden: the inputs are also the read display of the current dates. */
+  readonly canEdit: boolean;
 }) {
   const update = useUpdateCard(orgId, boardId);
 
@@ -426,10 +497,11 @@ function DatesSection({
         <input
           type="date"
           value={card.startDate?.slice(0, 10) ?? ''}
+          disabled={!canEdit}
           onChange={(event) => {
             set('startDate', event.target.value);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         />
       </label>
 
@@ -441,10 +513,11 @@ function DatesSection({
         <input
           type="date"
           value={card.dueDate?.slice(0, 10) ?? ''}
+          disabled={!canEdit}
           onChange={(event) => {
             set('dueDate', event.target.value);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         />
       </label>
     </section>

@@ -9,14 +9,17 @@ import {
   schema,
   withOrgScope,
   outboxWriter,
+  uuidArrayContains,
   type SQL,
 } from '@taskflow/db';
 import {
   InvalidRankError,
   between,
   errors,
+  unsafeAsId,
   type CardId,
   type ListId,
+  type OrgId,
   type Priority,
   type StatusId,
   type UserId,
@@ -29,6 +32,7 @@ import {
   cardAssigned,
   cardCreated,
   cardMoved,
+  cardsBulkReassigned,
   cardStatusChanged,
   cardUpdated,
   listRebalanced,
@@ -286,6 +290,74 @@ export interface CardDetail extends CardSummary {
   readonly startDate: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /**
+   * What the client may show on THIS card — computed per-card, here, rather
+   * than folded into `SettingsCapabilities`, because a project-level guest
+   * tuple (viewer/commenter/editor, Phase 15's "Guest access into Work")
+   * makes `card:update`/`comment:create` resource-scoped facts, not flat
+   * role checks: a `member` role grants both by default, but a `viewer`
+   * relation tuple RESTRICTS the ceiling below whatever the role would
+   * otherwise allow (`RELATION_GRANTS`'s own `restrictive: true`), and a
+   * `commenter` tuple sits between the two. `card-detail-panel.tsx` used to
+   * render every edit control — title, description, dates, assignee,
+   * labels, custom fields, checklist, attachments — and the comment
+   * composer unconditionally for anyone who could open the panel at all,
+   * the identical "shown to everyone, let the server answer" gap Phase 15
+   * §1's sweep already found and fixed once for comment moderation
+   * (`moderateComments`, below) and repeated across a dozen other surfaces —
+   * found here a second time, this time from a real report: a
+   * project shared at `viewer` still saw every edit control, each of which
+   * the server would have refused.
+   *
+   *   `update`  — `card:update`. Gates every field-editing control: title,
+   *               description, dates, priority, status, sprint, assignee,
+   *               labels, custom fields, checklist, attachments, location —
+   *               `card:move` and `attachment:upload` are separate
+   *               permissions in the catalog, but `RELATION_GRANTS` grants
+   *               both to `editor` alongside `update` and to neither
+   *               `viewer` nor `commenter`, so for every guest relation this
+   *               one boolean already answers all three; a role/tuple
+   *               combination that split them would need its own field, and
+   *               none exists in this codebase today.
+   *   `archive` — `card:delete`, deliberately its own field rather than
+   *               reusing `update`: `RELATION_GRANTS`'s `editor` entry grants
+   *               `update`/`move`/`create` but never `delete` — no guest
+   *               relation can ever archive a card, so gating the Archive
+   *               button on `update` would wrongly show it to an editor.
+   *   `comment` — `comment:create`. Gates the comment composer alone —
+   *               reading comments stays open to anyone holding `card:read`,
+   *               same as it always has.
+   *   `manageProjectVocabulary` — `project:update`, checked against the
+   *               PROJECT directly (distance 0, not inherited), because
+   *               `card:update` is the wrong proxy for it: a plain Member
+   *               holds `card:update` by role but not `project:update` (see
+   *               `roles.ts`'s `MEMBER` list), so a create-label/create-field
+   *               form gated on `update` above would show it to a Member
+   *               whose click the server would then refuse — the identical
+   *               bug this capability set exists to close, just for a
+   *               different actor. `label-section.tsx`'s own header used to
+   *               say plainly "shows both controls to everyone and lets the
+   *               server answer" — this is what closes that, for real, on
+   *               both the tagging AND the vocabulary-definition half.
+   *               `editor` (never `viewer`/`commenter`) DOES reach this too:
+   *               `relationGrants` matches an action by SUFFIX, and
+   *               `RELATION_GRANTS.editor.actions` includes `update`, so a
+   *               project-scoped `editor` guest tuple grants `project:update`
+   *               on that exact project the same way it grants `card:update`
+   *               beneath it — deliberate, matching this codebase's own
+   *               stated design that an org may hand a guest up to full
+   *               `editor` access with "no default relation restriction."
+   *   `moderateComments` — `comment:delete`, unchanged from before this
+   *               capability set grew four more fields; see the sibling
+   *               comment this one used to carry alone.
+   */
+  readonly capabilities: {
+    readonly update: boolean;
+    readonly archive: boolean;
+    readonly comment: boolean;
+    readonly manageProjectVocabulary: boolean;
+    readonly moderateComments: boolean;
+  };
 }
 
 export async function getCard(
@@ -329,11 +401,110 @@ export async function getCard(
 
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
+    const cardTarget = {
+      orgId: card.orgId as OrgId,
+      resource: { type: 'card', id: input.cardId },
+      ancestors: ancestorsOfCard(card),
+    } as const;
+    const update = can(actor.subject, 'card:update', cardTarget).allowed;
+    const archive = can(actor.subject, 'card:delete', cardTarget).allowed;
+    const comment = can(actor.subject, 'comment:create', cardTarget).allowed;
+    const manageProjectVocabulary = can(actor.subject, 'project:update', {
+      orgId: card.orgId as OrgId,
+      resource: { type: 'project', id: card.projectId },
+    }).allowed;
+    const moderateComments = can(actor.subject, 'comment:delete', cardTarget).allowed;
+
     const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,
       reference: referenceOf(projectKey, number),
+      capabilities: { update, archive, comment, manageProjectVocabulary, moderateComments },
+    };
+  });
+}
+
+export interface CardByReference {
+  readonly cardId: string;
+  readonly reference: string;
+  readonly title: string;
+  readonly boardId: string;
+  readonly projectId: string;
+  readonly statusId: string | null;
+}
+
+const REFERENCE_PATTERN = /^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/;
+
+/**
+ * `WEB-142` -> the card it names, or a NOT_FOUND naming exactly what was
+ * looked up. Added for the AI assistant's `find_card` tool
+ * (`apps/api/src/ai/tools/lookup.ts`): a card is the single most commonly
+ * REFERENCED entity in an ordinary request ("move WEB-709", "what's the
+ * status of API-6"), and yet — unlike every other entity type
+ * `lookup.ts`'s tools already resolve by name — nothing in this codebase
+ * could turn a human-typed reference into a real id. `search` does not fill
+ * this gap: it indexes card CONTENT (title, description text), never the
+ * project-key-plus-number reference, so a search for "WEB-709" matches
+ * nothing and the assistant had no way to reach a card a person named the
+ * exact way this app displays it everywhere else.
+ *
+ * The key half is uppercased before the query — `router.ts`'s own
+ * `ProjectKey` schema transforms every key to uppercase before it is ever
+ * stored, so a lowercase or mixed-case reference a person actually types
+ * ("web-709") would silently match nothing without this.
+ */
+export async function getCardByReference(
+  actor: WorkActor,
+  input: { readonly reference: string },
+): Promise<CardByReference> {
+  const match = REFERENCE_PATTERN.exec(input.reference.trim());
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw errors.notFound(
+      `"${input.reference}" is not a valid card reference (expected something like WEB-142).`,
+    );
+  }
+  const key = match[1].toUpperCase();
+  const number = Number.parseInt(match[2], 10);
+
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        cardId: schema.cards.id,
+        orgId: schema.cards.orgId,
+        boardId: schema.cards.boardId,
+        projectId: schema.cards.projectId,
+        title: schema.cards.title,
+        statusId: schema.cards.statusId,
+        number: schema.cards.number,
+        projectKey: schema.projects.key,
+      })
+      .from(schema.cards)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.cards.projectId))
+      .where(
+        and(
+          eq(schema.projects.key, key),
+          eq(schema.cards.number, number),
+          isNull(schema.cards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const card = rows[0];
+    if (!card) {
+      throw errors.notFound(`No card found with reference "${key}-${String(number)}".`);
+    }
+
+    const cardId = unsafeAsId<'CardId'>(card.cardId);
+    enforceOn(actor, 'card:read', { type: 'card', id: cardId }, card, ancestorsOfCard(card));
+
+    return {
+      cardId: card.cardId,
+      reference: referenceOf(card.projectKey, card.number),
+      title: card.title,
+      boardId: card.boardId,
+      projectId: card.projectId,
+      statusId: card.statusId,
     };
   });
 }
@@ -861,6 +1032,101 @@ export async function assignCard(
     ]);
 
     return { assigneeIds };
+  });
+}
+
+export interface BulkReassignResult {
+  /** Card ids the operation actually changed. */
+  readonly reassigned: readonly string[];
+  /** A card it could not touch, and why — never thrown, so one board the
+   *  rule owner cannot edit does not abort every other card's reassignment. */
+  readonly failed: readonly { readonly cardId: string; readonly error: string }[];
+}
+
+/**
+ * Offboarding automation's `cards.bulk_reassign` (ai/phase-15-ai-copilot-and-
+ * permissions.md §8, offboarding item 2) — hands every open card
+ * `fromUserId` is carrying to `toUserId`, in one operation.
+ *
+ * A genuinely NEW mutation shape, not `assignCard` looped: every other bulk
+ * action in this codebase (`sprint.add_cards`) loops a PER-ITEM service call
+ * because each item is independently meaningful. This one is a single
+ * intent — "everything this person had, someone else now has" — so it gets
+ * its own event (`card.bulk_reassigned`) naming every card touched, rather
+ * than one `card.assigned` per card that would read as N unrelated changes.
+ *
+ * Authorization is still PER CARD, because permission is: a rule owner can
+ * hold `card:update` on one board and not another via a relationship tuple,
+ * and `enforceOn` is what already knows how to ask that question correctly.
+ * A card the owner cannot touch is reported in `failed` rather than thrown —
+ * the `sprint.add_cards` precedent for a bulk operation a human already
+ * confirmed touching a named set of resources: abandoning every other card
+ * because one board refused would be worse for the org, not safer.
+ *
+ * Archived cards are excluded — reassigning work that is already done is not
+ * "open/in-progress" work in the sense offboarding cares about, and Wave 1
+ * has no product surface for un-archiving one via this path anyway.
+ */
+export async function bulkReassignCards(
+  actor: WorkActor,
+  input: { readonly fromUserId: UserId; readonly toUserId: UserId },
+): Promise<BulkReassignResult> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const target = await tx
+      .select({ userId: schema.memberships.userId })
+      .from(schema.memberships)
+      .where(
+        and(eq(schema.memberships.userId, input.toUserId), eq(schema.memberships.status, 'active')),
+      )
+      .limit(1);
+    if (!target[0]) {
+      throw errors.validation({ toUserId: 'Not a member of this organization.' });
+    }
+
+    const rows = await tx
+      .select({ id: schema.cards.id })
+      .from(schema.cards)
+      .where(
+        and(
+          uuidArrayContains(schema.cards.assigneeIds, input.fromUserId),
+          isNull(schema.cards.archivedAt),
+        ),
+      );
+
+    const reassigned: string[] = [];
+    const failed: { readonly cardId: string; readonly error: string }[] = [];
+
+    for (const row of rows) {
+      const cardId = row.id as CardId;
+      try {
+        const card = await loadCard(tx, cardId);
+        enforceOn(actor, 'card:update', { type: 'card', id: cardId }, card, ancestorsOfCard(card));
+
+        const next = card.assigneeIds.filter((id) => id !== input.fromUserId);
+        if (!next.includes(input.toUserId)) next.push(input.toUserId);
+
+        await tx
+          .update(schema.cards)
+          .set({ assigneeIds: next, updatedAt: new Date() })
+          .where(eq(schema.cards.id, cardId));
+
+        reassigned.push(cardId);
+      } catch (error) {
+        failed.push({ cardId, error: error instanceof Error ? error.message : 'unknown error' });
+      }
+    }
+
+    if (reassigned.length > 0) {
+      await outboxWriter.append(tx, [
+        createEvent(
+          cardsBulkReassigned,
+          { cardIds: reassigned, fromUserId: input.fromUserId, toUserId: input.toUserId },
+          envelopeOf(actor),
+        ),
+      ]);
+    }
+
+    return { reassigned, failed };
   });
 }
 

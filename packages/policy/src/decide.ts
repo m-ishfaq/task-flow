@@ -40,6 +40,21 @@ export interface Subject {
   readonly role: Role;
   /** Resolved tuples for THIS user. See tuples.ts on why they arrive pre-expanded. */
   readonly tuples: readonly RelationshipTuple[];
+  /**
+   * Org-level permissions granted to this member individually, on top of
+   * their role (ai/phase-15-ai-copilot-and-permissions.md §1) — e.g. one
+   * specific Member being given `call:place` without promoting them to
+   * Admin. Already resolved and filtered to active (non-revoked,
+   * unexpired) rows by the caller, the same way `tuples` arrives
+   * pre-expanded rather than as raw storage rows.
+   *
+   * Optional, and defaults to none. A caller that has not wired up
+   * member-grant resolution (a worker, the collab gateway, or an older test
+   * fixture) simply sees no individual grants, which is the fail-closed
+   * direction: it can only cause a grant to be ignored, never honored when
+   * it should not be.
+   */
+  readonly memberGrants?: readonly Permission[];
 }
 
 export interface Target {
@@ -182,19 +197,33 @@ export function can(subject: Subject, permission: Permission, target?: Target): 
   }
 
   /* ---------------------------------------------------------------------- *
-   * Layer 2b — role.
+   * Layer 2b — role, plus an individual member grant on top of it.
+   *
+   * A member grant is checked here, alongside the role, rather than as its
+   * own layer — it composes with everything below exactly the way a role
+   * grant does: a restrictive tuple further down can still CAP a permission
+   * an individual grant added, the same as it caps one the role added,
+   * because sharing a board read-only with someone is meant to narrow
+   * whatever they could otherwise do there, not just their role.
    * ---------------------------------------------------------------------- */
-  const byRole = roleGrants(subject.role, permission);
+  const grantedByRole = roleGrants(subject.role, permission);
+  const grantedByMemberGrant = !grantedByRole && hasMemberGrant(subject, permission);
+  const byRole = grantedByRole || grantedByMemberGrant;
+  const roleReason = byRole
+    ? grantedByMemberGrant
+      ? `An individual grant gives you ${permission}.`
+      : `Role ${subject.role} grants ${permission}.`
+    : `Role ${subject.role} does not grant ${permission}.`;
   trace.push({
     layer: 2,
     outcome: byRole ? 'grant' : 'deny',
-    rule: `role=${subject.role} ${byRole ? 'grants' : 'does not grant'} ${permission}`,
+    rule: grantedByMemberGrant
+      ? `an individual grant gives this member ${permission}`
+      : `role=${subject.role} ${byRole ? 'grants' : 'does not grant'} ${permission}`,
   });
 
   if (!target) {
-    return byRole
-      ? finish(true, `Role ${subject.role} grants ${permission}.`)
-      : finish(false, `Role ${subject.role} does not grant ${permission}.`);
+    return finish(byRole, roleReason);
   }
 
   /* ---------------------------------------------------------------------- *
@@ -217,9 +246,7 @@ export function can(subject: Subject, permission: Permission, target?: Target): 
     }
 
     trace.push({ layer: 2, outcome: 'skip', rule: 'no relationship tuple on this resource' });
-    return byRole
-      ? finish(true, `Role ${subject.role} grants ${permission}.`)
-      : finish(false, `Role ${subject.role} does not grant ${permission}.`);
+    return finish(byRole, roleReason);
   }
 
   const byTuple = nearest.filter((tuple) => relationGrants(tuple.relation, permission));
@@ -264,9 +291,7 @@ export function can(subject: Subject, permission: Permission, target?: Target): 
     return finish(true, 'Granted by a relationship on this resource.');
   }
 
-  return byRole
-    ? finish(true, `Role ${subject.role} grants ${permission}.`)
-    : finish(false, `Role ${subject.role} does not grant ${permission}.`);
+  return finish(byRole, roleReason);
 }
 
 /** Convenience for call sites that genuinely only need the answer. */
@@ -339,9 +364,23 @@ export function allowed(subject: Subject, permission: Permission, target?: Targe
 export function couldGrant(subject: Subject, permission: Permission): boolean {
   if (!isRole(subject.role)) return false;
   if (roleGrants(subject.role, permission)) return true;
+  /* Checked before the `isOrgLevel` refusal below, not after: that refusal
+     exists because a TUPLE's relation grants by action SUFFIX regardless of
+     resource type (see the vulnerability this function's own doc comment
+     documents), which is unsafe to trust for a permission with no per-resource
+     layer 2 to narrow it back down. A member grant has no such looseness — it
+     names exactly one permission, explicitly, nothing derived from a suffix —
+     so letting it satisfy an org-level permission here is not a version of
+     that vulnerability, it is the entire reason the mechanism exists. */
+  if (hasMemberGrant(subject, permission)) return true;
   if (isOrgLevel(permission)) return false;
 
   return subject.tuples.some((tuple) => relationGrants(tuple.relation, permission));
+}
+
+/** True when `subject` holds an individual, already-resolved grant of `permission`. */
+function hasMemberGrant(subject: Subject, permission: Permission): boolean {
+  return (subject.memberGrants ?? []).includes(permission);
 }
 
 /**

@@ -28,9 +28,18 @@ export interface StatusSectionProps {
   readonly cardId: CardId;
   readonly projectId: ProjectId;
   readonly statusId: string | null;
+  /** `card:update` — disabled, not hidden: the select is also the read display of the current status. */
+  readonly canEdit: boolean;
 }
 
-export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: StatusSectionProps) {
+export function StatusSection({
+  orgId,
+  boardId,
+  cardId,
+  projectId,
+  statusId,
+  canEdit,
+}: StatusSectionProps) {
   const optimistic = useOptimistic();
   const list = useQuery(statusesQuery(orgId, projectId));
 
@@ -59,11 +68,12 @@ export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: S
       <select
         aria-label="Status"
         value={statusId ?? ''}
+        disabled={!canEdit}
         onChange={(event) => {
           const value = event.target.value;
           setStatus.mutate(value === '' ? null : (value as StatusId));
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
       >
         <option value="">No status</option>
         {(list.data ?? []).map((status) => (
@@ -81,6 +91,8 @@ export interface PrioritySectionProps {
   readonly boardId: BoardId;
   readonly cardId: CardId;
   readonly priority: Priority | null;
+  /** `card:update` — disabled, not hidden: the select is also the read display of the current priority. */
+  readonly canEdit: boolean;
 }
 
 /**
@@ -91,7 +103,13 @@ export interface PrioritySectionProps {
  * same way `DatesSection` does; the board tile updates sooner because
  * `useUpdateCard` patches `cardsOfBoard` optimistically.
  */
-export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySectionProps) {
+export function PrioritySection({
+  orgId,
+  boardId,
+  cardId,
+  priority,
+  canEdit,
+}: PrioritySectionProps) {
   const update = useUpdateCard(orgId, boardId);
 
   return (
@@ -117,6 +135,7 @@ export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySe
         <select
           aria-label="Priority"
           value={priority ?? ''}
+          disabled={!canEdit}
           onChange={(event) => {
             const value = event.target.value;
             update.mutate({
@@ -125,7 +144,7 @@ export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySe
             });
           }}
           className={cn(
-            'h-8 w-full rounded border border-line bg-surface-sunken pr-2 text-xs text-ink',
+            'h-8 w-full rounded border border-line bg-surface-sunken pr-2 text-xs text-ink disabled:opacity-50',
             priority !== null ? 'pl-6' : 'pl-2',
           )}
         >

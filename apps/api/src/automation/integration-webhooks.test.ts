@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { unsafeAsId, type OrgId } from '@taskflow/contracts';
+import { unsafeAsId, type CardId, type OrgId, type UserId } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase, initializeIntegrationAuthDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import {
@@ -10,8 +10,16 @@ import {
   signSlackRequest,
   SoftwareKeyProvider,
 } from '@taskflow/security';
+import type { Subject } from '@taskflow/policy';
 import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
+import { loadTuples } from '../tenancy/resolve.js';
+import * as projects from '../work/project.service.js';
+import * as boards from '../work/board.service.js';
+import * as lists from '../work/list.service.js';
+import * as cards from '../work/card.service.js';
+import { linkCardPullRequest } from '../work/card-pull-request.service.js';
+import type { WorkActor } from '../work/shared.js';
 import {
   registerIntegrationWebhooks,
   type IntegrationWebhookDeps,
@@ -156,6 +164,56 @@ async function triggerEvents(
   );
   await admin.setOrg(null);
   return result.rows as { name: string; payload: Record<string, unknown> }[];
+}
+
+/** Every outbox row for the org, unfiltered — `triggerEvents`'s own
+    `LIKE 'integration.%'` excludes the `card.pull_request_*` events the
+    pull_request derivatives below emit, which are ordinary card events, not
+    connector-trigger ones. */
+async function allEvents(
+  orgId: string,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY occurred_at`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  return result.rows as { name: string; payload: Record<string, unknown> }[];
+}
+
+async function actorFor(orgId: OrgId, userId: UserId, role: Subject['role']): Promise<WorkActor> {
+  const tuples = await loadTuples(orgId, userId);
+  return {
+    subject: { orgId, userId, role, tuples },
+    requestId: unsafeAsId<'RequestId'>('0195ee32-0000-7000-8000-0000000000ff'),
+  };
+}
+
+/** A real project/board/list/card, for the `pull_request` derivative tests
+    below — the only tests in this file that need a real Work hierarchy
+    rather than just an org and a connector row. */
+async function cardFixture(
+  orgId: OrgId,
+): Promise<{ owner: WorkActor; cardId: CardId; reference: string }> {
+  const owner = await actorFor(orgId, OWNER, 'owner');
+  const project = await projects.createProject(owner, {
+    name: 'Website',
+    key: `W${fixtureCounter.toString(36).toUpperCase()}`,
+    description: null,
+  });
+  const board = await boards.createBoard(owner, { projectId: project.projectId, name: 'Delivery' });
+  const list = await lists.createList(owner, {
+    boardId: board.boardId,
+    name: 'Todo',
+    wipLimit: null,
+  });
+  const card = await cards.createCard(owner, {
+    listId: list.listId,
+    title: 'Fix login bug',
+    description: null,
+  });
+  return { owner, cardId: card.cardId, reference: card.reference };
 }
 
 async function deliveryRows(orgId: string): Promise<number> {
@@ -713,5 +771,172 @@ describe('the GitHub route — resolve first, verify second, dedupe on success',
     expect(await triggerEvents(a)).toHaveLength(0);
     expect(await triggerEvents(b)).toHaveLength(0);
     expect(await deliveryRows(b)).toBe(0);
+  });
+});
+
+/**
+ * The `pull_request` derivatives (§7.2's last documented automation gap) —
+ * end-to-end WIRING tests. `card-pull-request.service.test.ts` already
+ * covers `notifyPullRequestMerged`/`autoLinkPullRequestFromBranchName`'s own
+ * edge cases directly; what only a real POST through this route proves is
+ * that a `pull_request` webhook delivery actually reaches them, in the SAME
+ * transaction as the delivery-dedupe row and `integration.github_event`.
+ */
+describe('the GitHub route — pull_request derivatives', () => {
+  it('a merged PR fans out card.pull_request_merged to its linked card', async () => {
+    const orgId = await scaffold('github-pr-merged');
+    await insertConnector({
+      orgId,
+      provider: 'github',
+      providerScope: 'acme/merged-repo',
+      status: 'connected',
+      verifySecret: GITHUB_VERIFY_SECRET,
+    });
+    const fixture = await cardFixture(orgId);
+    await linkCardPullRequest(fixture.owner, {
+      cardId: fixture.cardId,
+      providerScope: 'acme/merged-repo',
+      prNumber: 42,
+    });
+
+    const body = githubBody('acme/merged-repo', {
+      action: 'closed',
+      pull_request: { number: 42, merged: true },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/integrations/github',
+      headers: {
+        'content-type': 'application/json',
+        'x-github-delivery': 'uuid-delivery-pr-merged-1',
+        'x-github-event': 'pull_request',
+        'x-hub-signature-256': signGitHubRequest({ secret: GITHUB_VERIFY_SECRET, body }),
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(204);
+    const events = await allEvents(orgId);
+    const merged = events.filter((event) => event.name === 'card.pull_request_merged');
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.payload).toMatchObject({
+      cardId: fixture.cardId,
+      providerScope: 'acme/merged-repo',
+      prNumber: 42,
+    });
+  });
+
+  it('a PR closed WITHOUT merging emits nothing beyond the generic github_event', async () => {
+    const orgId = await scaffold('github-pr-closed-unmerged');
+    await insertConnector({
+      orgId,
+      provider: 'github',
+      providerScope: 'acme/closed-repo',
+      status: 'connected',
+      verifySecret: GITHUB_VERIFY_SECRET,
+    });
+    const fixture = await cardFixture(orgId);
+    await linkCardPullRequest(fixture.owner, {
+      cardId: fixture.cardId,
+      providerScope: 'acme/closed-repo',
+      prNumber: 43,
+    });
+
+    const body = githubBody('acme/closed-repo', {
+      action: 'closed',
+      pull_request: { number: 43, merged: false },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/integrations/github',
+      headers: {
+        'content-type': 'application/json',
+        'x-github-delivery': 'uuid-delivery-pr-closed-1',
+        'x-github-event': 'pull_request',
+        'x-hub-signature-256': signGitHubRequest({ secret: GITHUB_VERIFY_SECRET, body }),
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(204);
+    const events = await allEvents(orgId);
+    expect(events.filter((event) => event.name === 'card.pull_request_merged')).toHaveLength(0);
+    /* `triggerEvents`, not `allEvents` — the fixture setup above (`cardFixture`,
+       `linkCardPullRequest`) emits its own real events (`project.created`,
+       `card.pull_request_linked`, ...) that `allEvents`' unfiltered query would
+       include here, and this assertion only cares about the connector-trigger
+       namespace the webhook itself writes to. */
+    const triggered = await triggerEvents(orgId);
+    expect(triggered.map((event) => event.name)).toEqual(['integration.github_event']);
+  });
+
+  it('an opened PR auto-links the card its branch name references', async () => {
+    const orgId = await scaffold('github-pr-opened');
+    await insertConnector({
+      orgId,
+      provider: 'github',
+      providerScope: 'acme/opened-repo',
+      status: 'connected',
+      verifySecret: GITHUB_VERIFY_SECRET,
+    });
+    const fixture = await cardFixture(orgId);
+    const branchName = `${fixture.reference.toLowerCase()}-fix-login-redirect`;
+
+    const body = githubBody('acme/opened-repo', {
+      action: 'opened',
+      pull_request: { number: 77, merged: false, head: { ref: branchName } },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/integrations/github',
+      headers: {
+        'content-type': 'application/json',
+        'x-github-delivery': 'uuid-delivery-pr-opened-1',
+        'x-github-event': 'pull_request',
+        'x-hub-signature-256': signGitHubRequest({ secret: GITHUB_VERIFY_SECRET, body }),
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(204);
+    const events = await allEvents(orgId);
+    const linked = events.filter((event) => event.name === 'card.pull_request_linked');
+    expect(linked).toHaveLength(1);
+    expect(linked[0]?.payload).toMatchObject({
+      cardId: fixture.cardId,
+      providerScope: 'acme/opened-repo',
+      prNumber: 77,
+    });
+  });
+
+  it('an opened PR from a branch with no recognizable reference links nothing', async () => {
+    const orgId = await scaffold('github-pr-opened-no-ref');
+    await insertConnector({
+      orgId,
+      provider: 'github',
+      providerScope: 'acme/opened-no-ref-repo',
+      status: 'connected',
+      verifySecret: GITHUB_VERIFY_SECRET,
+    });
+
+    const body = githubBody('acme/opened-no-ref-repo', {
+      action: 'opened',
+      pull_request: { number: 78, merged: false, head: { ref: 'fix-something-unrelated' } },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/integrations/github',
+      headers: {
+        'content-type': 'application/json',
+        'x-github-delivery': 'uuid-delivery-pr-opened-2',
+        'x-github-event': 'pull_request',
+        'x-hub-signature-256': signGitHubRequest({ secret: GITHUB_VERIFY_SECRET, body }),
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(204);
+    const events = await allEvents(orgId);
+    expect(events.filter((event) => event.name === 'card.pull_request_linked')).toHaveLength(0);
   });
 });

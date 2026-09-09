@@ -1,9 +1,13 @@
+import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
+import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { CallsPanel } from './calls-panel.js';
 import { NumbersPanel } from './numbers-panel.js';
 import { MessagesPanel } from './messages-panel.js';
+import { RecordingsPanel } from './recordings-panel.js';
 import { SpendPanel } from './spend-panel.js';
 
 /**
@@ -15,21 +19,34 @@ import { SpendPanel } from './spend-panel.js';
  * open tab is a shareable, back-button-correct link (the same reasoning
  * `chatRoute`'s `channel` and `docsRoute`'s `page` already establish).
  *
- * Per CLAUDE.md §8.2, nothing here re-derives authorization: every tab and
- * every control renders unconditionally, and a caller without the permission
- * gets a real FORBIDDEN from the server the first time they try — not a
- * hidden button. `phoneNumber:read`/`call:read`/`sms:read` cover MEMBER for
- * three of the four tabs; Spend's `report` sub-view needs `recording:read`
- * (ADMIN), so a member sees "current spend" there and a FORBIDDEN on the
- * itemized report, exactly as the server's own tiering intends.
+ * Per CLAUDE.md §8.2, nothing here re-derives authorization — every tab
+ * still renders through the server, which is what actually refuses a
+ * request. What changed (Phase 15 §1): `phoneNumber:read`/`call:read`/
+ * `sms:read`/`call:place`/`sms:send` are no longer Member role defaults,
+ * they are individually granted via `authz.member_grants`, so a Member can
+ * hold any SUBSET of them. Rendering all four tabs unconditionally would put
+ * three of them permanently one click from a "You do not have permission to
+ * do that" error for anyone with a partial grant — the exact gap this
+ * section closes, per the standing rule that a permission which used to be
+ * freely available must have every one of its old display sites re-checked,
+ * not just the one that was reported. Each tab is hidden unless its own
+ * `SettingsCapabilities` boolean is true; Spend's `report` sub-view still
+ * needs `recording:read` (ADMIN, not one of the five grantable permissions,
+ * so it stays an inline FORBIDDEN exactly as before this change — that half
+ * was never freely available to a Member to begin with).
  */
 
 const TABS = [
-  { id: 'calls', label: 'Calls' },
-  { id: 'numbers', label: 'Numbers' },
-  { id: 'messages', label: 'Messages' },
-  { id: 'spend', label: 'Spend' },
-] as const;
+  { id: 'calls', label: 'Calls', capability: 'readCalls' },
+  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers' },
+  { id: 'messages', label: 'Messages', capability: 'readSms' },
+  { id: 'recordings', label: 'Recordings', capability: 'readRecordings' },
+  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers' },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  capability: keyof SettingsCapabilities;
+}[];
 
 type TabId = (typeof TABS)[number]['id'];
 
@@ -37,10 +54,41 @@ export function TelephonyPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const navigate = useNavigate();
   const tab = useSearch({ from: '/calls', select: (value) => value.tab }) ?? 'calls';
+  const org = useQuery(orgDetailQuery(orgId));
+  const capabilities = org.data?.capabilities;
+
+  const visibleTabs =
+    capabilities === undefined ? [] : TABS.filter((item) => capabilities[item.capability]);
 
   const selectTab = (next: TabId) => {
     void navigate({ to: '/calls', search: { tab: next, thread: undefined } });
   };
+
+  // If the current tab isn't one the caller can see (a stale link, or a
+  // partial grant that never covered it), land on the first tab that is —
+  // never on a tab this org member has never been able to open.
+  useEffect(() => {
+    if (capabilities === undefined) return;
+    const allowed = TABS.filter((item) => capabilities[item.capability]);
+    if (allowed.some((item) => item.id === tab)) return;
+    const fallback = allowed[0];
+    if (fallback !== undefined) selectTab(fallback.id);
+    /* `selectTab` closes over `navigate`, a new reference each render;
+       including it would re-run this on every render rather than only when
+       the tab or the capability set actually changes. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities, tab]);
+
+  if (capabilities !== undefined && visibleTabs.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="max-w-sm text-center text-sm text-ink-muted">
+          You don&apos;t have access to any part of Voice &amp; Messaging yet. An admin or owner can
+          grant you access from Settings → Individual permissions.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -52,7 +100,7 @@ export function TelephonyPage() {
           Phone numbers, calls, SMS, and spend — one carrier account per organization.
         </p>
         <nav aria-label="Voice & Messaging sections" className="mt-3 flex gap-1">
-          {TABS.map((item) => (
+          {visibleTabs.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -74,10 +122,15 @@ export function TelephonyPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {tab === 'calls' && <CallsPanel orgId={orgId} />}
-        {tab === 'numbers' && <NumbersPanel orgId={orgId} />}
-        {tab === 'messages' && <MessagesPanel orgId={orgId} />}
-        {tab === 'spend' && <SpendPanel orgId={orgId} />}
+        {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel orgId={orgId} />}
+        {tab === 'numbers' && capabilities?.readPhoneNumbers === true && (
+          <NumbersPanel orgId={orgId} />
+        )}
+        {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
+        {tab === 'recordings' && capabilities?.readRecordings === true && (
+          <RecordingsPanel orgId={orgId} />
+        )}
+        {tab === 'spend' && capabilities?.readPhoneNumbers === true && <SpendPanel orgId={orgId} />}
       </div>
     </div>
   );

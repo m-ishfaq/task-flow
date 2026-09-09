@@ -18,6 +18,7 @@ import {
   type SpaceId,
 } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
+import { allowed } from '@taskflow/policy';
 import { newId } from '@taskflow/security';
 import { rebalancePageSiblings } from './rebalance.js';
 import {
@@ -34,6 +35,7 @@ import {
   loadPage,
   loadSpace,
   orgOf,
+  pageTarget,
   userOf,
   type DocsActor,
   type PageRow,
@@ -56,7 +58,9 @@ export async function listPages(
   actor: DocsActor,
   input: { readonly spaceId: SpaceId },
 ): Promise<readonly PageSummary[]> {
-  return withOrgScope(orgOf(actor), async (tx) => {
+  const orgId = orgOf(actor);
+
+  return withOrgScope(orgId, async (tx) => {
     const space = await loadSpace(tx, input.spaceId);
     enforceOnSpace(actor, 'space:read', space);
 
@@ -68,6 +72,8 @@ export async function listPages(
         rank: schema.pages.rank,
         archivedAt: schema.pages.archivedAt,
         publishedAt: schema.pages.publishedAt,
+        publishedVersionId: schema.pages.publishedVersionId,
+        ancestorIds: schema.pages.ancestorIds,
       })
       .from(schema.pages)
       .where(eq(schema.pages.spaceId, input.spaceId))
@@ -87,6 +93,34 @@ export async function listPages(
       rank: row.rank,
       archivedAt: row.archivedAt,
       publishedAt: row.publishedAt,
+      /**
+       * Whether the caller may archive/restore THIS page. `page:delete` is
+       * Admin-and-Owner by role but tuple-shareable per page (§3.1), so — like
+       * `listSpaces`'s own `capabilities.manage` — it cannot be answered from
+       * the flat org-wide `SettingsCapabilities`: a flat check would both hide
+       * a control a per-page grant genuinely gives a Member AND show one to a
+       * Member with no grant at all. The latter is the bug being closed here —
+       * `docs-page.tsx`'s page-level Archive/Restore button used to render for
+       * every viewer regardless of `page:delete` (Phase 15 §1's sweep).
+       */
+      capabilities: {
+        archive: allowed(
+          actor.subject,
+          'page:delete',
+          pageTarget({
+            id: row.id,
+            orgId,
+            spaceId: input.spaceId,
+            parentPageId: row.parentPageId,
+            title: row.title,
+            rank: row.rank,
+            ancestorIds: row.ancestorIds,
+            archivedAt: row.archivedAt,
+            publishedVersionId: row.publishedVersionId,
+            publishedAt: row.publishedAt,
+          }),
+        ),
+      },
     }));
   });
 }
@@ -99,6 +133,7 @@ interface PageSummary {
   readonly archivedAt: Date | null;
   /** Wave 4, §3.9 — non-null exactly when this page has a live public snapshot. */
   readonly publishedAt: Date | null;
+  readonly capabilities: { readonly archive: boolean };
 }
 
 export async function createPage(

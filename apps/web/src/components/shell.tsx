@@ -26,7 +26,7 @@ import { disconnectRtcSocket } from '../lib/rtc-socket.js';
 import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
-import { orgsQuery } from '../features/org/api.js';
+import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
@@ -34,6 +34,7 @@ import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
 import { CallSurface } from '../features/rtc/call-surface.js';
+import { NewOrgSetupDialog } from '../features/ai/setup-dialog.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -266,6 +267,15 @@ export function Shell() {
           unmounts is not a phone. */}
       {hasOrg && <CallSurface />}
 
+      {/* The §6 new-org Docs bootstrap offer (ai/phase-15-ai-copilot-and-
+          permissions.md §6). Mounted in the frame rather than on `/projects`
+          specifically: the component's own effect is a no-op unless THIS
+          tab just created the current org, so it costs nothing to keep
+          mounted everywhere `hasOrg` is true, and it means the offer still
+          appears even if `choose()` ever routes somewhere other than
+          `/projects` after creation. */}
+      {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
+
       <div className="flex min-w-0 flex-1 flex-col">
         <Header showMenuButton={hasOrg} />
         {/* `relative` establishes a containing block, and it is load-bearing.
@@ -328,6 +338,16 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
 function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
+  const orgId = useSession((state) => state.orgId);
+  /* Gates the "Permissions" link below — `audit:read`, the same capability
+     `/settings/audit` already reads (Phase 15 §1's sweep: this link used to
+     render for every role and let `/admin/permissions` answer FORBIDDEN,
+     worse than most of that sweep's other findings because the page it
+     points at inspects a COLLEAGUE's access, not the caller's own). */
+  const canDebugPermissions = useQuery({
+    ...orgDetailQuery(orgId ?? ''),
+    enabled: orgId !== null,
+  }).data?.capabilities.viewAuditLog;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
@@ -381,7 +401,9 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
         <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
-        <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
+        {canDebugPermissions === true && (
+          <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
+        )}
       </nav>
     </header>
   );

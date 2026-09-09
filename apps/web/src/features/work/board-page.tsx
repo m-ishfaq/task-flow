@@ -1,19 +1,22 @@
 import { useState } from 'react';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import type { CardId, ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
 import { useSession } from '../../lib/session.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
-import { cardsQuery, listsQuery, statusesQuery } from './api.js';
+import { boardsQuery, cardsQuery, listsQuery, projectsQuery, statusesQuery } from './api.js';
 import { SprintPicker } from './sprints.js';
 import { filterCardsBySprint, type SprintFilter } from './sprint-filter.js';
 import { useBoardRoom } from './use-board-room.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
 import { ListView } from './list-view.js';
+import { CalendarView } from './calendar-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
 import { ViewTabs } from './view-tabs.js';
 import { BulkBar } from './bulk-bar.js';
@@ -59,6 +62,22 @@ const SORT_BY_LABEL: Readonly<Record<SortBy, string>> = {
  *
  * View, filter and open card all live in the URL (§10.5), so a board with a
  * filter applied and a card open is one link.
+ *
+ * ## The toolbar collapses on narrow web screens only
+ *
+ * The header row (view tabs, saved views, filter/sprint, group/sort, share)
+ * is one `flex-wrap` row that reads fine at desktop width and, below `md:`,
+ * wraps into five or six stacked lines before any card is visible — a real
+ * usability complaint on a phone browser, not a design choice worth keeping.
+ * `useIsDesktop()` (the same 768px `md:` breakpoint `calendar-view.tsx`
+ * already coordinates its own responsive swap against) gates a purely
+ * cosmetic disclosure: at `md:` and above the full row always renders,
+ * exactly as before this change, and no toggle appears at all. Below it, a
+ * compact bar (current view name plus a "Tools" toggle) is what's always
+ * visible, and the full row — completely unchanged, same components, same
+ * props — only renders once expanded. No behavior, permission, or data
+ * changed by this; `toolbarExpanded` is pure, unpersisted client state, the
+ * same "no server representation" reasoning `selection` below already gets.
  */
 
 export function BoardPage() {
@@ -84,6 +103,24 @@ export function BoardPage() {
      The query gating below flips itself on the moment a card lands. Cast
      because the fallback comes off the wire un-branded. */
   const projectId = (search.project ?? cards.data?.[0]?.projectId ?? null) as ProjectId | null;
+
+  /* `boards.list`/`projects.list` already return per-row `capabilities.update`
+     (`board:update`/`project:update`) — `projects-page.tsx` and
+     `project-settings-page.tsx` already read them for their own controls, but
+     this page never fetched either, so every list/sprint/import management
+     control below rendered unconditionally and let a Member's attempt come
+     back FORBIDDEN (Phase 15 §1's sweep). `enabled: projectId !== null`
+     matches the same gating `statuses` above already uses. */
+  const boards = useQuery({
+    ...boardsQuery(orgId, projectId ?? ('' as ProjectId)),
+    enabled: projectId !== null,
+  });
+  const canManageBoard =
+    boards.data?.find((board) => board.boardId === boardId)?.capabilities.update ?? false;
+
+  const projects = useQuery(projectsQuery(orgId));
+  const canManageProject =
+    projects.data?.find((project) => project.projectId === projectId)?.capabilities.update ?? false;
 
   /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
      and patches/invalidates the queries above live as the full Wave 2 event
@@ -122,6 +159,12 @@ export function BoardPage() {
      survive navigating to another board, and a store would make that survival
      the default. */
   const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
+
+  /* Small-screen-only toolbar disclosure — see the component's own doc
+     comment above. `isDesktop` decides whether the toggle exists at all;
+     `toolbarExpanded` only matters when it does not. */
+  const isDesktop = useIsDesktop();
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
 
   if (lists.isPending || cards.isPending) {
     /* Columns, not a spinner. The board's shape is known before its contents
@@ -169,112 +212,171 @@ export function BoardPage() {
           than the viewport — it must sit above the cards and below any dialog,
           and anchoring it to the viewport would put it over the sidebar. */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line/50 bg-surface-raised/80 px-4 py-2.5 backdrop-blur-sm">
-          <ViewToggle
-            value={view}
-            onChange={(next) => {
-              setSearch({ view: next });
-            }}
-          />
-
-          {/* Selecting a view WRITES the four URL params rather than becoming
-              state of its own. The URL stays the single description of what is
-              on screen, so a pasted link and the highlighted tab can never
-              disagree — see view-tabs.tsx. */}
-          <ViewTabs
-            orgId={orgId}
-            boardId={boardId}
-            current={{ type: view, groupBy, sortBy, filter }}
-            onApply={(arrangement) => {
-              setSearch({
-                view: arrangement.type,
-                groupBy: arrangement.groupBy,
-                sortBy: arrangement.sortBy,
-                filter: arrangement.filter ?? undefined,
-              });
-            }}
-          />
-
-          <FilterBuilder
-            orgId={orgId}
-            projectId={projectId}
-            value={filter}
-            onChange={(next) => {
-              setSearch({ filter: next ?? undefined });
-            }}
-          />
-
-          {/* The sprint dimension — the picker writes `sprint=` and the
-              manager panel lives behind it. Only when the project is known
-              (same gating as the status vocabulary above). */}
-          {projectId !== null && (
-            <SprintPicker
-              orgId={orgId}
-              projectId={projectId}
-              boardId={boardId}
-              value={sprint}
-              onChange={(next) => {
-                setSearch({ sprint: next ?? undefined });
-              }}
-            />
-          )}
-
-          {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for
-              the table, which has its own columns, so they only render for
-              board and list. */}
-          {view !== 'table' && (
-            <>
-              <GroupBySelect
-                value={groupBy}
-                onChange={(next) => {
-                  setSearch({ groupBy: next });
+        <div className="shrink-0 border-b border-line/50 bg-surface-raised/80 backdrop-blur-sm">
+          {/* Compact bar — small screens only (`isDesktop` false below `md:`).
+              Always visible there regardless of `toolbarExpanded`, so there is
+              always a way back to collapsing the full row again. Renders
+              nothing at desktop width, where the full row below is always
+              shown and this toggle would be redundant chrome. */}
+          {!isDesktop && (
+            <div className="flex items-center gap-2 px-4 py-2">
+              <span className="text-xs font-medium capitalize text-ink">{view}</span>
+              <button
+                type="button"
+                aria-expanded={toolbarExpanded}
+                aria-label={toolbarExpanded ? 'Hide board tools' : 'Show board tools'}
+                onClick={() => {
+                  setToolbarExpanded((previous) => !previous);
                 }}
-              />
-              <SortBySelect
-                value={sortBy}
-                onChange={(next) => {
-                  setSearch({ sortBy: next });
-                }}
-              />
-            </>
-          )}
-
-          <span className="ml-auto text-xs text-ink-faint">
-            {sprintCards.length} {sprintCards.length === 1 ? 'card' : 'cards'}
-            {filter !== null && ' matching'}
-            {sprint !== null && ` in ${sprint === 'backlog' ? 'backlog' : 'sprint'}`}
-          </span>
-
-          {othersPresent.length > 0 && (
-            <div
-              className="flex items-center -space-x-1.5"
-              title={othersPresent.map((person) => person.label).join(', ')}
-            >
-              {othersPresent.slice(0, 5).map((person) => (
-                <span
-                  key={person.userId}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
-                >
-                  {person.label.slice(0, 2).toUpperCase()}
-                </span>
-              ))}
-              {othersPresent.length > 5 && (
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
-                  +{othersPresent.length - 5}
-                </span>
-              )}
+                className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-line/60 bg-surface-sunken/40 px-2.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Tools
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform duration-[var(--motion-fast)]',
+                    toolbarExpanded && 'rotate-180',
+                  )}
+                />
+              </button>
             </div>
           )}
 
-          <ArchivedCardsDialog orgId={orgId} boardId={boardId} />
-          <ShareBoardDialog orgId={orgId} boardId={boardId} />
-          {/* Import/export is project-scoped — a board reached by a pasted
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-3 px-4 py-2.5',
+              !isDesktop && (toolbarExpanded ? 'border-t border-line/50' : 'hidden'),
+            )}
+          >
+            <ViewToggle
+              value={view}
+              onChange={(next) => {
+                setSearch({ view: next });
+              }}
+            />
+
+            {/* Selecting a view WRITES the four URL params rather than becoming
+              state of its own. The URL stays the single description of what is
+              on screen, so a pasted link and the highlighted tab can never
+              disagree — see view-tabs.tsx. */}
+            <ViewTabs
+              orgId={orgId}
+              boardId={boardId}
+              current={{ type: view, groupBy, sortBy, filter }}
+              onApply={(arrangement) => {
+                setSearch({
+                  view: arrangement.type,
+                  groupBy: arrangement.groupBy,
+                  sortBy: arrangement.sortBy,
+                  filter: arrangement.filter ?? undefined,
+                });
+              }}
+              canManageBoard={canManageBoard}
+            />
+
+            <FilterBuilder
+              orgId={orgId}
+              projectId={projectId}
+              value={filter}
+              onChange={(next) => {
+                setSearch({ filter: next ?? undefined });
+              }}
+            />
+
+            {/* The sprint dimension — the picker writes `sprint=` and the
+              manager panel lives behind it. Only when the project is known
+              (same gating as the status vocabulary above). */}
+            {projectId !== null && (
+              <SprintPicker
+                orgId={orgId}
+                projectId={projectId}
+                boardId={boardId}
+                value={sprint}
+                onChange={(next) => {
+                  setSearch({ sprint: next ?? undefined });
+                }}
+                canManageProject={canManageProject}
+              />
+            )}
+
+            {/* The standup view (Phase 15 §5) — placed in the toolbar rather than
+              the sidebar, because this is exactly where a team is looking when
+              a daily standup starts. `project:read`, same floor as the board
+              itself, so no extra gate is needed here beyond `projectId` being
+              known. */}
+            {projectId !== null && (
+              <Link
+                to="/projects/$projectId/standup"
+                params={{ projectId }}
+                className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+              >
+                Standup
+              </Link>
+            )}
+
+            {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for
+              the table, which has its own columns, and for the calendar,
+              which is inherently grouped by date — so they only render for
+              board and list. */}
+            {view !== 'table' && view !== 'calendar' && (
+              <>
+                <GroupBySelect
+                  value={groupBy}
+                  onChange={(next) => {
+                    setSearch({ groupBy: next });
+                  }}
+                />
+                <SortBySelect
+                  value={sortBy}
+                  onChange={(next) => {
+                    setSearch({ sortBy: next });
+                  }}
+                />
+              </>
+            )}
+
+            <span className="ml-auto text-xs text-ink-faint">
+              {sprintCards.length} {sprintCards.length === 1 ? 'card' : 'cards'}
+              {filter !== null && ' matching'}
+              {sprint !== null && ` in ${sprint === 'backlog' ? 'backlog' : 'sprint'}`}
+            </span>
+
+            {othersPresent.length > 0 && (
+              <div
+                className="flex items-center -space-x-1.5"
+                title={othersPresent.map((person) => person.label).join(', ')}
+              >
+                {othersPresent.slice(0, 5).map((person) => (
+                  <span
+                    key={person.userId}
+                    className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
+                  >
+                    {person.label.slice(0, 2).toUpperCase()}
+                  </span>
+                ))}
+                {othersPresent.length > 5 && (
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
+                    +{othersPresent.length - 5}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <ArchivedCardsDialog orgId={orgId} boardId={boardId} canManageBoard={canManageBoard} />
+            <ShareBoardDialog orgId={orgId} boardId={boardId} />
+            {/* Import/export is project-scoped — a board reached by a pasted
               URL with no `?project=` cannot know which project's cards it
               would move, so it waits for the vocabulary to resolve, exactly
               like the sprint picker above. */}
-          {projectId !== null && (
-            <ImportExportDialog orgId={orgId} boardId={boardId} projectId={projectId} />
-          )}
+            {projectId !== null && (
+              <ImportExportDialog
+                orgId={orgId}
+                boardId={boardId}
+                projectId={projectId}
+                canManageProject={canManageProject}
+              />
+            )}
+          </div>
         </div>
 
         {view === 'board' && (
@@ -296,6 +398,7 @@ export function BoardPage() {
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
             }}
+            canManageBoard={canManageBoard}
           />
         )}
 
@@ -318,6 +421,15 @@ export function BoardPage() {
             orgId={orgId}
             boardId={boardId}
             lists={liveLists}
+            cards={sprintCards}
+            onOpenCard={(cardId) => {
+              setSearch({ card: cardId as CardId });
+            }}
+          />
+        )}
+
+        {view === 'calendar' && (
+          <CalendarView
             cards={sprintCards}
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
@@ -358,8 +470,8 @@ function ViewToggle({
   value,
   onChange,
 }: {
-  readonly value: 'board' | 'table' | 'list' | 'insights';
-  readonly onChange: (value: 'board' | 'table' | 'list' | 'insights') => void;
+  readonly value: 'board' | 'table' | 'list' | 'calendar' | 'insights';
+  readonly onChange: (value: 'board' | 'table' | 'list' | 'calendar' | 'insights') => void;
 }) {
   return (
     <div
@@ -367,7 +479,7 @@ function ViewToggle({
       role="group"
       aria-label="View"
     >
-      {(['board', 'list', 'table', 'insights'] as const).map((mode) => (
+      {(['board', 'list', 'table', 'calendar', 'insights'] as const).map((mode) => (
         <button
           key={mode}
           type="button"

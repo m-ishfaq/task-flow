@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Bot,
   Building2,
   CreditCard,
   Flag,
@@ -29,6 +30,7 @@ import { PlansTab } from './plans-tab.js';
 import { AuditTab } from './audit-tab.js';
 import { OperationsTab } from './operations-tab.js';
 import { BillingTab } from './billing-tab.js';
+import { AiTab } from './ai-tab.js';
 
 /**
  * ## What this page is
@@ -75,6 +77,7 @@ export function PlatformAdminPage() {
     | 'users'
     | 'plans'
     | 'billing'
+    | 'ai'
     | 'flags'
     | 'branding'
     | 'broadcast'
@@ -275,6 +278,7 @@ export function PlatformAdminPage() {
             ['users', 'Users', Users],
             ['plans', 'Plans', LayoutGrid],
             ['billing', 'Billing', CreditCard],
+            ['ai', 'AI Models', Bot],
             ['flags', 'Feature flags', Flag],
             ['branding', 'Branding', Palette],
             ['broadcast', 'Broadcast', Megaphone],
@@ -328,6 +332,14 @@ export function PlatformAdminPage() {
       )}
       {tab === 'billing' && (
         <BillingTab
+          guard={guard}
+          onStepUp={() => {
+            setGateOpen(true);
+          }}
+        />
+      )}
+      {tab === 'ai' && (
+        <AiTab
           guard={guard}
           onStepUp={() => {
             setGateOpen(true);

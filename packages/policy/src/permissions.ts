@@ -162,6 +162,44 @@ export const PERMISSIONS = [
      — deliberately NOT a `RESOURCE_TYPE`, because nothing holds a relationship
      tuple on "analytics". */
   'analytics:read',
+
+  /* AI Copilot (Phase 15 §2.4, ai/phase-15-ai-copilot-and-permissions.md).
+     Two independent gates, matching the split `analytics` already uses: the
+     `aiAssistant` FEATURE FLAG answers "does this org's plan include AI at
+     all," and this PERMISSION answers "which specific members inside an
+     org-that-has-it may open the assistant." An org can be on a plan that
+     includes AI and still have granted it to nobody — same as any other
+     member grant.
+
+     Org-level, deliberately not a `RESOURCE_TYPE`: the assistant itself has
+     no resource a tuple could name (see `ORG_LEVEL_PERMISSIONS` below), and
+     every per-resource question a tool call makes is answered again, at
+     EXECUTION, against the caller's own live permissions on the resource the
+     tool touches — the same "ask twice" shape `automation:manage` already
+     uses for rule-building versus rule-execution. */
+  'ai:use',
+
+  /* GitHub/PR integration (Phase 15 §7). The full spec names four
+     permissions (`pr:view`, `pr:review`, `pr:merge`, `repo:connect`).
+     Wave 1 shipped only `pr:view` — the other three had no caller yet, and
+     registering a permission ahead of any code that checks it is exactly
+     the "flag/permission registered ahead of its first caller, then nobody
+     comes back to wire it" gap this codebase has already hit twice
+     (`aiAssistant` granted to no plan for a release cycle; `analytics`
+     checked by no route for a release cycle). Wave 2 adds `pr:review` (gates
+     `pr_post_comment`/`pr_request_changes`/`pr_approve`) and `pr:merge`
+     (gates `pr_merge`/`pr_close`) alongside their first real callers. Wave 3
+     adds `repo:connect`, gating `create_branch_from_card` — the one action
+     from the original four-permission list this codebase went without a
+     caller for the longest, closed the moment the branch-creation tool
+     existed to check it. Org-level for the identical reason `ai:use` is:
+     every function these gate takes an `orgId` off the `Subject` and no
+     per-resource target — there is no tuple a PR, a repo connection, or a
+     branch could be named by. */
+  'pr:view',
+  'pr:review',
+  'pr:merge',
+  'repo:connect',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -190,10 +228,14 @@ const PERMISSION_SET: ReadonlySet<string> = new Set<string>(PERMISSIONS);
  * channel could read the whole org audit log through it; see
  * `ai/phase-5-chat.md`'s findings on `couldGrant`).
  *
- * `org:delete`, `org:billing`, `apiToken:create` and `apiToken:revoke` are not
- * reachable through any route today, but are included on the same reasoning
- * ahead of the day one is added — deleting or billing the org, or minting
- * your own API credentials, will never be something a resource tuple grants.
+ * `org:delete` and `org:billing` are not reachable through any route today,
+ * but are included on the same reasoning ahead of the day one is added —
+ * deleting or billing the org will never be something a resource tuple
+ * grants. `apiToken:create`/`apiToken:revoke` WERE in that same "ahead of
+ * the day" category when this paragraph was written; `apiToken.router.ts`
+ * (Phase 10 Wave 3) is the route that arrived, and the reasoning held —
+ * minting or revoking your own API credentials is still never something a
+ * resource tuple should be able to satisfy.
  *
  * The telephony permissions were once excluded here with the note that "those
  * phases have not shipped". Phase 7 shipped five waves and a UI, and the
@@ -269,6 +311,23 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'sms:send',
   'recording:read',
   'recording:export',
+  /* Phase 15 §2.4. The assistant is org furniture in the identical sense:
+     `ai.service.ts` (§4 onward) takes an `orgId` and no per-resource subject
+     when deciding WHETHER the assistant may be opened at all — the
+     resource-aware questions happen later, per tool call, against the
+     resource the tool names. A chat-channel tuple must never satisfy this
+     floor any more than it may satisfy `automation:manage`. */
+  'ai:use',
+  /* Phase 15 §7. Same reasoning as `ai:use` directly above: the connector is
+     org furniture (`platform.integrations` has no per-resource tuple
+     target), so a channel or board tuple must never satisfy any of these
+     four floors. `repo:connect` gates a repo-level write (creating a
+     branch) rather than a PR-level one, but the reasoning is identical: the
+     repo connection itself is the org's, not any one card's or board's. */
+  'pr:view',
+  'pr:review',
+  'pr:merge',
+  'repo:connect',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
@@ -297,4 +356,86 @@ export function isReadOnly(permission: Permission): boolean {
 /** The resource type a permission acts on. */
 export function resourceOf(permission: Permission): ResourceType {
   return permission.slice(0, permission.indexOf(':')) as ResourceType;
+}
+
+/**
+ * Permissions eligible to be granted to one specific member individually, on
+ * top of their role (ai/phase-15-ai-copilot-and-permissions.md §1) — the
+ * `authz.member_grants` table (migration 0097).
+ *
+ * Deliberately a separate, narrower list from the full catalog, checked at
+ * the write path (`apps/api/src/tenancy/member-grant.service.ts`) rather
+ * than as a CHECK constraint in the migration — see that migration's own
+ * comment for why. Not every permission should ever be individually
+ * grantable: ownership-adjacent and destructive org-wide capabilities
+ * (`org:update`, `org:delete`, `member:manage`, role changes, ...) stay
+ * role-only regardless of this mechanism existing. A permission landing here
+ * is a deliberate, reviewed decision — same discipline as `ORG_LEVEL_PERMISSIONS`
+ * above — not a default every permission gets.
+ *
+ * Wave 1's starting set is exactly the telephony permissions
+ * `roles.ts` already hands to the whole Member role with no way to
+ * restrict them to specific people — the gap that motivated building this
+ * mechanism at all (see the phase spec's §0). They stay on the Member role
+ * for now: this list makes them ALSO grantable to a Guest, who holds
+ * nothing from their role, without promoting them to Member — e.g. giving
+ * one contractor calling ability without giving them read access to every
+ * board. Retiring the blanket Member-role grant in favor of this list being
+ * the only source is a deliberate follow-up (needs a data migration
+ * backfilling existing orgs' grants first), not bundled into the wave that
+ * introduces the mechanism.
+ *
+ * Wave 2 adds the four automation permissions (`automation:manage`,
+ * `webhook:manage`, `integration:manage`, `apiToken:create`,
+ * `apiToken:revoke` — five entries, `apiToken` split across the matrix
+ * pair). Unlike telephony, none of these were ever on the Member role — an
+ * org that wants ONE Member able to build rules, or manage the webhook
+ * registry, without promoting them to Admin previously had no way to say
+ * that at all. This is safe to grant narrowly for the same reason it is
+ * safe to grant to Admin at every org: `automation.service.ts` asks no
+ * per-resource question when a rule is BUILT, because the resource-aware
+ * question is asked again at EXECUTION, in the worker, against the rule
+ * owner's own live permissions re-resolved on every run (see
+ * `apps/worker/src/automation/executor.ts`). A Member granted
+ * `automation:manage` can therefore only build rules whose actions their
+ * OWN permissions already allow — granting the ABILITY TO BUILD does not
+ * also grant the actions a built rule may take. `integration:manage` and
+ * `apiToken:create`/`revoke` are still stepUp-gated at their own routes
+ * regardless of how the floor permission was obtained, so a hijacked
+ * session cannot use an individual grant to skip that ceremony either.
+ *
+ * Wave 3 (Phase 15 §2.4) adds `ai:use`. Owner and Admin hold it by role, same
+ * as `automation:manage` — this is what makes it grantable to a Member or
+ * Guest individually rather than only ever reachable by promotion.
+ *
+ * Wave 4 (Phase 15 §7 Wave 1) adds `pr:view` — same shape as `ai:use`:
+ * Owner/Admin hold it by role, and this is what lets an org grant it to one
+ * Member without promoting them.
+ *
+ * Wave 5 (Phase 15 §7 Wave 2) adds `pr:review` and `pr:merge`, same shape.
+ * An org that wants one Member reviewing PRs without also letting them
+ * merge/close can grant `pr:review` alone — the two were kept as separate
+ * permissions, not folded into one, for exactly this reason.
+ */
+export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'phoneNumber:read',
+  'call:place',
+  'call:read',
+  'sms:send',
+  'sms:read',
+  'automation:manage',
+  'webhook:manage',
+  'integration:manage',
+  'apiToken:create',
+  'apiToken:revoke',
+  'ai:use',
+  'pr:view',
+  'pr:review',
+  'pr:merge',
+  'repo:connect',
+]);
+
+/** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */
+export function isGrantable(permission: Permission): boolean {
+  return GRANTABLE_PERMISSIONS.has(permission);
 }

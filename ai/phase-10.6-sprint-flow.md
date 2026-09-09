@@ -2,10 +2,16 @@
 
 ## Status
 
-**DRAFT 2026-08-12.** Decisions D1–D5 below were proposed and then built the same day at the
-author's direction; they are recorded as decisions rather than as a review that happened.
+**SHIPPED — all four slices, committed and on `main`.** Decisions D1–D5 below were proposed and
+then built the same day at the author's direction; they are recorded as decisions rather than as a
+review that happened. This header undercounted its own body for a stretch: it said only slices 1-3
+were built (line below), "uncommitted," while §"Slice 4" further down in this same file already
+said "Phase 10.6 slices 1-4 all built. Not committed." — and neither claim held once checked
+against the actual repo, where `sprint-planning.tsx` (Slice 4) has its own commit history on
+`main`, not a feature branch. Left corrected in place rather than silently rewritten, per this
+repo's own "a status marker is a claim, not a fact" discipline (CLAUDE.md).
 
-**Slices 1–3 BUILT, uncommitted** (branch `phase-10.5-sprints`):
+**Slices 1–3 below, Slice 4 further down under its own heading — all four built and committed:**
 
 - **Slice 1** — `listActiveSprints` + the `sprints.active` route, `/projects/$projectId/sprints`
   (`sprints-page.tsx`), and the sidebar's ambient active-sprint line. Authorization deliberately
@@ -55,7 +61,8 @@ Deliberately NOT optimistic, unlike `sprint-section.tsx`'s field: a planning ses
 of deliberate moves, and a card that appears to cross the gap and then springs back is worse than
 one that takes a moment.
 
-**Phase 10.6 slices 1–4 all built. Not committed.**
+**Phase 10.6 slices 1–4 all built, and — per the header above, corrected once checked against the
+real repo — committed and on `main`.**
 
 **This phase revisits two decisions Phase 10.5 resolved deliberately**, and says so here rather
 than quietly implementing around them — the habit `ai/phase-7-voice.md` and `ai/phase-8-search.md`

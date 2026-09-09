@@ -179,3 +179,117 @@ export const integrationIssueCreated = defineEvent(
     })
     .strict(),
 );
+
+/**
+ * The four PR write events (Phase 15 §7 Wave 2 — `pr-write.service.ts`,
+ * the AI assistant's PR write tools). Same rule as the two events above and
+ * for the identical reason: no comment text, no review text — the audit log
+ * records that the org posted, where, and under which PR, never what was
+ * said. `prNumber` is public GitHub-side (it's the same number in the PR's
+ * own URL), so carrying it here is not the same disclosure a comment body
+ * would be.
+ */
+export const integrationPrCommentPosted = defineEvent(
+  'integration.pr_comment_posted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** GitHub's own id for the comment, for correlation. */
+      providerCommentId: z.number().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrReviewSubmitted = defineEvent(
+  'integration.pr_review_submitted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** `REQUEST_CHANGES` shipped first (§7.2's own text: "post a review
+          comment, request changes") — a real enum rather than a literal so
+          `APPROVE` (Wave 3, `approvePr`) is a value addition, not a schema
+          change. */
+      event: z.enum(['REQUEST_CHANGES', 'APPROVE']),
+      providerReviewId: z.number().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrMerged = defineEvent(
+  'integration.pr_merged',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      /** The merge commit's SHA, for correlation — GitHub's own id for what
+          this deployment did. */
+      sha: z.string().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationPrClosed = defineEvent(
+  'integration.pr_closed',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+    })
+    .strict(),
+);
+
+/**
+ * A file-scoped PR review comment (`pr_comment_on_file`) — the same
+ * "no comment text" rule the four events above already state, plus `path`
+ * (and no `line`: a specific line number is not the STABLE fact an access
+ * review asks about a comment months later, since GitHub's own line-vs-diff
+ * mapping shifts as a PR gets new commits — the file it was about does
+ * not). A genuinely new mutation shape from `postPrComment`'s general
+ * conversation-thread comment, not a variant of it: GitHub answers the two
+ * with different endpoints and a different required `commit_id`/`path`, so
+ * this gets its own event rather than reusing `integration.pr_comment_
+ * posted` with an optional `path` bolted on.
+ */
+export const integrationPrFileCommentPosted = defineEvent(
+  'integration.pr_file_comment_posted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      prNumber: z.number(),
+      path: z.string(),
+      /** GitHub's own id for the comment, for correlation. */
+      providerCommentId: z.number().nullable(),
+    })
+    .strict(),
+);
+
+/** `apps/api/src/automation/branch.service.ts` (Phase 15 §7 Wave 3's last
+    unbuilt action, "create a branch from this card"). `cardId` is the one
+    field none of the `integration.pr_*` events above carry — a branch is
+    created FROM a specific card, and losing that link in the audit trail
+    would leave "who created this branch and why" unanswerable the moment
+    the assistant's own transcript ages out. */
+export const integrationBranchCreated = defineEvent(
+  'integration.branch_created',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      cardId: z.string(),
+      branchName: z.string(),
+    })
+    .strict(),
+);
