@@ -5224,6 +5224,45 @@ service.ts`, `branch.service.ts`, and `integration-action.service.ts` share the 
 uncaught-thrown-fetch-error gap and are real, deliberately deferred follow-up work, not something
 this pass silently assumed fixed everywhere.
 
+### Two CI-only compile errors, unrelated to each other, both closed in one pass (FIXED)
+
+`packages/seed/src/modules/{authz.tuples,docs.spaces}.ts` · `packages/seed/src/docs.test.ts` ·
+`apps/mobile/src/lib/card-patch.test.ts`. Found from a real `turbo run typecheck` failure on this
+PR's own CI, in code neither of this session's own two immediately-preceding commits touched —
+root-caused and fixed directly rather than deferred, per this PR's own standing rule that a
+CI-red wake ends in a pushed fix or a documented reason it is not this PR's to fix.
+
+**`packages/seed`'s two `grantCreated` call sites were never updated when that event's own Zod
+schema gained a required `isGuest` field — "Guest access into Work" (this file's own section)
+threaded `isGuest` into `GrantInput` and `grantCreated`'s schema, and two hand-constructed event
+payloads elsewhere in the codebase were simply never revisited.** `authz.tuples.ts`'s random
+board-grant simulator has no guest concept at all, so it gets `isGuest: false` outright.
+`docs.spaces.ts`'s `buildGrants` needed a real fix, not a blanket `false`: its one `grant()`
+helper is shared between an ordinary demo tuple AND the deliberate "the guest, whose role grants
+nothing at all" illustration this file's own header already names as one of three shapes placed
+on purpose — and neither the emitted event NOR the actual `is_guest` database column was ever set
+for that one real guest tuple, silently relying on the column's own `false` default to look
+correct by coincidence. Fixed by threading an `isGuest` parameter through `grant()` (default
+`false`), widening the INSERT's own column list to include `is_guest`, and passing `true` at the
+one call site that is genuinely a guest. `docs.test.ts`'s existing "grants the guest exactly one
+page" case gained a direct assertion that the tuple is actually marked `is_guest: true` — the
+regression test for the real gap, not just the compile error.
+
+**`apps/mobile/src/lib/card-patch.test.ts`'s `CardDetail` fixture predates "Guest access into
+Work — hide edit/comment controls a relation can't use" (this file's own section) by a wide
+margin, and that feature widened `cards.get`'s `capabilities` object — a type `CardDetail`
+mirrors exactly, being a generated `Wire<...>` inference over the same router output, never
+hand-declared.** The fixture's own `capabilities: { moderateComments: false }` stopped
+satisfying that type the moment `comment`/`update`/`archive`/`manageProjectVocabulary` joined it,
+and nothing about this test (`mergePatch`'s own patch-forwarding logic) ever reads
+`capabilities` — the fixture only needs to type-check, not assert anything about the new fields,
+so the fix is the four missing booleans added as plain `true` literals.
+
+**Verified with a full `pnpm turbo run typecheck` and `pnpm turbo run lint` across all 24
+packages, `pnpm prettier --check .`, the guardrail selftest, and `pnpm check:encoding`, all
+clean — not just the two files each error named.** The `docs.test.ts`/`card-patch.test.ts` suites
+themselves also ran directly (`vitest run`, no database needed for either) and pass in full.
+
 ### Phase 4 — the realtime spine, and the failures that do not announce themselves
 
 `apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are

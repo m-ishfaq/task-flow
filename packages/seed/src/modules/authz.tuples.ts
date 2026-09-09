@@ -169,6 +169,9 @@ export const tuplesModule = defineSeedModule({
               objectType: 'board',
               objectId: grant.board.id,
               expiresAt: null,
+              // Never a guest here — this module has no guest concept at all,
+              // unlike docs.spaces's own `withGuest` illustration.
+              isGuest: false,
             },
             envelopeFor(org.id, org.owner.id, grant.createdAt),
           ),
