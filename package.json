@@ -63,7 +63,8 @@
       "tar@7": ">=7.5.22 <8",
       "vite@<6.4.3": ">=6.4.3",
       "ip-address": ">=10.3.1",
-      "simply-deferred": "npm:simply-deferred@3.0.0"
+      "simply-deferred": "npm:simply-deferred@3.0.0",
+      "@xmldom/xmldom@<0.9.12": ">=0.9.12"
     },
     "auditConfig": {
       "ignoreGhsas": [
