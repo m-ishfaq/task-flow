@@ -5,20 +5,15 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
-  FileText,
   Folder,
-  ListChecks,
   Lock,
-  MessageSquare,
   Pin,
-  Phone,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Sparkles,
   Star,
-  Users,
   Workflow,
   type LucideProps,
 } from 'lucide-react';
@@ -40,6 +35,7 @@ import { useBranding } from '../lib/branding-context.js';
 import { useEntitlements } from '../lib/entitlements.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
 import { TaskFlowLogo } from './taskflow-logo.js';
+import { CallsMark, ChatMark, DocsMark, PeopleMark, WorkMark } from './suite-icons.js';
 
 /**
  * The navigation tree (Phase 3.5 Wave 1, ai/phase-3.5-work-ux.md §4.1).
@@ -101,7 +97,9 @@ import { TaskFlowLogo } from './taskflow-logo.js';
  * route re-resolve the same entitlement independently, so a stale or wrong
  * answer here costs a wrongly-styled nav item, never wrongly-granted access.
  */
-/** A `lucide-react` icon component — every nav row's leading glyph. */
+/** A nav row's leading glyph — a lucide icon for utility rows, or a bespoke
+    `suite-icons.tsx` product mark; both share the `LucideProps` contract so
+    they slot in interchangeably. */
 type NavIcon = ComponentType<LucideProps>;
 
 interface NavItem {
@@ -147,7 +145,7 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'start',
     items: [
-      { to: '/home', label: 'My tasks', icon: ListChecks },
+      { to: '/home', label: 'My tasks', icon: WorkMark },
       { to: '/search', label: 'Search', icon: Search },
       /* Individually grantable (ai/phase-15-ai-copilot-and-permissions.md
          §2.4), the identical `capability` shape `/analytics` uses below —
@@ -164,17 +162,23 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare, tint: 'chat', flag: 'chat' },
-      { to: '/docs', label: 'Docs', icon: FileText, tint: 'docs', flag: 'docs' },
+      { to: '/chat', label: 'Chat', icon: ChatMark, tint: 'chat', flag: 'chat' },
+      { to: '/docs', label: 'Docs', icon: DocsMark, tint: 'docs', flag: 'docs' },
       {
         to: '/calls',
         label: 'Calls',
-        icon: Phone,
+        icon: CallsMark,
         tint: 'calls',
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
       },
-      { to: '/people', label: 'People', icon: Users, tint: 'people', capability: 'viewDirectory' },
+      {
+        to: '/people',
+        label: 'People',
+        icon: PeopleMark,
+        tint: 'people',
+        capability: 'viewDirectory',
+      },
       {
         to: '/analytics',
         label: 'Analytics',
