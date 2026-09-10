@@ -131,6 +131,62 @@ interface NavItem {
    * gating on a single capability key here would hide it for them too.
    */
   readonly anyOfCapabilities?: readonly (keyof SettingsCapabilities)[];
+  /**
+   * Design Bible §01's suite spectrum — which product module this item
+   * belongs to, so its active indicator and icon take that module's own hue
+   * (`SUITE_STYLES` below) instead of the generic accent every item used
+   * before. Absent for "Where you start" items (My tasks, Search, Assistant)
+   * and Automations: those are entry points and configuration, not a product
+   * module competing for its own color the way Chat/Docs/Calls/People do.
+   */
+  readonly suite?: Suite;
+}
+
+/** A product module's own hue, per the Design Bible's suite spectrum (§01). */
+type Suite = 'work' | 'chat' | 'docs' | 'calls' | 'people';
+
+/**
+ * Literal, fully-spelled class strings per suite — not built with template
+ * interpolation (`` `text-suite-${suite}` ``) — because Tailwind's scanner
+ * finds candidate classes by matching literal text in source files; a
+ * dynamically-assembled class name is invisible to it and would compile away
+ * silently, working in dev (arbitrary CSS var resolution) and vanishing in a
+ * production build using only the classes it can actually see.
+ */
+const SUITE_STYLES: Readonly<Record<Suite, { readonly active: string; readonly bar: string }>> = {
+  work: {
+    active: 'bg-suite-work/10 text-suite-work hover:bg-suite-work/10 hover:text-suite-work',
+    bar: 'before:from-suite-work before:to-suite-work/0',
+  },
+  chat: {
+    active: 'bg-suite-chat/10 text-suite-chat hover:bg-suite-chat/10 hover:text-suite-chat',
+    bar: 'before:from-suite-chat before:to-suite-chat/0',
+  },
+  docs: {
+    active: 'bg-suite-docs/10 text-suite-docs hover:bg-suite-docs/10 hover:text-suite-docs',
+    bar: 'before:from-suite-docs before:to-suite-docs/0',
+  },
+  calls: {
+    active: 'bg-suite-calls/10 text-suite-calls hover:bg-suite-calls/10 hover:text-suite-calls',
+    bar: 'before:from-suite-calls before:to-suite-calls/0',
+  },
+  people: {
+    active: 'bg-suite-people/10 text-suite-people hover:bg-suite-people/10 hover:text-suite-people',
+    bar: 'before:from-suite-people before:to-suite-people/0',
+  },
+};
+
+/** The active-row bar/tint for a given suite, or the generic accent when none. */
+function activeStylesFor(suite: Suite | undefined): string {
+  if (suite === undefined) {
+    return cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR);
+  }
+  const styles = SUITE_STYLES[suite];
+  return cn(
+    styles.active,
+    'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b',
+    styles.bar,
+  );
 }
 
 const PRIMARY_SECTIONS: readonly {
@@ -157,16 +213,23 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
-      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
+      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat', suite: 'chat' },
+      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs', suite: 'docs' },
       {
         to: '/calls',
         label: 'Calls',
         icon: Phone,
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
+        suite: 'calls',
       },
-      { to: '/people', label: 'People', icon: Users, capability: 'viewDirectory' },
+      {
+        to: '/people',
+        label: 'People',
+        icon: Users,
+        capability: 'viewDirectory',
+        suite: 'people',
+      },
       {
         to: '/analytics',
         label: 'Analytics',
@@ -253,6 +316,15 @@ const ACTIVE_BAR =
   'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-accent before:to-accent/0';
 
 /**
+ * The same bar, in the Work suite's own hue — the project and board links in
+ * the tree below are the Work module, per the Design Bible's suite spectrum
+ * (§01), so their "you are here" bar reads `--color-suite-work` rather than
+ * the generic accent every other nav item without a `suite` falls back to.
+ */
+const WORK_TREE_BAR =
+  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-suite-work before:to-suite-work/0';
+
+/**
  * The tint, applied to the ROW rather than to the link.
  *
  * `activeProps` can only style the `<Link>`, and a link that starts after a
@@ -278,11 +350,13 @@ function NavLink({
   label,
   icon: Icon,
   locked = false,
+  suite,
 }: {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
   readonly locked?: boolean;
+  readonly suite?: Suite | undefined;
 }) {
   return (
     <Link
@@ -295,7 +369,7 @@ function NavLink({
           : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
-        className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
+        className: activeStylesFor(suite),
       }}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
@@ -429,6 +503,7 @@ export function Sidebar() {
                     label={item.label}
                     icon={item.icon}
                     locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
+                    suite={item.suite}
                   />
                 ))}
               </div>
@@ -564,7 +639,7 @@ function ProjectNode({
           to="/projects/$projectId"
           params={{ projectId }}
           className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted hover:text-ink"
-          activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+          activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
           title={`${name} (${projectKey}) — open project settings`}
         >
           {name}
@@ -787,7 +862,7 @@ function BoardLink({
            identifies a board; `view` and `project` are state on top of it. */
         activeOptions={{ includeSearch: false }}
         className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
-        activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+        activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
       >
         {board.name}
       </Link>

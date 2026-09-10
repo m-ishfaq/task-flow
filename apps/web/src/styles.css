@@ -158,6 +158,34 @@
   --color-priority-urgent: oklch(60% 0.19 22);
   --color-priority-medium: oklch(60% 0.17 285);
 
+  /**
+   * Suite spectrum — Design Bible §01: one hue per product module, so the
+   * sidebar, a module's own icon, and its "you are here" indicator agree on
+   * what color that module is everywhere it appears, rather than every
+   * surface reaching for the same generic accent regardless of which product
+   * it belongs to. Chosen to sit far enough apart on the wheel to stay
+   * distinguishable at a glance (285/220/158/66/350) while every one of them
+   * still clears the 3:1 non-text bar against all four surface tones — these
+   * are icon/indicator swatches, the same non-text-only rule the priority
+   * tokens above document, never rendered as body text on a bare surface.
+   * `--color-accent` (285) and `--color-suite-work` (also 285, lighter) are
+   * deliberately the same hue: Work is the product's home base, not a module
+   * competing with the others, so it borrows the brand hue instead of
+   * claiming a new one.
+   */
+  --color-suite-work: oklch(64% 0.16 285);
+  --color-suite-chat: oklch(66% 0.12 220);
+  --color-suite-docs: oklch(66% 0.13 158);
+  --color-suite-calls: oklch(74% 0.13 66);
+  --color-suite-people: oklch(66% 0.14 350);
+
+  /* A punchier accent step for thin decorative strokes and icon glyphs — the
+     wordmark, illustration lines — where the audited `--color-accent` (tuned
+     for a solid fill with text on top of it) reads slightly flat. Never used
+     for text or a filled control; those keep `--color-accent`'s own audited
+     value untouched. */
+  --color-accent-strong: oklch(60% 0.18 285);
+
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
@@ -189,6 +217,28 @@
 
   /* Subtle inner glow for focused/active elements */
   --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
+
+  /**
+   * Design Bible §03's depth ladder, as Tailwind v4 `--shadow-*` overrides
+   * rather than a parallel `--lift-*` custom-property set: this project
+   * already has one depth scale (`--shadow-sm/md/lg/xl` above), and a second,
+   * differently-named one with close-but-not-identical values would leave two
+   * answers to "how raised is this" with no way to tell which a given
+   * component means. `shadow-lift-1/2/3` extend the existing `shadow-*`
+   * family instead — `lift-1` slots below `sm` (a resting card tile, one step
+   * above flat), `lift-2` between `sm` and `md` (hover), `lift-3` above `xl`
+   * (a floated detail panel or dragged card).
+   */
+  --shadow-lift-1: 0 1px 2px oklch(0% 0 0 / 30%);
+  --shadow-lift-2: 0 4px 14px oklch(0% 0 0 / 34%), 0 1px 3px oklch(0% 0 0 / 24%);
+  --shadow-lift-3: 0 18px 44px oklch(0% 0 0 / 46%), 0 6px 14px oklch(0% 0 0 / 30%);
+
+  /* The machined top-edge highlight every raised panel/card/button gets in
+     the Design Bible — a 1px inset line at 5% white, reading as the edge
+     catching ambient light rather than a flat color block. Composed onto a
+     component's own shadow with a comma (`shadow-[var(--shadow-lift-1),var(--shadow-top-light)]`),
+     never a replacement for it. */
+  --shadow-top-light: inset 0 1px 0 oklch(100% 0 0 / 5%);
 
   /* Column-specific elevation for better depth hierarchy */
   --shadow-column: 0 1px 3px oklch(0% 0 0 / 8%), 0 1px 2px oklch(0% 0 0 / 6%);
