@@ -169,6 +169,12 @@ export default function TabsLayout() {
         name="chat"
         options={{
           title: 'Chat',
+          /* The suite spectrum, parity with web's product rail: each product's
+             active tab takes its own hue (`@taskflow/tokens` chat/docs/calls),
+             so the bar reads as a suite rather than one accent repeated five
+             times. Home and Boards (both Work) keep the global accent — Work is
+             the accent hue on web too. The inactive tint stays neutral. */
+          tabBarActiveTintColor: colors.chat.hex,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
@@ -183,6 +189,7 @@ export default function TabsLayout() {
         name="docs"
         options={{
           title: 'Docs',
+          tabBarActiveTintColor: colors.docs.hex,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'document-text' : 'document-text-outline'}
@@ -196,6 +203,7 @@ export default function TabsLayout() {
         name="calls"
         options={{
           title: 'Calls',
+          tabBarActiveTintColor: colors.calls.hex,
           // `exactOptionalPropertyTypes` refuses an explicit `undefined` for
           // `href` (it wants the key omitted, not set to undefined) — so the
           // "show" case spreads no override at all rather than `href: undefined`.
