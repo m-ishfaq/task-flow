@@ -214,10 +214,21 @@
    * raised card tile (`Button`'s primary variant here, `card-tile.tsx` later
    * in the redesign) had no elevation step below Popover's before this.
    */
-  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 25%), 0 1px 2px oklch(0% 0 0 / 15%);
-  --shadow-md: 0 4px 12px oklch(0% 0 0 / 28%), 0 2px 4px oklch(0% 0 0 / 18%);
-  --shadow-lg: 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
-  --shadow-xl: 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
+  /*
+   * The hairline top-light — an inset 1px highlight along a surface's top edge,
+   * so a raised element catches light like real material instead of reading as
+   * a flat colour block outlined by a border (the design bible's §3 spec, and
+   * the single biggest tell separating "layered surfaces" from "admin panel").
+   * Baked into every elevation step below so anything carrying a shadow gets
+   * the edge for free, and exposed standalone (`.top-light`) for the many
+   * raised surfaces that sit flat (no drop shadow) but still want the edge.
+   */
+  --top-light: inset 0 1px 0 oklch(100% 0 0 / 5%);
+
+  --shadow-sm: var(--top-light), 0 1px 3px oklch(0% 0 0 / 25%), 0 1px 2px oklch(0% 0 0 / 15%);
+  --shadow-md: var(--top-light), 0 4px 12px oklch(0% 0 0 / 28%), 0 2px 4px oklch(0% 0 0 / 18%);
+  --shadow-lg: var(--top-light), 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
+  --shadow-xl: var(--top-light), 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
 
   /* Subtle inner glow for focused/active elements */
   --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
@@ -700,6 +711,34 @@
     outline-offset: 2px;
     border-color: var(--color-accent);
     transform: translateY(-2px);
+  }
+
+  /* ------------------------------------------------------------------------
+   * Panel — the layered-material replacement for a flat `border` box.
+   *
+   * The app is full of `rounded-* border border-line bg-surface-raised`
+   * containers that read as OUTLINED rather than raised — the exact "admin
+   * panel" tell §3 of the design bible calls out ("boundaries come from the
+   * surface step and the light, not from a heavy 1px border on every box").
+   * `.panel` gives a container the material treatment instead: it sits on
+   * `surface-raised`, carries the hairline top-light edge plus a soft
+   * dark-tuned drop shadow, and keeps only a faint hairline border for
+   * definition. Apply it IN PLACE OF `rounded-* border border-line
+   * bg-surface-raised` — never alongside a conflicting `shadow-*`/`border-*`
+   * utility, which (being unlayered) would win over it.
+   * ------------------------------------------------------------------------ */
+  .panel {
+    background: var(--color-surface-raised);
+    border: 1px solid color-mix(in oklab, var(--color-line) 55%, transparent);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Just the edge highlight, for a raised surface that sits flat (no drop
+     shadow of its own) but still wants to catch light on its top edge — a
+     rail, a header, a sunken field. */
+  .top-light {
+    box-shadow: var(--top-light);
   }
 
   /* Priority indicator — clean left edge, slightly wider for visibility */

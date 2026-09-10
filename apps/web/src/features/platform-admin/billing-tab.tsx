@@ -136,7 +136,7 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       {/* MRR card */}
-      <div className="rounded-xl border border-line bg-surface-raised p-4">
+      <div className="panel p-4">
         <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">
           Monthly recurring revenue
         </p>
@@ -148,7 +148,7 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
       </div>
 
       {/* Status breakdown */}
-      <div className="rounded-xl border border-line bg-surface-raised p-4">
+      <div className="panel p-4">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
           By status
         </p>
@@ -156,7 +156,7 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
       </div>
 
       {/* Plan distribution */}
-      <div className="rounded-xl border border-line bg-surface-raised p-4">
+      <div className="panel p-4">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
           By plan
         </p>

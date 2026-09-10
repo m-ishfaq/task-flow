@@ -446,7 +446,7 @@ function BrandingPreview({
       </p>
 
       {/* Browser tab preview */}
-      <div className="mb-3 overflow-hidden rounded-lg border border-line bg-surface-raised">
+      <div className="panel mb-3 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line bg-surface-sunken/60 px-2.5 py-1.5">
           <div className="flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1">
             {faviconUrl !== null ? (
@@ -473,7 +473,7 @@ function BrandingPreview({
 
       <div className="flex gap-3">
         {/* Mini sidebar */}
-        <div className="flex w-40 shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
+        <div className="panel flex w-40 shrink-0 flex-col overflow-hidden">
           <div className="flex h-9 items-center gap-1.5 border-b border-line px-2.5">
             {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-4 shrink-0 rounded object-contain" />

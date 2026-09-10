@@ -138,7 +138,7 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 
   return (
     <Section title="Organization">
-      <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
+      <div className="panel p-4">
         <form
           className="flex items-end gap-2"
           onSubmit={(event) => {
@@ -1162,7 +1162,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
           )}
 
           {capabilities.manageMembers && selectedGrants.size > 0 && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border border-line/50 bg-surface-raised px-3 py-2">
+            <div className="panel mb-2 flex items-center gap-2 px-3 py-2">
               <span className="text-xs text-ink-muted">{selectedGrants.size} selected</span>
               <ConfirmButton
                 label={

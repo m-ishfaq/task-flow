@@ -88,7 +88,7 @@ export function PeoplePage() {
 
 function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) {
   return (
-    <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+    <ul className="panel divide-y divide-line/40 overflow-hidden">
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (

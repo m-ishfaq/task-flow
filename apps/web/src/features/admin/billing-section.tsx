@@ -164,7 +164,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
 
       {data !== undefined && (
         <div className="flex flex-col gap-3">
-          <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
+          <div className="panel p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <StatusBadge billingStatus={data.billingStatus} />

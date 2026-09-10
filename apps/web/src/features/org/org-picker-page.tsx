@@ -99,7 +99,7 @@ export function OrgPickerPage() {
       {isOperator.data === true && (
         <Link
           to="/platform-admin"
-          className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+          className="panel flex items-center gap-3 p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
         >
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-ink">Platform console</span>
