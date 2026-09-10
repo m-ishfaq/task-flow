@@ -35,7 +35,7 @@ import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button, Spinner } from './primitives.js';
+import { Avatar, Spinner } from './primitives.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
@@ -335,9 +335,7 @@ function ConnectionBanner() {
       role="status"
       className={cn(
         'sticky top-0 z-20 flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-medium',
-        status === 'offline'
-          ? 'bg-danger/15 text-danger'
-          : 'bg-warning/15 text-warning',
+        status === 'offline' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning',
       )}
     >
       {status === 'offline' ? (
@@ -588,15 +586,39 @@ function OrgSwitcher() {
 
   return (
     <DropdownMenuRoot>
+      {/* The design bible §06 footer: a real identity BLOCK, not a text button.
+          The org's own mark (a rounded square, so an organisation never reads as
+          a person), its name at full strength, and the caller's role beneath it
+          — "which org am I in, and as what" is the question this corner of every
+          screen exists to answer, and the previous ghost button answered only
+          half of it. */}
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
-          <span className="truncate">{current?.name ?? 'Select organization'}</span>
+        <button
+          type="button"
+          aria-label="Switch organization"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-hover"
+        >
+          {current === undefined ? (
+            <span aria-hidden="true" className="size-8 shrink-0 rounded-lg bg-surface-hover" />
+          ) : (
+            <Avatar userId={current.orgId} label={current.name} size="md" shape="square" />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-ink">
+              {current?.name ?? 'Select organization'}
+            </span>
+            {current !== undefined && (
+              <span className="block truncate text-xs text-ink-faint capitalize">
+                {current.role}
+              </span>
+            )}
+          </span>
           <ChevronDown
             aria-hidden="true"
-            className="ml-auto size-3.5 shrink-0"
+            className="size-3.5 shrink-0 text-ink-faint"
             strokeWidth={2.25}
           />
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-48">
         {memberships.map((org) => (

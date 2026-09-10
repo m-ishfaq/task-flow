@@ -213,12 +213,8 @@ function PrFileBrowser({
                 <span className="shrink-0 text-xs uppercase tracking-wide text-ink-faint">
                   {file.status}
                 </span>
-                <span className="shrink-0 font-mono text-xs text-success">
-                  +{file.additions}
-                </span>
-                <span className="shrink-0 font-mono text-xs text-danger">
-                  -{file.deletions}
-                </span>
+                <span className="shrink-0 font-mono text-xs text-success">+{file.additions}</span>
+                <span className="shrink-0 font-mono text-xs text-danger">-{file.deletions}</span>
               </button>
             </li>
           ))}

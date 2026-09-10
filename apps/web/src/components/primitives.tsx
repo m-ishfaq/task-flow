@@ -313,18 +313,34 @@ export interface AvatarProps {
   readonly userId: string;
   /** Email or display name. Shown on hover and to assistive tech. */
   readonly label: string;
-  readonly size?: 'xs' | 'sm';
+  readonly size?: 'xs' | 'sm' | 'md';
+  /**
+   * A PERSON is a disc; an ORGANISATION is a rounded square (design bible §06's
+   * sidebar footer). Keeping both in one component means initials, hue and ring
+   * are derived identically — an org mark that drifted to its own colour hash
+   * would stop matching the org it names.
+   */
+  readonly shape?: 'circle' | 'square';
   readonly className?: string;
 }
 
+const AVATAR_SIZES: Readonly<Record<NonNullable<AvatarProps['size']>, string>> = {
+  /* 10/11px initials, not the 9/10px this used to be — two characters in 9px on
+     a 20px disc are a smudge, and initials are the identifier a stack of
+     avatars is scanned by. */
+  xs: 'size-5 text-xs',
+  sm: 'size-6 text-xs',
+  md: 'size-8 text-xs',
+};
+
 /**
- * A person, as a coloured disc.
+ * A person, as a coloured disc — or an organisation, as a rounded square.
  *
  * `role="img"` with an `aria-label` rather than a bare styled span: the initials
  * inside are a rendering of the label, not text worth reading out, and without
  * the role a screen reader announces "AL" — which identifies nobody.
  */
-export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
+export function Avatar({ userId, label, size = 'sm', shape = 'circle', className }: AvatarProps) {
   return (
     <span
       role="img"
@@ -332,12 +348,10 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
       title={label}
       style={{ backgroundColor: `oklch(58% 0.13 ${String(hueOf(userId))})` }}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-medium text-white',
+        'inline-flex shrink-0 items-center justify-center font-medium text-white',
         'ring-1 ring-surface-raised',
-        /* 10/11px initials, not the 9/10px this used to be — two characters in
-           9px on a 20px disc are a smudge, and initials are the identifier a
-           stack of avatars is scanned by. */
-        size === 'xs' ? 'size-5 text-xs' : 'size-6 text-xs',
+        shape === 'square' ? 'rounded-lg' : 'rounded-full',
+        AVATAR_SIZES[size],
         className,
       )}
     >

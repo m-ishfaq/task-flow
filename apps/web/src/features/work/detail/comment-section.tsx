@@ -291,7 +291,7 @@ export function CommentSection({
 
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Comments
       </h3>
@@ -543,12 +543,7 @@ function CommentRow({
                 Admin-and-Owner only, so a plain Member viewing someone
                 else's comment sees neither control at all. */}
             {canComment && comment.authorId !== null && comment.authorId === viewerId && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-5 px-1 text-xs"
-                onClick={onStartEdit}
-              >
+              <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onStartEdit}>
                 Edit
               </Button>
             )}

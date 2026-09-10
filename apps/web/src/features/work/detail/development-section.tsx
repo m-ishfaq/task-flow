@@ -207,7 +207,7 @@ function PullRequestSubsection({
 
   return (
     <div className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <GitPullRequest aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Pull requests
       </h3>
@@ -378,7 +378,7 @@ function BranchSubsection({
 
   return (
     <div className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <GitBranch aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Branches
       </h3>

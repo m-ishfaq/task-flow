@@ -142,7 +142,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <Paperclip aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Attachments
       </h3>
