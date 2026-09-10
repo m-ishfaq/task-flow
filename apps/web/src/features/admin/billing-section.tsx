@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check } from 'lucide-react';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -306,7 +307,11 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               <ul className="mt-1.5 flex flex-col gap-1">
                 {data.features.map((feature) => (
                   <li key={feature.flagName} className="flex items-baseline gap-2">
-                    <span className="shrink-0 text-success">✓</span>
+                    <Check
+                      aria-hidden="true"
+                      className="mt-0.5 size-3.5 shrink-0 text-success"
+                      strokeWidth={2.5}
+                    />
                     <span>
                       <span className="text-xs text-ink">{featureLabel(feature.flagName)}</span>
                       {/* What it actually means. A chip reading "tqlTextSyntax"
@@ -455,8 +460,16 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                             </li>
                           ) : (
                             plan.features.map((feature) => (
-                              <li key={feature} className="text-[11px] text-ink-muted">
-                                ✓ {featureLabel(feature)}
+                              <li
+                                key={feature}
+                                className="flex items-baseline gap-1.5 text-[11px] text-ink-muted"
+                              >
+                                <Check
+                                  aria-hidden="true"
+                                  className="size-3 shrink-0 text-success"
+                                  strokeWidth={2.5}
+                                />
+                                {featureLabel(feature)}
                               </li>
                             ))
                           )}

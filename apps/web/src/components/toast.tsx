@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as RadixToast from '@radix-ui/react-toast';
+import { X } from 'lucide-react';
 import { messageFor } from '../lib/error-message.js';
 import { apiErrorOf } from '../lib/trpc.js';
 import { ToastContext, type ToastApi, type ToastTone } from '../lib/toast-context.js';
@@ -133,9 +134,9 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             )}
             <RadixToast.Close
               aria-label="Dismiss"
-              className="absolute right-1.5 top-1.5 rounded px-1 text-xs text-ink-faint hover:text-ink"
+              className="absolute right-1.5 top-1.5 rounded p-1 text-ink-faint hover:text-ink"
             >
-              ✕
+              <X aria-hidden="true" className="size-3.5" strokeWidth={2} />
             </RadixToast.Close>
           </RadixToast.Root>
         ))}

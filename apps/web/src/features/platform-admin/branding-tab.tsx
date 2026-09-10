@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lock } from 'lucide-react';
 import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
 import { TaskFlowLogo } from '../../components/taskflow-logo.js';
 import { api, errorCodeOf } from '../../lib/trpc.js';
@@ -459,7 +460,7 @@ function BrandingPreview({
             <span className="ml-0.5 text-ink-faint">×</span>
           </div>
           <div className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5">
-            <span className="text-[9px] text-ink-faint">🔒</span>
+            <Lock aria-hidden="true" className="size-2.5 shrink-0 text-ink-faint" strokeWidth={2} />
             <span className="max-w-25 truncate text-[9px] text-ink-muted">
               app.{(productName || 'taskflow').toLowerCase().replace(/\s+/g, '-')}.io/home
             </span>

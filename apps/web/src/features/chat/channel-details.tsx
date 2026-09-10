@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Hash, Lock, X } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { useSession } from '../../lib/session.js';
@@ -110,14 +111,14 @@ export function ChannelDetailsPanel({
      breakpoint; the panel's own ✕ returns to the conversation either way. */
   if (data === undefined) {
     return (
-      <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line md:static md:w-72">
+      <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised md:static md:w-72">
         <PanelHeader title="Details" onClose={onClose} />
       </aside>
     );
   }
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line md:static md:w-72 bg-black">
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line bg-surface-raised md:static md:w-72">
       <PanelHeader title="Details" onClose={onClose} />
 
       <div className="flex flex-col gap-4 p-4">
@@ -141,9 +142,21 @@ export function ChannelDetailsPanel({
         ) : (
           <section className="flex flex-col gap-1">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-medium text-ink">
-                {data.type === 'public' ? '# ' : '🔒 '}
-                {data.name}
+              <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-ink">
+                {data.type === 'public' ? (
+                  <Hash
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-ink-faint"
+                    strokeWidth={2}
+                  />
+                ) : (
+                  <Lock
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-ink-faint"
+                    strokeWidth={2}
+                  />
+                )}
+                <span className="truncate">{data.name}</span>
               </h3>
               <Button
                 size="sm"
@@ -265,7 +278,7 @@ function PanelHeader({ title, onClose }: { readonly title: string; readonly onCl
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
       <h2 className="text-sm font-medium text-ink">{title}</h2>
       <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close details">
-        ✕
+        <X aria-hidden="true" className="size-4" strokeWidth={2} />
       </Button>
     </header>
   );

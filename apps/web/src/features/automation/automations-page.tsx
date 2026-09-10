@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, X } from 'lucide-react';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -738,9 +739,15 @@ function ActionOutcome({ result }: { readonly result: unknown }) {
 
   return (
     <li className="flex items-start gap-1.5">
-      <span aria-hidden="true" className={failed ? 'text-danger' : 'text-success'}>
-        {failed ? '✕' : '✓'}
-      </span>
+      {failed ? (
+        <X aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-danger" strokeWidth={2.5} />
+      ) : (
+        <Check
+          aria-hidden="true"
+          className="mt-0.5 size-3.5 shrink-0 text-success"
+          strokeWidth={2.5}
+        />
+      )}
       <span className="sr-only">{failed ? 'Failed' : 'Succeeded'}:</span>
       <span className="min-w-0 flex-1 text-ink-faint">
         {ACTION_LABELS[type] ?? type}

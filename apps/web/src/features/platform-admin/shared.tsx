@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { MoreHorizontal, Search, ShieldAlert, type LucideProps } from 'lucide-react';
+import { Check, MoreHorizontal, Search, ShieldAlert, X, type LucideProps } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -475,9 +475,19 @@ export function OrgDetailDialog({
                     key={feature.flagName}
                     className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
                   >
-                    <span className={feature.enabled ? 'text-success' : 'text-ink-faint'}>
-                      {feature.enabled ? '✓' : '✗'}
-                    </span>
+                    {feature.enabled ? (
+                      <Check
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-success"
+                        strokeWidth={2.5}
+                      />
+                    ) : (
+                      <X
+                        aria-hidden="true"
+                        className="size-3.5 shrink-0 text-ink-faint"
+                        strokeWidth={2.5}
+                      />
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
                       <span className="block text-[11px] text-ink-faint">

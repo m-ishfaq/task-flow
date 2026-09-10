@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import {
   LIST_OPERATORS,
@@ -528,9 +529,9 @@ function RemoveButton({ onClick }: { readonly onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Remove condition"
-      className="ml-auto rounded px-1.5 text-xs text-ink-faint hover:bg-surface-hover hover:text-danger"
+      className="ml-auto rounded p-1 text-ink-faint hover:bg-surface-hover hover:text-danger"
     >
-      ✕
+      <X aria-hidden="true" className="size-3.5" strokeWidth={2} />
     </button>
   );
 }

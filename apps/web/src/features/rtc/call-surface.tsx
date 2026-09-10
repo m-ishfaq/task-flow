@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PhoneIncoming } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -300,7 +301,14 @@ function IncomingCallBanner() {
             answer.mutate();
           }}
         >
-          {answer.isPending ? 'Answering…' : '📞 Pick up'}
+          {answer.isPending ? (
+            'Answering…'
+          ) : (
+            <>
+              <PhoneIncoming aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+              Pick up
+            </>
+          )}
         </Button>
         <Button
           size="sm"

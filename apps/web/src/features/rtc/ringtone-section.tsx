@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Play } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { cn } from '../../lib/cn.js';
@@ -91,9 +92,11 @@ export function RingtoneSection() {
                       <span className="block text-sm text-ink">{tone.label}</span>
                       <span className="block text-xs text-ink-faint">{tone.description}</span>
                     </span>
-                    <span aria-hidden="true" className="text-xs text-ink-faint">
-                      ▶
-                    </span>
+                    <Play
+                      aria-hidden="true"
+                      className="size-3.5 shrink-0 text-ink-faint"
+                      strokeWidth={2}
+                    />
                   </button>
                 </li>
               );

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Users } from 'lucide-react';
+import { Check, Users } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -190,7 +190,13 @@ export function AssigneeSection({
                             >
                               <Avatar userId={member.userId} label={member.email} size="xs" />
                               <span className="truncate">{member.email}</span>
-                              {on && <span className="ml-auto">✓</span>}
+                              {on && (
+                                <Check
+                                  aria-hidden="true"
+                                  className="ml-auto size-3.5 shrink-0"
+                                  strokeWidth={2.5}
+                                />
+                              )}
                             </button>
                           </li>
                         );

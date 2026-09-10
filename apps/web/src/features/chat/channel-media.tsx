@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bookmark, ChevronDown, ChevronUp, Phone, Play, Video } from 'lucide-react';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { formatCallDuration, formatRelative } from '../../lib/format.js';
@@ -129,7 +130,11 @@ export function CallTimelineCard({
           missed ? 'bg-danger/10 text-danger' : 'bg-surface-sunken text-ink-muted',
         )}
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <span>
           {byViewer ? 'You called' : `${initiator.label} called`} · {text}
         </span>
@@ -162,16 +167,30 @@ function CallRow({
         }}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-ink">{initiator.label}</p>
           <p className="text-[11px] text-ink-faint">
             {formatRelative(entry.createdAt)} · {callStatusLabel(entry)}
           </p>
         </div>
-        <span className="shrink-0 text-[11px] text-ink-faint" aria-hidden="true">
-          {expanded ? '▲' : '▼'}
-        </span>
+        {expanded ? (
+          <ChevronUp
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-ink-faint"
+            strokeWidth={2}
+          />
+        ) : (
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-ink-faint"
+            strokeWidth={2}
+          />
+        )}
       </button>
 
       {expanded && (
@@ -257,7 +276,8 @@ function RecordingRow({ recording }: { readonly recording: CallRecordingSummary 
             play.mutate();
           }}
         >
-          ▶ Listen
+          <Play aria-hidden="true" className="size-3 shrink-0" strokeWidth={2} />
+          Listen
         </Button>
         <Button
           size="sm"
@@ -455,13 +475,19 @@ export function SavedSection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-5 shrink-0 px-1 text-[11px]"
+                  className="h-5 shrink-0 px-1 text-warning"
+                  aria-label="Remove from saved"
                   disabled={unsave.isPending}
                   onClick={() => {
                     unsave.mutate(row.messageId as MessageId);
                   }}
                 >
-                  ★
+                  <Bookmark
+                    aria-hidden="true"
+                    className="size-3.5"
+                    strokeWidth={2}
+                    fill="currentColor"
+                  />
                 </Button>
               }
             />
