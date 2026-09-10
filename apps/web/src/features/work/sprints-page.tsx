@@ -45,8 +45,8 @@ export function SprintsPage() {
     <div className="mx-auto max-w-5xl p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-ink">Sprints</h1>
-          <p className="mt-0.5 truncate text-xs text-ink-faint">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">Sprints</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">
             {project?.name ?? 'This project'} — planning units. Completing one keeps its done cards
             and returns the rest to the backlog.
           </p>

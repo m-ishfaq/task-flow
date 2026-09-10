@@ -38,7 +38,7 @@ export interface PaletteColors {
 const BASE_LIGHTNESS = 55;
 const HOVER_LIGHTNESS = 50;
 const CHROMA = 0.17;
-const INK = 'oklch(98% 0.01 258)';
+const INK = 'oklch(98% 0.01 285)';
 
 /** Hue angle for each palette, degrees on the OKLCH hue wheel. */
 const HUES: Record<PaletteId, number> = {

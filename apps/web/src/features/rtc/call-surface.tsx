@@ -265,7 +265,7 @@ function IncomingCallBanner() {
     <div
       role="alert"
       aria-live="assertive"
-      className="fixed bottom-4 right-4 z-50 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+      className="fixed bottom-4 right-4 z-50 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-lg"
     >
       {/* A moving band rather than a static header. A ringing phone competes
           with whatever the person is reading, and motion is what wins that
@@ -461,7 +461,7 @@ function ActiveCallBar() {
   const recordingState = recording.data?.state ?? 'none';
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-surface shadow-2xl">
+    <div className="fixed bottom-4 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-surface shadow-lg">
       {recordingState === 'pending' && (
         <RecordingConsentBar
           sessionId={sessionId}

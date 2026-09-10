@@ -17,7 +17,7 @@ import type { ExpoConfig } from 'expo/config';
  * `packages/tokens/src/colors.test.ts` (or a visual check against a real
  * build) is what would catch it, not a compiler.
  */
-const STATUS_BAR_BACKGROUND = '#0d1117';
+const STATUS_BAR_BACKGROUND = '#0a0d14';
 
 /**
  * Expo config (ai/phase-14-mobile.md §5, §10).

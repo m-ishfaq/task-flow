@@ -75,10 +75,10 @@ function withFacet(query: string, facet: Facet): string {
 
 const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }> = {
   card: { label: 'Card', className: 'bg-accent/10 text-accent' },
-  message: { label: 'Message', className: 'bg-violet-500/10 text-violet-500' },
-  page: { label: 'Page', className: 'bg-emerald-500/10 text-emerald-500' },
-  comment: { label: 'Comment', className: 'bg-amber-500/10 text-amber-500' },
-  transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
+  message: { label: 'Message', className: 'bg-priority-medium/10 text-priority-medium' },
+  page: { label: 'Page', className: 'bg-success/10 text-success' },
+  comment: { label: 'Comment', className: 'bg-warning/10 text-warning' },
+  transcript: { label: 'Transcript', className: 'bg-info/10 text-info' },
 };
 
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
