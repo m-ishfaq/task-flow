@@ -34,7 +34,7 @@ import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { SUITE_STYLES, suiteForPath, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button } from './primitives.js';
+import { Avatar, Button, OrgBadge } from './primitives.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
@@ -564,7 +564,8 @@ function OrgSwitcher() {
   return (
     <DropdownMenuRoot>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
+        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start gap-2">
+          {current !== undefined && <OrgBadge orgId={current.orgId} name={current.name} />}
           <span className="truncate">{current?.name ?? 'Select organization'}</span>
           <ChevronDown
             aria-hidden="true"
@@ -581,8 +582,11 @@ function OrgSwitcher() {
               switchTo(org.orgId as OrgId);
             }}
           >
-            <span>{org.name}</span>
-            <span className="text-[11px] text-ink-faint">{org.role}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <OrgBadge orgId={org.orgId} name={org.name} />
+              <span className="truncate">{org.name}</span>
+            </span>
+            <span className="shrink-0 text-[11px] text-ink-faint">{org.role}</span>
           </DropdownMenuItem>
         ))}
 

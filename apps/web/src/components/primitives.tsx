@@ -455,6 +455,47 @@ export function AvatarStack({
   );
 }
 
+/**
+ * An organization, as a small colored square — the Design Bible's own
+ * `.org-badge` (§app-frame), which the org switcher had none of at all
+ * before this: a plain text name with no identity mark next to it, unlike
+ * every PERSON in this app, which always renders as a colored disc.
+ *
+ * Square (`rounded-md`), not round — the one deliberate shape difference
+ * from `Avatar`, so an org reads as a distinct kind of thing from a person
+ * at a glance in the same switcher menu, the way a folder icon reads
+ * differently from a file icon. Hue is hashed from the org's own id (same
+ * `hueOf` an avatar uses), not the bible's own fixed people-hue example —
+ * the mockup only ever shows one org, so it had no reason to vary; a real
+ * switcher lists several, and a per-org color is what actually lets someone
+ * tell two rows apart at a glance the way `Avatar`'s per-person color does.
+ */
+export function OrgBadge({
+  orgId,
+  name,
+  className,
+}: {
+  readonly orgId: string;
+  readonly name: string;
+  readonly className?: string;
+}) {
+  const hue = hueOf(orgId);
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        backgroundImage: `linear-gradient(160deg, oklch(64% 0.13 ${String(hue)}), oklch(52% 0.13 ${String(hue)}))`,
+      }}
+      className={cn(
+        'inline-flex size-[22px] shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white',
+        className,
+      )}
+    >
+      {initialsOf(name)}
+    </span>
+  );
+}
+
 export function Spinner({ className }: { readonly className?: string }) {
   return (
     <span
