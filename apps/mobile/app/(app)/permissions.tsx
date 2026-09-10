@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { GRANTABLE_PERMISSIONS } from '@taskflow/policy';
@@ -26,7 +27,6 @@ import {
   MEMBERS_QUERY_KEY,
   MEMBER_GRANTS_QUERY_KEY,
   type Member,
-  type MemberGrant,
 } from '../../src/lib/org-settings.js';
 
 /**
@@ -153,6 +153,30 @@ function PermissionsScreenContent() {
   const labelOf = (member: { readonly email: string; readonly displayName: string | null }) =>
     member.displayName ?? member.email;
 
+  /* One row per PERSON, not per grant. A member holding three individual
+     permissions used to render as three near-identical rows (same name, same
+     role, differing only by one badge) — the exact "diff row for each perm per
+     person" this screen was reported for. Grants are grouped by user in the
+     order they arrive (a Map preserves insertion order), and each person's
+     permissions render as a row of individually-revocable chips — the same
+     regrouping web's PermissionsSection already made. */
+  const groupedGrants = (() => {
+    const byUser = new Map<
+      string,
+      { readonly member: Member | undefined; readonly permissions: string[] }
+    >();
+    for (const entry of grants.data ?? []) {
+      const existing = byUser.get(entry.userId);
+      if (existing) existing.permissions.push(entry.permission);
+      else
+        byUser.set(entry.userId, {
+          member: memberById.get(entry.userId),
+          permissions: [entry.permission],
+        });
+    }
+    return [...byUser.entries()].map(([userId, value]) => ({ userId, ...value }));
+  })();
+
   const needle = memberQuery.trim().toLowerCase();
   const matches = (members.data ?? []).filter(
     (member) =>
@@ -199,35 +223,37 @@ function PermissionsScreenContent() {
       )}
 
       <ScrollView contentContainerStyle={styles.list}>
-        {(grants.data ?? []).map((entry: MemberGrant) => {
-          const member = memberById.get(entry.userId);
-          return (
-            <View key={`${entry.userId}:${entry.permission}`} style={styles.row}>
-              <View style={styles.rowText}>
-                <Text style={styles.rowName} numberOfLines={1}>
-                  {member ? labelOf(member) : entry.userId}
-                </Text>
-                <Text style={styles.rowMeta} numberOfLines={1}>
-                  {member?.role ?? 'former member'}
-                </Text>
-              </View>
-              <View style={styles.permissionBadge}>
-                <Text style={styles.permissionBadgeText} numberOfLines={1}>
-                  {entry.permission}
-                </Text>
-              </View>
-              <Pressable
-                style={styles.revokeButton}
-                disabled={revoke.isPending}
-                onPress={() => {
-                  runRevoke({ userId: entry.userId, permission: entry.permission });
-                }}
-              >
-                <Text style={styles.revokeButtonText}>Revoke</Text>
-              </Pressable>
+        {groupedGrants.map(({ userId, member, permissions }) => (
+          <View key={userId} style={styles.personRow}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowName} numberOfLines={1}>
+                {member ? labelOf(member) : userId}
+              </Text>
+              <Text style={styles.rowMeta} numberOfLines={1}>
+                {member?.role ?? 'former member'}
+              </Text>
             </View>
-          );
-        })}
+            <View style={styles.chipWrap}>
+              {permissions.map((permission) => (
+                <Pressable
+                  key={permission}
+                  style={styles.permChip}
+                  disabled={revoke.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Revoke ${permission}`}
+                  onPress={() => {
+                    runRevoke({ userId, permission });
+                  }}
+                >
+                  <Text style={styles.permChipText} numberOfLines={1}>
+                    {permission}
+                  </Text>
+                  <Ionicons name="close" size={13} color={colors.inkMuted.hex} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
       </ScrollView>
 
       <Modal
@@ -421,9 +447,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  personRow: {
     gap: 8,
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
@@ -445,29 +469,30 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
     marginTop: 1,
   },
-  permissionBadge: {
-    backgroundColor: colors.surfaceSunken.hex,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    maxWidth: 130,
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
-  permissionBadgeText: {
+  /* Each chip is the revoke control: tapping it revokes that one permission
+     (through the same step-up guard every other revoke here uses), with a
+     close glyph making the outcome legible. */
+  permChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceSunken.hex,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: 999,
+    paddingLeft: 8,
+    paddingRight: 5,
+    paddingVertical: 3,
+  },
+  permChipText: {
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     color: colors.ink.hex,
-  },
-  revokeButton: {
-    borderWidth: 1,
-    borderColor: colors.danger.hex + '80',
-    borderRadius: radiusCard,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  revokeButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.danger.hex,
   },
   avoider: {
     flex: 1,
