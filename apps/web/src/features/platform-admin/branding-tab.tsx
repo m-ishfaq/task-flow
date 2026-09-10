@@ -496,7 +496,7 @@ function BrandingPreview({
               <span
                 key={item}
                 className={cn(
-                  'flex items-center gap-1.5 rounded px-2 py-1 text-[10px]',
+                  'flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px]',
                   index === 0 ? 'bg-accent/10 font-medium text-accent' : 'text-ink-muted',
                 )}
               >

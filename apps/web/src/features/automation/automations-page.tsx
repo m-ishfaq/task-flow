@@ -342,7 +342,7 @@ export function AutomationsPage() {
                 {count !== undefined && (
                   <span
                     className={cn(
-                      'rounded px-1 text-[10px] tabular-nums',
+                      'rounded-md px-1 text-[10px] tabular-nums',
                       tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
                     )}
                   >

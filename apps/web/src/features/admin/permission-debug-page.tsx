@@ -265,7 +265,7 @@ export function PermissionDebugPage() {
                       </span>
                       <span
                         className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                          'rounded-md px-1.5 py-0.5 text-[10px] font-medium',
                           step.outcome === 'allow'
                             ? 'bg-success/15 text-success'
                             : step.outcome === 'deny'

@@ -74,7 +74,7 @@ export function AuditPage() {
       {verify.data !== undefined && (
         <div
           className={cn(
-            'rounded border px-3 py-2 text-sm',
+            'rounded-lg border px-3 py-2 text-sm',
             verify.data.intact
               ? 'border-success/40 bg-success/10 text-ink'
               : 'border-danger/40 bg-danger/10 text-ink',
