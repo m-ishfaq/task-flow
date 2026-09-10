@@ -269,6 +269,25 @@ function hueOf(id: string): number {
 }
 
 /**
+ * A person's identity colour — the SAME hue their avatar disc uses.
+ *
+ * Exported so a surface can bind a person's NAME to their face. Chat is the
+ * case that needed it: in a run of bubbles from several different people every
+ * bubble is the same grey surface and every name the same muted grey, so
+ * "whose message is this?" could only be answered by finding the one small
+ * avatar in the group. Colouring the name from the same hash makes the name
+ * and the face agree, which is the cheapest possible identity signal and the
+ * only one that survives a bubble having no avatar beside it at all.
+ *
+ * Lighter than the 58% the disc fills at (a saturated fill needs to carry white
+ * initials; text on a dark surface needs to clear contrast the other way), so
+ * the two read as the same colour rather than the same value.
+ */
+export function personColor(userId: string): string {
+  return `oklch(76% 0.11 ${String(hueOf(userId))})`;
+}
+
+/**
  * Initials for a label that is usually an email address.
  *
  * `tenancy.members.list` returns `email` and no display name (there is no
@@ -671,7 +690,9 @@ export function TabBar<T extends string | null>({
   grow = false,
   className,
 }: {
-  readonly items: readonly (readonly [T, string] | readonly [T, string, ComponentType<LucideProps>])[];
+  readonly items: readonly (
+    readonly [T, string] | readonly [T, string, ComponentType<LucideProps>]
+  )[];
   readonly value: T;
   readonly onChange: (value: T) => void;
   readonly ariaLabel: string;

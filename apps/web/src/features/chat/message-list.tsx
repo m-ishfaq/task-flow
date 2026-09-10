@@ -3,7 +3,7 @@ import { Paperclip, Pin } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { cn } from '../../lib/cn.js';
 import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
-import { Avatar, Button } from '../../components/primitives.js';
+import { Avatar, Button, personColor } from '../../components/primitives.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
 import type { Message, MessageAttachment, MessagePreview } from './api.js';
@@ -107,8 +107,18 @@ export function MessageGroupView({
             sent them — but every group still gets ONE relative timestamp,
             because "who and when" is what a message header is for and only
             half of that is redundant here. */}
+        {/* The name carries the SENDER'S OWN COLOUR — the same hue as their
+            avatar disc (`personColor`). Every non-own bubble is the same grey
+            surface, so with three people in a channel the only thing telling
+            them apart used to be one 24px avatar per run, and a muted-grey name
+            that looked identical for everyone. Binding the name to the face
+            makes attribution instant, and it keeps working for the bubbles in a
+            run that have no avatar beside them at all. */}
         {!isOwn && (
-          <span className="px-1 text-xs font-medium text-ink-muted">
+          <span
+            className="px-1 text-xs font-semibold"
+            style={group.authorId === null ? undefined : { color: personColor(group.authorId) }}
+          >
             {authorLabel ?? 'Unknown'}
           </span>
         )}
