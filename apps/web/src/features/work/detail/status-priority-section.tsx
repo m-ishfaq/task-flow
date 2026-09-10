@@ -73,7 +73,7 @@ export function StatusSection({
           const value = event.target.value;
           setStatus.mutate(value === '' ? null : (value as StatusId));
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
       >
         <option value="">No status</option>
         {(list.data ?? []).map((status) => (
@@ -144,7 +144,7 @@ export function PrioritySection({
             });
           }}
           className={cn(
-            'h-8 w-full rounded border border-line bg-surface-sunken pr-2 text-xs text-ink disabled:opacity-50',
+            'h-8 w-full rounded-md border border-line bg-surface-sunken pr-2 text-xs text-ink disabled:opacity-50',
             priority !== null ? 'pl-6' : 'pl-2',
           )}
         >

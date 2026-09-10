@@ -141,7 +141,7 @@ export function GuestAccessSection({
           onChange={(event) => {
             setRelation(event.target.value as GuestRelation);
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           {GUEST_RELATIONS.map((entry) => (
             <option key={entry} value={entry}>

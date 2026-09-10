@@ -717,7 +717,7 @@ export function OrgOverrideDialog({
                     const value = event.target.value as OverrideChoice;
                     setChoices((prev) => ({ ...prev, [feature.flagName]: value }));
                   }}
-                  className="h-8 shrink-0 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+                  className="h-8 shrink-0 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
                 >
                   <option value="inherit">Inherit</option>
                   <option value="add">Force on</option>

@@ -180,7 +180,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
           onChange={(event) => {
             setSubjectId(event.target.value);
           }}
-          className="h-8 flex-1 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 flex-1 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Choose someone…</option>
           {(members.data ?? []).map((member) => (
@@ -196,7 +196,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
           onChange={(event) => {
             setRelation(event.target.value as Relation);
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           {RELATIONS.map((entry) => (
             <option key={entry} value={entry}>

@@ -207,7 +207,7 @@ function ExportTab({
           onChange={(event) => {
             setScope(event.target.value);
           }}
-          className="mt-1 h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="mt-1 h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Whole project</option>
           <option value="board">This board</option>
@@ -226,7 +226,7 @@ function ExportTab({
           onChange={(event) => {
             setFormat(event.target.value as 'csv' | 'json');
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="csv">CSV (spreadsheet)</option>
           <option value="json">JSON</option>
@@ -374,7 +374,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           onChange={(event) => {
             setListId(event.target.value);
           }}
-          className="mt-1 h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="mt-1 h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Choose a list…</option>
           {(lists.data ?? []).map((list) => (
@@ -474,7 +474,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
                     /* The preview described the OLD mapping. */
                     setPreview(null);
                   }}
-                  className="h-7 min-w-0 flex-1 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+                  className="h-7 min-w-0 flex-1 rounded-md border border-line bg-surface-sunken px-1.5 text-xs text-ink"
                 >
                   <option value="">— not imported —</option>
                   {table.headers.map((header) => (
@@ -586,7 +586,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
       )}
 
       {done !== null && (
-        <div className="rounded border border-line bg-surface-sunken/60 p-3 text-xs">
+        <div className="rounded-md border border-line bg-surface-sunken/60 p-3 text-xs">
           <p className="font-medium text-ink">
             Imported {done.created} {done.created === 1 ? 'card' : 'cards'}
             {done.errors.length > 0 &&

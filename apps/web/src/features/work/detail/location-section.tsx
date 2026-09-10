@@ -172,7 +172,7 @@ export function LocationSection({
             if (next === '') return;
             move.mutate(next as ListId);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+          className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         >
           {showingBoardId !== boardId && <option value="">Choose a list…</option>}
           {(lists.data ?? []).map((list) => (
@@ -220,7 +220,7 @@ function BoardSelect({
         onChange={(event) => {
           onChange(event.target.value as BoardId);
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
       >
         {(boards.data ?? []).map((board) => (
           <option key={board.boardId} value={board.boardId}>

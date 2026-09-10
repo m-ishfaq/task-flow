@@ -264,7 +264,7 @@ function SaveViewDialog({
               onChange={(event) => {
                 setName(event.target.value);
               }}
-              className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+              className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
             />
           </label>
 
