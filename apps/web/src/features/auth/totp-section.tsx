@@ -113,7 +113,7 @@ export function TotpSection() {
         <>
           <div className="flex items-center justify-between">
             {status.data.enabled ? (
-              <Badge className="bg-success/15 text-success">Enabled</Badge>
+              <Badge tone="success">Enabled</Badge>
             ) : (
               <Badge>Not enabled</Badge>
             )}

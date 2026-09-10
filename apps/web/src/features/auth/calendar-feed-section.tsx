@@ -62,11 +62,7 @@ export function CalendarFeedSection() {
       {status.data !== undefined && mintedUrl === null && (
         <>
           <div className="flex items-center justify-between">
-            {status.data.active ? (
-              <Badge className="bg-success/15 text-success">Active</Badge>
-            ) : (
-              <Badge>Not set up</Badge>
-            )}
+            {status.data.active ? <Badge tone="success">Active</Badge> : <Badge>Not set up</Badge>}
             <Button
               variant="secondary"
               size="sm"

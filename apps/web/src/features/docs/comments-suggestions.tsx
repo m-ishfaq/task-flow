@@ -329,7 +329,7 @@ function CommentsTab({
                 </span>
                 <span>{formatRelative(comment.createdAt)}</span>
                 {comment.editedAt !== null && <span>(edited)</span>}
-                {comment.resolvedAt !== null && <Badge className="text-success">resolved</Badge>}
+                {comment.resolvedAt !== null && <Badge tone="success">resolved</Badge>}
               </div>
 
               {comment.deletedAt !== null ? (

@@ -172,7 +172,7 @@ function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCard
           {project.key}
         </span>
         <h2 className="truncate text-sm font-medium text-ink">{project.name}</h2>
-        {isArchived && <Badge className="text-warning">archived</Badge>}
+        {isArchived && <Badge tone="warning">archived</Badge>}
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {/* Not offered on an archived project: duplicating one would create a

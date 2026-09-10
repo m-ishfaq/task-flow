@@ -853,7 +853,7 @@ function PagePanel({
           <>
             <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
               {page.title}
-              {isArchived && <Badge className="text-warning">archived</Badge>}
+              {isArchived && <Badge tone="warning">archived</Badge>}
             </h1>
             <div className="flex shrink-0 gap-2">
               <Button

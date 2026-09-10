@@ -6,7 +6,7 @@ import type { CardId, ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
 import { useSession } from '../../lib/session.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
-import { Skeleton } from '../../components/primitives.js';
+import { Segmented, Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
 import { boardsQuery, cardsQuery, listsQuery, projectsQuery, statusesQuery } from './api.js';
@@ -466,6 +466,17 @@ export function BoardPage() {
   );
 }
 
+const VIEW_TOGGLE_OPTIONS = [
+  { value: 'board', label: 'Board' },
+  { value: 'list', label: 'List' },
+  { value: 'table', label: 'Table' },
+  { value: 'calendar', label: 'Calendar' },
+  { value: 'insights', label: 'Insights' },
+] as const satisfies readonly {
+  value: 'board' | 'table' | 'list' | 'calendar' | 'insights';
+  label: string;
+}[];
+
 function ViewToggle({
   value,
   onChange,
@@ -474,30 +485,7 @@ function ViewToggle({
   readonly onChange: (value: 'board' | 'table' | 'list' | 'calendar' | 'insights') => void;
 }) {
   return (
-    <div
-      className="inline-flex rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5"
-      role="group"
-      aria-label="View"
-    >
-      {(['board', 'list', 'table', 'calendar', 'insights'] as const).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          aria-pressed={value === mode}
-          onClick={() => {
-            onChange(mode);
-          }}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all duration-[var(--motion-fast)]',
-            value === mode
-              ? 'bg-accent text-accent-ink shadow-sm'
-              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-          )}
-        >
-          {mode}
-        </button>
-      ))}
-    </div>
+    <Segmented value={value} onChange={onChange} options={VIEW_TOGGLE_OPTIONS} aria-label="View" />
   );
 }
 

@@ -102,6 +102,62 @@ export function Button({
   );
 }
 
+/**
+ * A segmented control — one of a small, fixed set of mutually exclusive
+ * choices, rendered as a pill-shaped button group. The Design Bible's
+ * `.segmented`/`.tabs-demo` pattern (board view toggle, the component kit's
+ * own tab demo), extracted here per PLAN.md §6 once the identical markup
+ * had drifted into two independent copies — the board's view toggle
+ * (`board-page.tsx`) and the home page's sprint-scope filter
+ * (`home-page.tsx`) — with slightly different padding, borders and no
+ * shared shadow, which is exactly the kind of divergence a shared
+ * component exists to stop compounding as a third caller inevitably
+ * copies whichever one it happened to find first.
+ *
+ * Generic over the option type so a caller's own union (board's
+ * `'board' | 'table' | ...`, home's `'all' | 'sprint' | 'backlog'`) is what
+ * `value`/`onChange` are typed against — never a bare `string`, which would
+ * let a typo in one call site's `value` compile silently.
+ */
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  'aria-label': ariaLabel,
+}: {
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly options: readonly { readonly value: T; readonly label: ReactNode }[];
+  readonly 'aria-label': string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex shrink-0 gap-0.5 rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => {
+            onChange(option.value);
+          }}
+          className={cn(
+            'rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-[var(--motion-fast)]',
+            value === option.value
+              ? 'bg-accent text-accent-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* `ComponentProps`, not `ComponentPropsWithoutRef`: React 19 passes `ref` as an
    ordinary prop, and `FocusOnMountInput` below needs to forward one. */
 export type InputProps = ComponentProps<'input'>;
@@ -213,13 +269,36 @@ export function Field({ label, htmlFor, error, hint, children }: FieldProps) {
   );
 }
 
+type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'accent';
+
+/**
+ * One color combination per tone, matching the Design Bible's component-kit
+ * badge variants (`.bd.n/.ok/.wn/.er/.ac`) — a tint of the state color at low
+ * opacity behind text in that same color, no border except on `neutral`
+ * (whose fill alone is too close to the surface to read as a shape without
+ * one). Kept at `rounded-md` (6px) rather than the bible's pill-shaped
+ * `.bd` (`border-radius: 999px`): every real Badge call site in this app is
+ * a label or count sitting inline with other 6px-radius metadata (a card's
+ * tags, a section heading's count) — the bible's OWN card-metadata tags
+ * (`.tag`) are 6px for the identical reason, and a pill-shaped badge would
+ * be the one rounder shape on an otherwise consistently-6px row.
+ */
+const BADGE_TONES: Readonly<Record<BadgeTone, string>> = {
+  neutral: 'bg-surface-hover/80 text-ink-muted border border-line/30',
+  success: 'bg-success/15 text-success',
+  warning: 'bg-warning/15 text-warning',
+  danger: 'bg-danger/15 text-danger',
+  accent: 'bg-accent/15 text-accent',
+};
+
 export interface BadgeProps {
   readonly children: ReactNode;
+  readonly tone?: BadgeTone;
   readonly className?: string;
   readonly title?: string;
 }
 
-export function Badge({ children, className, title }: BadgeProps) {
+export function Badge({ children, tone = 'neutral', className, title }: BadgeProps) {
   return (
     <span
       title={title}
@@ -232,7 +311,7 @@ export function Badge({ children, className, title }: BadgeProps) {
            the same 12px the board's other metadata uses, so badges sit level
            with their neighbours rather than one size down from them. */
         'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
-        'bg-surface-hover/80 text-ink-muted border border-line/30',
+        BADGE_TONES[tone],
         className,
       )}
     >
@@ -445,6 +524,14 @@ export function SkeletonRows({
  * where a product has the most freedom to look designed, because nothing is
  * competing with it — a bare dashed box reads as "unfinished", which is the
  * exact impression a demo with no data leaves.
+ *
+ * The faint accent glow behind the icon is the Design Bible's own `.empty`
+ * signature (§components) — a `radial-gradient` at 7% accent opacity,
+ * centred above the content rather than filling the whole box, so the panel
+ * reads as lit from one considered point rather than tinted flat. It costs
+ * nothing when there's no icon to glow behind (the gradient is still there,
+ * just under nothing but whitespace) so it stays on unconditionally rather
+ * than being gated on `icon !== undefined`.
  */
 export function Empty({
   title,
@@ -459,7 +546,7 @@ export function Empty({
   readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,oklch(58%_0.17_285/7%),transparent_70%)] bg-surface-sunken/30 p-12 text-center">
       {icon !== undefined && (
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           {icon}

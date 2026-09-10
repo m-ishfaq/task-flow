@@ -107,9 +107,7 @@ export function AiTab({
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                       {row.label}
-                      {row.isDefault && (
-                        <Badge className="border-accent/30 text-accent">default</Badge>
-                      )}
+                      {row.isDefault && <Badge tone="accent">default</Badge>}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {row.provider} · <span className="font-mono">{row.model}</span>

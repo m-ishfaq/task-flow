@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { Skeleton } from '../../components/primitives.js';
+import { Segmented, Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { activeSprintsQuery, myCardsQuery } from './api.js';
 import { ListView } from './list-view.js';
@@ -27,6 +27,12 @@ import { ListView } from './list-view.js';
  * on a board reached with no `?project=`), just without the labels and
  * custom-fields sections that need it.
  */
+
+const SPRINT_SCOPE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'sprint', label: 'This sprint' },
+  { value: 'backlog', label: 'Backlog' },
+] as const satisfies readonly { value: 'all' | 'sprint' | 'backlog'; label: string }[];
 
 export function HomePage() {
   const orgId = useSession((state) => state.orgId) ?? '';
@@ -102,35 +108,12 @@ export function HomePage() {
               not use sprints would otherwise get two filters that both mean
               "everything" and one that is always empty. */}
           {runningSprintIds.size > 0 && (
-            <div
-              className="flex shrink-0 gap-1 rounded-lg border border-line bg-surface-raised p-1"
-              role="group"
+            <Segmented
+              value={scope}
+              onChange={setScope}
+              options={SPRINT_SCOPE_OPTIONS}
               aria-label="Filter by sprint"
-            >
-              {(
-                [
-                  ['all', 'All'],
-                  ['sprint', 'This sprint'],
-                  ['backlog', 'Backlog'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={scope === value}
-                  onClick={() => {
-                    setScope(value);
-                  }}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    scope === value
-                      ? 'bg-accent text-accent-ink'
-                      : 'text-ink-muted hover:bg-surface-hover hover:text-ink'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            />
           )}
         </div>
       </div>

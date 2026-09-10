@@ -124,10 +124,7 @@ function OooBadge({ member }: { readonly member: DirectoryMember }) {
   if (!oooStatus(member.oooFrom, member.oooUntil)) return null;
 
   return (
-    <Badge
-      className="bg-surface-hover text-warning"
-      {...(member.oooMessage === null ? {} : { title: member.oooMessage })}
-    >
+    <Badge tone="warning" {...(member.oooMessage === null ? {} : { title: member.oooMessage })}>
       OOO
     </Badge>
   );
