@@ -1113,14 +1113,14 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   navBackText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '400',
     color: colors.accent.hex,
     lineHeight: 26,
   },
   navTitle: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.ink.hex,
   },
@@ -1146,12 +1146,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   heroAvatarText: {
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.accent.hex,
   },
   heroName: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
     textAlign: 'center',
@@ -1170,7 +1170,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   heroBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.warning.hex,
     textTransform: 'uppercase',
@@ -1188,7 +1188,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line.hex + '60',
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -1363,7 +1363,7 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
   },
   excerptMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
 

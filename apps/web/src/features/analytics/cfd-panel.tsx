@@ -5,6 +5,7 @@ import { api } from '../../lib/trpc.js';
 import { wire } from '@taskflow/client';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { ChartGrid } from './chart.js';
 
 const CATEGORY_COLORS: Record<string, string> = {
   notStarted: 'rgb(156, 163, 175)', // gray
@@ -89,14 +90,29 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
 
   const toY = (count: number) => height - (count / maxTotal) * height;
 
-  // Stacked: done on bottom, active in middle, notStarted on top
-  const donePath = points.map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done))}`).join(' ');
-  const activePath = points
-    .map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done + p.active))}`)
-    .join(' ');
-  const notStartedPath = points
-    .map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done + p.active + p.notStarted))}`)
-    .join(' ');
+  /* Closed polygons: top edge along each cumulative line, bottom edge along
+     the previous band's line reversed (or the floor for the lowest band).
+     Points are handled as arrays, never by spreading a joined string — a
+     string spread decomposes by code point, not by point. */
+  const donePts = points.map(
+    (p, i) => [i * 8 + 4, toY(p.done)] as const,
+  );
+  const activePts = points.map(
+    (p, i) => [i * 8 + 4, toY(p.done + p.active)] as const,
+  );
+  const notStartedPts = points.map(
+    (p, i) => [i * 8 + 4, toY(p.done + p.active + p.notStarted)] as const,
+  );
+  const fmt = (pt: readonly [number, number]) => `${String(pt[0])},${String(pt[1])}`;
+  const donePath = donePts.map(fmt).join(' ');
+  const activePath = activePts.map(fmt).join(' ');
+  const notStartedPath = notStartedPts.map(fmt).join(' ');
+  const floor = points.map((_, i) => `${String(i * 8 + 4)},${String(height)}`).join(' ');
+  const reverseJoin = (pts: readonly (readonly [number, number])[]) =>
+    [...pts].reverse().map(fmt).join(' ');
+  const doneArea = `${donePath} ${floor}`;
+  const activeArea = `${activePath} ${reverseJoin(donePts)}`;
+  const notStartedArea = `${notStartedPath} ${reverseJoin(activePts)}`;
 
   return (
     <div className="space-y-4">
@@ -119,24 +135,30 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
         )}
       </div>
 
-      {/* Stacked area chart */}
+      {/* Stacked area chart — real translucent fills, not hairline polylines:
+          a CFD's bands ARE its reading, and 1px strokes render them
+          invisible. Fills at low opacity keep overlaps legible over the grid. */}
       <svg
         viewBox={`0 0 ${String(width)} ${String(height)}`}
         className="w-full"
         style={{ height: 120 }}
         preserveAspectRatio="none"
       >
-        <polyline fill="none" stroke={CATEGORY_COLORS['done']} strokeWidth="1" points={donePath} />
+        <ChartGrid height={height} width={width} />
+        <polygon fill={CATEGORY_COLORS['notStarted']} fillOpacity={0.28} points={notStartedArea} />
+        <polygon fill={CATEGORY_COLORS['active']} fillOpacity={0.32} points={activeArea} />
+        <polygon fill={CATEGORY_COLORS['done']} fillOpacity={0.32} points={doneArea} />
+        <polyline fill="none" stroke={CATEGORY_COLORS['done']} strokeWidth="1.5" points={donePath} />
         <polyline
           fill="none"
           stroke={CATEGORY_COLORS['active']}
-          strokeWidth="1"
+          strokeWidth="1.5"
           points={activePath}
         />
         <polyline
           fill="none"
           stroke={CATEGORY_COLORS['notStarted']}
-          strokeWidth="1"
+          strokeWidth="1.5"
           points={notStartedPath}
         />
       </svg>
@@ -154,7 +176,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
         ))}
       </div>
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-xs text-ink/40">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>

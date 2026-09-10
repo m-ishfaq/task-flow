@@ -88,7 +88,7 @@ export function OAuthCallbackPage() {
   if (linkErrorMessage !== null || mutationError !== null) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-lg font-semibold text-ink">Sign-in did not complete</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Sign-in did not complete</h1>
         {linkErrorMessage !== null ? (
           <p className="text-sm text-danger">{linkErrorMessage}</p>
         ) : (

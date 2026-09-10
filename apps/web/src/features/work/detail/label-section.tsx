@@ -121,7 +121,7 @@ export function LabelSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <Tag aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Labels
       </h3>
@@ -138,7 +138,7 @@ export function LabelSection({
             (onCard.data ?? []).map((label) => (
               <li key={label.labelId}>
                 <span
-                  className="rounded px-1.5 py-0.5 text-[11px] text-white"
+                  className="rounded px-1.5 py-0.5 text-xs text-white"
                   style={{ backgroundColor: label.color }}
                 >
                   {label.name}
@@ -167,7 +167,7 @@ export function LabelSection({
                     toggle(label.labelId);
                   }}
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-[11px]',
+                    'rounded px-1.5 py-0.5 text-xs',
                     on ? 'text-white' : 'bg-surface-hover text-ink-muted hover:text-ink',
                   )}
                   style={on ? { backgroundColor: label.color } : undefined}

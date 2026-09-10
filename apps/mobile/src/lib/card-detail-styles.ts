@@ -257,7 +257,7 @@ export const styles = StyleSheet.create({
     gap: 8,
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkFaint.hex,
     textTransform: 'uppercase',
@@ -289,7 +289,7 @@ export const styles = StyleSheet.create({
     borderRadius: 3,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: colors.inkMuted.hex,
   },
@@ -327,7 +327,7 @@ export const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   checklistCount: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   checklistDeleteButton: {
@@ -360,7 +360,7 @@ export const styles = StyleSheet.create({
     borderColor: colors.accent.hex,
   },
   checklistBoxCheck: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.accentInk.hex,
   },
@@ -402,7 +402,7 @@ export const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   attachmentStatus: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   attachmentStatusDanger: {

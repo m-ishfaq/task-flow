@@ -113,10 +113,10 @@ export function ListView({
                 {/* Sentence-case 13px, matching `Section` — the uppercase
                     micro-label this used to be read as an admin panel's
                     column heading, not as the title of a group of work. */}
-                <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+                <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
                   {group.label}
                 </h2>
-                <span className="rounded-full bg-surface-hover/80 px-2 py-0.5 text-[11px] font-medium text-ink-faint">
+                <span className="rounded-full bg-surface-hover/80 px-2 py-0.5 text-xs font-medium text-ink-faint">
                   {group.cards.length}
                 </span>
               </button>
@@ -136,17 +136,17 @@ export function ListView({
                           }}
                           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover/60"
                         >
-                          <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+                          <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-xs font-medium text-ink-faint">
                             {card.reference}
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                             {card.title}
                           </span>
 
                           {card.priority !== null && (
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
                                 'bg-surface-hover text-ink-muted',
                               )}
                             >
@@ -164,7 +164,7 @@ export function ListView({
                           {due !== null && (
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
                                 due.overdue
                                   ? 'bg-danger/15 text-danger'
                                   : 'bg-surface-hover text-ink-muted',
@@ -178,7 +178,7 @@ export function ListView({
                           {card.checklistTotal > 0 && (
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
                                 card.checklistDone === card.checklistTotal
                                   ? 'bg-success/10 text-success'
                                   : 'bg-surface-hover text-ink-muted',
@@ -190,7 +190,7 @@ export function ListView({
                           )}
 
                           {card.commentCount > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted">
                               <MessageSquare
                                 aria-hidden="true"
                                 className="size-3"

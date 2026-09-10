@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   groupLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',

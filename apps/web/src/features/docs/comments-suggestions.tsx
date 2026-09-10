@@ -311,7 +311,7 @@ function CommentsTab({
         <ul className="space-y-2">
           {list.map((comment) => (
             <li key={comment.commentId} className="rounded border border-line p-2">
-              <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+              <div className="flex items-center gap-1.5 text-xs text-ink-faint">
                 {/* Matches `work/detail/comment-section.tsx`'s own comment
                     rows — a name with no face next to it here was the one
                     place Docs quietly diverged from Work's convention for
@@ -352,7 +352,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px]"
+                      className="h-5 px-1 text-xs"
                       onClick={() => {
                         if (!revealAnchor(editorHandle, comment.anchorFrom)) {
                           toast.show('That text is no longer available.', { tone: 'neutral' });
@@ -365,7 +365,7 @@ function CommentsTab({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-5 px-1 text-[11px]"
+                        className="h-5 px-1 text-xs"
                         onClick={() => {
                           setEditing(comment.commentId);
                         }}
@@ -376,7 +376,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px]"
+                      className="h-5 px-1 text-xs"
                       onClick={() => {
                         resolve.mutate({
                           commentId: comment.commentId as CommentId,
@@ -389,7 +389,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px] text-danger"
+                      className="h-5 px-1 text-xs text-danger"
                       onClick={() => {
                         remove.mutate(comment.commentId as CommentId);
                       }}
@@ -649,7 +649,7 @@ function SuggestionRow({
 
   return (
     <li className="rounded border border-line p-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+      <div className="flex items-center gap-1.5 text-xs text-ink-faint">
         <Badge>{suggestion.kind}</Badge>
         {/* Same fix as the comment rows above — see that one's comment. */}
         {suggestion.authorId !== null && (
@@ -669,7 +669,7 @@ function SuggestionRow({
       )}
 
       <div className="mt-1 flex flex-wrap gap-1">
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onReveal}>
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onReveal}>
           Reveal
         </Button>
         {pending && (
@@ -677,7 +677,7 @@ function SuggestionRow({
             <Button
               size="sm"
               variant="ghost"
-              className="h-5 px-1 text-[11px] text-success"
+              className="h-5 px-1 text-xs text-success"
               disabled={decidePending}
               onClick={() => {
                 onDecide('accepted');

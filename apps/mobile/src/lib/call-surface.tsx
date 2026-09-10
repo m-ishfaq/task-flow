@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   recordingIndicator: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.danger.hex,
   },
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   consentSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   consentActions: {

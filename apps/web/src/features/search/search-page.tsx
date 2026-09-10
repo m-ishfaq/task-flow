@@ -75,10 +75,10 @@ function withFacet(query: string, facet: Facet): string {
 
 const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }> = {
   card: { label: 'Card', className: 'bg-accent/10 text-accent' },
-  message: { label: 'Message', className: 'bg-violet-500/10 text-violet-500' },
-  page: { label: 'Page', className: 'bg-emerald-500/10 text-emerald-500' },
-  comment: { label: 'Comment', className: 'bg-amber-500/10 text-amber-500' },
-  transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
+  message: { label: 'Message', className: 'bg-priority-medium/10 text-priority-medium' },
+  page: { label: 'Page', className: 'bg-success/10 text-success' },
+  comment: { label: 'Comment', className: 'bg-warning/10 text-warning' },
+  transcript: { label: 'Transcript', className: 'bg-info/10 text-info' },
 };
 
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
@@ -252,7 +252,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               }}
               aria-pressed={facet === entry.id}
               className={cn(
-                'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
+                'rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-[var(--motion-fast)]',
                 facet === entry.id
                   ? 'border-accent bg-accent text-white'
                   : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
@@ -320,21 +320,21 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                        'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tracking-wide uppercase',
                         TYPE_BADGE[hit.type].className,
                       )}
                     >
                       {TYPE_BADGE[hit.type].label}
                     </span>
                     {hit.archived && (
-                      <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-faint">
+                      <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-xs text-ink-faint">
                         Archived
                       </span>
                     )}
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                       {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
                     </span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">
+                    <span className="shrink-0 text-xs text-ink-faint">
                       {formatRelative(hit.updatedAt)}
                     </span>
                   </div>
@@ -346,7 +346,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 </button>
               </li>
             ))}
-            <li className="pt-1 text-center text-[11px] text-ink-faint">
+            <li className="pt-1 text-center text-xs text-ink-faint">
               {results.data.length} of at most {results.data.length} results
             </li>
           </ul>
@@ -444,7 +444,7 @@ function SavedSearches({
             >
               {entry.name}
               {entry.isShared && (
-                <span className="ml-1 text-[10px] text-ink-faint" title="Shared with everyone">
+                <span className="ml-1 text-xs text-ink-faint" title="Shared with everyone">
                   ◇
                 </span>
               )}

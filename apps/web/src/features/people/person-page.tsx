@@ -73,7 +73,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
       <header className="flex items-center gap-4">
         <Avatar userId={member.userId} label={label} size="sm" className="size-12 text-lg" />
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-ink">{label}</h1>
+          <h1 className="truncate font-display text-xl font-semibold tracking-tight text-ink">{label}</h1>
           <p className="truncate text-xs text-ink-muted">
             {member.email}
             {member.userId === me ? <span className="text-ink-faint"> · you</span> : null}
@@ -142,7 +142,7 @@ function ChartCard({
 }) {
   return (
     <div className="rounded-lg border border-line p-4">
-      <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
       {people.length === 0 ? (
         <p className="mt-2 text-sm text-ink-faint">{empty}</p>
       ) : (

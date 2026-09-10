@@ -766,7 +766,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.hex,
   },
   unreadBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.accentInk.hex,
   },
@@ -840,11 +840,11 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
   },
   savedRowTime: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   savedRowUnsave: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   form: {

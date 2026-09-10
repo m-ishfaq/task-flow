@@ -1591,16 +1591,16 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   rowFaint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   rowFaintFlex: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   recordedTag: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
   },
@@ -1612,7 +1612,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rowBodyMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   rowBodyDivider: {
@@ -1656,7 +1656,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   pillText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   pillAccent: {
@@ -1683,7 +1683,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line.hex,
   },
   countryTag: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -1734,7 +1734,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   unreadBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.accentInk.hex,
   },
@@ -1790,12 +1790,12 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   bubbleTimeOut: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 2,
     color: colors.accentInk.hex + 'b3',
   },
   bubbleTimeIn: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 2,
     color: colors.inkFaint.hex,
   },
@@ -1892,7 +1892,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   automationCaption: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   spendTable: {
@@ -1910,7 +1910,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line.hex,
   },
   spendTableHeader: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkFaint.hex,
   },

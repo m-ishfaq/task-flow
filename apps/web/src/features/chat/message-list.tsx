@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { Check, Pin } from 'lucide-react';
+import { Paperclip, Pin } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { cn } from '../../lib/cn.js';
 import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
-import { Avatar, Button } from '../../components/primitives.js';
+import { Avatar, Button, personColor } from '../../components/primitives.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
 import type { Message, MessageAttachment, MessagePreview } from './api.js';
@@ -107,8 +107,18 @@ export function MessageGroupView({
             sent them — but every group still gets ONE relative timestamp,
             because "who and when" is what a message header is for and only
             half of that is redundant here. */}
+        {/* The name carries the SENDER'S OWN COLOUR — the same hue as their
+            avatar disc (`personColor`). Every non-own bubble is the same grey
+            surface, so with three people in a channel the only thing telling
+            them apart used to be one 24px avatar per run, and a muted-grey name
+            that looked identical for everyone. Binding the name to the face
+            makes attribution instant, and it keeps working for the bubbles in a
+            run that have no avatar beside them at all. */}
         {!isOwn && (
-          <span className="px-1 text-xs font-medium text-ink-muted">
+          <span
+            className="px-1 text-xs font-semibold"
+            style={group.authorId === null ? undefined : { color: personColor(group.authorId) }}
+          >
             {authorLabel ?? 'Unknown'}
           </span>
         )}
@@ -294,7 +304,7 @@ function MessageBubble({
               placement; right-aligned in both the viewer's and others'). */}
           <div
             className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
+              'mt-0.5 flex items-center justify-end gap-1 text-xs leading-none',
               isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
             )}
           >
@@ -341,13 +351,13 @@ function MessageBubble({
           )}
         >
           <EmojiPickerButton onPick={onToggleReaction} />
-          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onOpenThread}>
+          <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onOpenThread}>
             Reply
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onTogglePin(pinned);
             }}
@@ -357,7 +367,7 @@ function MessageBubble({
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onToggleSave(isSaved);
             }}
@@ -367,12 +377,7 @@ function MessageBubble({
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-5 px-1 text-[11px]"
-              onClick={onStartEdit}
-            >
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onStartEdit}>
               Edit
             </Button>
           )}
@@ -407,7 +412,7 @@ function MessageBubble({
         <button
           type="button"
           onClick={onOpenThread}
-          className="px-1 text-xs font-medium text-accent hover:underline"
+          className="px-1 text-xs font-medium text-chat hover:underline"
         >
           {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
         </button>
@@ -440,7 +445,7 @@ function DeleteMenu({
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           Delete
         </Button>
       </PopoverTrigger>
@@ -505,19 +510,26 @@ function ReactionBar({
         return (
           <PopoverRoot key={emoji}>
             <PopoverTrigger asChild>
+              {/* Design bible §07 `.react span`: a quiet pill that TINTS in the
+                  chat hue when it is yours, rather than filling solid accent —
+                  a saturated violet chip shouted louder than the message it was
+                  attached to, and spoke the global accent on a surface that is
+                  cyan everywhere else. `aria-pressed` carries the "mine" state
+                  semantically, which is also why the tick is gone: it was doing
+                  a job the button's own pressed state does properly. */}
               <button
                 type="button"
+                aria-pressed={mine}
                 aria-label={`${emoji} — ${String(userIds.length)} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
                 className={cn(
-                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                  'flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors',
                   mine
-                    ? 'border-accent bg-accent text-accent-ink'
+                    ? 'border-chat/50 bg-chat/15 text-ink'
                     : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
                 )}
               >
                 <span>{emoji}</span>
-                <span>{userIds.length}</span>
-                {mine && <Check aria-hidden="true" className="size-3" strokeWidth={2.5} />}
+                <span className="tabular-nums">{userIds.length}</span>
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" align="start" className="w-52 p-1.5">
@@ -530,7 +542,7 @@ function ReactionBar({
                     key={userId}
                     className={cn(
                       'flex items-center justify-between rounded px-1.5 py-1 text-sm text-ink',
-                      userId === viewerId && 'font-medium text-accent',
+                      userId === viewerId && 'font-medium text-chat',
                     )}
                   >
                     <span>{personOf(userId).label}</span>
@@ -561,7 +573,7 @@ export function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string)
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           React
         </Button>
       </PopoverTrigger>
@@ -661,7 +673,7 @@ export function AttachFileButton({
           inputRef.current?.click();
         }}
       >
-        📎
+        <Paperclip aria-hidden="true" className="size-4" strokeWidth={2} />
       </Button>
     </>
   );

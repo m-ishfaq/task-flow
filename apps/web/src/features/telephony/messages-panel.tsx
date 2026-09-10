@@ -91,13 +91,13 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                     {String(thread.counterparty)}
                   </span>
                   {thread.unreadCount > 0 && (
-                    <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
+                    <span className="rounded-full bg-accent px-1.5 text-xs font-medium text-accent-ink">
                       {thread.unreadCount}
                     </span>
                   )}
                 </div>
                 {thread.lastMessageAt !== null && (
-                  <p className="mt-0.5 text-[10px] text-ink-faint">
+                  <p className="mt-0.5 text-xs text-ink-faint">
                     {formatRelative(thread.lastMessageAt)}
                   </p>
                 )}
@@ -192,7 +192,7 @@ function ComposeView({
         <button
           type="button"
           onClick={onCancel}
-          className="ml-auto text-[11px] text-ink-muted hover:text-ink"
+          className="ml-auto text-xs text-ink-muted hover:text-ink"
         >
           Cancel
         </button>
@@ -259,7 +259,7 @@ function ComposeView({
             {send.isPending ? 'Sending…' : 'Send'}
           </Button>
           {activeNumber === '' && (
-            <span className="text-[11px] text-warning">Buy a number before sending.</span>
+            <span className="text-xs text-warning">Buy a number before sending.</span>
           )}
         </div>
 
@@ -304,7 +304,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
+        <span className="rounded bg-surface-hover px-1.5 py-0.5 text-xs text-ink-muted">
           SMS
         </span>
         {/* The counterparty's number is already resolved here — this is the
@@ -340,7 +340,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
                 <p className="whitespace-pre-wrap break-words">{message.body}</p>
                 <p
                   className={cn(
-                    'mt-0.5 text-[10px]',
+                    'mt-0.5 text-xs',
                     message.direction === 'outbound' ? 'text-accent-ink/70' : 'text-ink-faint',
                   )}
                 >

@@ -433,13 +433,13 @@ function Bucket({
 }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-ink-faint">
         {icon}
         {label}
         <span className="ml-auto tabular-nums">{cards.length}</span>
       </p>
       {cards.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">Nothing</p>
+        <p className="text-xs text-ink-faint">Nothing</p>
       ) : (
         <ul className="space-y-1">
           {cards.map((card) => (
@@ -496,9 +496,9 @@ function StandupCardRow({
               )}
             />
           )}
-          <span className="shrink-0 font-mono text-[10px] text-ink-faint">{card.reference}</span>
+          <span className="shrink-0 font-mono text-xs text-ink-faint">{card.reference}</span>
           {card.dueDate !== null && (
-            <span className="ml-auto shrink-0 text-[10px] whitespace-nowrap text-ink-faint">
+            <span className="ml-auto shrink-0 text-xs whitespace-nowrap text-ink-faint">
               {formatDate(card.dueDate)}
             </span>
           )}

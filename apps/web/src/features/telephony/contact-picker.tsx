@@ -123,7 +123,7 @@ export function ContactPicker({
                 )}
               >
                 <span aria-hidden="true">👤</span>
-                <span aria-hidden="true" className="text-[10px]">
+                <span aria-hidden="true" className="text-xs">
                   ▾
                 </span>
               </button>
@@ -171,7 +171,7 @@ export function ContactPicker({
                             <span className="block truncate">{person.label}</span>
                             <span
                               className={cn(
-                                'block truncate font-mono text-[10px]',
+                                'block truncate font-mono text-xs',
                                 person.userId === matched?.userId
                                   ? 'text-accent-ink/70'
                                   : 'text-ink-faint',
@@ -192,7 +192,7 @@ export function ContactPicker({
       </div>
 
       {matched !== undefined && (
-        <p className="flex items-center gap-1 text-[11px] text-ink-muted">
+        <p className="flex items-center gap-1 text-xs text-ink-muted">
           <Avatar userId={matched.userId} label={matched.label} size="xs" />
           <span className="truncate">{matched.label}</span>
         </p>

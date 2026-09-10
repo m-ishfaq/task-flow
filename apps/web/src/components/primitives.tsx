@@ -4,8 +4,10 @@ import {
   useState,
   type ComponentProps,
   type ComponentPropsWithoutRef,
+  type ComponentType,
   type ReactNode,
 } from 'react';
+import type { LucideProps } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 
 /**
@@ -19,6 +21,23 @@ import { cn } from '../lib/cn.js';
  * the primitives with real behaviour — focus traps, roving tabindex, escape
  * handling — and these are the styled shells around them plus the handful of
  * things Radix has no opinion about.
+ *
+ * ## The type scale (UI/UX redesign — the contract)
+ *
+ * Stock Tailwind tokens ONLY. No arbitrary `text-[Npx]` anywhere under
+ * `apps/web/src` — `scripts/check-typography.mjs` exists to keep it that way.
+ * Every size below maps to one rung; when you reach for a pixel value, pick the
+ * rung instead. This is the single biggest lever from "admin panel" to
+ * "product": one scale, tabular numerals on figures, tracked uppercase labels.
+ *
+ *   text-xs   (12/16)  badges, hints, captions, metadata, dense cells
+ *   text-sm   (14/20)  body copy, list rows, buttons (md), inputs, descriptions
+ *   text-base (16/24)  section headings (`Section`), emphasized body
+ *   text-xl   (20/28)  dense-tool page titles (Analytics, Telephony)
+ *   text-2xl  (24/32)  `PageHeader` titles — the default page title
+ *
+ * Migration map for anything still on a pixel value: [10px]/[11px]/[12px] ->
+ * text-xs, [13px]/[14px]/[15px] -> text-sm (or text-base where it was a heading).
  */
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -77,7 +96,7 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'press inline-flex items-center justify-center rounded font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded-lg font-medium transition-colors',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
@@ -250,6 +269,25 @@ function hueOf(id: string): number {
 }
 
 /**
+ * A person's identity colour — the SAME hue their avatar disc uses.
+ *
+ * Exported so a surface can bind a person's NAME to their face. Chat is the
+ * case that needed it: in a run of bubbles from several different people every
+ * bubble is the same grey surface and every name the same muted grey, so
+ * "whose message is this?" could only be answered by finding the one small
+ * avatar in the group. Colouring the name from the same hash makes the name
+ * and the face agree, which is the cheapest possible identity signal and the
+ * only one that survives a bubble having no avatar beside it at all.
+ *
+ * Lighter than the 58% the disc fills at (a saturated fill needs to carry white
+ * initials; text on a dark surface needs to clear contrast the other way), so
+ * the two read as the same colour rather than the same value.
+ */
+export function personColor(userId: string): string {
+  return `oklch(76% 0.11 ${String(hueOf(userId))})`;
+}
+
+/**
  * Initials for a label that is usually an email address.
  *
  * `tenancy.members.list` returns `email` and no display name (there is no
@@ -275,18 +313,34 @@ export interface AvatarProps {
   readonly userId: string;
   /** Email or display name. Shown on hover and to assistive tech. */
   readonly label: string;
-  readonly size?: 'xs' | 'sm';
+  readonly size?: 'xs' | 'sm' | 'md';
+  /**
+   * A PERSON is a disc; an ORGANISATION is a rounded square (design bible §06's
+   * sidebar footer). Keeping both in one component means initials, hue and ring
+   * are derived identically — an org mark that drifted to its own colour hash
+   * would stop matching the org it names.
+   */
+  readonly shape?: 'circle' | 'square';
   readonly className?: string;
 }
 
+const AVATAR_SIZES: Readonly<Record<NonNullable<AvatarProps['size']>, string>> = {
+  /* 10/11px initials, not the 9/10px this used to be — two characters in 9px on
+     a 20px disc are a smudge, and initials are the identifier a stack of
+     avatars is scanned by. */
+  xs: 'size-5 text-xs',
+  sm: 'size-6 text-xs',
+  md: 'size-8 text-xs',
+};
+
 /**
- * A person, as a coloured disc.
+ * A person, as a coloured disc — or an organisation, as a rounded square.
  *
  * `role="img"` with an `aria-label` rather than a bare styled span: the initials
  * inside are a rendering of the label, not text worth reading out, and without
  * the role a screen reader announces "AL" — which identifies nobody.
  */
-export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
+export function Avatar({ userId, label, size = 'sm', shape = 'circle', className }: AvatarProps) {
   return (
     <span
       role="img"
@@ -294,12 +348,10 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
       title={label}
       style={{ backgroundColor: `oklch(58% 0.13 ${String(hueOf(userId))})` }}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-medium text-white',
+        'inline-flex shrink-0 items-center justify-center font-medium text-white',
         'ring-1 ring-surface-raised',
-        /* 10/11px initials, not the 9/10px this used to be — two characters in
-           9px on a 20px disc are a smudge, and initials are the identifier a
-           stack of avatars is scanned by. */
-        size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+        shape === 'square' ? 'rounded-lg' : 'rounded-full',
+        AVATAR_SIZES[size],
         className,
       )}
     >
@@ -340,7 +392,7 @@ export function AvatarStack({
           className={cn(
             'inline-flex shrink-0 items-center justify-center rounded-full',
             'bg-surface-hover text-ink-muted ring-1 ring-surface-raised',
-            size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+            size === 'xs' ? 'size-5 text-xs' : 'size-6 text-xs',
           )}
         >
           +{hidden.length}
@@ -439,9 +491,9 @@ export function Empty({
           {icon}
         </span>
       )}
-      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      <p className="text-base font-semibold text-ink">{title}</p>
       {description !== undefined && (
-        <p className="max-w-sm text-[13px] leading-relaxed text-ink-muted">{description}</p>
+        <p className="max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>
       )}
       {action !== undefined && <div className="mt-1">{action}</div>}
     </div>
@@ -481,9 +533,7 @@ export function PageHeader({
       <div className="min-w-0">
         <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h1>
         {description !== undefined && (
-          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">
-            {description}
-          </p>
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">{description}</p>
         )}
       </div>
       {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -525,7 +575,7 @@ export function Section({
         {count !== undefined && <Badge>{count}</Badge>}
       </div>
       {description !== undefined && (
-        <p className="text-[13px] leading-relaxed text-ink-muted">{description}</p>
+        <p className="text-sm leading-relaxed text-ink-muted">{description}</p>
       )}
       {children}
     </section>
@@ -628,5 +678,87 @@ export function ConfirmButton({
         Cancel
       </Button>
     </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * TabBar — the one `role="tablist"` strip (design bible §21: "5 tab-strip
+ * implementations" collapsed into this primitive).
+ *
+ * Extracted from `features/platform-admin/shared.tsx`, which had already
+ * converged its own two copies; analytics, import/export and the console's
+ * top-level switcher hand-rolled near-copies of the same pill-strip shape
+ * before this landed here. Generic over the value type so a nullable "All"
+ * filter and a plain string union share one implementation.
+ *
+ * `grow` fills the strip for a two- or three-item toggle inside a dialog;
+ * `items` entries carry an optional trailing icon component, which the
+ * console's top-level switcher uses so its ten sections stay scannable.
+ * -------------------------------------------------------------------------- */
+export function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  grow = false,
+  className,
+}: {
+  readonly items: readonly (
+    readonly [T, string] | readonly [T, string, ComponentType<LucideProps>]
+  )[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly grow?: boolean;
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        /* `max-w-full overflow-x-auto`: a strip with many items (the console
+           has ten) stays scrollable inside a narrow parent instead of pushing
+           the page wide — the behaviour the console's original hand-rolled
+           bar carried, kept here so every adopter gets it. */
+        'inline-flex max-w-full gap-0.5 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1',
+        grow && 'flex w-full',
+        className,
+      )}
+    >
+      {items.map((item) => {
+        const [itemValue, label, Icon] = item;
+        return (
+          <button
+            key={itemValue ?? 'null'}
+            type="button"
+            role="tab"
+            aria-selected={value === itemValue}
+            onClick={() => {
+              onChange(itemValue);
+            }}
+            className={cn(
+              'relative whitespace-nowrap rounded-lg px-3 py-1.5 font-medium transition-all duration-[var(--motion-fast)]',
+              size === 'sm' ? 'text-sm' : 'text-xs',
+              grow && 'flex-1',
+              value === itemValue
+                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            )}
+          >
+            {Icon !== undefined && (
+              <Icon
+                aria-hidden="true"
+                className="mr-1.5 inline size-4 align-[-0.15em]"
+                strokeWidth={2}
+              />
+            )}
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

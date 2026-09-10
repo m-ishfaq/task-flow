@@ -622,7 +622,7 @@ export function ChannelPanel({
               />
             )}
             <span className="min-w-0 flex-1">
-              <span className="block min-w-0 truncate font-display text-[15px] font-semibold leading-tight text-ink">
+              <span className="block min-w-0 truncate font-display text-sm font-semibold leading-tight text-ink">
                 {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
               </span>
               {/* The second line carries whichever of the two things the
@@ -712,7 +712,7 @@ export function ChannelPanel({
                       ) && (
                         <div className="flex items-center gap-2" role="separator">
                           <span className="h-px flex-1 bg-danger/40" />
-                          <span className="text-[11px] font-medium text-danger">New messages</span>
+                          <span className="text-xs font-medium text-danger">New messages</span>
                           <span className="h-px flex-1 bg-danger/40" />
                         </div>
                       )}

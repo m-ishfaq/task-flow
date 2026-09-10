@@ -87,7 +87,7 @@ export function HomePage() {
       <div className="mx-auto w-full max-w-7xl shrink-0 px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">My tasks</h1>
+            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">My Tasks</h1>
             <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
               {visible.length} {visible.length === 1 ? 'card' : 'cards'}
               {scope === 'all'

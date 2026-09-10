@@ -169,7 +169,7 @@ function ViewTab({
           // Private views sit alongside shared ones in the same strip, so the
           // strip has to say which is which — otherwise someone "shares" a
           // board arrangement nobody else can see.
-          <span className="ml-1 text-[10px] text-ink-faint">private</span>
+          <span className="ml-1 text-xs text-ink-faint">private</span>
         )}
       </button>
 
@@ -253,7 +253,7 @@ function SaveViewDialog({
           }}
         >
           <label className="block space-y-1">
-            <span className="text-[11px] text-ink-faint">Name</span>
+            <span className="text-xs text-ink-faint">Name</span>
             {/* No `autoFocus`: it is a lint error here for a11y reasons, and
                   Radix already moves focus into the dialog on open — which
                   announces the dialog first rather than dropping a screen

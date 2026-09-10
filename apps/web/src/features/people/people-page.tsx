@@ -88,7 +88,7 @@ export function PeoplePage() {
 
 function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) {
   return (
-    <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+    <ul className="panel divide-y divide-line/40 overflow-hidden">
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (
@@ -102,16 +102,25 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
               <Link
                 to="/people/$userId"
                 params={{ userId: member.userId }}
-                className="block truncate text-[13px] font-medium text-ink hover:text-accent"
+                className="block truncate text-sm font-medium text-ink hover:text-accent"
               >
                 {label}
               </Link>
-              <p className="truncate text-[11px] text-ink-faint">{member.email}</p>
+              {/* §11's identity row: title · department is what a directory
+                  row is FOR — the email is a detail the profile page owns, and
+                  a wall of raw addresses is what made the old list read as a
+                  user table instead of a people directory. Email stays as the
+                  fallback when no title is set. */}
+              <p className="truncate text-xs text-ink-faint">
+                {member.jobTitle !== null || member.department !== null
+                  ? [member.jobTitle, member.department].filter(Boolean).join(' · ')
+                  : member.email}
+              </p>
             </div>
 
             <OooBadge member={member} />
 
-            <Badge className="text-[11px]">{member.role}</Badge>
+            <Badge className="text-xs">{member.role}</Badge>
           </li>
         );
       })}

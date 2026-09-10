@@ -144,7 +144,7 @@ export function LocationSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <MapPin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Location
       </h3>
@@ -160,7 +160,7 @@ export function LocationSection({
       )}
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-ink-faint">List</span>
+        <span className="text-xs text-ink-faint">List</span>
         <select
           aria-label="List"
           /* Empty while showing another board's lists, so the control never
@@ -212,7 +212,7 @@ function BoardSelect({
 
   return (
     <label className="block space-y-1">
-      <span className="text-[11px] text-ink-faint">Board</span>
+      <span className="text-xs text-ink-faint">Board</span>
       <select
         aria-label="Board"
         value={value}

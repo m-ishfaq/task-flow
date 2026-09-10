@@ -99,11 +99,11 @@ export function OrgPickerPage() {
       {isOperator.data === true && (
         <Link
           to="/platform-admin"
-          className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+          className="panel flex items-center gap-3 p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
         >
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-ink">Platform console</span>
-            <span className="block text-[11px] text-ink-faint">
+            <span className="block text-xs text-ink-faint">
               Operator tools — organizations, users, plans and the operator audit log.
             </span>
           </span>
@@ -131,7 +131,7 @@ export function OrgPickerPage() {
 
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-ink">{org.name}</span>
-                    <span className="block truncate font-mono text-[11px] text-ink-faint">
+                    <span className="block truncate font-mono text-xs text-ink-faint">
                       {org.slug}
                     </span>
                   </span>
@@ -168,7 +168,7 @@ export function OrgPickerPage() {
                   <span className="block truncate text-sm font-medium text-ink-muted">
                     {org.name}
                   </span>
-                  <span className="block truncate text-[11px] text-ink-faint">
+                  <span className="block truncate text-xs text-ink-faint">
                     {org.orgStatus !== 'active'
                       ? 'This organization has been suspended'
                       : 'Your membership is suspended'}

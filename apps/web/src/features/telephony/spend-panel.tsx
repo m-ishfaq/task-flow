@@ -63,7 +63,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">This organization's spend</h2>
+          <h2 className="text-sm font-semibold text-ink">This organization's spend</h2>
         </div>
 
         {current.isPending ? (
@@ -79,7 +79,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
               </p>
               <span
                 className={cn(
-                  'ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  'ml-auto rounded-full px-2 py-0.5 text-xs font-medium',
                   over
                     ? 'bg-danger/15 text-danger'
                     : ratio > 0.8
@@ -114,14 +114,14 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                  and what a rule's refusal cites cannot drift. */
               <div className="mt-3 border-t border-line/60 pt-2.5">
                 <div className="flex items-baseline gap-2">
-                  <p className="text-[11px] font-medium text-ink-muted">Automation allowance</p>
-                  <p className="text-[11px] text-ink-faint">
+                  <p className="text-xs font-medium text-ink-muted">Automation allowance</p>
+                  <p className="text-xs text-ink-faint">
                     {formatCents(automationSpentCents)} of {formatCents(automationCapCents)} · rules
                     only, in addition to the org cap
                   </p>
                   <span
                     className={cn(
-                      'ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      'ml-auto rounded-full px-2 py-0.5 text-xs font-medium',
                       automationOver
                         ? 'bg-danger/15 text-danger'
                         : automationRatio > 0.8
@@ -163,7 +163,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
       {canReadRecordings && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <h2 className="text-[13px] font-semibold text-ink">
+            <h2 className="text-sm font-semibold text-ink">
               Cost attribution — last {String(SINCE_DAYS)} days
             </h2>
           </div>

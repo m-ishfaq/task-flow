@@ -8,6 +8,7 @@ import { OrgGate } from './features/org/org-gate.js';
 import { BrandingProvider } from './features/branding/branding-provider.js';
 import { ToastProvider } from './components/toast.js';
 import { Spinner } from './components/primitives.js';
+import { TaskFlowLogo } from './components/taskflow-logo.js';
 
 /**
  * Providers, and the one thing that has to happen before anything renders.
@@ -63,9 +64,14 @@ export function App() {
   }, []);
 
   if (status === 'restoring' && !restoreFailed) {
+    /* Branded boot rather than a bare spinner — the mark is the static
+       `TaskFlowLogo`, not `BrandMark`, because this renders ABOVE the
+       `BrandingProvider` below and so has no branding context to read an
+       operator's custom logo from. */
     return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner className="size-6" />
+      <div className="flex h-full flex-col items-center justify-center gap-4">
+        <TaskFlowLogo size={40} className="text-accent" />
+        <Spinner className="size-5" />
       </div>
     );
   }

@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   },
   menuBadgeText: {
     color: colors.accentInk.hex,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

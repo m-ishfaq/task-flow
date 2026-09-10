@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',

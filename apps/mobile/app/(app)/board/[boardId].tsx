@@ -1417,7 +1417,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   archivedRowSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   archivedRestoreText: {

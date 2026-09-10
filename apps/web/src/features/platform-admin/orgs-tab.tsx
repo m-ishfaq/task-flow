@@ -193,28 +193,28 @@ export function OrgsTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Organization
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Owner
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Plan
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Renews
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Last invoice
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Status
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Members
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Created
                 </th>
                 <th className="px-3 py-2.5" />
@@ -233,7 +233,7 @@ export function OrgsTab({
                     <p className="font-medium text-ink transition-colors group-hover:text-accent">
                       {org.name}
                     </p>
-                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-xs text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
                     {org.ownerEmail === null ? (
@@ -241,7 +241,7 @@ export function OrgsTab({
                     ) : (
                       <>
                         {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
-                        <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
+                        <p className="text-xs text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
                   </td>
@@ -249,7 +249,7 @@ export function OrgsTab({
                     <p className="text-ink">
                       {org.planId ?? <span className="text-ink-faint">no plan</span>}
                     </p>
-                    <p className="text-[11px] text-ink-faint">
+                    <p className="text-xs text-ink-faint">
                       {org.billingStatus}
                       {org.billingStatus === 'trialing' &&
                         org.trialEndsAt !== null &&
@@ -265,7 +265,7 @@ export function OrgsTab({
                     ) : (
                       <span>
                         {formatDate(org.currentPeriodEnd)}
-                        <span className="ml-1.5 text-[10px] text-ink-faint">
+                        <span className="ml-1.5 text-xs text-ink-faint">
                           {relativeTime(new Date(org.currentPeriodEnd))}
                         </span>
                       </span>
@@ -284,7 +284,7 @@ export function OrgsTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[11px] text-ink-faint">
+                        <p className="text-xs text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
@@ -433,7 +433,7 @@ export function OrgsTab({
             <ModalDescription>
               This permanently deletes the organization and everything it owns — projects, channels,
               documents, memberships, and its audit history. There is no undo. Type{' '}
-              <code className="rounded bg-surface-sunken px-1 font-mono text-[11px]">
+              <code className="rounded bg-surface-sunken px-1 font-mono text-xs">
                 {deleteTarget.slug}
               </code>{' '}
               to confirm.
@@ -643,7 +643,7 @@ function ChangeOrgPlanDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Recorded in the operator audit chain. Required.
             </p>
           </Field>

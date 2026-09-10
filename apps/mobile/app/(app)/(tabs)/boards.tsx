@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sheetTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
     marginBottom: 4,

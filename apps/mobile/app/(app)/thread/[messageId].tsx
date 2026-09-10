@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
   },
   editedTag: {
-    fontSize: 11,
+    fontSize: 12,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
   },

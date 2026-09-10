@@ -61,7 +61,7 @@ export function StatusSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <CircleDot aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Status
       </h3>
@@ -114,7 +114,7 @@ export function PrioritySection({
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <Flag aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Priority
       </h3>

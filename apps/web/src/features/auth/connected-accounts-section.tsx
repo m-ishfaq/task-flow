@@ -104,7 +104,7 @@ export function ConnectedAccountsSection() {
             >
               <div className="min-w-0">
                 <p className="text-ink">{OAUTH_PROVIDER_LABEL[account.provider]}</p>
-                <p className="truncate text-[11px] text-ink-faint">
+                <p className="truncate text-xs text-ink-faint">
                   {account.email} · linked {formatDate(account.linkedAt)}
                 </p>
               </div>

@@ -94,13 +94,13 @@ export function PublishPanel({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold text-ink">Publish</h3>
+        <h3 className="text-sm font-semibold text-ink">Publish</h3>
         {publishedAt !== null && <Badge className="text-success">published</Badge>}
       </div>
 
       {publishedAt !== null ? (
         <div className="space-y-1.5">
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             Published {formatRelative(publishedAt)} — anyone with the link can view it.
           </p>
           <div className="flex gap-1.5">

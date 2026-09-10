@@ -68,7 +68,7 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
       )}
 
       <div
-        className="grid shrink-0 items-center gap-2 border-b border-line/50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint"
+        className="grid shrink-0 items-center gap-2 border-b border-line/50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-faint"
         style={{ gridTemplateColumns: TEMPLATE }}
       >
         {/* No visible label — the column itself is a colored dot per row, and
@@ -119,7 +119,7 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
                   onClick={() => {
                     onOpenCard(card.cardId);
                   }}
-                  className="text-left font-mono text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
+                  className="text-left font-mono text-xs font-medium text-ink-faint transition-colors hover:text-accent"
                 >
                   {card.reference}
                 </button>

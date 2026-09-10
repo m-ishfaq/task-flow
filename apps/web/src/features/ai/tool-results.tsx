@@ -193,7 +193,7 @@ function EntityRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-ink">{primary}</span>
         {secondary !== undefined && (
-          <span className="block truncate text-[11px] text-ink-faint">{secondary}</span>
+          <span className="block truncate text-xs text-ink-faint">{secondary}</span>
         )}
       </span>
     </>
@@ -241,7 +241,7 @@ function CardActionResult({
       >
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span>{verb}</span>
-        <span className="ml-auto shrink-0 text-[11px] text-accent underline">Open card</span>
+        <span className="ml-auto shrink-0 text-xs text-accent underline">Open card</span>
       </button>
       {note}
     </ResultPanel>
@@ -366,14 +366,14 @@ function renderMyCards(result: ToolResultMessage, ctx: ToolResultRenderContext):
                     )}
                   />
                 )}
-                <span className="shrink-0 font-mono text-[10px] text-ink-faint">
+                <span className="shrink-0 font-mono text-xs text-ink-faint">
                   {card.reference}
                 </span>
                 <span className="min-w-0 flex-1 break-words text-ink">{card.title}</span>
                 {card.dueDate !== null && (
                   <span
                     className={cn(
-                      'shrink-0 text-[10px] whitespace-nowrap',
+                      'shrink-0 text-xs whitespace-nowrap',
                       isPastDue(card.dueDate) ? 'text-danger' : 'text-ink-faint',
                     )}
                   >
@@ -477,7 +477,7 @@ function renderListBoards(result: ToolResultMessage): ReactNode | null {
               // naturally as one compact line, so the fix here is a real
               // separator character in the text itself rather than
               // switching to a vertical list the way labels did.
-              <p className="mt-1 truncate pl-5 text-[11px] text-ink-faint">
+              <p className="mt-1 truncate pl-5 text-xs text-ink-faint">
                 {board.lists.map((list) => list.name).join(' · ')}
               </p>
             )}
@@ -560,7 +560,7 @@ function renderListMembers(result: ToolResultMessage): ReactNode | null {
             >
               <Avatar userId={member.userId} label={member.name} size="xs" />
               <span className="min-w-0 flex-1 truncate text-ink">{member.name}</span>
-              <span className="shrink-0 truncate text-[11px] text-ink-faint">{member.email}</span>
+              <span className="shrink-0 truncate text-xs text-ink-faint">{member.email}</span>
             </Link>
           </li>
         ))}
@@ -606,7 +606,7 @@ function renderListSprints(result: ToolResultMessage, call: ToolCallWire): React
         <Link
           to="/projects/$projectId/sprints"
           params={{ projectId: projectId as ProjectId }}
-          className="block pt-1 text-[11px] text-accent underline"
+          className="block pt-1 text-xs text-accent underline"
         >
           View sprints
         </Link>
@@ -720,7 +720,7 @@ function renderFindCard(result: ToolResultMessage, ctx: ToolResultRenderContext)
           icon={<Kanban aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />}
           primary={
             <>
-              <span className="font-mono text-[10px] text-ink-faint">{reference}</span> {title}
+              <span className="font-mono text-xs text-ink-faint">{reference}</span> {title}
             </>
           }
           onClick={() => {
@@ -761,7 +761,7 @@ function renderCardCreate(
         warningList.length > 0 ? (
           <div className="mt-1 space-y-0.5 border-t border-line/40 pt-1">
             {warningList.map((warning) => (
-              <p key={warning} className="flex items-start gap-1 text-[11px] text-warning">
+              <p key={warning} className="flex items-start gap-1 text-xs text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
                 {warning}
               </p>
@@ -816,7 +816,7 @@ function renderSprintCreate(result: ToolResultMessage, call: ToolCallWire): Reac
           <Link
             to="/projects/$projectId/sprints"
             params={{ projectId: projectId as ProjectId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             View
           </Link>
@@ -853,7 +853,7 @@ function renderSprintAddCards(result: ToolResultMessage): ReactNode | null {
       {failedEntries.length > 0 && (
         <div className="mt-1 space-y-0.5 border-t border-line/40 pt-1">
           {failedEntries.map((entry) => (
-            <p key={entry.cardId} className="flex items-start gap-1 text-[11px] text-danger">
+            <p key={entry.cardId} className="flex items-start gap-1 text-xs text-danger">
               <XCircle aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
               {entry.reason}
             </p>
@@ -887,7 +887,7 @@ function renderChatPostMessage(result: ToolResultMessage): ReactNode | null {
           <Link
             to="/chat"
             search={{ channel: channelId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             View
           </Link>
@@ -916,7 +916,7 @@ function renderDocsCreatePage(result: ToolResultMessage, call: ToolCallWire): Re
           <Link
             to="/docs"
             search={{ space: spaceId, page: pageId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             Open
           </Link>
@@ -969,7 +969,7 @@ function renderListPrs(result: ToolResultMessage): ReactNode | null {
               className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-surface-hover"
             >
               <GitPullRequest aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-              <span className="shrink-0 font-mono text-[10px] text-ink-faint">#{pr.number}</span>
+              <span className="shrink-0 font-mono text-xs text-ink-faint">#{pr.number}</span>
               <span className="min-w-0 flex-1 truncate text-ink">{pr.title}</span>
               {pr.isDraft && <Badge>Draft</Badge>}
             </a>
@@ -1035,7 +1035,7 @@ function InlineFileDiff({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
       >
         <ChevronLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
         All files
@@ -1075,12 +1075,12 @@ function PrFileRow({
   const content = (
     <>
       <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
-      <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs">{file.path}</span>
+      <span className="shrink-0 text-xs uppercase tracking-wide text-ink-faint">
         {file.status}
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-success">+{file.additions}</span>
-      <span className="shrink-0 font-mono text-[10px] text-danger">-{file.deletions}</span>
+      <span className="shrink-0 font-mono text-xs text-success">+{file.additions}</span>
+      <span className="shrink-0 font-mono text-xs text-danger">-{file.deletions}</span>
     </>
   );
 
@@ -1139,7 +1139,7 @@ function GetPrDiffResult({
         <div className="mb-1 flex justify-end">
           <button
             type="button"
-            className="text-[11px] text-accent underline"
+            className="text-xs text-accent underline"
             onClick={() => {
               setBrowseFiles((current) => !current);
               setSelectedPath(null);
@@ -1165,7 +1165,7 @@ function GetPrDiffResult({
         ) : files.isError ? (
           <ErrorNote message="Could not load the file list." />
         ) : files.data.length === 0 ? (
-          <p className="text-[11px] text-ink-faint">This pull request changes no files.</p>
+          <p className="text-xs text-ink-faint">This pull request changes no files.</p>
         ) : (
           <ul className="space-y-1">
             {files.data.map((file) => (
@@ -1183,7 +1183,7 @@ function GetPrDiffResult({
         <>
           <DiffView diff={diff} truncated={truncated} />
           {truncated && repoScope !== null && (
-            <p className="mt-1 text-[11px] text-ink-faint">
+            <p className="mt-1 text-xs text-ink-faint">
               This diff was too large to show in full.{' '}
               <button
                 type="button"
@@ -1372,14 +1372,14 @@ function renderGetPrFileContent(result: ToolResultMessage): ReactNode | null {
       <div className="overflow-hidden rounded-md border border-line/60">
         <div className="flex items-center gap-2 border-b border-line/60 bg-surface-sunken/60 px-2 py-1">
           <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{path}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{path}</span>
           {truncated && (
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-warning">
+            <span className="shrink-0 text-xs uppercase tracking-wide text-warning">
               Truncated
             </span>
           )}
         </div>
-        <pre className="max-h-80 overflow-auto whitespace-pre px-2 py-1.5 font-mono text-[11px] leading-relaxed text-ink">
+        <pre className="max-h-80 overflow-auto whitespace-pre px-2 py-1.5 font-mono text-xs leading-relaxed text-ink">
           {content}
         </pre>
       </div>
@@ -1501,7 +1501,7 @@ function prWriteRenderer(verb: string) {
               href={`https://github.com/${providerScope}/pull/${String(prNumber)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto shrink-0 text-[11px] text-accent underline"
+              className="ml-auto shrink-0 text-xs text-accent underline"
             >
               Open
             </a>
@@ -1541,14 +1541,14 @@ function renderPrCommentOnFile(result: ToolResultMessage, call: ToolCallWire): R
       <div className="flex items-center gap-1.5 text-ink">
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span className="min-w-0 flex-1 truncate">
-          Commented on <span className="font-mono text-[11px]">{path}</span> in PR #{prNumber}
+          Commented on <span className="font-mono text-xs">{path}</span> in PR #{prNumber}
         </span>
         {providerScope !== null && (
           <a
             href={`https://github.com/${providerScope}/pull/${String(prNumber)}/files`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             Open
           </a>
@@ -1642,13 +1642,13 @@ function renderCreateBranchFromCard(result: ToolResultMessage): ReactNode | null
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span>
           {alreadyExisted ? 'Branch already existed: ' : 'Created branch '}
-          <span className="font-mono text-[11px]">{branchName}</span>
+          <span className="font-mono text-xs">{branchName}</span>
         </span>
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto shrink-0 text-[11px] text-accent underline"
+          className="ml-auto shrink-0 text-xs text-accent underline"
         >
           Open
         </a>

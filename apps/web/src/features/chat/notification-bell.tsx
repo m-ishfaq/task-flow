@@ -1,6 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import {
+  AtSign,
+  Bell,
+  Mail,
+  PhoneMissed,
+  Reply,
+  SquareCheckBig,
+  type LucideProps,
+} from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -132,11 +141,11 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'}
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
-          🔔
+          <Bell aria-hidden="true" className="size-4" strokeWidth={2} />
           {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold text-white">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
@@ -209,7 +218,7 @@ function NotificationRow({
         className="flex w-full flex-col gap-0.5 px-3 py-2 text-left"
       >
         <span className="flex items-center gap-1.5">
-          <span aria-hidden>{iconFor(notification.kind)}</span>
+          <KindIcon kind={notification.kind} />
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
             {notification.title}
           </span>
@@ -219,7 +228,7 @@ function NotificationRow({
         </span>
 
         {actorLabel !== null && (
-          <span className="truncate text-[11px] text-ink-faint">{actorLabel}</span>
+          <span className="truncate text-xs text-ink-faint">{actorLabel}</span>
         )}
 
         {notification.excerpt !== null && (
@@ -230,18 +239,37 @@ function NotificationRow({
   );
 }
 
-/** A glyph per kind. Kept here rather than on the row: it is presentation. */
-function iconFor(kind: string): string {
-  if (
-    kind === 'chat.mention' ||
-    kind === 'card.comment_mention' ||
-    kind === 'page.comment_mention'
-  ) {
-    return '@';
-  }
-  if (kind === 'chat.direct') return '✉️';
-  if (kind === 'chat.thread_reply') return '↩️';
-  if (kind === 'card.assigned') return '📌';
-  if (kind === 'call.missed') return '📞';
-  return '🔔';
+/**
+ * The mark per notification kind — a real line icon, not an emoji.
+ *
+ * The bell dropdown used to carry a column of colour emoji (@, ✉️, ↩️, 📌, 📞,
+ * 🔔), which render at each platform's mercy and read as a different, less
+ * finished UI than the rest of the app's lucide iconography. Each kind now maps
+ * to a lucide glyph, tinted with the suite hue of the thing it is about — a
+ * direct message in the chat hue, a missed call in the calls hue — so a glance
+ * down the list sorts the notifications by kind before a word is read. The
+ * mention family shares the accent because it is not owned by one product.
+ */
+const KIND_ICON: Readonly<
+  Record<string, { readonly icon: ComponentType<LucideProps>; readonly tint: string }>
+> = {
+  'chat.mention': { icon: AtSign, tint: 'text-accent' },
+  'card.comment_mention': { icon: AtSign, tint: 'text-accent' },
+  'page.comment_mention': { icon: AtSign, tint: 'text-accent' },
+  'chat.direct': { icon: Mail, tint: 'text-chat' },
+  'chat.thread_reply': { icon: Reply, tint: 'text-chat' },
+  'card.assigned': { icon: SquareCheckBig, tint: 'text-accent' },
+  'call.missed': { icon: PhoneMissed, tint: 'text-calls' },
+};
+
+function KindIcon({ kind }: { readonly kind: string }) {
+  const entry = KIND_ICON[kind];
+  const Icon = entry?.icon ?? Bell;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn('size-3.5 shrink-0', entry?.tint ?? 'text-ink-faint')}
+      strokeWidth={2}
+    />
+  );
 }

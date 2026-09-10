@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ComponentType } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type ComponentType } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -7,6 +7,7 @@ import {
   Menu,
   ShieldCheck,
   SlidersHorizontal,
+  WifiOff,
   type LucideProps,
 } from 'lucide-react';
 import {
@@ -20,7 +21,12 @@ import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache, keys } from '../lib/query.js';
 import { api } from '../lib/trpc.js';
-import { disconnectSocket } from '../lib/socket.js';
+import {
+  currentConnectionStatus,
+  disconnectSocket,
+  onConnectionStatus,
+  type ConnectionStatus,
+} from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { disconnectRtcSocket } from '../lib/rtc-socket.js';
 import { hangUp } from '../features/rtc/use-call.js';
@@ -29,7 +35,7 @@ import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button } from './primitives.js';
+import { Avatar, Spinner } from './primitives.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
@@ -291,9 +297,53 @@ export function Shell() {
             sidebar and all — off the top. Positioning `main` keeps those
             descendants inside the frame that clips them. */}
         <main className="relative min-h-0 flex-1 overflow-x-auto bg-surface">
+          {hasOrg && <ConnectionBanner />}
           <Outlet />
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The offline banner (design bible §21: "socket drop is silent").
+ *
+ * A live board is a real-time surface wearing a polled query as a fallback —
+ * so when the socket drops, the page keeps LOOKING alive while everything on
+ * it silently goes stale until the next poll fires. This banner is the part of
+ * the UI that says so.
+ *
+ * Reads the status store on `lib/socket.ts` through `useSyncExternalStore` —
+ * the store changes from network callbacks outside React, which is exactly
+ * what that hook exists for. Shows nothing while connected, and only
+ * mounts its bar in the two states where there is something to say.
+ * Deliberately a persistent bar rather than a toast: a drop that outlasts
+ * its own notification is the failure mode this exists to close.
+ */
+function ConnectionBanner() {
+  const status = useSyncExternalStore(onConnectionStatus, currentConnectionStatus);
+
+  if (status === 'connected') return null;
+
+  const copy: Readonly<Record<Exclude<ConnectionStatus, 'connected'>, string>> = {
+    offline: 'Connection lost — updates are paused.',
+    reconnecting: 'Reconnecting…',
+  };
+
+  return (
+    <div
+      role="status"
+      className={cn(
+        'sticky top-0 z-20 flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-medium',
+        status === 'offline' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning',
+      )}
+    >
+      {status === 'offline' ? (
+        <WifiOff aria-hidden="true" className="size-3.5" strokeWidth={2} />
+      ) : (
+        <Spinner className="size-3.5" />
+      )}
+      {copy[status]}
     </div>
   );
 }
@@ -460,9 +510,11 @@ function Breadcrumbs() {
      header actually gets tight, which the desktop-only build before this wave
      never exercised. */
   return (
-    <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
-      {label}
-    </h1>
+    /* `text-sm`, not a page-title rung: this element exists so every route
+       has exactly one h1 for the document outline (§02's "one h1 per route"
+       rule). The visible page title is PageHeader's — this is a compact
+       top-bar label, styled as one, not a second competing title. */
+    <h1 className="min-w-0 truncate text-sm font-semibold tracking-tight text-ink">{label}</h1>
   );
 }
 
@@ -534,15 +586,39 @@ function OrgSwitcher() {
 
   return (
     <DropdownMenuRoot>
+      {/* The design bible §06 footer: a real identity BLOCK, not a text button.
+          The org's own mark (a rounded square, so an organisation never reads as
+          a person), its name at full strength, and the caller's role beneath it
+          — "which org am I in, and as what" is the question this corner of every
+          screen exists to answer, and the previous ghost button answered only
+          half of it. */}
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
-          <span className="truncate">{current?.name ?? 'Select organization'}</span>
+        <button
+          type="button"
+          aria-label="Switch organization"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-hover"
+        >
+          {current === undefined ? (
+            <span aria-hidden="true" className="size-8 shrink-0 rounded-lg bg-surface-hover" />
+          ) : (
+            <Avatar userId={current.orgId} label={current.name} size="md" shape="square" />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-ink">
+              {current?.name ?? 'Select organization'}
+            </span>
+            {current !== undefined && (
+              <span className="block truncate text-xs text-ink-faint capitalize">
+                {current.role}
+              </span>
+            )}
+          </span>
           <ChevronDown
             aria-hidden="true"
-            className="ml-auto size-3.5 shrink-0"
+            className="size-3.5 shrink-0 text-ink-faint"
             strokeWidth={2.25}
           />
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-48">
         {memberships.map((org) => (
@@ -553,7 +629,7 @@ function OrgSwitcher() {
             }}
           >
             <span>{org.name}</span>
-            <span className="text-[11px] text-ink-faint">{org.role}</span>
+            <span className="text-xs text-ink-faint">{org.role}</span>
           </DropdownMenuItem>
         ))}
 

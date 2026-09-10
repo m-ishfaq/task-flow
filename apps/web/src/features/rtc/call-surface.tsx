@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PhoneIncoming } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -265,7 +266,7 @@ function IncomingCallBanner() {
     <div
       role="alert"
       aria-live="assertive"
-      className="fixed bottom-4 right-4 z-50 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+      className="fixed bottom-4 right-4 z-50 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-lg"
     >
       {/* A moving band rather than a static header. A ringing phone competes
           with whatever the person is reading, and motion is what wins that
@@ -300,7 +301,14 @@ function IncomingCallBanner() {
             answer.mutate();
           }}
         >
-          {answer.isPending ? 'Answering…' : '📞 Pick up'}
+          {answer.isPending ? (
+            'Answering…'
+          ) : (
+            <>
+              <PhoneIncoming aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+              Pick up
+            </>
+          )}
         </Button>
         <Button
           size="sm"
@@ -461,7 +469,7 @@ function ActiveCallBar() {
   const recordingState = recording.data?.state ?? 'none';
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-surface shadow-2xl">
+    <div className="fixed bottom-4 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-surface shadow-lg">
       {recordingState === 'pending' && (
         <RecordingConsentBar
           sessionId={sessionId}
@@ -760,7 +768,7 @@ function RecordingConsentBar({
         <p className="text-xs font-medium text-ink">
           {myTurn ? 'Record this call?' : 'Waiting for everyone to agree'}
         </p>
-        <p className="truncate text-[11px] text-ink-faint">
+        <p className="truncate text-xs text-ink-faint">
           {consented.length} agreed
           {awaiting.length > 0 &&
             ` · waiting for ${awaiting.map((id) => personOf(id).label).join(', ')}`}

@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   sectionHeader: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkFaint.hex,
     textTransform: 'uppercase',

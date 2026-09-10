@@ -95,9 +95,9 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">This org's numbers</h2>
+          <h2 className="text-sm font-semibold text-ink">This org's numbers</h2>
           {numbers.data !== undefined && (
-            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink-muted">
               {numbers.data.length}
             </span>
           )}
@@ -120,10 +120,10 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                 className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover"
               >
                 <span className="font-mono text-sm text-ink">{String(number.e164)}</span>
-                <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                <span className="rounded bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                   {number.isoCountry}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
                   bought {formatDate(number.purchasedAt)}
                 </span>
                 {capabilities?.releaseNumbers === true && (
@@ -147,7 +147,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
       {capabilities?.purchaseNumbers === true && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <h2 className="text-[13px] font-semibold text-ink">Buy a number</h2>
+            <h2 className="text-sm font-semibold text-ink">Buy a number</h2>
           </div>
           <form
             className="rounded-lg border border-line bg-surface-raised p-3"
@@ -202,11 +202,11 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                           className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
                         >
                           <span className="font-mono text-xs text-ink">{phoneNumber}</span>
-                          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                          <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
                             {[available.locality, available.region].filter(Boolean).join(', ') ||
                               available.isoCountry}
                           </span>
-                          <span className="text-[11px] text-ink-muted">
+                          <span className="text-xs text-ink-muted">
                             ${(available.monthlyCostCents / 100).toFixed(2)}/mo
                           </span>
                           <Button

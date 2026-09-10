@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Users } from 'lucide-react';
+import { Check, Users } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -94,7 +94,7 @@ export function AssigneeSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <Users aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Assignees
       </h3>
@@ -115,7 +115,7 @@ export function AssigneeSection({
                 toggle(person.userId);
               }}
               title={`Remove ${person.label}`}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted hover:text-danger"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted hover:text-danger"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>
@@ -123,7 +123,7 @@ export function AssigneeSection({
           ) : (
             <span
               key={person.userId}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>
@@ -190,7 +190,13 @@ export function AssigneeSection({
                             >
                               <Avatar userId={member.userId} label={member.email} size="xs" />
                               <span className="truncate">{member.email}</span>
-                              {on && <span className="ml-auto">✓</span>}
+                              {on && (
+                                <Check
+                                  aria-hidden="true"
+                                  className="ml-auto size-3.5 shrink-0"
+                                  strokeWidth={2.5}
+                                />
+                              )}
                             </button>
                           </li>
                         );

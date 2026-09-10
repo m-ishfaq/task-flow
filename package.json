@@ -22,6 +22,7 @@
     "verify:guardrails": "node packages/guardrail-selftest/verify.js && node scripts/check-migration-rls.mjs && node scripts/verify-semgrep-rules.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:encoding:fix": "node scripts/check-encoding.mjs --fix",
+    "check:typography": "node scripts/check-typography.mjs",
     "check:mobile-bundle-secrets": "node scripts/check-mobile-bundle-secrets.mjs",
     "preflight": "node scripts/preflight.mjs"
   },

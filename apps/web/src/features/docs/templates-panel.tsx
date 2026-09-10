@@ -76,7 +76,7 @@ export function TemplatesPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[13px] font-semibold text-ink">Templates</h3>
+      <h3 className="text-sm font-semibold text-ink">Templates</h3>
 
       {saving ? (
         <form

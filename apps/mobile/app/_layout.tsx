@@ -10,9 +10,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
 import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '@taskflow/client';
-import { colors, radiusCard } from '@taskflow/tokens';
+import { colors, fontSans, fontMono, radiusCard } from '@taskflow/tokens';
 import { errorCodeOf, isUnauthenticated } from '../src/lib/trpc-client.js';
 import { biometricGate, session } from '../src/lib/app-session.js';
 import { useSession } from '../src/lib/use-session.js';
@@ -84,7 +85,34 @@ function onAppStateChange(status: AppStateStatus): void {
 
 type UnlockState = 'checking' | 'locked' | 'unlocked';
 
+/**
+ * Geist, loaded once at boot (design bible §15: "no Geist" was one of the
+ * tells that made mobile read as a different visual product than web).
+ *
+ * The two variable-weight files are the SAME bytes `apps/web` serves from
+ * `public/fonts/` — copied into `packages/tokens/assets/fonts/` so one
+ * directory serves both platforms and neither can drift to a different
+ * revision of the face. `useFonts` maps the family names the tokens
+ * package exports (`fontSans`/`fontMono`) to the loaded files; until it
+ * settles, those names are simply absent from the OS and every component
+ * falls back to the platform default, so the splash below stays up until
+ * loading completes rather than flashing a system-font UI first.
+ *
+ * `expo-font` is already a dependency (Phase 14's push-icon work); no new
+ * package. The hook re-renders this component when loading completes, and
+ * the `render` guard below keeps the gate's own state machine — which
+ * must not restart on a re-render — untouched by it.
+ */
+function useProductFonts(): boolean {
+  const [loaded, error] = useFonts({
+    [fontSans]: require('../../node_modules/@taskflow/tokens/assets/fonts/Geist-Variable.woff2'),
+    [fontMono]: require('../../node_modules/@taskflow/tokens/assets/fonts/GeistMono-Variable.woff2'),
+  });
+  return loaded && error === undefined;
+}
+
 export default function RootLayout() {
+  const fontsReady = useProductFonts();
   const [unlockState, setUnlockState] = useState<UnlockState>('checking');
 
   useEffect(() => {
@@ -143,9 +171,15 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <BrandingProvider>
-          {unlockState === 'checking' && <Splash />}
-          {unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
-          {unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
+          {/* Fonts gate everything, exactly like the restore check: a UI that
+              flashes in the platform default and re-renders in Geist a frame
+              later is the pre-Geist look the bible's ledger names, just made
+              brief. The biometric gate's own state is NOT gated on fonts — the
+              lock screen is reachable and legible in the fallback face. */}
+          {!fontsReady && <Splash />}
+          {fontsReady && unlockState === 'checking' && <Splash />}
+          {fontsReady && unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
+          {fontsReady && unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
         </BrandingProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
@@ -186,6 +220,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: colors.ink.hex,
+    fontFamily: fontSans,
   },
   lockSubtitle: {
     fontSize: 14,

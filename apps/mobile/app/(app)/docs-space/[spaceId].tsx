@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
@@ -753,7 +753,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   templateSectionLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   publishedBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.success.hex,
   },

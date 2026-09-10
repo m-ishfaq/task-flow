@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Phone } from 'lucide-react';
 import type { ChannelId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
@@ -86,7 +87,14 @@ export function CallButton({
         start.mutate();
       }}
     >
-      {start.isPending ? 'Connecting…' : live == null ? '📞 Call' : '📞 Join call'}
+      {start.isPending ? (
+        'Connecting…'
+      ) : (
+        <>
+          <Phone aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+          {live == null ? 'Call' : 'Join call'}
+        </>
+      )}
     </Button>
   );
 }

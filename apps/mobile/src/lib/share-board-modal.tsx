@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   grantMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   revokeText: {
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
   },
   confersHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
     marginBottom: 10,
   },

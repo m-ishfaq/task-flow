@@ -256,7 +256,7 @@ function renderInline(text: string): ReactNode {
 export function MarkdownLite({ text }: { readonly text: string }): ReactNode {
   const blocks = parseMarkdownBlocks(text);
   return (
-    <div className="space-y-2 text-[13px] leading-relaxed">
+    <div className="space-y-2 text-sm leading-relaxed">
       {blocks.map((block, index) => {
         switch (block.type) {
           case 'paragraph':
@@ -285,7 +285,7 @@ export function MarkdownLite({ text }: { readonly text: string }): ReactNode {
             return (
               <pre
                 key={index}
-                className="overflow-x-auto rounded-lg border border-line/60 bg-ink/[0.06] p-2.5 text-[12px]"
+                className="overflow-x-auto rounded-lg border border-line/60 bg-ink/[0.06] p-2.5 text-xs"
               >
                 <code className="font-mono">{block.code}</code>
               </pre>

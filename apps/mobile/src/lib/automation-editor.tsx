@@ -781,12 +781,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   smallFieldLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkFaint.hex,
   },
   fieldHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   textInput: {
@@ -839,7 +839,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   actionTypeChevron: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   removeActionText: {
@@ -866,7 +866,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent.hex,
   },
   priorityChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
     textTransform: 'capitalize',

@@ -45,8 +45,8 @@ export function SprintsPage() {
     <div className="mx-auto max-w-5xl p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-ink">Sprints</h1>
-          <p className="mt-0.5 truncate text-xs text-ink-faint">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">Sprints</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">
             {project?.name ?? 'This project'} — planning units. Completing one keeps its done cards
             and returns the rest to the backlog.
           </p>
@@ -105,12 +105,12 @@ export function SprintsPage() {
                       <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>
                       <StatusChip status={sprint.status} />
                     </p>
-                    <p className="truncate text-[11px] text-ink-faint">
+                    <p className="truncate text-xs text-ink-faint">
                       {sprint.startsOn} → {sprint.endsOn}
                       {sprint.goal !== null && sprint.goal !== '' && ` · ${sprint.goal}`}
                     </p>
                   </div>
-                  <span className="shrink-0 text-[11px] text-ink-faint">
+                  <span className="shrink-0 text-xs text-ink-faint">
                     {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                 </div>
@@ -162,7 +162,7 @@ function StatusChip({ status }: { readonly status: string }) {
         : 'bg-surface-raised text-ink-faint';
 
   return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize ${tone}`}>
+    <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium capitalize ${tone}`}>
       {status}
     </span>
   );

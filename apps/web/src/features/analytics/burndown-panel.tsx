@@ -5,6 +5,7 @@ import { api } from '../../lib/trpc.js';
 import { wire } from '@taskflow/client';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { AreaGradient, ChartFrame, ChartGrid, EndPoint, closedArea } from './chart.js';
 
 /** §3.2 — Burndown: remaining not-done work over time. */
 export function BurndownPanel({ orgId }: { readonly orgId: string }) {
@@ -76,27 +77,36 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
         </span>
       </div>
 
-      {/* Simple line chart via SVG */}
-      <svg
-        viewBox={`0 0 ${String(points.length * 8)} 120`}
-        className="w-full"
-        style={{ height: 120 }}
-        preserveAspectRatio="none"
-      >
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          className="text-accent"
-          points={points
-            .map(
-              (p, i) => `${String(i * 8 + 4)},${String(120 - (p.remaining / maxRemaining) * 110)}`,
-            )
-            .join(' ')}
-        />
-      </svg>
+      {/* Line chart: faint grid, gradient area fill, emphasized endpoint —
+          the three craft marks the design bible demands for every chart. */}
+      <ChartFrame height={120} viewBoxWidth={points.length * 8} label="Remaining work over time">
+        <AreaGradient id="burndown-fill" />
+        <ChartGrid height={120} width={points.length * 8} />
+        {(() => {
+          const pts = points.map(
+            (p, i) => `${String(i * 8 + 4)},${String(120 - (p.remaining / maxRemaining) * 110)}`,
+          );
+          const last = points[points.length - 1];
+          const lastX = (points.length - 1) * 8 + 4;
+          const lastY = last === undefined ? 120 : 120 - (last.remaining / maxRemaining) * 110;
+          return (
+            <>
+              <path d={closedArea(pts, 120, points.length * 8)} fill="url(#burndown-fill)" />
+              <polyline
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="1.75"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                points={pts.join(' ')}
+              />
+              <EndPoint cx={lastX} cy={lastY} />
+            </>
+          );
+        })()}
+      </ChartFrame>
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-xs text-ink/40">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>

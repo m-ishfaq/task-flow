@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   hitBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
@@ -426,13 +426,13 @@ const styles = StyleSheet.create({
     borderColor: colors.line.hex,
   },
   archivedPillText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkFaint.hex,
   },
   hitTime: {
     marginLeft: 'auto',
-    fontSize: 10,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   hitTitle: {

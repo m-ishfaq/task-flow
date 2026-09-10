@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Pin } from 'lucide-react';
+import { Bookmark, Lock, Pin } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -96,9 +96,7 @@ export function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-          Channels
-        </h2>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-ink-faint">Channels</h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
@@ -126,7 +124,7 @@ export function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-ink-faint">
           Direct messages
         </h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
@@ -134,9 +132,10 @@ export function ChannelListPanel({
 
       <ul className="px-1.5 pb-3">
         {directs.map((channel) => (
-          <ChannelRow
+          <DirectRow
             key={channel.channelId}
             channel={channel}
+            personOf={personOf}
             /* A DM has no name — the database refuses one — so it is labelled by
                WHO is in it, from `participantIds` (the viewer already excluded
                server-side) resolved through the same member lookup every avatar
@@ -167,12 +166,16 @@ export function ChannelListPanel({
  * `truncate` span, same as the string they replace.
  */
 function ChannelTypePrefix({ type }: { readonly type: string }) {
-  if (type === 'public') return <>{'# '}</>;
+  /* No trailing space on the `#`: this sits in a flex row, where a trailing
+     space collapses and the sigil ends up welded to the name
+     ("#design-system"). The caller owns the gap with a margin instead, so the
+     `#` and the lock are spaced identically. */
+  if (type === 'public') return <>#</>;
   if (type === 'private') {
     return (
       <Lock
         aria-hidden="true"
-        className="mr-1 inline size-3 -translate-y-px shrink-0"
+        className="inline size-3 -translate-y-px shrink-0"
         strokeWidth={2.25}
       />
     );
@@ -180,6 +183,28 @@ function ChannelTypePrefix({ type }: { readonly type: string }) {
   return null;
 }
 
+/**
+ * The unread pill — the design bible §07 `.chan .u`: the PRODUCT hue as the
+ * fill with a near-black label on it, not the app accent. Chat's own surface
+ * carries the chat hue throughout, so a violet badge here would be the one
+ * thing on the screen still speaking the global accent.
+ */
+function UnreadPill({ count }: { readonly count: number }) {
+  return (
+    <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-chat px-1.5 text-xs font-bold text-surface tabular-nums">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+/**
+ * A channel row — design bible §07 `.chan`.
+ *
+ * The `#`/lock prefix carries the chat hue and a heavier weight so the sigil
+ * reads as the channel's identity rather than punctuation, and the active row
+ * is a chat-hue wash with full-strength ink (not accent-on-accent, which made
+ * the selected channel the only violet thing on a cyan surface).
+ */
 function ChannelRow({
   channel,
   label,
@@ -201,26 +226,96 @@ function ChannelRow({
           onSelect(channel.channelId as ChannelId);
         }}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
-          active
-            ? 'bg-accent/15 text-accent'
-            : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          'flex w-full items-center gap-2 rounded-lg px-2.5 py-[7px] text-left text-sm transition-colors duration-[var(--motion-fast)]',
+          active ? 'bg-chat/15 text-ink' : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         )}
       >
-        <span className="min-w-0 flex-1 truncate">
-          <ChannelTypePrefix type={channel.type} />
+        <span
+          className={cn(
+            'flex min-w-0 flex-1 items-center truncate',
+            active ? 'font-medium' : undefined,
+          )}
+        >
+          <span
+            className={cn('mr-1.5 shrink-0 font-semibold', active ? 'text-chat' : 'text-chat/70')}
+          >
+            <ChannelTypePrefix type={channel.type} />
+          </span>
           {label}
         </span>
-        {unreadCount > 0 && (
-          <span
-            className={cn(
-              'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold',
-              active ? 'bg-accent-ink/20 text-accent-ink' : 'bg-accent text-accent-ink',
+        {unreadCount > 0 && <UnreadPill count={unreadCount} />}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * A direct-message row — design bible §07's DM list.
+ *
+ * The bible's own note on this screen names what was wrong here: a DM showed
+ * as a bare line of text, so a conversation with a person was visually
+ * indistinguishable from a channel, and when someone had no display name the
+ * row read as a raw email address. It now leads with that person's avatar (the
+ * same id-derived colour they carry on every board and in every message), so a
+ * DM is recognised by FACE first and name second, which is how people actually
+ * scan a conversation list.
+ *
+ * The last-message preview the bible also shows is deliberately NOT faked:
+ * `chat.channels.list` carries no message content, and inventing a placeholder
+ * line would be worse than leaving it out. Adding it is a real API change to a
+ * reviewed surface, not a styling pass.
+ */
+function DirectRow({
+  channel,
+  label,
+  active,
+  unreadCount,
+  personOf,
+  onSelect,
+}: {
+  readonly channel: ChannelSummary;
+  readonly label: string;
+  readonly active: boolean;
+  readonly unreadCount: number;
+  readonly personOf: (userId: string) => { readonly label: string };
+  readonly onSelect: (channelId: ChannelId) => void;
+}) {
+  const [first, ...others] = channel.participantIds;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => {
+          onSelect(channel.channelId as ChannelId);
+        }}
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-[var(--motion-fast)]',
+          active ? 'bg-chat/15 text-ink' : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+        )}
+      >
+        {first === undefined ? (
+          /* No resolvable participant — `member:read` denied, or an empty DM.
+             A neutral disc keeps the row's rhythm rather than collapsing it. */
+          <span aria-hidden="true" className="size-6 shrink-0 rounded-full bg-surface-hover" />
+        ) : (
+          <span className="relative shrink-0">
+            <Avatar userId={first} label={personOf(first).label} />
+            {/* A group DM says so with a count rather than a stack that would
+                not fit this row's width. */}
+            {others.length > 0 && (
+              <span className="absolute -right-1 -bottom-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-surface-raised px-0.5 text-[10px] font-semibold text-ink-muted ring-1 ring-surface">
+                {others.length + 1}
+              </span>
             )}
-          >
-            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
+
+        <span className={cn('min-w-0 flex-1 truncate text-sm', active ? 'font-medium' : undefined)}>
+          {label}
+        </span>
+
+        {unreadCount > 0 && <UnreadPill count={unreadCount} />}
       </button>
     </li>
   );
@@ -280,7 +375,7 @@ function PinnedMessagesButton({
             Pinned messages
           </span>
           {list.length > 0 && (
-            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-xs font-semibold text-ink-muted">
               {list.length > 99 ? '99+' : list.length}
             </span>
           )}
@@ -341,13 +436,12 @@ function PinnedMessageSidebarRow({
     <li className="border-b border-line px-3 py-2 last:border-b-0">
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
         <span className="truncate text-xs font-medium text-ink">
-          <ChannelTypePrefix type={row.channelType} />
-          {row.channelName ?? 'Direct message'}
+          <ChannelTypePrefix type={row.channelType} /> {row.channelName ?? 'Direct message'}
         </span>
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Pinned {new Date(row.pinnedAt).toLocaleString()}
         </span>
       </button>
@@ -355,7 +449,7 @@ function PinnedMessageSidebarRow({
         type="button"
         disabled={pending}
         onClick={onUnpin}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unpin
       </button>
@@ -407,11 +501,11 @@ function SavedMessagesButton({
           className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
-            <span aria-hidden>🔖</span>
+            <Bookmark aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
             Saved messages
           </span>
           {list.length > 0 && (
-            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-xs font-semibold text-ink-muted">
               {list.length > 99 ? '99+' : list.length}
             </span>
           )}
@@ -469,13 +563,12 @@ function SavedMessageRow({
     <li className="border-b border-line px-3 py-2 last:border-b-0">
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
         <span className="truncate text-xs font-medium text-ink">
-          <ChannelTypePrefix type={row.channelType} />
-          {row.channelName ?? 'Direct message'}
+          <ChannelTypePrefix type={row.channelType} /> {row.channelName ?? 'Direct message'}
         </span>
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Saved {new Date(row.savedAt).toLocaleString()}
         </span>
       </button>
@@ -483,7 +576,7 @@ function SavedMessageRow({
         type="button"
         disabled={pending}
         onClick={onUnsave}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unsave
       </button>
@@ -685,7 +778,7 @@ function NewDirectMessagePopover({
                     onClick={() => {
                       toggle(userId);
                     }}
-                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent hover:bg-accent/20"
                   >
                     <span className="truncate">{member?.email ?? userId}</span>
                     <span aria-hidden="true">×</span>

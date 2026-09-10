@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
@@ -602,7 +602,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sheetTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
     marginBottom: 4,

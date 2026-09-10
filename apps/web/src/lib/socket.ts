@@ -238,7 +238,21 @@ function buildSocket(): GatewaySocket {
    * yet to have lost) and nothing to diff against, so firing this there too
    * would invalidate every board query on every page load for no reason.
    */
+  /* The offline banner's two edges (§21). `disconnect` is a SOCKET reserved
+     event (the Manager has `reconnect_attempt`/`reconnect` only); only the
+     CLIENT-side reason (`io client disconnect` is our own tear-down, e.g.
+     sign-out or the scheduled reauth below) is skipped — a server-initiated
+     or transport-initiated close is exactly the "silent drop" the banner
+     exists to surface. */
+  created.on('disconnect', (reason) => {
+    if (reason === 'io client disconnect') return;
+    setConnectionStatus('offline');
+  });
+  created.io.on('reconnect_attempt', () => {
+    setConnectionStatus('reconnecting');
+  });
   created.io.on('reconnect', () => {
+    setConnectionStatus('connected');
     for (const [boardId, orgId] of joinedBoards) {
       created.emit('board:join', { orgId, boardId }, () => {
         /* Best-effort. If access was revoked while disconnected, the ack says
@@ -311,6 +325,45 @@ export function onReconnect(handler: () => void): () => void {
   ensureSocket();
   reconnectListeners.add(handler);
   return () => reconnectListeners.delete(handler);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Connection status, for the shell's offline banner (design bible §21:
+ * "socket drop is silent — no offline / reconnection banner").
+ *
+ * A module-level store rather than React state: the Manager's `disconnect`
+ * / `reconnect` events fire from network callbacks with no render to hang
+ * state on, and the listeners below are registered once at socket build
+ * time — exactly the shape ui-store.ts's Zustand pattern exists for. The
+ * banner subscribes with `useConnectionStatus()`; nothing else reads it.
+ *
+ * Deliberately NOT a toast: a drop that outlasts its own notification is
+ * the failure mode this exists to close, and a stream of toasts on every
+ * wifi blip trains people to dismiss the one signal that matters.
+ * ------------------------------------------------------------------------- */
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'offline';
+
+let connectionStatus: ConnectionStatus = 'connected';
+const statusListeners = new Set<() => void>();
+
+function setConnectionStatus(next: ConnectionStatus): void {
+  if (connectionStatus === next) return;
+  connectionStatus = next;
+  for (const listener of statusListeners) listener();
+}
+
+/**
+ * Subscribes to connection-status changes. Returns an unsubscribe function,
+ * the same lifecycle as `onReconnect`/`onBroadcast`.
+ */
+export function onConnectionStatus(handler: () => void): () => void {
+  statusListeners.add(handler);
+  return () => statusListeners.delete(handler);
+}
+
+/** The current status, for a subscriber's first read after subscribing. */
+export function currentConnectionStatus(): ConnectionStatus {
+  return connectionStatus;
 }
 
 /**
@@ -396,8 +449,13 @@ export function disconnectSocket(): void {
   // would otherwise survive into whoever signs in next on this tab.
   joinedBoards.clear();
   reconnectListeners.clear();
+  statusListeners.clear();
   socket?.disconnect();
   socket = undefined;
+  // A torn-down socket is not an outage — the next sign-in starts a fresh
+  // connection, and a stale 'offline' here would flash the banner the moment
+  // the next tab builds one.
+  connectionStatus = 'connected';
 }
 
 export type {

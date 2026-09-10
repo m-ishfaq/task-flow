@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { SquareCheck } from 'lucide-react';
+import { Check, SquareCheck, X } from 'lucide-react';
 import type { BoardId, CardId, ChecklistId, ChecklistItemId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -175,7 +175,7 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
 
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
         <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Checklists
       </h3>
@@ -187,14 +187,14 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
           <div key={checklist.checklistId} className="space-y-1.5">
             <div className="flex items-center gap-2">
               <h4 className="text-xs font-medium text-ink">{checklist.name}</h4>
-              <span className="text-[11px] text-ink-faint">
+              <span className="text-xs text-ink-faint">
                 {done}/{checklist.items.length}
               </span>
               {canEdit && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-5 px-1 text-[11px]"
+                  className="ml-auto h-5 px-1 text-xs"
                   onClick={() => {
                     removeList.mutate(checklist.checklistId as ChecklistId);
                   }}
@@ -221,8 +221,8 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
                     }}
                     className="flex size-4 shrink-0 items-center justify-center rounded border border-line bg-surface-sunken data-[state=checked]:bg-accent disabled:opacity-60"
                   >
-                    <Checkbox.Indicator className="text-[10px] text-accent-ink">
-                      ✓
+                    <Checkbox.Indicator className="text-accent-ink">
+                      <Check aria-hidden="true" className="size-3" strokeWidth={3} />
                     </Checkbox.Indicator>
                   </Checkbox.Root>
 
@@ -239,9 +239,9 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
                       onClick={() => {
                         removeItem.mutate(item.itemId as ChecklistItemId);
                       }}
-                      className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
+                      className="text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
                     >
-                      ✕
+                      <X aria-hidden="true" className="size-3.5" strokeWidth={2} />
                     </button>
                   )}
                 </li>

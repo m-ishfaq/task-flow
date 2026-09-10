@@ -173,22 +173,22 @@ function DiffFileView({ file }: { readonly file: DiffFile }) {
   return (
     <div className="overflow-hidden rounded-md border border-line/60">
       <div className="flex items-center gap-2 border-b border-line/60 bg-surface-sunken/60 px-2 py-1">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{title}</span>
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{title}</span>
+        <span className="shrink-0 text-xs uppercase tracking-wide text-ink-faint">
           {STATUS_LABEL[file.status]}
         </span>
       </div>
       <div className="max-h-72 overflow-auto">
         {file.hunks.map((hunk, hunkIndex) => (
           <Fragment key={hunkIndex}>
-            <div className="bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent">
+            <div className="bg-accent/10 px-2 py-0.5 font-mono text-xs text-accent">
               {hunk.header}
             </div>
             {hunk.lines.map((line, lineIndex) => (
               <div
                 key={lineIndex}
                 className={cn(
-                  'whitespace-pre-wrap px-2 font-mono text-[11px] leading-relaxed',
+                  'whitespace-pre-wrap px-2 font-mono text-xs leading-relaxed',
                   line.kind === 'add' && 'bg-success/10 text-success',
                   line.kind === 'del' && 'bg-danger/10 text-danger',
                   line.kind === 'context' && 'text-ink-muted',
@@ -221,7 +221,7 @@ export function DiffView({
   // text, exactly what the old renderer always showed, as a fallback.
   if (files.length === 0) {
     return (
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-ink">
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs text-ink">
         {diff}
       </pre>
     );
@@ -232,7 +232,7 @@ export function DiffView({
       {files.map((file, index) => (
         <DiffFileView key={`${file.oldPath}->${file.newPath}-${String(index)}`} file={file} />
       ))}
-      {truncated && <p className="text-[11px] text-warning">Diff truncated.</p>}
+      {truncated && <p className="text-xs text-warning">Diff truncated.</p>}
     </div>
   );
 }

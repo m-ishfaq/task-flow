@@ -2052,7 +2052,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   editedTag: {
-    fontSize: 11,
+    fontSize: 12,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
   },
@@ -2077,7 +2077,7 @@ const styles = StyleSheet.create({
     borderColor: colors.inkMuted.hex + '25',
   },
   msgBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.accent.hex,
   },
@@ -2132,7 +2132,7 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   previewSite: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   previewTitle: {
@@ -2141,7 +2141,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   previewDescription: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   label: {
@@ -2235,7 +2235,7 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
   },
   reactionOptionText: {
-    fontSize: 22,
+    fontSize: 20,
   },
   actionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -2282,7 +2282,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger.hex + '66',
   },
   unreadDividerText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.danger.hex,
   },

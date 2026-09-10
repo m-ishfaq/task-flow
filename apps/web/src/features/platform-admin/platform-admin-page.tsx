@@ -16,8 +16,7 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { cn } from '../../lib/cn.js';
-import { Button, PageHeader } from '../../components/primitives.js';
+import { Button, PageHeader, TabBar } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
 import { StatCard, downloadCsv, money } from './shared.js';
@@ -249,6 +248,23 @@ export function PlatformAdminPage() {
         }
       />
 
+      {/* §18's operator band: the danger-toned scope notice that makes it
+          impossible to forget this is a cross-tenant tool. The org admin
+          console (settings-page) stays deliberately neutral — only THIS page
+          wears the warning. */}
+      <div
+        role="note"
+        className="flex items-center gap-3 rounded-xl border border-danger/40 border-l-4 bg-danger/8 px-4 py-2.5"
+      >
+        <Shield aria-hidden="true" className="size-4 shrink-0 text-danger" strokeWidth={2} />
+        <p className="text-xs leading-relaxed text-ink">
+          <span className="font-semibold text-danger">Operator mode</span> — you’re acting across
+          all organizations as{' '}
+          <span className="font-mono text-[13px] text-ink-muted">taskflow_platform_admin</span>.{' '}
+          <span className="text-ink-muted">Every action is logged.</span>
+        </p>
+      </div>
+
       {/* Summary stat cards — the at-a-glance dashboard every admin console leads with. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={Building2} label="Orgs" value={totalOrgs} accent={tab === 'orgs'} />
@@ -267,12 +283,10 @@ export function PlatformAdminPage() {
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
           switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1 shadow-sm"
-      >
-        {(
+      <TabBar
+        className="sticky top-0 z-10 shadow-sm"
+        ariaLabel="Platform administration sections"
+        items={(
           [
             ['orgs', 'Organizations', Building2],
             ['users', 'Users', Users],
@@ -285,27 +299,10 @@ export function PlatformAdminPage() {
             ['audit', 'Operator audit', Shield],
             ['operations', 'Operations', Zap],
           ] as const
-        ).map(([value, label, Icon]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
-              tab === value
-                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
-            {label}
-          </button>
-        ))}
-      </div>
+        ).map(([value, label, Icon]) => [value, label, Icon] as const)}
+        value={tab}
+        onChange={setTab}
+      />
 
       {tab === 'orgs' && (
         <OrgsTab

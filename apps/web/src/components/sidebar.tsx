@@ -5,20 +5,15 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
-  FileText,
   Folder,
-  ListChecks,
   Lock,
-  MessageSquare,
   Pin,
-  Phone,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Sparkles,
   Star,
-  Users,
   Workflow,
   type LucideProps,
 } from 'lucide-react';
@@ -40,6 +35,7 @@ import { useBranding } from '../lib/branding-context.js';
 import { useEntitlements } from '../lib/entitlements.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
 import { TaskFlowLogo } from './taskflow-logo.js';
+import { CallsMark, ChatMark, DocsMark, PeopleMark, WorkMark } from './suite-icons.js';
 
 /**
  * The navigation tree (Phase 3.5 Wave 1, ai/phase-3.5-work-ux.md §4.1).
@@ -101,13 +97,22 @@ import { TaskFlowLogo } from './taskflow-logo.js';
  * route re-resolve the same entitlement independently, so a stale or wrong
  * answer here costs a wrongly-styled nav item, never wrongly-granted access.
  */
-/** A `lucide-react` icon component — every nav row's leading glyph. */
+/** A nav row's leading glyph — a lucide icon for utility rows, or a bespoke
+    `suite-icons.tsx` product mark; both share the `LucideProps` contract so
+    they slot in interchangeably. */
 type NavIcon = ComponentType<LucideProps>;
 
 interface NavItem {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
+  /**
+   * The product hue this item carries in the rail (see `NAV_TINT`). Absent for
+   * the utility rows (My tasks, Search, Analytics) and configuration, which
+   * stay on the neutral accent — the spectrum names the day-to-day PRODUCTS, so
+   * colouring everything would dilute exactly the signal it exists to give.
+   */
+  readonly tint?: NavTint;
   /** The plan entitlement this item needs, or absent when it needs none. */
   readonly flag?: string;
   /**
@@ -140,7 +145,7 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'start',
     items: [
-      { to: '/home', label: 'My tasks', icon: ListChecks },
+      { to: '/home', label: 'My tasks', icon: WorkMark },
       { to: '/search', label: 'Search', icon: Search },
       /* Individually grantable (ai/phase-15-ai-copilot-and-permissions.md
          §2.4), the identical `capability` shape `/analytics` uses below —
@@ -157,16 +162,23 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
-      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
+      { to: '/chat', label: 'Chat', icon: ChatMark, tint: 'chat', flag: 'chat' },
+      { to: '/docs', label: 'Docs', icon: DocsMark, tint: 'docs', flag: 'docs' },
       {
         to: '/calls',
         label: 'Calls',
-        icon: Phone,
+        icon: CallsMark,
+        tint: 'calls',
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
       },
-      { to: '/people', label: 'People', icon: Users, capability: 'viewDirectory' },
+      {
+        to: '/people',
+        label: 'People',
+        icon: PeopleMark,
+        tint: 'people',
+        capability: 'viewDirectory',
+      },
       {
         to: '/analytics',
         label: 'Analytics',
@@ -253,6 +265,55 @@ const ACTIVE_BAR =
   'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-accent before:to-accent/0';
 
 /**
+ * The suite spectrum, applied to the product rail.
+ *
+ * Each product owns a hue (`styles.css`'s `--color-chat|docs|calls|people`), so
+ * the rail reads as a suite of products rather than one monochrome admin menu —
+ * and the colour a person sees against "Chat" here is the same one that surface
+ * carries throughout. This is the single strongest lever away from the
+ * "generic panel" look: the eye learns "cyan is chat, green is docs" the way it
+ * already does in Google Workspace or Notion, so a glance at the rail locates a
+ * product before the label is even read.
+ *
+ * A resting icon carries its product hue; the LABEL stays neutral (`ink-muted`),
+ * so four colours never shout at once — the colour is an identifier on a 16px
+ * glyph, not a highlight. The active state promotes the whole row (tint, text
+ * and the flow-bar) to that hue, the same gradient motif `ACTIVE_BAR` uses for
+ * everything else, just in the product's own colour.
+ *
+ * Written out as literals per key because Tailwind's JIT only emits a class it
+ * can see as text — a computed `text-${tint}` is never generated. `work` is
+ * deliberately absent: it is the accent hue (violet ~285), which the project
+ * tree and every un-tinted item already use, so Work needs no separate entry.
+ */
+type NavTint = 'chat' | 'docs' | 'calls' | 'people';
+
+const NAV_TINT: Readonly<
+  Record<NavTint, { readonly icon: string; readonly active: string; readonly bar: string }>
+> = {
+  chat: {
+    icon: 'text-chat',
+    active: 'bg-chat/10 text-chat hover:bg-chat/10 hover:text-chat',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-chat before:to-chat/0',
+  },
+  docs: {
+    icon: 'text-docs',
+    active: 'bg-docs/10 text-docs hover:bg-docs/10 hover:text-docs',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-docs before:to-docs/0',
+  },
+  calls: {
+    icon: 'text-calls',
+    active: 'bg-calls/10 text-calls hover:bg-calls/10 hover:text-calls',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-calls before:to-calls/0',
+  },
+  people: {
+    icon: 'text-people',
+    active: 'bg-people/10 text-people hover:bg-people/10 hover:text-people',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-people before:to-people/0',
+  },
+};
+
+/**
  * The tint, applied to the ROW rather than to the link.
  *
  * `activeProps` can only style the `<Link>`, and a link that starts after a
@@ -277,28 +338,45 @@ function NavLink({
   to,
   label,
   icon: Icon,
+  tint,
   locked = false,
 }: {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
+  /* `| undefined` explicitly (not just `?`): callers pass `item.tint`, which is
+     `NavTint | undefined`, and `exactOptionalPropertyTypes` rejects an
+     explicit `undefined` against a bare optional. */
+  readonly tint?: NavTint | undefined;
   readonly locked?: boolean;
 }) {
+  /* A locked item forfeits its product hue: it is not available, so advertising
+     its colour would be a promise the plan cannot yet keep. The faint,
+     upsell-ready styling below is the same for every locked row regardless of
+     which product it is. */
+  const style = !locked && tint !== undefined ? NAV_TINT[tint] : undefined;
+
   return (
     <Link
       to={to}
       className={cn(
-        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium',
+        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium',
         'transition-colors duration-[var(--motion-fast)]',
         locked
           ? 'text-ink-faint hover:bg-surface-hover'
           : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
-        className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
+        className: cn(
+          style?.active ?? 'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+          style?.bar ?? ACTIVE_BAR,
+        ),
       }}
     >
-      <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+      {/* The resting icon carries its product hue; when the row is active the
+          `activeProps` colour above takes over the whole row, including this
+          glyph, so the two states never disagree on colour. */}
+      <Icon aria-hidden="true" className={cn('size-4 shrink-0', style?.icon)} strokeWidth={2} />
       <span className="truncate">{label}</span>
       {locked && (
         <Lock aria-label="Not on your plan" className="ml-auto size-3 shrink-0" strokeWidth={2} />
@@ -378,7 +456,7 @@ export function Sidebar() {
         {open && (
           <Link
             to="/projects"
-            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
+            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-sm font-semibold text-ink transition-colors hover:text-accent"
           >
             {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
@@ -428,6 +506,7 @@ export function Sidebar() {
                     to={item.to}
                     label={item.label}
                     icon={item.icon}
+                    tint={item.tint}
                     locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
                   />
                 ))}
@@ -453,7 +532,7 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide uppercase',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -505,6 +584,7 @@ export function Sidebar() {
                 to={item.to}
                 label={item.label}
                 icon={item.icon}
+                tint={item.tint}
                 locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
               />
             ))}
@@ -636,7 +716,7 @@ function ActiveSprintLine({
     <Link
       to="/projects/$projectId/sprints"
       params={{ projectId }}
-      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint hover:text-ink"
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-xs text-ink-faint hover:text-ink"
       activeProps={{ className: 'text-accent' }}
       title={`${sprint.name} — ends ${sprint.endsOn}`}
     >
@@ -710,7 +790,7 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
           <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
           {isFirst ? 'Add the first board' : 'Board'}
@@ -744,10 +824,10 @@ function AddBoard({
               setAdding(false);
             }
           }}
-          className="h-6 w-full text-[11px]"
+          className="h-6 w-full text-xs"
         />
         {create.isError && (
-          <p role="alert" className="px-1 py-0.5 text-[10px] text-danger">
+          <p role="alert" className="px-1 py-0.5 text-xs text-danger">
             Could not create that board.
           </p>
         )}
@@ -841,7 +921,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
         <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>
