@@ -47,6 +47,7 @@ function card(overrides: Partial<CardSummary> = {}): CardSummary {
     checklistTotal: 0,
     version: 1,
     archivedAt: null,
+    labelColors: [],
     ...overrides,
   };
 }

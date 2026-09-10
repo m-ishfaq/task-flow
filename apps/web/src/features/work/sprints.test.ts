@@ -35,6 +35,7 @@ function card(id: string, sprintId: string | null): CardSummary {
     checklistTotal: 0,
     version: 1,
     archivedAt: null,
+    labelColors: [],
   };
 }
 

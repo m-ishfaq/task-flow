@@ -3,6 +3,7 @@ import {
   asc,
   compiledPredicate,
   eq,
+  inArray,
   increment,
   isNull,
   ne,
@@ -11,6 +12,7 @@ import {
   outboxWriter,
   uuidArrayContains,
   type SQL,
+  type TenantDb,
 } from '@taskflow/db';
 import {
   InvalidRankError,
@@ -101,6 +103,8 @@ export interface CardSummary {
   readonly checklistTotal: number;
   readonly version: number;
   readonly archivedAt: Date | null;
+  /** Hex triplets, one per label the card carries — see `labelColorsByCard`. */
+  readonly labelColors: readonly string[];
 }
 
 /** `WEB-142` — the human-facing identity of a card. */
@@ -190,6 +194,11 @@ export async function listCards(
       // The (rank, id) total order from §10.1, served by cards_list_rank_idx.
       .orderBy(asc(schema.cards.listId), asc(schema.cards.rank), asc(schema.cards.id));
 
+    const labelColors = await labelColorsByCard(
+      tx,
+      rows.map((row) => row.cardId),
+    );
+
     return rows.map(({ number, projectKey, ...row }) => ({
       ...row,
       // The column is text; the CHECK constraint is what actually limits it
@@ -197,6 +206,7 @@ export async function listCards(
       // `StatusCategory` in status.service.ts.
       priority: row.priority as Priority | null,
       reference: referenceOf(projectKey, number),
+      labelColors: labelColors.get(row.cardId) ?? [],
     }));
   });
 }
@@ -260,21 +270,69 @@ export async function listMyCards(
       // `id` breaking ties deterministically.
       .orderBy(asc(schema.cards.dueDate), asc(schema.cards.id));
 
-    return rows
-      .filter(
-        (row) =>
-          can(actor.subject, 'card:read', {
-            orgId: orgOf(actor),
-            resource: { type: 'card', id: row.cardId },
-            ancestors: ancestorsOfCard(row),
-          }).allowed,
-      )
-      .map(({ number, projectKey, ...row }) => ({
-        ...row,
-        priority: row.priority as Priority | null,
-        reference: referenceOf(projectKey, number),
-      }));
+    const readable = rows.filter(
+      (row) =>
+        can(actor.subject, 'card:read', {
+          orgId: orgOf(actor),
+          resource: { type: 'card', id: row.cardId },
+          ancestors: ancestorsOfCard(row),
+        }).allowed,
+    );
+
+    const labelColors = await labelColorsByCard(
+      tx,
+      readable.map((row) => row.cardId),
+    );
+
+    return readable.map(({ number, projectKey, ...row }) => ({
+      ...row,
+      priority: row.priority as Priority | null,
+      reference: referenceOf(projectKey, number),
+      labelColors: labelColors.get(row.cardId) ?? [],
+    }));
   });
+}
+
+/**
+ * Every card's label colors, in one batched query rather than one per card.
+ *
+ * `card_labels` is a plain junction table with no denormalized count the way
+ * `checklistDone`/`checklistTotal` are — a card can carry any number of
+ * labels, and the board tile needs their actual colors to paint, not a
+ * count. Grouping in JavaScript rather than `array_agg`-ing in the query
+ * keeps this an ordinary `SELECT` (no raw `sql` template, which guardrail 7
+ * bans outside `packages/db`) and matches the same batched-lookup shape
+ * `useMembers` already uses client-side for assignee faces: one extra query
+ * for the whole page, not one per row.
+ *
+ * Colors are ordered by the label's own name for a stable, deterministic
+ * swatch row — never insertion order, which would reshuffle every time a
+ * label is removed and re-added.
+ */
+async function labelColorsByCard(
+  tx: TenantDb,
+  cardIds: readonly string[],
+): Promise<Map<string, readonly string[]>> {
+  if (cardIds.length === 0) return new Map();
+
+  const rows = await tx
+    .select({
+      cardId: schema.cardLabels.cardId,
+      color: schema.labels.color,
+      name: schema.labels.name,
+    })
+    .from(schema.cardLabels)
+    .innerJoin(schema.labels, eq(schema.labels.id, schema.cardLabels.labelId))
+    .where(inArray(schema.cardLabels.cardId, cardIds))
+    .orderBy(asc(schema.labels.name));
+
+  const byCard = new Map<string, string[]>();
+  for (const row of rows) {
+    const existing = byCard.get(row.cardId);
+    if (existing) existing.push(row.color);
+    else byCard.set(row.cardId, [row.color]);
+  }
+  return byCard;
 }
 
 /** `assignee` overlaps `[@me]` — the filter compiler's own field, not a raw query. */
@@ -415,11 +473,14 @@ export async function getCard(
     }).allowed;
     const moderateComments = can(actor.subject, 'comment:delete', cardTarget).allowed;
 
+    const labelColors = await labelColorsByCard(tx, [card.cardId]);
+
     const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,
       reference: referenceOf(projectKey, number),
+      labelColors: labelColors.get(card.cardId) ?? [],
       capabilities: { update, archive, comment, manageProjectVocabulary, moderateComments },
     };
   });

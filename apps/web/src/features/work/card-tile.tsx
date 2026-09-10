@@ -94,8 +94,51 @@ export function CardTile({
         />
       )}
 
+      {/* Label swatches — a dash per label, color only, no text. The label
+          NAME is one popover away (the detail panel's own label section);
+          the board only has room to say "this card is tagged," not with
+          what. Absent entirely for an unlabeled card, matching the priority
+          edge's own "no color for none" rule above. */}
+      {card.labelColors.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-[5px]">
+          {/* Keyed by color+index rather than a label id the tile was never
+              given (the wire only carries colors, not label identity — see
+              `labelColorsByCard`) — the list never reorders within a
+              render, so this is stable in practice, not merely in theory. */}
+          {card.labelColors.map((color, index) => (
+            <span
+              key={`${color}-${String(index)}`}
+              className="h-[5px] w-[26px] rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Title — bold, clean, 14px for proper readability on a kanban board */}
       <span className="block text-[14px] font-medium leading-snug text-ink">{card.title}</span>
+
+      {/* The checklist progress meter — a shape a person reads at a glance,
+          next to the metadata row's own exact "7/9" fraction rather than in
+          place of it: the bar answers "how close," the pill answers "how
+          many." Absent for a card with no checklist at all — an empty bar
+          would read as 0% progress on a card that was never asked to have
+          any. */}
+      {card.checklistTotal > 0 && (
+        <div
+          className="mt-2 h-1 overflow-hidden rounded-sm bg-surface-sunken"
+          role="progressbar"
+          aria-label="Checklist progress"
+          aria-valuenow={card.checklistDone}
+          aria-valuemin={0}
+          aria-valuemax={card.checklistTotal}
+        >
+          <div
+            className="h-full rounded-sm bg-gradient-to-r from-success to-[oklch(74%_0.13_175)]"
+            style={{ width: `${String((card.checklistDone / card.checklistTotal) * 100)}%` }}
+          />
+        </div>
+      )}
 
       {/* Metadata row — reference, due, checklist, comments, and avatars.
           Generous spacing so the row doesn't feel cramped. */}
