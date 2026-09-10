@@ -676,31 +676,30 @@
    * modern look comes from clean surfaces, proper spacing, and subtle
    * elevation changes on interaction.
    * ------------------------------------------------------------------------ */
+  /* The board card, to the design bible §06 `.card` spec exactly: a FLAT
+     surface-raised block (no gradient — the accent-tinted gradient this used to
+     carry contradicted its own "clean surfaces" note and read as busier than
+     the bible's card), the material lift + hairline top-light via `--shadow-sm`,
+     an 11px radius, and the bible's 11/12/11/13 padding (the left is a touch
+     wider to clear the priority edge). Hover lifts 2px onto `--shadow-md`. */
   .card-tile {
     position: relative;
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-raised) 0%,
-      color-mix(in oklab, var(--color-surface-raised) 92%, var(--color-accent) 8%) 100%
-    );
-    border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
-    border-radius: calc(var(--radius-card) + 0.25rem);
-    padding: 0.75rem 0.875rem;
-    transition: all var(--motion-base) var(--motion-ease);
-    box-shadow:
-      0 1px 3px oklch(0% 0 0 / 12%),
-      0 1px 2px oklch(0% 0 0 / 8%);
+    overflow: hidden;
+    background: var(--color-surface-raised);
+    border: 1px solid color-mix(in oklab, var(--color-line) 62%, transparent);
+    border-radius: 0.6875rem;
+    padding: 0.6875rem 0.75rem 0.6875rem 0.8125rem;
+    transition:
+      transform var(--motion-base) var(--motion-ease),
+      box-shadow var(--motion-base) var(--motion-ease),
+      border-color var(--motion-base) var(--motion-ease);
+    box-shadow: var(--shadow-sm);
   }
 
   .card-tile:hover {
     border-color: var(--color-line-strong);
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-hover) 0%,
-      color-mix(in oklab, var(--color-surface-hover) 90%, var(--color-accent) 10%) 100%
-    );
     box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
   .card-tile.dragging {
@@ -751,29 +750,31 @@
     border-radius: calc(var(--radius-card) + 0.125rem) 0 0 calc(var(--radius-card) + 0.125rem);
   }
 
-  /* Column header — clean, minimal, with status dot */
+  /* Column header — design bible §06 `.col-head`: no divider rule (the column's
+     own surface step separates it from the cards), the bible's 11/12/9 padding,
+     status dot + name + count. */
   .column-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 0.75rem 0.5rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    padding: 0.6875rem 0.75rem 0.5625rem;
     background: transparent;
     border-radius: 0;
   }
 
-  /* Column container — subtle background tint */
+  /* Column container — design bible §06 `.col`: a sunken gradient trough that
+     sits BELOW the raised cards in it, a 13px radius, a hairline line border,
+     and only the top-light edge (no drop shadow — a trough catches light on its
+     lip, it does not float). */
   .column-container {
     background: linear-gradient(
       180deg,
-      color-mix(in oklab, var(--color-surface-sunken) 60%, transparent) 0%,
+      color-mix(in oklab, var(--color-surface-sunken) 55%, transparent) 0%,
       var(--color-surface-sunken) 100%
     );
-    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
-    border-radius: calc(var(--radius-card) + 0.375rem);
-    box-shadow:
-      0 1px 4px oklch(0% 0 0 / 8%),
-      inset 0 1px 0 oklch(100% 0 0 / 3%);
+    border: 1px solid color-mix(in oklab, var(--color-line) 55%, transparent);
+    border-radius: 0.8125rem;
+    box-shadow: var(--top-light);
   }
 
   /* Status dot indicator in column header */
