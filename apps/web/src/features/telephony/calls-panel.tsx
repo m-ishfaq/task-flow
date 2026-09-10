@@ -4,7 +4,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import { Avatar, Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
@@ -13,7 +13,9 @@ import {
   callTranscriptQuery,
   callsQuery,
   invalidateAfterSpend,
+  phoneContactsQuery,
   phoneNumbersQuery,
+  type PhoneContact,
 } from './api.js';
 import { CallButton } from './call-button.js';
 import { ContactPicker } from './contact-picker.js';
@@ -71,12 +73,43 @@ function durationLabel(seconds: number): string {
   return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
 }
 
+/** Digits only, so `+1 415 555 0100` and `+14155550100` are one number —
+ * the identical normalization `contact-picker.tsx` already uses, duplicated
+ * rather than shared: a one-line pure function, not worth a cross-file
+ * export for. */
+function digitsOf(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/**
+ * A phone number, resolved to a colleague when it matches one.
+ *
+ * The Design Bible's own §09 call log shows a name and a real avatar disc
+ * per row, not the bare E.164 string this panel used to render — matching
+ * `contact-picker.tsx`'s own reasoning for why a call's destination is
+ * looked up against the org directory rather than shown as a raw number
+ * the caller has to recognize by memory. A call to or from a number that
+ * matches no colleague (the common case — most calls are to customers, not
+ * coworkers) still renders correctly: no avatar, the raw number as the
+ * label, exactly what this panel already did before this pass.
+ */
+function contactFor(
+  counterparty: string,
+  byDigits: ReadonlyMap<string, PhoneContact>,
+): PhoneContact | undefined {
+  return byDigits.get(digitsOf(counterparty));
+}
+
 export function CallsPanel({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
   const numbers = useQuery(phoneNumbersQuery(orgId));
   const calls = useQuery(callsQuery(orgId));
+  const contacts = useQuery(phoneContactsQuery(orgId));
+  const contactsByDigits = new Map(
+    (contacts.data ?? []).map((contact) => [digitsOf(contact.phone), contact] as const),
+  );
 
   const [to, setTo] = useState('');
   const [fromPhoneNumberId, setFromPhoneNumberId] = useState('');
@@ -247,84 +280,109 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
           />
         ) : (
           <ul className="space-y-1.5">
-            {calls.data.map((call) => (
-              <li
-                key={call.callId}
-                className={cn(
-                  'overflow-hidden rounded-lg border transition-colors',
-                  expanded === call.callId ? 'border-accent/40' : 'border-line',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExpanded((current) => (current === call.callId ? null : call.callId));
-                  }}
-                  className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'text-sm leading-none',
-                      call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
-                    )}
-                  >
-                    {call.direction === 'outbound' ? '→' : '←'}
-                  </span>
-                  <span className="sr-only">
-                    {call.direction === 'outbound' ? 'Outbound' : 'Inbound'}
-                  </span>
-                  <span className="font-mono text-xs text-ink">{String(call.counterparty)}</span>
-                  {call.durationSeconds !== null && (
-                    <span className="text-[11px] text-ink-faint">
-                      {durationLabel(call.durationSeconds)}
-                    </span>
+            {calls.data.map((call) => {
+              const contact = contactFor(String(call.counterparty), contactsByDigits);
+              return (
+                <li
+                  key={call.callId}
+                  className={cn(
+                    'overflow-hidden rounded-lg border transition-colors',
+                    expanded === call.callId ? 'border-accent/40' : 'border-line',
                   )}
-                  <span className="ml-auto flex items-center gap-2">
-                    {call.recorded && (
-                      <span className="text-[10px] font-medium text-ink-muted">● recorded</span>
-                    )}
-                    <StatusPill status={call.status} />
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpanded((current) => (current === call.callId ? null : call.callId));
+                    }}
+                    className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
+                  >
                     <span
                       aria-hidden="true"
                       className={cn(
-                        'text-[10px] text-ink-faint transition-transform',
-                        expanded === call.callId && 'rotate-90',
+                        'text-sm leading-none',
+                        call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
                       )}
                     >
-                      ›
+                      {call.direction === 'outbound' ? '→' : '←'}
                     </span>
-                  </span>
-                </button>
-                {expanded === call.callId && (
-                  <div className="border-t border-line bg-surface px-3 py-2">
-                    {call.startedAt !== null && (
-                      <p className="mb-1.5 text-[11px] text-ink-faint">
-                        {call.direction === 'outbound' ? 'Placed' : 'Received'}{' '}
-                        {formatRelative(call.startedAt)}
-                      </p>
-                    )}
-                    {call.recorded ? (
-                      <CallRecordings orgId={orgId} callId={call.callId} />
+                    <span className="sr-only">
+                      {call.direction === 'outbound' ? 'Outbound' : 'Inbound'}
+                    </span>
+                    {/* A resolved colleague gets a face and a name, matching
+                      the Design Bible's own call-log row — the common case,
+                      a call with an external number nobody's directory
+                      lists, keeps the plain number-only rendering this
+                      panel always had, since there is no name or avatar to
+                      show for someone this org has no record of. */}
+                    {contact !== undefined ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Avatar userId={contact.userId} label={contact.label} size="xs" />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate text-xs font-medium text-ink">
+                            {contact.label}
+                          </span>
+                          <span className="truncate font-mono text-[10px] text-ink-faint">
+                            {String(call.counterparty)}
+                          </span>
+                        </span>
+                      </span>
                     ) : (
-                      <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
+                      <span className="font-mono text-xs text-ink">
+                        {String(call.counterparty)}
+                      </span>
                     )}
-                    {/* Redial lives in the expanded body, not on the row: the
+                    {call.durationSeconds !== null && (
+                      <span className="text-[11px] text-ink-faint">
+                        {durationLabel(call.durationSeconds)}
+                      </span>
+                    )}
+                    <span className="ml-auto flex items-center gap-2">
+                      {call.recorded && (
+                        <span className="text-[10px] font-medium text-ink-muted">● recorded</span>
+                      )}
+                      <StatusPill status={call.status} />
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'text-[10px] text-ink-faint transition-transform',
+                          expanded === call.callId && 'rotate-90',
+                        )}
+                      >
+                        ›
+                      </span>
+                    </span>
+                  </button>
+                  {expanded === call.callId && (
+                    <div className="border-t border-line bg-surface px-3 py-2">
+                      {call.startedAt !== null && (
+                        <p className="mb-1.5 text-[11px] text-ink-faint">
+                          {call.direction === 'outbound' ? 'Placed' : 'Received'}{' '}
+                          {formatRelative(call.startedAt)}
+                        </p>
+                      )}
+                      {call.recorded ? (
+                        <CallRecordings orgId={orgId} callId={call.callId} />
+                      ) : (
+                        <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
+                      )}
+                      {/* Redial lives in the expanded body, not on the row: the
                         row IS a button, and nesting one inside it is invalid
                         HTML that browsers resolve by dropping the inner
                         control's activation — the click would toggle the row
                         instead of dialling. */}
-                    <div className="mt-2 border-t border-line pt-2">
-                      <CallButton
-                        orgId={orgId}
-                        to={String(call.counterparty)}
-                        label={`Call ${String(call.counterparty)} back`}
-                      />
+                      <div className="mt-2 border-t border-line pt-2">
+                        <CallButton
+                          orgId={orgId}
+                          to={String(call.counterparty)}
+                          label={`Call ${String(call.counterparty)} back`}
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
-              </li>
-            ))}
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
