@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, Paperclip, Pin } from 'lucide-react';
+import { Paperclip, Pin } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { cn } from '../../lib/cn.js';
 import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
@@ -367,12 +367,7 @@ function MessageBubble({
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-5 px-1 text-xs"
-              onClick={onStartEdit}
-            >
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onStartEdit}>
               Edit
             </Button>
           )}
@@ -407,7 +402,7 @@ function MessageBubble({
         <button
           type="button"
           onClick={onOpenThread}
-          className="px-1 text-xs font-medium text-accent hover:underline"
+          className="px-1 text-xs font-medium text-chat hover:underline"
         >
           {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
         </button>
@@ -505,19 +500,26 @@ function ReactionBar({
         return (
           <PopoverRoot key={emoji}>
             <PopoverTrigger asChild>
+              {/* Design bible §07 `.react span`: a quiet pill that TINTS in the
+                  chat hue when it is yours, rather than filling solid accent —
+                  a saturated violet chip shouted louder than the message it was
+                  attached to, and spoke the global accent on a surface that is
+                  cyan everywhere else. `aria-pressed` carries the "mine" state
+                  semantically, which is also why the tick is gone: it was doing
+                  a job the button's own pressed state does properly. */}
               <button
                 type="button"
+                aria-pressed={mine}
                 aria-label={`${emoji} — ${String(userIds.length)} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
                 className={cn(
-                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                  'flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors',
                   mine
-                    ? 'border-accent bg-accent text-accent-ink'
+                    ? 'border-chat/50 bg-chat/15 text-ink'
                     : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
                 )}
               >
                 <span>{emoji}</span>
-                <span>{userIds.length}</span>
-                {mine && <Check aria-hidden="true" className="size-3" strokeWidth={2.5} />}
+                <span className="tabular-nums">{userIds.length}</span>
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" align="start" className="w-52 p-1.5">
@@ -530,7 +532,7 @@ function ReactionBar({
                     key={userId}
                     className={cn(
                       'flex items-center justify-between rounded px-1.5 py-1 text-sm text-ink',
-                      userId === viewerId && 'font-medium text-accent',
+                      userId === viewerId && 'font-medium text-chat',
                     )}
                   >
                     <span>{personOf(userId).label}</span>
