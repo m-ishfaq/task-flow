@@ -301,12 +301,24 @@ export interface AvatarProps {
  * the role a screen reader announces "AL" — which identifies nobody.
  */
 export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
+  const hue = hueOf(userId);
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
-      style={{ backgroundColor: `oklch(58% 0.13 ${String(hueOf(userId))})` }}
+      /* A two-stop gradient at the person's own hue, not a flat fill — the
+         Design Bible's own avatar discs (`.me`, `.dial-face .a`, `.msg .a`,
+         `.p-msg .a`) are all `linear-gradient(160deg, <light>, <dark>)`
+         rather than one flat color, which is what gives every "person as a
+         disc" in the bible's mockups a slight dimensional lift instead of a
+         sticker-flat fill. Kept at the previously-audited hue/chroma pair
+         (58% 0.13) as the gradient's MIDPOINT — 64%/52% either side of it —
+         so the disc's overall weight against the surrounding surfaces is
+         unchanged from before this ran. */
+      style={{
+        backgroundImage: `linear-gradient(160deg, oklch(64% 0.13 ${String(hue)}), oklch(52% 0.13 ${String(hue)}))`,
+      }}
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-full font-medium text-white',
         'ring-1 ring-surface-raised',
