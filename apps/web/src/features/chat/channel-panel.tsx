@@ -60,9 +60,11 @@ import {
   appendText,
   channelSubtitle,
   channelTitle,
+  dayKeyOf,
   describeTyping,
   firstUnreadAfter,
   flattenDocument,
+  formatDayLabel,
   groupByMessage,
   groupReactions,
   textDocument,
@@ -684,16 +686,36 @@ export function ChannelPanel({
             />
           ) : (
             <div className="space-y-4">
-              {timeline.map((item) =>
-                item.kind === 'call' ? (
-                  <CallTimelineCard
-                    key={item.key}
-                    entry={item.entry}
-                    viewerId={viewerId}
-                    personOf={personOf}
-                  />
+              {timeline.map((item, index) => {
+                /* A day divider whenever the timeline crosses midnight —
+                   `index === 0` always gets one too, so a channel opened
+                   mid-scroll still says which day its first visible message
+                   is from rather than assuming "obviously today". Computed
+                   against the PREVIOUS TIMELINE ITEM, not the previous
+                   message, so a call sitting between two messages from the
+                   same day never triggers a spurious divider around it. */
+                const previous = index > 0 ? timeline[index - 1] : undefined;
+                const showDayDivider =
+                  previous === undefined || dayKeyOf(item.at) !== dayKeyOf(previous.at);
+
+                const dayDivider = showDayDivider && (
+                  <div className="flex items-center gap-2" role="separator">
+                    <span className="h-px flex-1 bg-line/60" />
+                    <span className="text-[11px] font-medium text-ink-faint">
+                      {formatDayLabel(item.at)}
+                    </span>
+                    <span className="h-px flex-1 bg-line/60" />
+                  </div>
+                );
+
+                return item.kind === 'call' ? (
+                  <Fragment key={item.key}>
+                    {dayDivider}
+                    <CallTimelineCard entry={item.entry} viewerId={viewerId} personOf={personOf} />
+                  </Fragment>
                 ) : (
                   <Fragment key={item.key}>
+                    {dayDivider}
                     {/* The "new messages" line, placed by the read CURSOR rather
                         than by counting back from the end. A count-based position
                         lands somewhere plausible and wrong the moment a message
@@ -757,8 +779,8 @@ export function ChannelPanel({
                       onOpenThread={setOpenThreadId}
                     />
                   </Fragment>
-                ),
-              )}
+                );
+              })}
             </div>
           )}
         </div>

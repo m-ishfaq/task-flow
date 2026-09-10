@@ -8,6 +8,7 @@ import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
   Avatar,
+  AvatarStack,
   Button,
   Empty,
   Field,
@@ -15,7 +16,7 @@ import {
   Input,
   Skeleton,
 } from '../../components/primitives.js';
-import { useMembers } from '../org/use-members.js';
+import { useMembers, type Person } from '../org/use-members.js';
 import {
   allPinsQuery,
   channelsQuery,
@@ -59,7 +60,7 @@ export function ChannelListPanel({
      (CLAUDE.md §8.2: the server decides, the client never re-derives). */
   const canCreateChannel = channels.data?.canCreateChannel ?? false;
   const list = channels.data?.channels ?? [];
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
 
   const unread = useQuery({
     ...unreadCountsQuery(
@@ -134,7 +135,7 @@ export function ChannelListPanel({
 
       <ul className="px-1.5 pb-3">
         {directs.map((channel) => (
-          <ChannelRow
+          <DirectMessageRow
             key={channel.channelId}
             channel={channel}
             /* A DM has no name — the database refuses one — so it is labelled by
@@ -144,6 +145,7 @@ export function ChannelListPanel({
                where `member:read` is denied and the lookup returns nothing;
                rendering a raw uuid there would be worse than saying nothing. */
             label={directLabel(channel.participantIds, personOf)}
+            people={peopleOf(channel.participantIds)}
             active={selected === channel.channelId}
             unreadCount={unreadByChannel.get(channel.channelId) ?? 0}
             onSelect={onSelect}
@@ -220,6 +222,86 @@ function ChannelRow({
           <ChannelTypePrefix type={channel.type} />
           {label}
         </span>
+        {unreadCount > 0 && (
+          <span
+            className={cn(
+              'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold',
+              active ? 'bg-accent-ink/20 text-accent-ink' : 'bg-accent text-accent-ink',
+            )}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * A direct message, as a person — not as a row of plain text.
+ *
+ * The Design Bible's own §07 (Chat rebuilt) names this explicitly: "DMs
+ * show a person's name, avatar, presence and last-message preview instead
+ * of a raw email." `directLabel` had already fixed the "raw email" half —
+ * this fixes the "avatar" half, the other structural piece a text-only
+ * `ChannelRow` could never carry. A named CHANNEL stays plain text on
+ * purpose (the mockup's own `# design-system` row has no avatar either —
+ * a channel is not a person, and giving it one would blur the exact
+ * distinction this row exists to draw).
+ *
+ * `presence` and the last-message preview are deliberately NOT here yet:
+ * presence would need a genuinely new, org-wide "who's online" broadcast
+ * (today's realtime presence is scoped per-ROOM, for "who's looking at
+ * this channel right now" — `use-channel-room.ts`'s own doc comment —
+ * which cannot answer "is Rosa online anywhere" for every DM in this list
+ * at once without joining every one of their rooms just to find out). A
+ * preview would need the channel list to know each DM's most recent
+ * message, which `listChannels` does not fetch today and has no safe,
+ * un-verified-against-real-Postgres way to add in this pass (no denormalized
+ * `last_message_id` column exists yet, and a correlated "latest per
+ * channel" query needs either a migration or a raw-SQL aggregate this
+ * codebase reserves for `packages/db`, a human-review-flagged package).
+ * Both are real, separate follow-ups, not oversights.
+ */
+function DirectMessageRow({
+  channel,
+  label,
+  people,
+  active,
+  unreadCount,
+  onSelect,
+}: {
+  readonly channel: ChannelSummary;
+  readonly label: string;
+  readonly people: readonly Person[];
+  readonly active: boolean;
+  readonly unreadCount: number;
+  readonly onSelect: (channelId: ChannelId) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => {
+          onSelect(channel.channelId as ChannelId);
+        }}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+          active
+            ? 'bg-suite-chat/15 text-suite-chat'
+            : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+        )}
+      >
+        {people.length > 1 ? (
+          <AvatarStack people={people} max={2} size="xs" />
+        ) : (
+          <Avatar
+            userId={people[0]?.userId ?? channel.channelId}
+            label={people[0]?.label ?? label}
+            size="xs"
+          />
+        )}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
         {unreadCount > 0 && (
           <span
             className={cn(
