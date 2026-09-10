@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
-import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Button, Skeleton } from '../../components/primitives.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
@@ -24,14 +23,12 @@ export function ThreadPanel({
   orgId,
   channelId,
   rootMessage,
-  viewerId,
   personOf,
   onClose,
 }: {
   readonly orgId: string;
   readonly channelId: ChannelId;
   readonly rootMessage: Message;
-  readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onClose: () => void;
 }) {
@@ -78,40 +75,32 @@ export function ThreadPanel({
     reply.mutate(body);
   };
 
+  /* Flat, Slack-style — the same layout the main channel's `MessageRow`
+     uses (Design Bible §07), not a second bubble surface: a thread is the
+     same conversation, one level deep, and rendering it differently from
+     the channel it branched from would read as two different products
+     glued together. No avatar here (unlike the channel's own rows) — the
+     thread panel is 320px wide at most, and a name plus a timestamp
+     already say who and when without spending another 24px of that on a
+     disc that repeats the same information. */
   const renderPlain = (message: Message) => {
-    const isOwn = message.authorId !== null && message.authorId === viewerId;
     const label = message.authorId === null ? 'Unknown' : personOf(message.authorId).label;
 
     if (message.deletedAt !== null) {
-      return <p className="px-1 text-xs text-ink-faint italic">This message was deleted.</p>;
+      return <p className="px-0.5 text-xs text-ink-faint italic">This message was deleted.</p>;
     }
 
     return (
-      <div className={cn('flex flex-col gap-1', isOwn && 'items-end')}>
-        <span className="px-1 text-xs font-medium text-ink-muted">{label}</span>
-        <div
-          className={cn(
-            /* text-sm: same 14px floor as the main channel's bubbles — a
-               thread is a chat surface, not a document surface. */
-            'max-w-full rounded-2xl px-3 py-1.5 text-sm shadow-sm',
-            isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
-            /* Same as the main channel's bubble — see the comment there. */
-            isOwn && 'rich-text-on-accent',
-          )}
-        >
+      <div className="flex flex-col gap-0.5">
+        <span className="flex items-baseline gap-1.5 px-0.5">
+          <span className="text-[13px] font-semibold text-ink">{label}</span>
+          <span className="text-[11px] text-ink-faint">{formatTime(message.createdAt)}</span>
+        </span>
+        <div className="text-sm text-ink">
           <RichTextView value={message.body} bare />
-          {/* Same bottom-right timestamp as the main channel's bubbles — the
-              thread is the same WhatsApp-style surface, so the metadata sits
-              in the same corner rather than drifting to the left edge. */}
-          <div
-            className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
-              isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
-            )}
-          >
-            <span>{formatTime(message.createdAt)}</span>
-            {message.editedAt !== null && <span>edited</span>}
-          </div>
+          {message.editedAt !== null && (
+            <span className="ml-1.5 align-middle text-[10px] italic text-ink-faint">(edited)</span>
+          )}
         </div>
       </div>
     );

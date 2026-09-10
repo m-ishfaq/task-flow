@@ -859,7 +859,6 @@ export function ChannelPanel({
               orgId={orgId}
               channelId={channelId}
               rootMessage={rootMessage}
-              viewerId={viewerId}
               personOf={personOf}
               onClose={() => {
                 setOpenThreadId(null);

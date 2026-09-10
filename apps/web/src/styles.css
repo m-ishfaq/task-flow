@@ -597,21 +597,6 @@
     text-decoration: underline;
   }
 
-  /* Links INSIDE a message bubble on the accent fill (the sender's own
-     bubbles, `bg-accent`). The rule above colors every link the accent hue
-     itself — which is invisible on an accent background: a URL pasted into
-     chat rendered accent-on-accent, reading as an empty bubble while the
-     white text around it showed fine. The link keeps its affordance via the
-     underline (drawn at partial opacity so it reads as a link, not a rule)
-     and the text goes to the same near-white the bubble already uses, with
-     the 0.7 tint applied to the underline only — full-ink text, 55%-ink
-     underline, which is how WhatsApp's own light links on green bubbles
-     work. `chat-page.tsx` hangs this class on the bubble when it is the
-     viewer's own (`isOwn`). */
-  .rich-text-on-accent .rich-text a {
-    color: var(--color-accent-ink);
-    text-decoration-color: color-mix(in oklch, var(--color-accent-ink) 55%, transparent);
-  }
   .rich-text hr {
     border-color: var(--color-line);
     margin-block: 1rem;
