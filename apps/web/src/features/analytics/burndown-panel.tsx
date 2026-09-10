@@ -76,24 +76,51 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
         </span>
       </div>
 
-      {/* Simple line chart via SVG */}
+      {/* Design Bible §10's own burndown treatment: a dashed IDEAL line —
+          a straight burn from the window's starting remaining count down to
+          zero by its end, computed here rather than fetched, since it is a
+          pure function of the two numbers the chart already has and needs
+          no server round trip of its own — behind a solid ACTUAL line with
+          rounded joins and an emphasized dot at its own last point. No area
+          fill here, unlike Velocity's own chart: the bible's own SVG for
+          this one has none either, and a downward-trending fill would read
+          as "remaining work," which is already what the line itself shows. */}
       <svg
         viewBox={`0 0 ${String(points.length * 8)} 120`}
         className="w-full"
         style={{ height: 120 }}
         preserveAspectRatio="none"
       >
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          className="text-accent"
-          points={points
-            .map(
-              (p, i) => `${String(i * 8 + 4)},${String(120 - (p.remaining / maxRemaining) * 110)}`,
-            )
-            .join(' ')}
-        />
+        {(() => {
+          const width = points.length * 8;
+          const yFor = (remaining: number) => 120 - (remaining / maxRemaining) * 110;
+          const coords = points.map((p, i) => ({ x: i * 8 + 4, y: yFor(p.remaining) }));
+          const last = coords[coords.length - 1];
+          const first = points[0];
+          if (last === undefined || first === undefined) return null;
+
+          return (
+            <>
+              <line
+                x1={4}
+                y1={yFor(first.remaining)}
+                x2={width - 4}
+                y2={yFor(0)}
+                stroke="var(--color-line-strong)"
+                strokeDasharray="4 5"
+              />
+              <polyline
+                fill="none"
+                stroke="var(--color-success)"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={coords.map((c) => `${String(c.x)},${String(c.y)}`).join(' ')}
+              />
+              <circle cx={last.x} cy={last.y} r={4} fill="var(--color-success)" />
+            </>
+          );
+        })()}
       </svg>
 
       <div className="flex justify-between text-[10px] text-ink/40">
