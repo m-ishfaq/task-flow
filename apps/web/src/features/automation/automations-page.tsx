@@ -343,7 +343,7 @@ export function AutomationsPage() {
                 {count !== undefined && (
                   <span
                     className={cn(
-                      'rounded px-1 text-[10px] tabular-nums',
+                      'rounded px-1 text-xs tabular-nums',
                       tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
                     )}
                   >
@@ -585,7 +585,7 @@ function RuleRow({
             </span>
             {rule.conditionBroken && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-xs font-medium text-danger"
                 title="The stored condition no longer parses, so this rule is refused on every event"
               >
                 Broken
@@ -600,7 +600,7 @@ function RuleRow({
               `When`/`Then` are spelled out rather than implied by an arrow
               alone: the arrow reads as an arrow only once you already know the
               shape, and this row is where someone learns it. */}
-          <p className="truncate text-[11px] text-ink-faint">
+          <p className="truncate text-xs text-ink-faint">
             <span className="text-ink-faint">When </span>
             <span className="text-ink-muted">{triggerLabel(rule.triggerEvent)}</span>
             {rule.condition !== null && (
@@ -617,7 +617,7 @@ function RuleRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             disabled={setEnabled.isPending}
             onClick={() => {
               setEnabled.mutate(!rule.enabled);
@@ -626,14 +626,14 @@ function RuleRow({
             {rule.enabled ? 'Disable' : 'Enable'}
           </Button>
 
-          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onEdit}>
+          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={onEdit}>
             Edit
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             aria-expanded={expanded}
             onClick={onToggleExpanded}
           >
@@ -647,7 +647,7 @@ function RuleRow({
             label="Delete"
             confirmLabel="Delete rule"
             disabled={remove.isPending}
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             onConfirm={() => {
               remove.mutate();
             }}
@@ -686,7 +686,7 @@ function RunHistory({
   if (runs.isError) return <ErrorText error={runs.error} />;
   if (runs.data.length === 0) {
     return (
-      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-xs text-ink-faint">
         This rule has not run yet. A run is recorded every time its trigger fires — including when
         the condition does not match.
       </p>
@@ -696,7 +696,7 @@ function RunHistory({
   return (
     <ul className="border-t border-line/50/50">
       {runs.data.map((run) => (
-        <li key={run.runId} className="px-3 py-1.5 text-[11px]">
+        <li key={run.runId} className="px-3 py-1.5 text-xs">
           <div className="flex items-center gap-2">
             <span
               className={cn('w-16 shrink-0 font-medium', STATUS_COLOR[run.status] ?? 'text-ink')}
@@ -945,7 +945,7 @@ function RuleEditor({
             onChange={setCondition}
           />
           {condition === null && (
-            <span className="text-[11px] text-ink-faint">
+            <span className="text-xs text-ink-faint">
               {conditionResource === 'connector'
                 ? 'Runs on every event from every connected workspace or repository.'
                 : 'Runs every time the trigger fires.'}
@@ -968,7 +968,7 @@ function RuleEditor({
         <Field label="Project (for list, status and label choices)" htmlFor="automation-project">
           <div id="automation-project" className="space-y-1">
             <ProjectScopePicker orgId={orgId} value={scopeProject} onChange={setScopeProject} />
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               Those actions only apply to cards in this project — a card from another project
               records a failed run.
             </p>
@@ -1030,7 +1030,7 @@ function RuleEditor({
           Cancel
         </button>
         {name.trim() !== '' && !actionsComplete(actions) && (
-          <span className="text-[11px] text-ink-faint">Finish choosing each action to save.</span>
+          <span className="text-xs text-ink-faint">Finish choosing each action to save.</span>
         )}
       </div>
     </form>
@@ -1315,7 +1315,7 @@ function WebhookCreateForm({
           placeholder="https://hooks.example.com/on-release"
           className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         />
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           Public endpoints only — internal and private addresses are refused, and every redirect is
           re-checked at delivery.
         </p>
@@ -1401,7 +1401,7 @@ function WebhookRow({
             </span>
             {!webhook.enabled && webhook.disabledAt !== null && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-xs font-medium text-danger"
                 title={`Auto-disabled after ${String(webhook.failureCount)} consecutive failed deliveries`}
               >
                 Disabled by failures
@@ -1411,7 +1411,7 @@ function WebhookRow({
           {/* `font-mono` because this is a URL somebody will compare character
               by character against what they configured in their receiver, and
               a proportional font makes `rn` and `m` the same shape. */}
-          <p className="truncate font-mono text-[11px] text-ink-faint" title={webhook.url}>
+          <p className="truncate font-mono text-xs text-ink-faint" title={webhook.url}>
             {webhook.url}
           </p>
         </div>
@@ -1420,7 +1420,7 @@ function WebhookRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             disabled={setEnabled.isPending}
             onClick={() => {
               setEnabled.mutate(!webhook.enabled);
@@ -1432,7 +1432,7 @@ function WebhookRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             aria-expanded={expanded}
             onClick={onToggleExpanded}
           >
@@ -1446,7 +1446,7 @@ function WebhookRow({
             label="Delete"
             confirmLabel="Delete endpoint"
             disabled={remove.isPending}
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             onConfirm={() => {
               remove.mutate();
             }}
@@ -1481,7 +1481,7 @@ function WebhookDeliveries({
   if (deliveries.isError) return <ErrorText error={deliveries.error} />;
   if (deliveries.data.length === 0) {
     return (
-      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-xs text-ink-faint">
         No deliveries yet — this endpoint appears in no rule runs.
       </p>
     );
@@ -1490,7 +1490,7 @@ function WebhookDeliveries({
   return (
     <ul className="border-t border-line/50/50">
       {deliveries.data.map((delivery) => (
-        <li key={delivery.deliveryId} className="px-3 py-1.5 text-[11px]">
+        <li key={delivery.deliveryId} className="px-3 py-1.5 text-xs">
           <div className="flex items-center gap-2">
             <span
               className={cn(

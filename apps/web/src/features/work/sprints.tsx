@@ -310,7 +310,7 @@ export function SprintsManagerDialog({
               if (draft.name.trim() !== '') create.mutate(draft);
             }}
           >
-            <p className="text-[11px] font-medium text-ink-muted">New sprint</p>
+            <p className="text-xs font-medium text-ink-muted">New sprint</p>
             {/* Full-width rows rather than one crowded line: the single-row
                 version squeezed the name field until its placeholder read
                 "Sprin" and clipped the goal — the modal is not that short. */}
@@ -335,7 +335,7 @@ export function SprintsManagerDialog({
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+              <label className="flex items-center gap-1 text-xs text-ink-muted">
                 <input
                   type="date"
                   aria-label="Starts"
@@ -406,12 +406,12 @@ export function SprintsManagerDialog({
                               {sprint.name}
                             </span>
                             <span
-                              className={`text-[11px] font-medium ${STATUS_COLOR[sprint.status]}`}
+                              className={`text-xs font-medium ${STATUS_COLOR[sprint.status]}`}
                             >
                               {STATUS_LABEL[sprint.status]}
                             </span>
                           </div>
-                          <p className="truncate text-[11px] text-ink-faint">
+                          <p className="truncate text-xs text-ink-faint">
                             {sprint.startsOn} → {sprint.endsOn} · {sprint.cardCount}{' '}
                             {sprint.cardCount === 1 ? 'card' : 'cards'}
                             {sprint.goal !== null && ` · ${sprint.goal}`}
@@ -555,13 +555,13 @@ function CloseSprintPanel({
   return (
     <div className="mt-2 rounded border border-line bg-surface-sunken/60 p-3">
       <p className="text-xs font-medium text-ink">Complete {sprint.name}</p>
-      <p className="mt-0.5 text-[11px] text-ink-faint">
+      <p className="mt-0.5 text-xs text-ink-faint">
         {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'} attached. Cards in a done
         status stay with this sprint as its shipped record; the rest move where you choose.
       </p>
 
       <label className="mt-2 block">
-        <span className="text-[11px] font-medium text-ink-muted">Move unfinished cards to</span>
+        <span className="text-xs font-medium text-ink-muted">Move unfinished cards to</span>
         <select
           value={target}
           onChange={(event) => {
@@ -662,7 +662,7 @@ function EditSprintForm({
           }}
           className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink disabled:opacity-50"
         />
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           {locked ? 'Active: only the goal is editable.' : ''}
         </span>
         <div className="ml-auto flex items-center gap-2">

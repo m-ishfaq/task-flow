@@ -184,7 +184,7 @@ function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCard
               onClick={() => {
                 setDuplicating((open) => !open);
               }}
-              className="rounded-md border border-line/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+              className="rounded-md border border-line/60 px-2 py-0.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
             >
               Duplicate
             </button>
@@ -192,7 +192,7 @@ function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCard
           <Link
             to="/projects/$projectId"
             params={{ projectId: project.projectId as ProjectId }}
-            className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+            className="rounded border border-line px-2 py-0.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
           >
             Settings
           </Link>
@@ -317,7 +317,7 @@ function DuplicateProjectForm({
           }}
           className="mt-0.5"
         />
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-xs text-ink-muted">
           Copy the cards too
           <span className="block text-ink-faint">
             Unticked copies only the shape — boards, lists, statuses, labels and custom fields —
@@ -463,7 +463,7 @@ function BoardList({
         {/* The count is only interesting when it disagrees with what is shown —
             which is exactly the archived case, and otherwise it is noise. */}
         {showArchived && boards.data.length > live.length && (
-          <span className="text-[11px] text-ink-faint">
+          <span className="text-xs text-ink-faint">
             {boards.data.length - live.length} archived
           </span>
         )}

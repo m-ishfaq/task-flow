@@ -138,7 +138,7 @@ export default function TabsLayout() {
           }),
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: '600',
         },
       }}

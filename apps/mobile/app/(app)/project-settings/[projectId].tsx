@@ -898,7 +898,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -1065,7 +1065,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowCount: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   editText: {

@@ -1105,7 +1105,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.line.hex,
   },
   teamAvatarOverflowText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
   },
@@ -1119,11 +1119,11 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   teamCardMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   teamCardSlug: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'monospace',
     color: colors.inkFaint.hex,
   },
@@ -1161,7 +1161,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   teamMemberAvatarText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.accent.hex,
   },
@@ -1191,7 +1191,7 @@ const styles = StyleSheet.create({
     maxHeight: 180,
   },
   rowCount: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   teamChipRemove: {
@@ -1209,7 +1209,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -1293,7 +1293,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   memberStatus: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.warning.hex,
   },

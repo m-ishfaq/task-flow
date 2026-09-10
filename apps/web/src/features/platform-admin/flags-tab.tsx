@@ -46,7 +46,7 @@ export function FlagsTab({
 
   return (
     <section aria-label="Feature flags">
-      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
+      <p className="mb-3 text-sm leading-relaxed text-ink-muted">
         Global overrides — the table the evaluator never had. A toggle here changes what every
         organization resolves until the override is reset.
       </p>
@@ -70,17 +70,17 @@ export function FlagsTab({
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                     {flag.flagName}
-                    <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-ink-faint">
+                    <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-xs text-ink-faint">
                       Phase {flag.phase}
                     </span>
                     {flag.perOrg && (
-                      <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent">
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
                         org-toggleable
                       </span>
                     )}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-ink-muted">{flag.description}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-faint">
+                  <p className="mt-0.5 text-xs text-ink-faint">
                     {flag.source === 'override' ? (
                       <>
                         <span className="font-medium text-warning">overridden</span> — default was{' '}
@@ -101,7 +101,7 @@ export function FlagsTab({
                       onClick={() => {
                         set.mutate({ flagName: flag.flagName, value: null });
                       }}
-                      className="rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
                     >
                       Reset
                     </button>

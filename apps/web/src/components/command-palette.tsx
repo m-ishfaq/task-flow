@@ -305,7 +305,7 @@ function PaletteDialog({
                   )}
                 >
                   <span className="truncate">{command.label}</span>
-                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">
+                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-xs font-medium text-ink-faint">
                     {command.hint}
                   </span>
                 </button>
@@ -368,14 +368,14 @@ function ShortcutsDialog({
         <div className="mt-3 space-y-4">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+              <p className="mb-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
                 {group.title}
               </p>
               <ul className="space-y-1">
                 {group.items.map((item) => (
                   <li key={item.keys} className="flex items-center justify-between text-sm">
                     <span className="text-ink-muted">{item.description}</span>
-                    <kbd className="rounded-md border border-line/60 bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink">
+                    <kbd className="rounded-md border border-line/60 bg-surface-sunken px-1.5 py-0.5 font-mono text-xs font-medium text-ink">
                       {item.keys}
                     </kbd>
                   </li>

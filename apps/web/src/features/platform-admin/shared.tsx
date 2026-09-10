@@ -51,8 +51,8 @@ export function StatCard({
         <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
-        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+        <p className="truncate text-base font-semibold tracking-tight text-ink">{value}</p>
       </div>
     </div>
   );
@@ -210,69 +210,13 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
 }
 
 /**
- * A `role="tablist"` bar — the shell this console needed twice (the
- * top-level section switcher in platform-admin-page.tsx, and
- * `OperationsTab`'s kind filter) and had, until now, copied verbatim both
- * times, right down to the `bg-surface-raised text-ink shadow-sm`
- * active-state classes. Generic over the value type so a nullable "All"
- * filter and a plain non-null string union share one implementation instead
- * of one being a near-copy of the other with a `?? 'all'` key fallback
- * bolted on.
+ * `TabBar` moved to `components/primitives.tsx` (design bible §21's one
+ * tab-strip primitive — analytics and the import/export dialog were the
+ * other hand-rolled copies). Re-exported here so `operations-tab.tsx`'s
+ * existing `import { … TabBar … } from './shared.js'` keeps working.
  */
-export function TabBar<T extends string | null>({
-  items,
-  value,
-  onChange,
-  ariaLabel,
-  size = 'sm',
-  className,
-}: {
-  readonly items: readonly (readonly [T, string])[];
-  readonly value: T;
-  readonly onChange: (value: T) => void;
-  readonly ariaLabel: string;
-  readonly size?: 'sm' | 'xs';
-  readonly className?: string;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className={cn(
-        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
-        className,
-      )}
-    >
-      {items.map(([itemValue, label]) => (
-        <button
-          key={itemValue ?? 'null'}
-          type="button"
-          role="tab"
-          aria-selected={value === itemValue}
-          onClick={() => {
-            onChange(itemValue);
-          }}
-          className={cn(
-            'relative rounded-lg px-3 py-1.5 font-medium transition-all duration-150',
-            size === 'sm' ? 'text-sm' : 'text-xs',
-            value === itemValue
-              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
+export { TabBar } from '../../components/primitives.js';
 
-/**
- * The read gate every tab renders when its query hits STEP_UP_REQUIRED.
- *
- * Separate from `useStepUp`'s mutation flow because a query cannot be replayed
- * as a thunk — the tab's content only exists once the data does.
- */
 export function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
     <div className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning/5 p-5">
@@ -342,7 +286,7 @@ export function DetailRow({
   return (
     <>
       <dt className="text-ink-faint">{label}</dt>
-      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[11px]')}>{value}</dd>
+      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-xs')}>{value}</dd>
     </>
   );
 }
@@ -398,7 +342,7 @@ export function OrgDetailDialog({
         {data !== undefined && (
           <div className="mt-4 flex flex-col gap-5">
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Billing</h3>
+              <h3 className="mb-2 text-sm font-semibold text-ink">Billing</h3>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <DetailRow label="Plan" value={data.planName ?? data.planId ?? 'none'} />
                 <DetailRow label="Billing status" value={data.billingStatus} />
@@ -437,11 +381,11 @@ export function OrgDetailDialog({
 
             {data.override !== null && (
               <section className="rounded-lg border border-warning/40 bg-warning/5 p-2">
-                <h3 className="mb-1 text-[13px] font-semibold text-ink">
+                <h3 className="mb-1 text-sm font-semibold text-ink">
                   Operator override — outranks the plan
                 </h3>
                 <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
-                <p className="mt-0.5 text-[11px] text-ink-faint">
+                <p className="mt-0.5 text-xs text-ink-faint">
                   set {formatDate(data.override.setAt)}
                   {data.override.expiresAt === null
                     ? ' · no expiry'
@@ -456,7 +400,7 @@ export function OrgDetailDialog({
 
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[13px] font-semibold text-ink">Entitlements</h3>
+                <h3 className="text-sm font-semibold text-ink">Entitlements</h3>
                 {guard !== undefined && (
                   <Button
                     size="sm"
@@ -490,13 +434,13 @@ export function OrgDetailDialog({
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
-                      <span className="block text-[11px] text-ink-faint">
+                      <span className="block text-xs text-ink-faint">
                         {featureDescription(feature.flagName) ?? feature.description}
                       </span>
                     </span>
                     {/* WHERE the answer came from — see this component's own
                         header on why an override is only tolerable with it. */}
-                    <span className="shrink-0 text-[11px] text-ink-faint">
+                    <span className="shrink-0 text-xs text-ink-faint">
                       {feature.source === 'default' ? 'registry default' : `from ${feature.source}`}
                     </span>
                   </li>
@@ -505,7 +449,7 @@ export function OrgDetailDialog({
             </section>
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">
+              <h3 className="mb-2 text-sm font-semibold text-ink">
                 Members ({data.memberCount} active of {data.members.length})
               </h3>
               <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
@@ -517,12 +461,12 @@ export function OrgDetailDialog({
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
-                        <span className="ml-1 text-[11px] text-ink-faint">{member.email}</span>
+                        <span className="ml-1 text-xs text-ink-faint">{member.email}</span>
                       )}
                     </span>
                     <Badge>{member.role}</Badge>
                     {member.status !== 'active' && (
-                      <span className="text-[11px] text-ink-faint">{member.status}</span>
+                      <span className="text-xs text-ink-faint">{member.status}</span>
                     )}
                   </li>
                 ))}
@@ -534,7 +478,7 @@ export function OrgDetailDialog({
             {data.invoices.length > 0 && (
               <section>
                 {' '}
-                <h3 className="mb-2 text-[13px] font-semibold text-ink">Invoices</h3>
+                <h3 className="mb-2 text-sm font-semibold text-ink">Invoices</h3>
                 <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                   {data.invoices.map((invoice) => (
                     <li
@@ -571,7 +515,7 @@ export function OrgDetailDialog({
             )}
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Operator history</h3>
+              <h3 className="mb-2 text-sm font-semibold text-ink">Operator history</h3>
               {history.isPending && <SkeletonRows rows={3} className="mt-1 *:h-6" />}
               {history.data !== undefined &&
                 (history.data.length === 0 ? (
@@ -579,7 +523,7 @@ export function OrgDetailDialog({
                     No operator has acted on this organization.
                   </p>
                 ) : (
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-ink-muted">
+                  <ul className="mt-1 flex flex-col gap-0.5 text-xs text-ink-muted">
                     {history.data.map((entry, index) => (
                       <li key={`${entry.action}-${String(index)}`}>
                         {formatDateTime(entry.at)} · {entry.action} · {entry.by}
@@ -716,7 +660,7 @@ export function OrgOverrideDialog({
               <li key={feature.flagName} className="flex items-center gap-2 px-3 py-2">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-ink">{featureLabel(feature.flagName)}</span>
-                  <span className="block text-[11px] text-ink-faint">
+                  <span className="block text-xs text-ink-faint">
                     {featureDescription(feature.flagName) ?? feature.description}
                   </span>
                 </span>
@@ -746,7 +690,7 @@ export function OrgOverrideDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Recorded in the operator audit chain. Required, even to clear an override.
             </p>
           </Field>
@@ -760,7 +704,7 @@ export function OrgOverrideDialog({
                 setExpiresAt(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Optional. A temporary grant that outlives its reason is worse than no grant at all —
               leave empty only for something meant to stay indefinitely.
             </p>

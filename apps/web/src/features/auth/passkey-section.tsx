@@ -221,7 +221,7 @@ function PasskeyRow({ passkey, busy, onRename, onRemove }: PasskeyRowProps) {
         ) : (
           <p className="truncate text-sm text-ink">{passkey.name ?? 'Unnamed passkey'}</p>
         )}
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {passkey.deviceType === 'multiDevice' ? 'Syncs across devices' : 'This device only'}
           {passkey.backedUp && ' · backed up'} · added {formatDate(passkey.createdAt)}
           {passkey.lastUsedAt !== null && ` · last used ${formatDateTime(passkey.lastUsedAt)}`}

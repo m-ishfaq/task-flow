@@ -96,7 +96,7 @@ export function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Channels
         </h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
@@ -126,7 +126,7 @@ export function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Direct messages
         </h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
@@ -201,7 +201,7 @@ function ChannelRow({
           onSelect(channel.channelId as ChannelId);
         }}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+          'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-[var(--motion-fast)]',
           active
             ? 'bg-accent/15 text-accent'
             : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -214,7 +214,7 @@ function ChannelRow({
         {unreadCount > 0 && (
           <span
             className={cn(
-              'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold',
+              'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-xs font-semibold',
               active ? 'bg-accent-ink/20 text-accent-ink' : 'bg-accent text-accent-ink',
             )}
           >
@@ -280,7 +280,7 @@ function PinnedMessagesButton({
             Pinned messages
           </span>
           {list.length > 0 && (
-            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-xs font-semibold text-ink-muted">
               {list.length > 99 ? '99+' : list.length}
             </span>
           )}
@@ -347,7 +347,7 @@ function PinnedMessageSidebarRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Pinned {new Date(row.pinnedAt).toLocaleString()}
         </span>
       </button>
@@ -355,7 +355,7 @@ function PinnedMessageSidebarRow({
         type="button"
         disabled={pending}
         onClick={onUnpin}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unpin
       </button>
@@ -411,7 +411,7 @@ function SavedMessagesButton({
             Saved messages
           </span>
           {list.length > 0 && (
-            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-xs font-semibold text-ink-muted">
               {list.length > 99 ? '99+' : list.length}
             </span>
           )}
@@ -475,7 +475,7 @@ function SavedMessageRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Saved {new Date(row.savedAt).toLocaleString()}
         </span>
       </button>
@@ -483,7 +483,7 @@ function SavedMessageRow({
         type="button"
         disabled={pending}
         onClick={onUnsave}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unsave
       </button>
@@ -685,7 +685,7 @@ function NewDirectMessagePopover({
                     onClick={() => {
                       toggle(userId);
                     }}
-                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent hover:bg-accent/20"
                   >
                     <span className="truncate">{member?.email ?? userId}</span>
                     <span aria-hidden="true">×</span>

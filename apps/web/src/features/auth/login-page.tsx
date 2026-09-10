@@ -126,7 +126,7 @@ export function LoginPage() {
   if (challenge !== null) {
     return (
       <div className="auth-backdrop min-h-full">
-        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
+        <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6 p-6">
           <TotpChallengeForm
             challengeToken={challenge.token}
             onSuccess={(session) => {
@@ -140,7 +140,7 @@ export function LoginPage() {
 
   return (
     <div className="auth-backdrop min-h-full">
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6 p-6">
         <div className="flex flex-col items-center gap-3 text-center">
           {/* The product's mark — the uploaded logo when branding sets one,
               else the geometric accent-flow mark (`brand-mark.tsx`), on the
@@ -259,8 +259,8 @@ export function LoginPage() {
         <div className="space-y-2 border-t border-line pt-4">
           {passkeySupported ? (
             <Button
-              variant="secondary"
-              className="w-full"
+              variant="ghost"
+              className="w-full border border-line/60 hover:border-line-strong"
               disabled={signInWithPasskeyMutation.isPending}
               onClick={() => {
                 signInWithPasskeyMutation.mutate();
@@ -301,8 +301,8 @@ export function LoginPage() {
               oauthProviders.data?.[provider] === true && (
                 <Button
                   key={provider}
-                  variant="secondary"
-                  className="w-full"
+                  variant="ghost"
+                  className="w-full border border-line/60 hover:border-line-strong"
                   disabled={startOAuth.isPending}
                   onClick={() => {
                     startOAuth.mutate(provider);

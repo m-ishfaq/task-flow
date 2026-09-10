@@ -394,7 +394,7 @@ function ListPicker({ orgId, projectId, value, onChange, label }: PickerProps) {
         />
       ))}
       {!boards.isPending && live.length === 0 && (
-        <span className="text-[11px] text-ink-faint">That project has no boards.</span>
+        <span className="text-xs text-ink-faint">That project has no boards.</span>
       )}
     </div>
   );
@@ -486,7 +486,7 @@ function LabelPicker({ orgId, projectId, value, onChange, label }: PickerProps) 
 /** Shown where a project-scoped picker cannot offer anything yet. */
 function NeedsProject({ label }: { readonly label: string }) {
   return (
-    <span className="min-w-0 flex-1 text-[11px] text-ink-faint">
+    <span className="min-w-0 flex-1 text-xs text-ink-faint">
       Choose a project above to pick a {label.toLowerCase()}.
     </span>
   );

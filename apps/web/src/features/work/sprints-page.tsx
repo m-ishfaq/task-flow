@@ -105,12 +105,12 @@ export function SprintsPage() {
                       <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>
                       <StatusChip status={sprint.status} />
                     </p>
-                    <p className="truncate text-[11px] text-ink-faint">
+                    <p className="truncate text-xs text-ink-faint">
                       {sprint.startsOn} → {sprint.endsOn}
                       {sprint.goal !== null && sprint.goal !== '' && ` · ${sprint.goal}`}
                     </p>
                   </div>
-                  <span className="shrink-0 text-[11px] text-ink-faint">
+                  <span className="shrink-0 text-xs text-ink-faint">
                     {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                 </div>
@@ -162,7 +162,7 @@ function StatusChip({ status }: { readonly status: string }) {
         : 'bg-surface-raised text-ink-faint';
 
   return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize ${tone}`}>
+    <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium capitalize ${tone}`}>
       {status}
     </span>
   );

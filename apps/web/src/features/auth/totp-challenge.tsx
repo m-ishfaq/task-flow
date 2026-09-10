@@ -43,7 +43,7 @@ export function TotpChallengeForm({
       }}
     >
       <div>
-        <h1 className="text-lg font-semibold text-ink">Two-factor authentication</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Two-factor authentication</h1>
         <p className="mt-1 text-sm text-ink-muted">
           {useRecoveryCode
             ? 'Enter one of your saved recovery codes.'

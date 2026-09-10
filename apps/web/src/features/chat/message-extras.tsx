@@ -82,7 +82,7 @@ export function MessageAttachments({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-5 shrink-0 px-1 text-[11px]"
+                  className="h-5 shrink-0 px-1 text-xs"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(attachment.attachmentId as AttachmentId);
@@ -128,13 +128,13 @@ export function MessagePreviews({ previews }: { readonly previews: readonly Mess
             className="flex flex-col gap-0.5 px-2 py-1.5 hover:bg-surface-hover"
           >
             {preview.siteName !== null && (
-              <span className="truncate text-[11px] text-ink-faint">{preview.siteName}</span>
+              <span className="truncate text-xs text-ink-faint">{preview.siteName}</span>
             )}
             {preview.title !== null && (
               <span className="truncate text-xs font-medium text-ink">{preview.title}</span>
             )}
             {preview.description !== null && (
-              <span className="line-clamp-2 text-[11px] text-ink-muted">{preview.description}</span>
+              <span className="line-clamp-2 text-xs text-ink-muted">{preview.description}</span>
             )}
           </a>
         </li>

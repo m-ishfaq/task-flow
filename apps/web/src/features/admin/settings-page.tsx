@@ -75,14 +75,38 @@ export function SettingsPage() {
   // fetches this same cached query itself for its own inner capabilities,
   // so this costs no extra request.
   const org = useQuery(orgDetailQuery(orgId));
+  const caps = org.data?.capabilities;
+
+  /* §13: "a left-rail instead of one long scroll — one section at a time." The
+     rail lists exactly the sections this viewer's capabilities admit, and only
+     the active one renders — the page no longer stacks five heavy sections
+     (each with its own roster/grant queries) into one unbounded scroll. Local
+     state, not a search param: settings has no shareable per-section view
+     today, and this keeps the change to this file alone. */
+  const [active, setActive] = useState<SettingsSectionId>('general');
+
+  const allSections: readonly { id: SettingsSectionId; label: string; visible: boolean }[] = [
+    { id: 'general', label: 'General', visible: true },
+    { id: 'billing', label: 'Billing', visible: caps?.viewBilling === true },
+    { id: 'members', label: 'Members', visible: caps?.viewDirectory === true },
+    { id: 'permissions', label: 'Permissions', visible: caps?.manageMembers === true },
+    { id: 'role-defaults', label: 'Role defaults', visible: caps?.manageMembers === true },
+    { id: 'teams', label: 'Teams', visible: caps?.viewTeams === true },
+  ];
+  const sections = allSections.filter((section) => section.visible);
+
+  // A capability change (or a first render before the query resolves) can
+  // leave the stored selection pointing at a section that is not offered;
+  // falling back to the first offered one keeps the rail honest.
+  const current = sections.some((s) => s.id === active) ? active : (sections[0]?.id ?? 'general');
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
+    <div className="mx-auto flex max-w-5xl flex-col gap-7 p-8">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
         actions={
-          org.data?.capabilities.viewAuditLog === true ? (
+          caps?.viewAuditLog === true ? (
             <Link
               to="/settings/audit"
               className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
@@ -93,21 +117,55 @@ export function SettingsPage() {
         }
       />
 
-      <OrgSection orgId={orgId} />
-      {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
-      {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
-          role except Guest. Before these fields existed, both sections
-          rendered unconditionally and fired their own roster queries
-          regardless of who was looking, so a Guest reaching `/settings` (the
-          top-bar "Settings" link has no gate of its own — every role can open
-          this page) hit a raw FORBIDDEN `ErrorView` for each. */}
-      {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
-      {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
+      <div className="grid gap-7 md:grid-cols-[180px_1fr] md:items-start">
+        <nav aria-label="Settings sections" className="md:sticky md:top-4">
+          <ul className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+            {sections.map((section) => (
+              <li key={section.id} className="shrink-0">
+                <button
+                  type="button"
+                  aria-current={current === section.id ? 'page' : undefined}
+                  onClick={() => {
+                    setActive(section.id);
+                  }}
+                  className={cn(
+                    'press w-full rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors duration-[var(--motion-fast)]',
+                    current === section.id
+                      ? 'bg-accent/12 text-accent'
+                      : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                  )}
+                >
+                  {section.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div className="min-w-0">
+          {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
+              role except Guest. Before these fields existed, both sections
+              rendered unconditionally and fired their own roster queries
+              regardless of who was looking, so a Guest reaching `/settings` (the
+              top-bar "Settings" link has no gate of its own — every role can open
+              this page) hit a raw FORBIDDEN `ErrorView` for each. */}
+          {current === 'general' && <OrgSection orgId={orgId} />}
+          {current === 'billing' && caps?.viewBilling === true && <BillingSection orgId={orgId} />}
+          {current === 'members' && caps?.viewDirectory === true && <MemberSection orgId={orgId} />}
+          {current === 'permissions' && caps?.manageMembers === true && (
+            <PermissionsSection orgId={orgId} />
+          )}
+          {current === 'role-defaults' && caps?.manageMembers === true && (
+            <RoleDefaultGrantsSection orgId={orgId} />
+          )}
+          {current === 'teams' && caps?.viewTeams === true && <TeamSection orgId={orgId} />}
+        </div>
+      </div>
     </div>
   );
 }
+
+type SettingsSectionId = 'general' | 'billing' | 'members' | 'permissions' | 'role-defaults' | 'teams';
 
 /* -------------------------------------------------------------------------- *
  * The organization
@@ -1329,7 +1387,7 @@ function PermissionGrantChip({
         />
       )}
       <span className="font-mono font-medium text-ink">{permission}</span>
-      <span className="text-[10px] text-ink-faint">· {formatDate(grantedAt)}</span>
+      <span className="text-xs text-ink-faint">· {formatDate(grantedAt)}</span>
       {revocable &&
         (confirming ? (
           <span className="flex items-center gap-1 border-l border-line/50 pl-1.5">
@@ -1340,7 +1398,7 @@ function PermissionGrantChip({
                 onRevoke();
                 setConfirming(false);
               }}
-              className="text-[10px] font-medium text-danger hover:underline disabled:opacity-50"
+              className="text-xs font-medium text-danger hover:underline disabled:opacity-50"
             >
               Confirm
             </button>
@@ -1349,7 +1407,7 @@ function PermissionGrantChip({
               onClick={() => {
                 setConfirming(false);
               }}
-              className="text-[10px] text-ink-faint hover:text-ink"
+              className="text-xs text-ink-faint hover:text-ink"
             >
               Cancel
             </button>
@@ -1548,9 +1606,9 @@ function MemberRow({
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-sm text-ink">
           {member.email}
-          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
+          {isSelf && <span className="text-xs text-ink-faint">(you)</span>}
         </p>
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
           joined {formatDate(member.joinedAt)}
         </p>
@@ -1788,7 +1846,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
     <li className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
-        <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
+        <span className="font-mono text-xs text-ink-faint">{team.slug}</span>
         <Badge className="ml-auto">
           {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
         </Badge>
@@ -1800,7 +1858,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
       {canManage && (
         <div className="mt-2.5">
           {candidates.length === 0 ? (
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               {orgMembers.length === 0
                 ? 'No org members to add.'
                 : 'Everyone in the organization is on this team.'}
@@ -1860,7 +1918,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                           onRemove(member.userId as UserId);
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                        className="rounded-full px-1.5 text-xs font-medium text-danger hover:underline"
                       >
                         Remove
                       </button>
@@ -1869,7 +1927,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                         onClick={() => {
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                        className="rounded-full px-1 text-xs text-ink-muted hover:underline"
                       >
                         Cancel
                       </button>

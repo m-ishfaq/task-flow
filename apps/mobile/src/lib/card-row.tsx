@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   reference: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: colors.inkFaint.hex,
     fontVariant: ['tabular-nums'],
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: colors.inkMuted.hex,
   },

@@ -52,7 +52,7 @@ function StatusPill({ status }: { readonly status: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         tone,
       )}
     >
@@ -144,7 +144,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">Place a call</h2>
+          <h2 className="text-sm font-semibold text-ink">Place a call</h2>
         </div>
         <form
           className="rounded-xl border border-line/50 bg-surface-raised p-4"
@@ -228,9 +228,9 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">Call log</h2>
+          <h2 className="text-sm font-semibold text-ink">Call log</h2>
           {calls.data !== undefined && (
-            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink-muted">
               {calls.data.length}
             </span>
           )}
@@ -246,86 +246,14 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
             description="Calls you place appear here with their status, duration, and any recording."
           />
         ) : (
-          <ul className="space-y-1.5">
-            {calls.data.map((call) => (
-              <li
-                key={call.callId}
-                className={cn(
-                  'overflow-hidden rounded-lg border transition-colors',
-                  expanded === call.callId ? 'border-accent/40' : 'border-line',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExpanded((current) => (current === call.callId ? null : call.callId));
-                  }}
-                  className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'text-sm leading-none',
-                      call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
-                    )}
-                  >
-                    {call.direction === 'outbound' ? '→' : '←'}
-                  </span>
-                  <span className="sr-only">
-                    {call.direction === 'outbound' ? 'Outbound' : 'Inbound'}
-                  </span>
-                  <span className="font-mono text-xs text-ink">{String(call.counterparty)}</span>
-                  {call.durationSeconds !== null && (
-                    <span className="text-[11px] text-ink-faint">
-                      {durationLabel(call.durationSeconds)}
-                    </span>
-                  )}
-                  <span className="ml-auto flex items-center gap-2">
-                    {call.recorded && (
-                      <span className="text-[10px] font-medium text-ink-muted">● recorded</span>
-                    )}
-                    <StatusPill status={call.status} />
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'text-[10px] text-ink-faint transition-transform',
-                        expanded === call.callId && 'rotate-90',
-                      )}
-                    >
-                      ›
-                    </span>
-                  </span>
-                </button>
-                {expanded === call.callId && (
-                  <div className="border-t border-line bg-surface px-3 py-2">
-                    {call.startedAt !== null && (
-                      <p className="mb-1.5 text-[11px] text-ink-faint">
-                        {call.direction === 'outbound' ? 'Placed' : 'Received'}{' '}
-                        {formatRelative(call.startedAt)}
-                      </p>
-                    )}
-                    {call.recorded ? (
-                      <CallRecordings orgId={orgId} callId={call.callId} />
-                    ) : (
-                      <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
-                    )}
-                    {/* Redial lives in the expanded body, not on the row: the
-                        row IS a button, and nesting one inside it is invalid
-                        HTML that browsers resolve by dropping the inner
-                        control's activation — the click would toggle the row
-                        instead of dialling. */}
-                    <div className="mt-2 border-t border-line pt-2">
-                      <CallButton
-                        orgId={orgId}
-                        to={String(call.counterparty)}
-                        label={`Call ${String(call.counterparty)} back`}
-                      />
-                    </div>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          <DayGroupedCalls
+            calls={calls.data}
+            expanded={expanded}
+            orgId={orgId}
+            onToggle={(callId) => {
+              setExpanded((current) => (current === callId ? null : callId));
+            }}
+          />
         )}
       </section>
     </div>
@@ -359,7 +287,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
   if (recordings.isPending) return <SkeletonRows rows={1} />;
   if (recordings.isError) return <ErrorText error={recordings.error} />;
   if (recordings.data.length === 0) {
-    return <p className="text-[11px] text-ink-faint">No recording stored yet.</p>;
+    return <p className="text-xs text-ink-faint">No recording stored yet.</p>;
   }
 
   return (
@@ -368,7 +296,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
         {recordings.data.map((recording) => (
           <li key={recording.recordingId} className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-ink-muted">
+              <span className="text-xs text-ink-muted">
                 {recording.status}
                 {recording.durationSeconds !== null &&
                   ` · ${durationLabel(recording.durationSeconds)}`}
@@ -377,7 +305,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(recording.recordingId);
@@ -427,8 +355,186 @@ function Transcript({
 
   return (
     <details className="rounded border border-line bg-surface-sunken px-2 py-1">
-      <summary className="cursor-pointer text-[11px] text-ink-muted">Transcript</summary>
+      <summary className="cursor-pointer text-xs text-ink-muted">Transcript</summary>
       <p className="mt-1 text-xs whitespace-pre-wrap text-ink-muted">{transcript.data.text}</p>
     </details>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * §09's call log: grouped by day. A flat, undated list of phone numbers makes
+ * "did that call happen today or last week?" a hover-tooltip question; the
+ * day headers answer it before the eye reaches a row. Calls arrive from the
+ * API newest-first already, so a stable partition by calendar day keeps the
+ * order inside each group.
+ * -------------------------------------------------------------------------- */
+
+/* The call-list row type, restated from the router's output the way `Wire<T>`
+   always does at this boundary (dates arrive as ISO strings). */
+interface CallRow {
+  readonly callId: string;
+  readonly direction: 'inbound' | 'outbound';
+  readonly counterparty: unknown;
+  readonly status: string;
+  readonly durationSeconds: number | null;
+  readonly recorded: boolean;
+  readonly startedAt: string | null;
+  readonly endedAt: string | null;
+}
+
+interface DayGroupedCallsProps {
+  readonly calls: readonly CallRow[];
+  readonly expanded: string | null;
+  readonly orgId: string;
+  readonly onToggle: (callId: string) => void;
+}
+
+function DayGroupedCalls({ calls, expanded, orgId, onToggle }: DayGroupedCallsProps) {
+  const groups = groupByDay(calls);
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <section key={group.label} className="space-y-1.5">
+          <h3 className="px-0.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+            {group.label}
+          </h3>
+          <ul className="space-y-1.5">
+            {group.calls.map((call) => (
+              <CallRowItem
+                key={call.callId}
+                call={call}
+                orgId={orgId}
+                isExpanded={expanded === call.callId}
+                onToggle={onToggle}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** A stable day partition: one group per calendar day, newest day first. */
+function groupByDay(calls: readonly CallRow[]): { label: string; calls: CallRow[] }[] {
+  const today = dayKey(new Date());
+  const yesterday = dayKey(new Date(Date.now() - 86_400_000));
+  const byKey = new Map<string, { label: string; calls: CallRow[] }>();
+  for (const call of calls) {
+    if (call.startedAt === null) continue;
+    const key = dayKey(new Date(call.startedAt));
+    const existing = byKey.get(key);
+    if (existing !== undefined) {
+      existing.calls.push(call);
+      continue;
+    }
+    byKey.set(key, {
+      label:
+        key === today
+          ? 'Today'
+          : key === yesterday
+            ? 'Yesterday'
+            : new Date(call.startedAt).toLocaleDateString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              }),
+      calls: [call],
+    });
+  }
+  return [...byKey.values()];
+}
+
+/** Local-calendar day key — grouping follows the viewer's clock, not UTC. */
+function dayKey(date: Date): string {
+  const y = String(date.getFullYear());
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function CallRowItem({
+  call,
+  orgId,
+  isExpanded,
+  onToggle,
+}: {
+  readonly call: CallRow;
+  readonly orgId: string;
+  readonly isExpanded: boolean;
+  readonly onToggle: (callId: string) => void;
+}) {
+  return (
+    <li
+      className={cn(
+        'overflow-hidden rounded-lg border transition-colors',
+        isExpanded ? 'border-accent/40' : 'border-line',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onToggle(call.callId);
+        }}
+        className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'text-sm leading-none',
+            call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
+          )}
+        >
+          {call.direction === 'outbound' ? '→' : '←'}
+        </span>
+        <span className="sr-only">{call.direction === 'outbound' ? 'Outbound' : 'Inbound'}</span>
+        <span className="font-mono text-xs text-ink">{String(call.counterparty)}</span>
+        {call.durationSeconds !== null && (
+          <span className="text-xs text-ink-faint">{durationLabel(call.durationSeconds)}</span>
+        )}
+        <span className="ml-auto flex items-center gap-2">
+          {call.startedAt !== null && (
+            <span className="text-xs tabular-nums text-ink-faint">
+              {new Date(call.startedAt).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </span>
+          )}
+          {call.recorded && <span className="text-xs font-medium text-ink-muted">● recorded</span>}
+          <StatusPill status={call.status} />
+          <span
+            aria-hidden="true"
+            className={cn('text-xs text-ink-faint transition-transform', isExpanded && 'rotate-90')}
+          >
+            ›
+          </span>
+        </span>
+      </button>
+      {isExpanded && (
+        <div className="border-t border-line bg-surface px-3 py-2">
+          {call.startedAt !== null && (
+            <p className="mb-1.5 text-xs text-ink-faint">
+              {call.direction === 'outbound' ? 'Placed' : 'Received'} {formatRelative(call.startedAt)}
+            </p>
+          )}
+          {call.recorded ? (
+            <CallRecordings orgId={orgId} callId={call.callId} />
+          ) : (
+            <p className="text-xs text-ink-faint">This call was not recorded.</p>
+          )}
+          {/* Redial lives in the expanded body, not on the row: the row IS a
+              button, and nesting one inside it is invalid HTML that browsers
+              resolve by dropping the inner control's activation. */}
+          <div className="mt-2 border-t border-line pt-2">
+            <CallButton
+              orgId={orgId}
+              to={String(call.counterparty)}
+              label={`Call ${String(call.counterparty)} back`}
+            />
+          </div>
+        </div>
+      )}
+    </li>
   );
 }

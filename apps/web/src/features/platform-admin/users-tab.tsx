@@ -81,16 +81,16 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   User
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Email verified
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Orgs
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Created
                 </th>
               </tr>
@@ -109,7 +109,7 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       {user.name ?? user.email}
                     </p>
                     {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
-                    <p className="font-mono text-[11px] text-ink-faint">
+                    <p className="font-mono text-xs text-ink-faint">
                       {user.userId.slice(0, 8)}
                     </p>
                   </td>
@@ -216,7 +216,7 @@ function UserDetailDialog({
             </dl>
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">
+              <h3 className="mb-2 text-sm font-semibold text-ink">
                 Organizations ({data.memberships.length})
               </h3>
 
@@ -238,10 +238,10 @@ function UserDetailDialog({
                         </span>
                         <Badge>{membership.role}</Badge>
                         {membership.status !== 'active' && (
-                          <span className="text-[11px] text-ink-faint">{membership.status}</span>
+                          <span className="text-xs text-ink-faint">{membership.status}</span>
                         )}
                       </div>
-                      <p className="mt-0.5 text-[11px] text-ink-faint">
+                      <p className="mt-0.5 text-xs text-ink-faint">
                         {membership.orgSlug} · org {membership.orgStatus} ·{' '}
                         {membership.orgBillingStatus} · since {formatDate(membership.joinedAt)}
                       </p>

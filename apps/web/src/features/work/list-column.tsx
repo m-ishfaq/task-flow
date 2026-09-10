@@ -70,10 +70,10 @@ export function ListColumn({
       )}
     >
       <header className="column-header justify-between">
-        <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{list.name}</h2>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'rounded-full px-2 py-0.5 text-xs font-medium',
             overLimit ? 'bg-warning/15 text-warning' : 'bg-surface-hover/80 text-ink-faint',
           )}
           title={
@@ -467,7 +467,7 @@ function AddCard({
         // direction a chat composer's mention picker opens for the identical
         // reason.
         <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
-          <li className="px-2 py-1 text-[10px] font-medium text-ink-faint">Might already exist</li>
+          <li className="px-2 py-1 text-xs font-medium text-ink-faint">Might already exist</li>
           {matches.map((hit) => (
             <li key={hit.entityId}>
               <button

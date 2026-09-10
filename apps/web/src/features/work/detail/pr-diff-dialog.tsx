@@ -48,7 +48,7 @@ export function PrDiffButton({
         type="button"
         size="sm"
         variant="ghost"
-        className="h-6 px-1.5 text-[11px]"
+        className="h-6 px-1.5 text-xs"
         title="View diff"
         onClick={() => {
           setOpen(true);
@@ -96,7 +96,7 @@ function PrDiffDialogBody({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             onClick={() => {
               setBrowseFiles((previous) => !previous);
               setSelectedPath(null);
@@ -125,7 +125,7 @@ function PrDiffDialogBody({
           <div className="space-y-2">
             <DiffView diff={diff.data.diff} truncated={diff.data.truncated} />
             {diff.data.truncated && (
-              <p className="text-[11px] text-ink-faint">
+              <p className="text-xs text-ink-faint">
                 This diff was too large to show in full.{' '}
                 <button
                   type="button"
@@ -210,13 +210,13 @@ function PrFileBrowser({
                 <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">
                   {file.path}
                 </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
+                <span className="shrink-0 text-xs uppercase tracking-wide text-ink-faint">
                   {file.status}
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-success">
+                <span className="shrink-0 font-mono text-xs text-success">
                   +{file.additions}
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-danger">
+                <span className="shrink-0 font-mono text-xs text-danger">
                   -{file.deletions}
                 </span>
               </button>
@@ -251,7 +251,7 @@ function PrSingleFileDiff({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
       >
         <ChevronLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
         All files

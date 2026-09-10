@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
   },
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
     marginTop: 1,
   },
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   permChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     color: colors.ink.hex,
   },
@@ -554,7 +554,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   modalPickerRowRole: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   checkbox: {
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
   },
   selectionSummary: {
     marginTop: 4,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   errorText: {

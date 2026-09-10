@@ -115,7 +115,7 @@ export function AssigneeSection({
                 toggle(person.userId);
               }}
               title={`Remove ${person.label}`}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted hover:text-danger"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted hover:text-danger"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>
@@ -123,7 +123,7 @@ export function AssigneeSection({
           ) : (
             <span
               key={person.userId}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>

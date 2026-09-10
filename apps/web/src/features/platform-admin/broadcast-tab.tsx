@@ -204,7 +204,7 @@ export function BroadcastTab({
 
   return (
     <section aria-label="Broadcast">
-      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
+      <p className="mb-3 text-sm leading-relaxed text-ink-muted">
         Send a message to a specific member, a role-filtered subset, or every active member of ONE
         org — never across orgs in a single send. In-app delivery is always on; push and email are
         each optional. This does not reach an open tab instantly the way an ordinary notification
@@ -256,7 +256,7 @@ export function BroadcastTab({
                       <span className="min-w-0 truncate text-ink">
                         {candidate.name} <span className="text-ink-faint">({candidate.slug})</span>
                       </span>
-                      <span className="shrink-0 text-[11px] text-ink-faint">
+                      <span className="shrink-0 text-xs text-ink-faint">
                         {candidate.memberCount} members
                       </span>
                     </button>

@@ -186,7 +186,7 @@ export function IntegrationsCallbackPage() {
   if (linkErrorMessage !== null || (mutationError !== null && pending === null)) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-lg font-semibold text-ink">Connect did not complete</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Connect did not complete</h1>
         {linkErrorMessage !== null ? (
           <p className="text-sm text-danger">{linkErrorMessage}</p>
         ) : (
@@ -219,7 +219,7 @@ export function IntegrationsCallbackPage() {
   if (sessionStatus === 'anonymous') {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-lg font-semibold text-ink">Your session is gone</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Your session is gone</h1>
         <p className="text-sm text-ink-muted">
           The round trip to {provider} lost your sign-in. Sign back in and reconnect — the
           connection was not saved.
@@ -246,7 +246,7 @@ export function IntegrationsCallbackPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col justify-center gap-4 p-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Choose the repository</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Choose the repository</h1>
         <p className="mt-0.5 text-xs text-ink-muted">
           The connection is authorized for {pending.login || 'your GitHub account'}. It becomes a
           connector for the repository you pick — events from that repo will be verifiable, and
@@ -258,7 +258,7 @@ export function IntegrationsCallbackPage() {
           webhook config. Recovered-after-refresh renders without the secret
           and says so. */}
       {recovered ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-ink">
+        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-ink">
           This page was refreshed, so the verification secret is gone. It was shown once at connect
           time; reconnect to mint a new one.
         </div>

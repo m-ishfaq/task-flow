@@ -267,7 +267,7 @@ function SpaceTreePanel({
               onClick={() => {
                 setShowArchived((value) => !value);
               }}
-              className="mt-2 block px-1 text-[11px] text-ink-faint underline hover:text-ink-muted"
+              className="mt-2 block px-1 text-xs text-ink-faint underline hover:text-ink-muted"
             >
               {showArchived ? 'Hide archived spaces' : `Show archived (${String(archived.length)})`}
             </button>
@@ -401,7 +401,7 @@ function SpaceNode({
               onClick={() => {
                 restore.mutate();
               }}
-              className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+              className="shrink-0 px-1.5 py-1 text-xs text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
             >
               Restore
             </button>
@@ -416,7 +416,7 @@ function SpaceNode({
               setAddingRootPage((value) => !value);
             }}
             aria-label={`New page in ${space.name}`}
-            className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+            className="shrink-0 px-1.5 py-1 text-xs text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
           >
             + Page
           </button>
@@ -445,7 +445,7 @@ function SpaceNode({
           ) : pages.isError ? (
             <ErrorView error={pages.error} title="Could not load pages" />
           ) : live.length === 0 && !addingRootPage ? (
-            <p className="py-1 text-[11px] text-ink-faint">No pages</p>
+            <p className="py-1 text-xs text-ink-faint">No pages</p>
           ) : (
             <ul>
               {(byParent.get(null) ?? []).map((page) => (

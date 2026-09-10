@@ -92,7 +92,7 @@ export function AuditPage() {
                 Chain BROKEN across {verify.data.breaks.length}{' '}
                 {verify.data.breaks.length === 1 ? 'entry' : 'entries'}.
               </p>
-              <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
+              <ul className="mt-1 space-y-0.5 font-mono text-xs">
                 {verify.data.breaks.map((entry) => (
                   <li key={entry.id}>
                     seq {entry.seq}: {entry.reason}
@@ -134,7 +134,7 @@ export function AuditPage() {
                       <td className="text-ink-muted">
                         {entry.resourceType ?? '—'}
                         {entry.resourceId !== null && (
-                          <span className="ml-1 font-mono text-[11px] text-ink-faint">
+                          <span className="ml-1 font-mono text-xs text-ink-faint">
                             {entry.resourceId.slice(0, 8)}
                           </span>
                         )}
@@ -206,11 +206,11 @@ function ActorCell({
       <span className="inline-flex items-center gap-1.5 text-ink-faint">
         <span
           aria-hidden="true"
-          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-surface-sunken text-[9px]"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-surface-sunken text-xs"
         >
           SYS
         </span>
-        <span className="text-[11px] italic">system</span>
+        <span className="text-xs italic">system</span>
       </span>
     );
   }
@@ -220,12 +220,12 @@ function ActorCell({
       <span title={actorId} className="inline-flex items-center gap-1.5 text-ink-faint">
         <span
           aria-hidden="true"
-          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-dashed border-line text-[9px]"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-dashed border-line text-xs"
         >
           ?
         </span>
-        <span className="font-mono text-[10px]">{actorId.slice(0, 8)}</span>
-        <span className="text-[10px] italic">deleted</span>
+        <span className="font-mono text-xs">{actorId.slice(0, 8)}</span>
+        <span className="text-xs italic">deleted</span>
       </span>
     );
   }
@@ -233,7 +233,7 @@ function ActorCell({
   return (
     <span className="inline-flex items-center gap-1.5" title={`${actorEmail} · ${actorId}`}>
       <Avatar userId={actorId} label={actorEmail} size="xs" />
-      <span className="truncate text-[11px] text-ink-muted">{actorEmail}</span>
+      <span className="truncate text-xs text-ink-muted">{actorEmail}</span>
     </span>
   );
 }

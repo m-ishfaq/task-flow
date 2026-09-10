@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowEmail: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   oooBadge: {
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   oooBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.warning.hex,
   },
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   roleBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
     textTransform: 'capitalize',

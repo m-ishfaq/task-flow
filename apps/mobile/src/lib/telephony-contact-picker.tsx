@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   modalRowPhone: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   modalCancel: {

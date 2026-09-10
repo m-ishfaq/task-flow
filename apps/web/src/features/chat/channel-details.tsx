@@ -349,7 +349,7 @@ function DirectCallAction({ orgId, userId }: { readonly orgId: string; readonly 
 
   return (
     <div className="flex items-center gap-2">
-      <span className="font-mono text-[11px] text-ink-muted">{workPhone}</span>
+      <span className="font-mono text-xs text-ink-muted">{workPhone}</span>
       <CallButton orgId={orgId} to={workPhone} />
     </div>
   );

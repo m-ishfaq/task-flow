@@ -349,13 +349,13 @@ export function BoardPage() {
                 {othersPresent.slice(0, 5).map((person) => (
                   <span
                     key={person.userId}
-                    className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
+                    className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-xs font-medium text-accent-ink"
                   >
                     {person.label.slice(0, 2).toUpperCase()}
                   </span>
                 ))}
                 {othersPresent.length > 5 && (
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-xs font-medium text-ink-muted">
                     +{othersPresent.length - 5}
                   </span>
                 )}

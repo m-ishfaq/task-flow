@@ -187,14 +187,14 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
           <div key={checklist.checklistId} className="space-y-1.5">
             <div className="flex items-center gap-2">
               <h4 className="text-xs font-medium text-ink">{checklist.name}</h4>
-              <span className="text-[11px] text-ink-faint">
+              <span className="text-xs text-ink-faint">
                 {done}/{checklist.items.length}
               </span>
               {canEdit && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-5 px-1 text-[11px]"
+                  className="ml-auto h-5 px-1 text-xs"
                   onClick={() => {
                     removeList.mutate(checklist.checklistId as ChecklistId);
                   }}

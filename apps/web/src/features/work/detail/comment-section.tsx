@@ -402,7 +402,7 @@ export function CommentSection({
       )}
 
       {/* No inline error rows — every mutation here reports through a toast. */}
-      {viewerId === null && <p className="text-[11px] text-ink-faint">Not signed in.</p>}
+      {viewerId === null && <p className="text-xs text-ink-faint">Not signed in.</p>}
     </section>
   );
 }
@@ -489,7 +489,7 @@ function CommentRow({
 
   return (
     <div className={cn('space-y-1', pending && 'opacity-60')}>
-      <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+      <div className="flex items-center gap-1.5 text-xs text-ink-faint">
         {pending ? (
           <span>Posting…</span>
         ) : (
@@ -546,19 +546,19 @@ function CommentRow({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-5 px-1 text-[11px]"
+                className="h-5 px-1 text-xs"
                 onClick={onStartEdit}
               >
                 Edit
               </Button>
             )}
             {(comment.authorId === viewerId || canModerate) && (
-              <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
+              <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onDelete}>
                 Delete
               </Button>
             )}
             {onReply !== undefined && (
-              <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onReply}>
+              <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onReply}>
                 Reply
               </Button>
             )}

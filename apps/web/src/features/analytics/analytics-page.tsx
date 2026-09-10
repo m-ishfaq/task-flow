@@ -1,5 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useSession } from '../../lib/session.js';
+import { TabBar } from '../../components/primitives.js';
 import { VelocityPanel } from './velocity-panel.js';
 import { BurndownPanel } from './burndown-panel.js';
 import { CfdPanel } from './cfd-panel.js';
@@ -46,25 +47,13 @@ export function AnalyticsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line/50 px-4 pt-4 pb-2">
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Analytics</h1>
-        <div className="mt-2 flex gap-1 overflow-x-auto" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => {
-                selectTab(t.id);
-              }}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-accent/10 text-accent'
-                  : 'text-ink/60 hover:bg-surface-hover hover:text-ink'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar
+          className="mt-2"
+          ariaLabel="Analytics sections"
+          items={TABS.map((t) => [t.id, t.label] as const)}
+          value={tab}
+          onChange={selectTab}
+        />
       </header>
 
       <div className="flex-1 overflow-auto p-4">

@@ -1476,7 +1476,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   pillText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   actionsRow: {
@@ -1500,7 +1500,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   publishedHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
     marginBottom: 14,
   },
@@ -1591,7 +1591,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   itemTime: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   itemActions: {
@@ -1605,12 +1605,12 @@ const styles = StyleSheet.create({
     color: colors.accent.hex,
   },
   resolvedBadge: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.success.hex,
   },
   kindBadge: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     backgroundColor: colors.surfaceHover.hex,
@@ -1619,7 +1619,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   statusBadge: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkFaint.hex,
     textTransform: 'capitalize',
@@ -1726,7 +1726,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSunken.hex,
   },
   versionKindText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     color: colors.inkMuted.hex,
@@ -1737,7 +1737,7 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
   },
   versionTime: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   versionRestoreText: {

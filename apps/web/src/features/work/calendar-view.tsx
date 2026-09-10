@@ -171,7 +171,7 @@ function MonthGrid({
 }) {
   return (
     <>
-      <div className="grid grid-cols-7 text-[11px] font-medium text-ink-faint">
+      <div className="grid grid-cols-7 text-xs font-medium text-ink-faint">
         {WEEKDAY_LABELS.map((label) => (
           <div key={label} className="border-b border-line/30 px-2 py-1.5 text-center">
             {label}
@@ -197,7 +197,7 @@ function MonthGrid({
             >
               <div
                 className={cn(
-                  'mb-1 px-1 text-[11px]',
+                  'mb-1 px-1 text-xs',
                   isToday(day)
                     ? 'font-semibold text-accent'
                     : overdueDay
@@ -219,13 +219,13 @@ function MonthGrid({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="w-full rounded px-1 text-left text-[10px] text-ink-faint hover:bg-surface-hover hover:text-ink hover:underline"
+                        className="w-full rounded px-1 text-left text-xs text-ink-faint hover:bg-surface-hover hover:text-ink hover:underline"
                       >
                         +{overflow} more
                       </button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-64 p-2">
-                      <p className="mb-1 px-1 text-[11px] font-medium text-ink-muted">
+                      <p className="mb-1 px-1 text-xs font-medium text-ink-muted">
                         {format(day, 'EEEE, d MMMM')}
                       </p>
                       <ul className="max-h-64 space-y-0.5 overflow-y-auto">
@@ -314,7 +314,7 @@ function CardRow({
       title={card.title}
       className={cn(
         'flex w-full items-center gap-1.5 truncate rounded px-1 text-left text-ink hover:bg-surface-hover',
-        agenda ? 'py-1 text-[13px]' : 'py-0.5 text-[11px]',
+        agenda ? 'py-1 text-sm' : 'py-0.5 text-xs',
       )}
     >
       {card.priority !== null && (
@@ -324,7 +324,7 @@ function CardRow({
         />
       )}
       {agenda && (
-        <span className="shrink-0 font-mono text-[11px] text-ink-faint">{card.reference}</span>
+        <span className="shrink-0 font-mono text-xs text-ink-faint">{card.reference}</span>
       )}
       <span className="truncate">{card.title}</span>
     </button>

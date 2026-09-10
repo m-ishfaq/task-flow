@@ -143,7 +143,7 @@ export function PlansTab({
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                       {plan.name}
-                      <span className="font-mono text-[11px] text-ink-faint">{plan.id}</span>
+                      <span className="font-mono text-xs text-ink-faint">{plan.id}</span>
                       {plan.isDefault && <Badge>default</Badge>}
                       {!plan.isActive && <Badge>retired</Badge>}
                       {plan.stripeProductId === null && <Badge>no processor product</Badge>}
@@ -165,7 +165,7 @@ export function PlansTab({
                       )}
                     </p>
 
-                    <p className="mt-1 text-[11px] text-ink-faint">
+                    <p className="mt-1 text-xs text-ink-faint">
                       {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
                       {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
                       {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
@@ -177,7 +177,7 @@ export function PlansTab({
                         ` · +${String(plan.telephonyMarkupPct)}% markup`}
                     </p>
 
-                    <p className="mt-1 text-[11px] text-ink-faint">
+                    <p className="mt-1 text-xs text-ink-faint">
                       {plan.features.length === 0
                         ? 'core only — no flagged modules'
                         : plan.features.join(', ')}
@@ -189,7 +189,7 @@ export function PlansTab({
                         or that it belongs to the Stripe account this
                         deployment currently points at. Only looking settles
                         that, so the console makes looking one click. */}
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs text-ink-faint">
                       {plan.stripeProductId === null ? (
                         <span>not yet at the processor — created on first price</span>
                       ) : (
@@ -415,7 +415,7 @@ function RetirePlanDialog({
                 {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on
                 this plan
               </p>
-              <p className="mt-0.5 text-[11px] text-ink-muted">
+              <p className="mt-0.5 text-xs text-ink-muted">
                 They will continue to have access to all features until their plan is manually
                 changed or they cancel.
               </p>
@@ -574,7 +574,7 @@ function EditLimitsDialog({
           onChange(event.target.value);
         }}
       />
-      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
+      <p className="mt-0.5 text-xs text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
     </Field>
   );
 
@@ -824,7 +824,7 @@ function EditFeaturesDialog({
                     >
                       <span className="block text-sm text-ink">
                         {featureLabel(flag.flagName)}
-                        <span className="ml-1.5 font-mono text-[11px] text-ink-faint">
+                        <span className="ml-1.5 font-mono text-xs text-ink-faint">
                           {flag.flagName}
                         </span>
                       </span>

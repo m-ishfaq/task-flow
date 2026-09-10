@@ -640,7 +640,7 @@ const styles = StyleSheet.create({
     color: colors.danger.hex,
   },
   contactHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   featureLine: {
@@ -675,7 +675,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line.hex,
   },
   invoiceDate: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
     width: 72,
   },
@@ -685,7 +685,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowCount: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   invoiceAmount: {

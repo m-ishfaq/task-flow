@@ -32,7 +32,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   return (
     <section aria-label="Operator audit">
-      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
+      <p className="mb-3 text-sm leading-relaxed text-ink-muted">
         Every platform-admin call lands in a global hash chain — the accountability record of this
         tier itself. Reading it is recorded too.
       </p>
@@ -70,19 +70,19 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/60">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Seq
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       When
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Action
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Target
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Operator
                     </th>
                   </tr>
@@ -102,7 +102,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                           {entry.action}
                         </span>
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-xs text-ink-muted overflow-x-auto">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
                       <td className="px-3 py-2.5 text-ink-muted">

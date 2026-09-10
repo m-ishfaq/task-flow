@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger.hex,
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
     color: '#fff',
   },
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.2,
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.hex,
   },
   unreadCountPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#fff',
   },
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line.hex + '80',
   },
   markAllReadText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
   },
@@ -409,11 +409,11 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowTime: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   rowActor: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   rowExcerpt: {

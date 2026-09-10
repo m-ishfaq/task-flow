@@ -36,7 +36,7 @@ const summaryOnly = process.argv.includes('--summary');
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.turbo', 'dist', 'build', 'coverage', '.expo']);
 
-/** The mobile type scale (ai/ redesign spec §4.1 + the enforcement note §7). */
+/** The mobile type scale (`packages/tokens/src/typography.ts`'s `typeScale`). */
 const MOBILE_SCALE = new Set([12, 13, 14, 15, 16, 18, 20, 24, 28]);
 
 /** `text-[16px]`, `text-[11.5px]` — an arbitrary pixel font size on the web. */

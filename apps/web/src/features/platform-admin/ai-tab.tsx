@@ -114,7 +114,7 @@ export function AiTab({
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {row.provider} · <span className="font-mono">{row.model}</span>
                     </p>
-                    <p className="mt-0.5 text-[11px] text-ink-faint">
+                    <p className="mt-0.5 text-xs text-ink-faint">
                       Added {formatDate(row.createdAt)}
                       {row.updatedAt !== row.createdAt && ` · rotated ${formatDate(row.updatedAt)}`}
                     </p>
@@ -713,7 +713,7 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
 
 function SpendRowDetail({ row }: { readonly row: SpendRow }) {
   return (
-    <div className="border-t border-line/60 bg-surface-sunken/30 px-3 py-2.5 pl-9 text-[11px] text-ink-muted">
+    <div className="border-t border-line/60 bg-surface-sunken/30 px-3 py-2.5 pl-9 text-xs text-ink-muted">
       <p>
         <span className="tabular-nums text-ink">{row.totalInputTokens.toLocaleString()}</span> input
         tokens

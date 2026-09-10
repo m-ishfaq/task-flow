@@ -105,7 +105,7 @@ export function ThreadPanel({
               in the same corner rather than drifting to the left edge. */}
           <div
             className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
+              'mt-0.5 flex items-center justify-end gap-1 text-xs leading-none',
               isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
             )}
           >

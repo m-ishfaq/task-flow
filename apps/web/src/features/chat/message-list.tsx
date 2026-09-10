@@ -294,7 +294,7 @@ function MessageBubble({
               placement; right-aligned in both the viewer's and others'). */}
           <div
             className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
+              'mt-0.5 flex items-center justify-end gap-1 text-xs leading-none',
               isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
             )}
           >
@@ -341,13 +341,13 @@ function MessageBubble({
           )}
         >
           <EmojiPickerButton onPick={onToggleReaction} />
-          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onOpenThread}>
+          <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onOpenThread}>
             Reply
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onTogglePin(pinned);
             }}
@@ -357,7 +357,7 @@ function MessageBubble({
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onToggleSave(isSaved);
             }}
@@ -370,7 +370,7 @@ function MessageBubble({
             <Button
               size="sm"
               variant="ghost"
-              className="h-5 px-1 text-[11px]"
+              className="h-5 px-1 text-xs"
               onClick={onStartEdit}
             >
               Edit
@@ -440,7 +440,7 @@ function DeleteMenu({
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           Delete
         </Button>
       </PopoverTrigger>
@@ -561,7 +561,7 @@ export function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string)
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           React
         </Button>
       </PopoverTrigger>

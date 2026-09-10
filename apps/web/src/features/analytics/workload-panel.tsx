@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { workloadQuery } from './api.js';
-import { Empty, SkeletonRows } from '../../components/primitives.js';
+import { Avatar, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /** §3.5 — Workload: open cards per assignee. */
@@ -29,7 +29,10 @@ export function WorkloadPanel() {
       <div className="space-y-2">
         {entries.map((entry) => (
           <div key={entry.userId} className="flex items-center gap-3">
-            <div className="w-32 truncate text-xs text-ink/80" title={entry.email ?? entry.userId}>
+            {/* Identity row, not a bare name: the bible's workload mock cores
+                each bar with a face, and every other list in the app does too. */}
+            <Avatar userId={entry.userId} label={entry.name ?? entry.email ?? entry.userId} />
+            <div className="w-28 truncate text-xs text-ink/80" title={entry.email ?? entry.userId}>
               {entry.name ?? entry.email?.split('@')[0] ?? entry.userId.slice(0, 8) + '…'}
             </div>
             <div className="flex-1">

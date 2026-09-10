@@ -139,7 +139,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
                 <p className="truncate text-sm text-ink">
                   {tuple.subjectType === 'user' ? emailOf(tuple.subjectId) : tuple.subjectId}
                 </p>
-                <p className="text-[11px] text-ink-faint">
+                <p className="text-xs text-ink-faint">
                   {tuple.subjectType} · {tuple.relation}
                   {/* Narrowed first: `grants.list` types `relation` as a plain
                       string, because the column is text and a tuple written by
@@ -214,7 +214,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
       {/* Shows what the chosen relation actually confers, read from the policy
           package. A relation name alone is not self-explanatory, and guessing
           wrong here hands out real access. */}
-      <p className="text-[11px] text-ink-faint">
+      <p className="text-xs text-ink-faint">
         <span className="font-medium">{relation}</span> confers:{' '}
         {permissionsForRelation(relation).join(', ') || 'nothing on its own'}
       </p>

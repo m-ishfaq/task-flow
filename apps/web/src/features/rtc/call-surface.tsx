@@ -768,7 +768,7 @@ function RecordingConsentBar({
         <p className="text-xs font-medium text-ink">
           {myTurn ? 'Record this call?' : 'Waiting for everyone to agree'}
         </p>
-        <p className="truncate text-[11px] text-ink-faint">
+        <p className="truncate text-xs text-ink-faint">
           {consented.length} agreed
           {awaiting.length > 0 &&
             ` · waiting for ${awaiting.map((id) => personOf(id).label).join(', ')}`}

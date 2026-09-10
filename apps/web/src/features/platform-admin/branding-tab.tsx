@@ -288,7 +288,7 @@ export function BrandingTab({
                     onClick={() => {
                       setPreviewPalette(null);
                     }}
-                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent/80"
+                    className="text-xs text-accent underline underline-offset-2 hover:text-accent/80"
                   >
                     Reset to {data.paletteId}
                   </button>
@@ -391,7 +391,7 @@ function BrandingAssetUpload({
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{label}</p>
-        <p className="text-[11px] text-ink-faint">{description}</p>
+        <p className="text-xs text-ink-faint">{description}</p>
         {error !== null && (
           <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />
         )}
@@ -441,7 +441,7 @@ function BrandingPreview({
 
   return (
     <div className="rounded-xl border border-line bg-surface-sunken/40 p-4">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">
         Live preview
       </p>
 
@@ -454,20 +454,20 @@ function BrandingPreview({
             ) : (
               <TaskFlowLogo size={12} className="shrink-0 text-accent" />
             )}
-            <span className="max-w-30 truncate text-[10px] text-ink">
+            <span className="max-w-30 truncate text-xs text-ink">
               {productName || 'TaskFlow'}
             </span>
             <span className="ml-0.5 text-ink-faint">×</span>
           </div>
           <div className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5">
             <Lock aria-hidden="true" className="size-2.5 shrink-0 text-ink-faint" strokeWidth={2} />
-            <span className="max-w-25 truncate text-[9px] text-ink-muted">
+            <span className="max-w-25 truncate text-xs text-ink-muted">
               app.{(productName || 'taskflow').toLowerCase().replace(/\s+/g, '-')}.io/home
             </span>
           </div>
         </div>
         <div className="flex h-10 items-center px-3">
-          <span className="text-[10px] text-ink-faint">Page content…</span>
+          <span className="text-xs text-ink-faint">Page content…</span>
         </div>
       </div>
 
@@ -480,7 +480,7 @@ function BrandingPreview({
             ) : (
               <TaskFlowLogo size={16} className="shrink-0 text-accent" />
             )}
-            <span className="truncate text-[11px] font-semibold text-ink">
+            <span className="truncate text-xs font-semibold text-ink">
               {productName || 'TaskFlow'}
             </span>
           </div>
@@ -489,7 +489,7 @@ function BrandingPreview({
               <span
                 key={item}
                 className={cn(
-                  'flex items-center gap-1.5 rounded px-2 py-1 text-[10px]',
+                  'flex items-center gap-1.5 rounded px-2 py-1 text-xs',
                   index === 0 ? 'bg-accent/10 font-medium text-accent' : 'text-ink-muted',
                 )}
               >
@@ -507,9 +507,9 @@ function BrandingPreview({
         <div className="min-w-0 flex-1 space-y-2.5">
           {/* Mini header */}
           <div className="flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2">
-            <span className="text-[11px] font-semibold text-ink">Projects</span>
+            <span className="text-xs font-semibold text-ink">Projects</span>
             <span
-              className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white"
+              className="rounded-md px-2 py-0.5 text-xs font-medium text-white"
               style={{ backgroundColor: colors.base }}
             >
               New project
@@ -520,19 +520,19 @@ function BrandingPreview({
           <div className="rounded-lg border border-line bg-surface-raised p-2.5">
             <div className="mb-1.5 flex items-center gap-1.5">
               <span className="size-2 rounded-full" style={{ backgroundColor: colors.base }} />
-              <span className="text-[10px] font-medium text-ink">Sample card</span>
+              <span className="text-xs font-medium text-ink">Sample card</span>
             </div>
-            <p className="text-[10px] text-ink-muted">
+            <p className="text-xs text-ink-muted">
               This is how cards will look with your brand accent.
             </p>
             <div className="mt-1.5 flex gap-1">
               <span
-                className="rounded px-1 py-0.5 text-[9px] font-medium"
+                className="rounded px-1 py-0.5 text-xs font-medium"
                 style={{ backgroundColor: `${colors.base}20`, color: colors.base }}
               >
                 In progress
               </span>
-              <span className="rounded bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
+              <span className="rounded bg-surface-hover px-1 py-0.5 text-xs text-ink-faint">
                 Design
               </span>
             </div>
@@ -540,10 +540,10 @@ function BrandingPreview({
 
           {/* Color swatches */}
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-ink-faint">Accent:</span>
+            <span className="text-xs text-ink-faint">Accent:</span>
             <span className="size-3 rounded-full" style={{ backgroundColor: colors.base }} />
             <span className="size-3 rounded-full" style={{ backgroundColor: colors.hover }} />
-            <span className="text-[10px] text-ink-faint">• {paletteId}</span>
+            <span className="text-xs text-ink-faint">• {paletteId}</span>
           </div>
         </div>
       </div>

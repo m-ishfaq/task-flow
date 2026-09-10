@@ -291,7 +291,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 what it says — naming the owner turns a dead end into a next
                 step. */}
             {data.billingContact !== null && (
-              <p className="mt-2 text-[11px] text-ink-faint">
+              <p className="mt-2 text-xs text-ink-faint">
                 Billing is managed by{' '}
                 <strong className="text-ink-muted">
                   {data.billingContact.name ?? data.billingContact.email}
@@ -318,7 +318,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                           tells a customer nothing about what they are paying
                           for. */}
                       {featureDescription(feature.flagName) !== null && (
-                        <span className="block text-[11px] text-ink-muted">
+                        <span className="block text-xs text-ink-muted">
                           {featureDescription(feature.flagName)}
                         </span>
                       )}
@@ -362,7 +362,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 />
               </div>
               {data.usage.telephonyIncludedCents > 0 && (
-                <p className="mt-1 text-[10px] text-ink-faint">
+                <p className="mt-1 text-xs text-ink-faint">
                   {money(data.usage.telephonyIncludedCents)} is included in your plan; usage past
                   that is billed with your next invoice.
                 </p>
@@ -434,7 +434,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                         <p className="text-sm text-ink">
                           {plan.name}
                           {current && (
-                            <span className="ml-1.5 text-[10px] text-accent">current</span>
+                            <span className="ml-1.5 text-xs text-accent">current</span>
                           )}
                         </p>
                         {plan.description !== null && (
@@ -455,14 +455,14 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                             only question anyone opens a plan picker with. */}
                         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                           {plan.features.length === 0 ? (
-                            <li className="text-[11px] text-ink-faint">
+                            <li className="text-xs text-ink-faint">
                               Core work management only
                             </li>
                           ) : (
                             plan.features.map((feature) => (
                               <li
                                 key={feature}
-                                className="flex items-baseline gap-1.5 text-[11px] text-ink-muted"
+                                className="flex items-baseline gap-1.5 text-xs text-ink-muted"
                               >
                                 <Check
                                   aria-hidden="true"

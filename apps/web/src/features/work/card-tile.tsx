@@ -95,13 +95,13 @@ export function CardTile({
       )}
 
       {/* Title — bold, clean, 14px for proper readability on a kanban board */}
-      <span className="block text-[14px] font-medium leading-snug text-ink">{card.title}</span>
+      <span className="block text-sm font-medium leading-snug text-ink">{card.title}</span>
 
       {/* Metadata row — reference, due, checklist, comments, and avatars.
           Generous spacing so the row doesn't feel cramped. */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {/* Reference code — styled as a subtle pill for quick scanning */}
-        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-xs font-medium text-ink-faint">
           {card.reference}
         </span>
 
@@ -109,7 +109,7 @@ export function CardTile({
         {due !== null && (
           <span
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
               due.overdue ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
             )}
           >
@@ -123,7 +123,7 @@ export function CardTile({
           <span
             title="Checklist progress"
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
               card.checklistDone === card.checklistTotal
                 ? 'bg-success/10 text-success'
                 : 'bg-surface-hover text-ink-muted',
@@ -138,7 +138,7 @@ export function CardTile({
         {card.commentCount > 0 && (
           <span
             title="Comments"
-            className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted"
+            className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted"
           >
             <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
             {card.commentCount}

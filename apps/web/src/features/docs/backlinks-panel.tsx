@@ -29,7 +29,7 @@ export function BacklinksPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[13px] font-semibold text-ink">What links here</h3>
+      <h3 className="text-sm font-semibold text-ink">What links here</h3>
 
       {backlinks.isPending ? (
         <div aria-busy="true" className="space-y-1.5">

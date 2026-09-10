@@ -85,7 +85,7 @@ function InfoCard({
     <div className="rounded-lg border border-line/50 p-3">
       <div className="text-xs text-ink/50">{label}</div>
       <div className="mt-1 text-sm font-medium text-ink">{value}</div>
-      {hint && <div className="mt-0.5 text-[10px] text-ink/40">{hint}</div>}
+      {hint && <div className="mt-0.5 text-xs text-ink/40">{hint}</div>}
     </div>
   );
 }

@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   roleBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
     textTransform: 'capitalize',

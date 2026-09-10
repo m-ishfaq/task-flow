@@ -118,7 +118,7 @@ export function FilterBuilder({
         <Button size="sm" variant={value === null ? 'secondary' : 'primary'}>
           Filter
           {value !== null && (
-            <span className="rounded bg-black/20 px-1 text-[10px]">{countComparisons(value)}</span>
+            <span className="rounded bg-black/20 px-1 text-xs">{countComparisons(value)}</span>
           )}
         </Button>
       </PopoverTrigger>
@@ -126,7 +126,7 @@ export function FilterBuilder({
       <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
         <div
           className={cn(
-            'mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]',
+            'mb-2 inline-flex overflow-hidden rounded border border-line text-xs',
             !tqlAvailable && 'hidden',
           )}
         >
@@ -271,7 +271,7 @@ function TqlEditor({
           {error}
         </p>
       )}
-      <p className="text-[11px] text-ink-faint">
+      <p className="text-xs text-ink-faint">
         The same language the Search page speaks. Switch back to Builder to see it as chips.
       </p>
     </div>
@@ -312,7 +312,7 @@ function GroupEditor({
   return (
     <div className={cn('space-y-2', depth > 0 && 'rounded border border-line p-2')}>
       <div className="flex items-center gap-2">
-        <div className="inline-flex overflow-hidden rounded border border-line text-[11px]">
+        <div className="inline-flex overflow-hidden rounded border border-line text-xs">
           {(['and', 'or'] as const).map((combinator) => (
             <button
               key={combinator}
@@ -332,7 +332,7 @@ function GroupEditor({
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           {group.combinator === 'and' ? 'all of these match' : 'any of these match'}
         </span>
       </div>

@@ -356,7 +356,7 @@ function NavLink({
     <Link
       to={to}
       className={cn(
-        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium',
+        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium',
         'transition-colors duration-[var(--motion-fast)]',
         locked
           ? 'text-ink-faint hover:bg-surface-hover'
@@ -452,7 +452,7 @@ export function Sidebar() {
         {open && (
           <Link
             to="/projects"
-            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
+            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-sm font-semibold text-ink transition-colors hover:text-accent"
           >
             {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
@@ -528,7 +528,7 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide uppercase',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -712,7 +712,7 @@ function ActiveSprintLine({
     <Link
       to="/projects/$projectId/sprints"
       params={{ projectId }}
-      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint hover:text-ink"
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-xs text-ink-faint hover:text-ink"
       activeProps={{ className: 'text-accent' }}
       title={`${sprint.name} — ends ${sprint.endsOn}`}
     >
@@ -786,7 +786,7 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
           <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
           {isFirst ? 'Add the first board' : 'Board'}
@@ -820,10 +820,10 @@ function AddBoard({
               setAdding(false);
             }
           }}
-          className="h-6 w-full text-[11px]"
+          className="h-6 w-full text-xs"
         />
         {create.isError && (
-          <p role="alert" className="px-1 py-0.5 text-[10px] text-danger">
+          <p role="alert" className="px-1 py-0.5 text-xs text-danger">
             Could not create that board.
           </p>
         )}
@@ -917,7 +917,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
         <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>

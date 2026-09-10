@@ -160,7 +160,7 @@ export function LocationSection({
       )}
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-ink-faint">List</span>
+        <span className="text-xs text-ink-faint">List</span>
         <select
           aria-label="List"
           /* Empty while showing another board's lists, so the control never
@@ -212,7 +212,7 @@ function BoardSelect({
 
   return (
     <label className="block space-y-1">
-      <span className="text-[11px] text-ink-faint">Board</span>
+      <span className="text-xs text-ink-faint">Board</span>
       <select
         aria-label="Board"
         value={value}

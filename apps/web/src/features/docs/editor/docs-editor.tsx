@@ -356,7 +356,7 @@ function ConnectionPill({
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted"
+      className="inline-flex items-center gap-1.5 text-xs text-ink-muted"
       title={synced ? 'Connected and in sync' : 'Connection state'}
     >
       <span className={cn('size-1.5 rounded-full', dot)} aria-hidden="true" />
@@ -401,7 +401,7 @@ function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
 
   return (
     <span
-      className="text-[11px] text-ink-faint"
+      className="text-xs text-ink-faint"
       title={`${String(others)} other viewer${others === 1 ? '' : 's'}`}
     >
       {others === 1 ? '1 other viewing' : `${String(others)} others viewing`}

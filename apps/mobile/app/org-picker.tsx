@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   rowSlug: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
     fontFamily: 'monospace',
   },
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   roleBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.inkMuted.hex,
     textTransform: 'capitalize',
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   fieldHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   errorText: {

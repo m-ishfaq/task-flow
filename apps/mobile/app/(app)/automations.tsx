@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   brokenBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.danger.hex,
   },
@@ -544,17 +544,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   runStatus: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     textTransform: 'capitalize',
   },
   runReason: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   runTime: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   runOutcomes: {
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   runOutcome: {
-    fontSize: 11,
+    fontSize: 12,
   },
   runOutcomeLabel: {
     color: colors.inkFaint.hex,

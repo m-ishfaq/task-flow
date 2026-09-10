@@ -4,8 +4,10 @@ import {
   useState,
   type ComponentProps,
   type ComponentPropsWithoutRef,
+  type ComponentType,
   type ReactNode,
 } from 'react';
+import type { LucideProps } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 
 /**
@@ -643,5 +645,85 @@ export function ConfirmButton({
         Cancel
       </Button>
     </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * TabBar — the one `role="tablist"` strip (design bible §21: "5 tab-strip
+ * implementations" collapsed into this primitive).
+ *
+ * Extracted from `features/platform-admin/shared.tsx`, which had already
+ * converged its own two copies; analytics, import/export and the console's
+ * top-level switcher hand-rolled near-copies of the same pill-strip shape
+ * before this landed here. Generic over the value type so a nullable "All"
+ * filter and a plain string union share one implementation.
+ *
+ * `grow` fills the strip for a two- or three-item toggle inside a dialog;
+ * `items` entries carry an optional trailing icon component, which the
+ * console's top-level switcher uses so its ten sections stay scannable.
+ * -------------------------------------------------------------------------- */
+export function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  grow = false,
+  className,
+}: {
+  readonly items: readonly (readonly [T, string] | readonly [T, string, ComponentType<LucideProps>])[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly grow?: boolean;
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        /* `max-w-full overflow-x-auto`: a strip with many items (the console
+           has ten) stays scrollable inside a narrow parent instead of pushing
+           the page wide — the behaviour the console's original hand-rolled
+           bar carried, kept here so every adopter gets it. */
+        'inline-flex max-w-full gap-0.5 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1',
+        grow && 'flex w-full',
+        className,
+      )}
+    >
+      {items.map((item) => {
+        const [itemValue, label, Icon] = item;
+        return (
+          <button
+            key={itemValue ?? 'null'}
+            type="button"
+            role="tab"
+            aria-selected={value === itemValue}
+            onClick={() => {
+              onChange(itemValue);
+            }}
+            className={cn(
+              'relative whitespace-nowrap rounded-lg px-3 py-1.5 font-medium transition-all duration-[var(--motion-fast)]',
+              size === 'sm' ? 'text-sm' : 'text-xs',
+              grow && 'flex-1',
+              value === itemValue
+                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            )}
+          >
+            {Icon !== undefined && (
+              <Icon
+                aria-hidden="true"
+                className="mr-1.5 inline size-4 align-[-0.15em]"
+                strokeWidth={2}
+              />
+            )}
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
   },
   disabledNote: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
 });

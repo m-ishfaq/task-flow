@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
@@ -425,12 +425,12 @@ const styles = StyleSheet.create({
     borderColor: colors.line.hex + '60',
   },
   statBoxValue: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.ink.hex,
   },
   statBoxLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
     marginTop: 2,
   },
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   rangeText: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.inkFaint.hex,
   },
   /* Workload rows */
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
   },
   workloadLabel: {
     width: 56,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
   workloadBarBg: {

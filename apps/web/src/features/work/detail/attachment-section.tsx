@@ -167,7 +167,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 </p>
                 <p
                   className={cn(
-                    'text-[11px]',
+                    'text-xs',
                     status === 'infected'
                       ? 'text-danger'
                       : status === 'rejected'
@@ -184,7 +184,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(attachment.attachmentId as AttachmentId);
@@ -198,7 +198,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   onClick={() => {
                     remove.mutate(attachment.attachmentId as AttachmentId);
                   }}
@@ -226,7 +226,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
         />
       )}
 
-      {progress !== null && <p className="text-[11px] text-ink-faint">{progress}</p>}
+      {progress !== null && <p className="text-xs text-ink-faint">{progress}</p>}
 
       {/* A refusal is a normal outcome, not an exception — `confirm` returns a
           status rather than throwing — so it renders here rather than as an
