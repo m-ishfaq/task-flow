@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronLeft,
   CircleDot,
@@ -121,10 +122,26 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
 }
 
 /** Every renderer below shares this shell — the same bordered-list style
-    `standup-page.tsx`'s buckets and this file's own `EntityList` use. */
-function ResultPanel({ children }: { readonly children: ReactNode }) {
+    `standup-page.tsx`'s buckets and this file's own `EntityList` use.
+    `header` is the Design Bible §12's own "✓ my_cards · 2 results" line —
+    optional, and left to each renderer to opt into, rather than forced on
+    every call site: a one-row `CardActionResult` confirming a single write
+    has nothing a tool-name-plus-count header would add over its own
+    "Assigned WEB-142 · Open card" text, which already names the action. */
+function ResultPanel({
+  header,
+  children,
+}: {
+  readonly header?: ReactNode;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="space-y-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-xs">
+      {header !== undefined && (
+        <div className="flex items-center gap-1.5 border-b border-line/40 pb-1.5 text-[11px] font-medium text-ink-muted">
+          {header}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -343,7 +360,17 @@ function renderMyCards(result: ToolResultMessage, ctx: ToolResultRenderContext):
   if (parsed.length === 0) return <ResultPanel>{result.content}</ResultPanel>;
 
   return (
-    <ResultPanel>
+    <ResultPanel
+      header={
+        <>
+          <Check aria-hidden="true" className="size-3 shrink-0 text-success" />
+          <span className="font-mono text-ink-faint">my_cards</span>
+          <span>
+            · {parsed.length} {parsed.length === 1 ? 'result' : 'results'}
+          </span>
+        </>
+      }
+    >
       <EntityList>
         {parsed.map((card) => {
           const priority = isPriority(card.priority) ? card.priority : null;

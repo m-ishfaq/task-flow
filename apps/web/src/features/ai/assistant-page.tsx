@@ -690,8 +690,15 @@ function MessageBubble({
             <Bot aria-hidden="true" className="size-3.5" strokeWidth={2} />
           </div>
           <div className="min-w-0 max-w-[85%] space-y-2">
+            {/* Flat, not a bubble — Design Bible §12's own assistant reply
+                has no background at all, unlike the user's own accent
+                bubble above: the model's replies are prose next to a real
+                tool-result CARD (already its own bordered box, below), and
+                wrapping plain text in a second box next to that one reads
+                as two boxes competing rather than a reply with evidence
+                attached to it. */}
             {message.content !== '' && (
-              <div className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-ink">
+              <div className="text-[13px] leading-relaxed text-ink">
                 <MarkdownLite text={message.content} />
               </div>
             )}
