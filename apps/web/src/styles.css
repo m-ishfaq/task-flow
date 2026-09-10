@@ -740,6 +740,25 @@
     box-shadow: var(--top-light);
   }
 
+  /* The card's checklist meter — design bible §06 `.prog`.
+     A 4px trough on the sunken surface with a success→teal gradient fill, so a
+     card's completeness is legible at a glance without parsing "7 / 9". The
+     count stays in the meta row for the exact number; this is the shape. */
+  .checklist-meter {
+    margin-top: 0.5625rem;
+    height: 4px;
+    border-radius: 3px;
+    background: var(--color-surface-sunken);
+    overflow: hidden;
+  }
+
+  .checklist-meter > i {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--color-success), oklch(74% 0.13 175));
+  }
+
   /* Priority indicator — clean left edge, slightly wider for visibility */
   .priority-bar {
     position: absolute;

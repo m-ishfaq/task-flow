@@ -97,6 +97,20 @@ export function CardTile({
       {/* Title — bold, clean, 14px for proper readability on a kanban board */}
       <span className="block text-sm font-medium leading-snug text-ink">{card.title}</span>
 
+      {/* The checklist meter (design bible §06). Decorative — `aria-hidden`,
+          because the meta row below already states the same fact as "3/9" with
+          a title, and a progress bar announced separately would read the card's
+          completeness out twice. */}
+      {card.checklistTotal > 0 && (
+        <div aria-hidden="true" className="checklist-meter">
+          <i
+            style={{
+              width: `${String(Math.round((card.checklistDone / card.checklistTotal) * 100))}%`,
+            }}
+          />
+        </div>
+      )}
+
       {/* Metadata row — reference, due, checklist, comments, and avatars.
           Generous spacing so the row doesn't feel cramped. */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
