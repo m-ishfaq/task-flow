@@ -159,7 +159,15 @@ export function CardTile({
        Border uses 60% opacity for a hairline effect that reads as a
        boundary without noise. */
     'card-tile w-full text-left',
-    dragging && 'ring-1 ring-accent/70',
+    /* The literal class name `dragging`, not a Tailwind ring utility —
+       `styles.css`'s `.card-tile.dragging` rule (the lift-3-weight shadow,
+       the accent outline, the slight rotate) was defined and never
+       actually reachable: this used to add `ring-1 ring-accent/70`
+       instead, a thinner, different-looking treatment that quietly
+       replaced it. The drag overlay (`board-view.tsx`'s `DragOverlay`) is
+       the one caller that ever passes `dragging`, so this is the only
+       place the rule can now fire from. */
+    dragging && 'dragging',
     selected === true && 'ring-1 ring-accent',
   );
 
