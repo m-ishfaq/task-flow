@@ -108,6 +108,13 @@ interface NavItem {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
+  /**
+   * The product hue this item carries in the rail (see `NAV_TINT`). Absent for
+   * the utility rows (My tasks, Search, Analytics) and configuration, which
+   * stay on the neutral accent — the spectrum names the day-to-day PRODUCTS, so
+   * colouring everything would dilute exactly the signal it exists to give.
+   */
+  readonly tint?: NavTint;
   /** The plan entitlement this item needs, or absent when it needs none. */
   readonly flag?: string;
   /**
@@ -157,16 +164,17 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
-      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
+      { to: '/chat', label: 'Chat', icon: MessageSquare, tint: 'chat', flag: 'chat' },
+      { to: '/docs', label: 'Docs', icon: FileText, tint: 'docs', flag: 'docs' },
       {
         to: '/calls',
         label: 'Calls',
         icon: Phone,
+        tint: 'calls',
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
       },
-      { to: '/people', label: 'People', icon: Users, capability: 'viewDirectory' },
+      { to: '/people', label: 'People', icon: Users, tint: 'people', capability: 'viewDirectory' },
       {
         to: '/analytics',
         label: 'Analytics',
@@ -253,6 +261,55 @@ const ACTIVE_BAR =
   'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-accent before:to-accent/0';
 
 /**
+ * The suite spectrum, applied to the product rail.
+ *
+ * Each product owns a hue (`styles.css`'s `--color-chat|docs|calls|people`), so
+ * the rail reads as a suite of products rather than one monochrome admin menu —
+ * and the colour a person sees against "Chat" here is the same one that surface
+ * carries throughout. This is the single strongest lever away from the
+ * "generic panel" look: the eye learns "cyan is chat, green is docs" the way it
+ * already does in Google Workspace or Notion, so a glance at the rail locates a
+ * product before the label is even read.
+ *
+ * A resting icon carries its product hue; the LABEL stays neutral (`ink-muted`),
+ * so four colours never shout at once — the colour is an identifier on a 16px
+ * glyph, not a highlight. The active state promotes the whole row (tint, text
+ * and the flow-bar) to that hue, the same gradient motif `ACTIVE_BAR` uses for
+ * everything else, just in the product's own colour.
+ *
+ * Written out as literals per key because Tailwind's JIT only emits a class it
+ * can see as text — a computed `text-${tint}` is never generated. `work` is
+ * deliberately absent: it is the accent hue (violet ~285), which the project
+ * tree and every un-tinted item already use, so Work needs no separate entry.
+ */
+type NavTint = 'chat' | 'docs' | 'calls' | 'people';
+
+const NAV_TINT: Readonly<
+  Record<NavTint, { readonly icon: string; readonly active: string; readonly bar: string }>
+> = {
+  chat: {
+    icon: 'text-chat',
+    active: 'bg-chat/10 text-chat hover:bg-chat/10 hover:text-chat',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-chat before:to-chat/0',
+  },
+  docs: {
+    icon: 'text-docs',
+    active: 'bg-docs/10 text-docs hover:bg-docs/10 hover:text-docs',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-docs before:to-docs/0',
+  },
+  calls: {
+    icon: 'text-calls',
+    active: 'bg-calls/10 text-calls hover:bg-calls/10 hover:text-calls',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-calls before:to-calls/0',
+  },
+  people: {
+    icon: 'text-people',
+    active: 'bg-people/10 text-people hover:bg-people/10 hover:text-people',
+    bar: 'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-people before:to-people/0',
+  },
+};
+
+/**
  * The tint, applied to the ROW rather than to the link.
  *
  * `activeProps` can only style the `<Link>`, and a link that starts after a
@@ -277,13 +334,24 @@ function NavLink({
   to,
   label,
   icon: Icon,
+  tint,
   locked = false,
 }: {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
+  /* `| undefined` explicitly (not just `?`): callers pass `item.tint`, which is
+     `NavTint | undefined`, and `exactOptionalPropertyTypes` rejects an
+     explicit `undefined` against a bare optional. */
+  readonly tint?: NavTint | undefined;
   readonly locked?: boolean;
 }) {
+  /* A locked item forfeits its product hue: it is not available, so advertising
+     its colour would be a promise the plan cannot yet keep. The faint,
+     upsell-ready styling below is the same for every locked row regardless of
+     which product it is. */
+  const style = !locked && tint !== undefined ? NAV_TINT[tint] : undefined;
+
   return (
     <Link
       to={to}
@@ -295,10 +363,16 @@ function NavLink({
           : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
-        className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
+        className: cn(
+          style?.active ?? 'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+          style?.bar ?? ACTIVE_BAR,
+        ),
       }}
     >
-      <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+      {/* The resting icon carries its product hue; when the row is active the
+          `activeProps` colour above takes over the whole row, including this
+          glyph, so the two states never disagree on colour. */}
+      <Icon aria-hidden="true" className={cn('size-4 shrink-0', style?.icon)} strokeWidth={2} />
       <span className="truncate">{label}</span>
       {locked && (
         <Lock aria-label="Not on your plan" className="ml-auto size-3 shrink-0" strokeWidth={2} />
@@ -428,6 +502,7 @@ export function Sidebar() {
                     to={item.to}
                     label={item.label}
                     icon={item.icon}
+                    tint={item.tint}
                     locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
                   />
                 ))}
@@ -505,6 +580,7 @@ export function Sidebar() {
                 to={item.to}
                 label={item.label}
                 icon={item.icon}
+                tint={item.tint}
                 locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
               />
             ))}
