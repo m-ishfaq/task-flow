@@ -360,7 +360,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           type="button"
           onClick={toggleMobileNav}
           aria-label="Open navigation"
-          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
+          className="-ml-1 shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
         >
           <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
         </button>
@@ -396,7 +396,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+          className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>

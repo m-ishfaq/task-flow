@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { Bell } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -132,9 +133,13 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'}
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
-          🔔
+          {/* A real glyph, not an emoji — an emoji renders at the OS's own
+              size and weight, never matches the 1.75px-stroke icon language
+              every other control in this header uses (Menu, Keyboard,
+              SlidersHorizontal), and looks different per platform/font. */}
+          <Bell aria-hidden="true" className="size-4" strokeWidth={2} />
           {unread > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
               {unread > 99 ? '99+' : unread}

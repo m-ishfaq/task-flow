@@ -46,8 +46,14 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      it is a boundary, not a decoration. */
   primary:
     'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.17_285/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.17_285/40%)]',
+  /* `shadow-top-light` composed alongside the existing flat `shadow-sm` via
+     an arbitrary value (Tailwind utilities can't be layered — the last
+     `shadow-*` class simply wins, since they all set the same property) —
+     the Design Bible's "machined top-edge" highlight (§03), so a secondary
+     button reads as a raised, physical control the same way `primary`'s own
+     ring already does, rather than a flat colour block. */
   secondary:
-    'bg-surface-raised text-ink border border-line/60 shadow-sm hover:bg-surface-hover hover:border-line-strong',
+    'bg-surface-raised text-ink border border-line/60 shadow-[var(--shadow-sm),var(--shadow-top-light)] hover:bg-surface-hover hover:border-line-strong',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
   danger:
     'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_oklch(55%_0.19_22/30%)]',
@@ -77,7 +83,15 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'press inline-flex items-center justify-center rounded font-medium transition-colors',
+        /* `rounded-lg` (8px), not the bare `rounded` (4px) this used to be —
+           every other raised control in the app (Input, the card tile, the
+           board's segmented view toggle) already sits at 8-11px, and a
+           button at a quarter of that read as a sharper, flatter corner than
+           everything around it. The Design Bible's own component kit (§components)
+           puts every button at 9px; 8px is the nearest step this app's
+           existing radius scale already has, so this is the one component
+           that needed to move, not a new radius token. */
+        'press inline-flex items-center justify-center rounded-lg font-medium transition-colors',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
