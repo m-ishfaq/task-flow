@@ -66,8 +66,23 @@ export const colors = {
   warning: { oklch: { l: 76, c: 0.15, h: 75 }, hex: '#e8a127' },
   success: { oklch: { l: 70, c: 0.15, h: 155 }, hex: '#3bb974' },
 
+  /** The one new semantic hue — see styles.css's own `--color-info` comment. */
+  info: { oklch: { l: 60, c: 0.15, h: 230 }, hex: '#008ec8' },
+
   priorityUrgent: { oklch: { l: 60, c: 0.19, h: 22 }, hex: '#da4149' },
   priorityMedium: { oklch: { l: 60, c: 0.17, h: 285 }, hex: '#796ce0' },
+
+  /**
+   * The suite spectrum — one hue per product surface, for orientation only.
+   * See styles.css's own `--color-work`..`--color-people` comment for the
+   * audit reasoning; the hex values here are derived from those same oklch
+   * triples (colors.test.ts re-derives and asserts they agree).
+   */
+  work: { oklch: { l: 64, c: 0.16, h: 285 }, hex: '#847ae8' },
+  chat: { oklch: { l: 66, c: 0.12, h: 220 }, hex: '#01a2c5' },
+  docs: { oklch: { l: 66, c: 0.13, h: 158 }, hex: '#3baa73' },
+  calls: { oklch: { l: 74, c: 0.13, h: 66 }, hex: '#e29948' },
+  people: { oklch: { l: 66, c: 0.14, h: 350 }, hex: '#d06b9e' },
 
   /**
    * `styles.css`'s own token also carries `/ 60%` alpha, dropped here: a

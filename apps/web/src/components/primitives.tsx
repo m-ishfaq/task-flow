@@ -19,6 +19,23 @@ import { cn } from '../lib/cn.js';
  * the primitives with real behaviour — focus traps, roving tabindex, escape
  * handling — and these are the styled shells around them plus the handful of
  * things Radix has no opinion about.
+ *
+ * ## The type scale (UI/UX redesign — the contract)
+ *
+ * Stock Tailwind tokens ONLY. No arbitrary `text-[Npx]` anywhere under
+ * `apps/web/src` — `scripts/check-typography.mjs` exists to keep it that way.
+ * Every size below maps to one rung; when you reach for a pixel value, pick the
+ * rung instead. This is the single biggest lever from "admin panel" to
+ * "product": one scale, tabular numerals on figures, tracked uppercase labels.
+ *
+ *   text-xs   (12/16)  badges, hints, captions, metadata, dense cells
+ *   text-sm   (14/20)  body copy, list rows, buttons (md), inputs, descriptions
+ *   text-base (16/24)  section headings (`Section`), emphasized body
+ *   text-xl   (20/28)  dense-tool page titles (Analytics, Telephony)
+ *   text-2xl  (24/32)  `PageHeader` titles — the default page title
+ *
+ * Migration map for anything still on a pixel value: [10px]/[11px]/[12px] ->
+ * text-xs, [13px]/[14px]/[15px] -> text-sm (or text-base where it was a heading).
  */
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -77,7 +94,7 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'press inline-flex items-center justify-center rounded font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded-lg font-medium transition-colors',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
@@ -299,7 +316,7 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
         /* 10/11px initials, not the 9/10px this used to be — two characters in
            9px on a 20px disc are a smudge, and initials are the identifier a
            stack of avatars is scanned by. */
-        size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+        size === 'xs' ? 'size-5 text-xs' : 'size-6 text-xs',
         className,
       )}
     >
@@ -340,7 +357,7 @@ export function AvatarStack({
           className={cn(
             'inline-flex shrink-0 items-center justify-center rounded-full',
             'bg-surface-hover text-ink-muted ring-1 ring-surface-raised',
-            size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+            size === 'xs' ? 'size-5 text-xs' : 'size-6 text-xs',
           )}
         >
           +{hidden.length}
@@ -439,9 +456,9 @@ export function Empty({
           {icon}
         </span>
       )}
-      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      <p className="text-base font-semibold text-ink">{title}</p>
       {description !== undefined && (
-        <p className="max-w-sm text-[13px] leading-relaxed text-ink-muted">{description}</p>
+        <p className="max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>
       )}
       {action !== undefined && <div className="mt-1">{action}</div>}
     </div>
@@ -481,9 +498,7 @@ export function PageHeader({
       <div className="min-w-0">
         <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h1>
         {description !== undefined && (
-          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">
-            {description}
-          </p>
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">{description}</p>
         )}
       </div>
       {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -525,7 +540,7 @@ export function Section({
         {count !== undefined && <Badge>{count}</Badge>}
       </div>
       {description !== undefined && (
-        <p className="text-[13px] leading-relaxed text-ink-muted">{description}</p>
+        <p className="text-sm leading-relaxed text-ink-muted">{description}</p>
       )}
       {children}
     </section>

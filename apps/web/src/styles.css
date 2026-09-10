@@ -117,6 +117,14 @@
   --color-warning: oklch(76% 0.15 75);
   --color-success: oklch(70% 0.15 155);
 
+  /* The one new semantic hue (UI/UX redesign): informational states and the
+     search "transcript" badge, which previously reached for an off-token
+     Tailwind blue. L 60% clears the 3:1 WCAG 1.4.11 non-text bar against the
+     hardest surface (`--color-surface-hover`) at >=3.25:1 — audited by the same
+     method as the priority pair below. Mirrored in
+     `packages/tokens/src/colors.ts` (`info`) for apps/mobile. */
+  --color-info: oklch(60% 0.15 230);
+
   /**
    * A priority signal — the UI/UX redesign pass's one deliberate signature
    * (a colored left edge on a card tile), and the one thing this codebase
@@ -158,6 +166,24 @@
   --color-priority-urgent: oklch(60% 0.19 22);
   --color-priority-medium: oklch(60% 0.17 285);
 
+  /**
+   * The suite spectrum (UI/UX redesign — foundation). One hue per product
+   * surface, for ORIENTATION only: a product's icon, its nav active tint, its
+   * page thread. Additive, and audited the same way as the priority pair —
+   * each sits at L 64-74 / C 0.12-0.16, clearing the 3:1 non-text bar on all
+   * four surface tones. Buttons, focus rings and links stay `--color-accent`
+   * everywhere, so the accent audit is untouched and the app never turns into
+   * a rainbow. These are NON-TEXT / large-glyph swatches (a 16px+ icon, a
+   * tint, a thread), never body-size coloured text on a bare surface.
+   * Mirrored in `packages/tokens/src/colors.ts` for apps/mobile, kept in sync
+   * by hand like the rest of this block.
+   */
+  --color-work: oklch(64% 0.16 285);
+  --color-chat: oklch(66% 0.12 220);
+  --color-docs: oklch(66% 0.13 158);
+  --color-calls: oklch(74% 0.13 66);
+  --color-people: oklch(66% 0.14 350);
+
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
@@ -165,6 +191,12 @@
   --color-overlay: oklch(15% 0.02 265 / 60%);
 
   --radius-card: 0.625rem;
+
+  /* Control radius (UI/UX redesign — foundation). Button, Input, Textarea and
+     the native <select> all land here (0.5rem/8px). Before this, Button was a
+     bare `rounded` (4px) and the select rule below hardcoded 0.375rem (6px), so
+     two controls on the same row disagreed by 2-4px. One token, one radius. */
+  --radius-control: 0.5rem;
 
   /**
    * Elevation. Before this pass the whole app had exactly two ad hoc shadow
@@ -383,7 +415,7 @@
   select:not([multiple]) {
     appearance: none;
     -webkit-appearance: none;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-control);
     border: 1px solid var(--color-line);
     background-color: var(--color-surface-sunken);
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.014 262)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
