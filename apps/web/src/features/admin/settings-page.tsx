@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { Building2, CreditCard, ScrollText, Shield, Users, UsersRound } from 'lucide-react';
 import {
   ModalContent,
   ModalDescription,
@@ -68,43 +69,126 @@ import { BillingSection } from './billing-section.js';
  * grows, the control moves further away, and the page gets worse the more it is
  * used. A fixed position at the top does not.
  */
+type SettingsTab = 'general' | 'members' | 'permissions' | 'billing' | 'teams';
+
+interface SettingsRailItem {
+  readonly id: SettingsTab;
+  readonly label: string;
+  readonly icon: typeof Building2;
+}
+
+/**
+ * The left-rail navigation — Design Bible §13's own thesis, named directly
+ * in its subtitle: "a left-rail instead of one long scroll, one section at
+ * a time." Every section below (`OrgSection`, `MemberSection`, ...) is
+ * unchanged internally; this only changes which ONE of them is mounted at
+ * a time, replacing the page's old single-column stack of every section
+ * rendered at once.
+ *
+ * Gated the identical way the old stacked layout already was — a rail item
+ * for a section the caller cannot reach (`viewDirectory`/`manageMembers`/
+ * `viewBilling`/`viewTeams`, all already-computed server capabilities, per
+ * §8.2) simply is not in the list, the same "hide, don't disable" rule
+ * Phase 15 §1's own sweep already applies everywhere else in this app —
+ * never a rail item that opens onto a raw FORBIDDEN.
+ *
+ * Local `useState`, not a URL search param — the same choice
+ * `platform-admin-page.tsx`'s own tab switcher already made for the
+ * closest precedent to this exact shape (a settings-style console with
+ * several gated tabs), and nothing today deep-links into one specific
+ * settings section (checked: no `/settings#members`-style link anywhere
+ * in this app), so there is no bookmarkable state this pass would break
+ * by not wiring one up.
+ */
 export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
-  // For the Audit log link and for deciding which SECTIONS below even
-  // render (Billing, Individual permissions) — every section that renders
-  // fetches this same cached query itself for its own inner capabilities,
-  // so this costs no extra request.
+  // Every section that renders fetches this same cached query itself for
+  // its own inner capabilities, so reading it again here for the rail
+  // costs no extra request.
   const org = useQuery(orgDetailQuery(orgId));
+  const capabilities = org.data?.capabilities;
+
+  const items: readonly SettingsRailItem[] = [
+    { id: 'general', label: 'General', icon: Building2 },
+    ...(capabilities?.viewDirectory === true
+      ? [{ id: 'members' as const, label: 'Members', icon: Users }]
+      : []),
+    ...(capabilities?.manageMembers === true
+      ? [{ id: 'permissions' as const, label: 'Permissions', icon: Shield }]
+      : []),
+    ...(capabilities?.viewBilling === true
+      ? [{ id: 'billing' as const, label: 'Billing', icon: CreditCard }]
+      : []),
+    ...(capabilities?.viewTeams === true
+      ? [{ id: 'teams' as const, label: 'Teams', icon: UsersRound }]
+      : []),
+  ];
+
+  const [tab, setTab] = useState<SettingsTab>('general');
+  // Falls back to the first still-available item rather than rendering
+  // nothing — the same shape guards `platform-admin-page.tsx`'s own tab
+  // state against a tab that WAS reachable when clicked and no longer is.
+  const activeTab = items.some((item) => item.id === tab) ? tab : (items[0]?.id ?? 'general');
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
+    <div className="mx-auto max-w-5xl p-8">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
-        actions={
-          org.data?.capabilities.viewAuditLog === true ? (
-            <Link
-              to="/settings/audit"
-              className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            >
-              Audit log
-            </Link>
-          ) : undefined
-        }
       />
 
-      <OrgSection orgId={orgId} />
-      {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
-      {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
-          role except Guest. Before these fields existed, both sections
-          rendered unconditionally and fired their own roster queries
-          regardless of who was looking, so a Guest reaching `/settings` (the
-          top-bar "Settings" link has no gate of its own — every role can open
-          this page) hit a raw FORBIDDEN `ErrorView` for each. */}
-      {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
-      {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
+      <div className="mt-7 flex gap-6">
+        <nav aria-label="Settings sections" className="w-44 shrink-0 space-y-0.5">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={activeTab === item.id ? 'page' : undefined}
+              onClick={() => {
+                setTab(item.id);
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+                activeTab === item.id
+                  ? 'bg-accent/10 font-medium text-accent'
+                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              <item.icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+              {item.label}
+            </button>
+          ))}
+
+          {capabilities?.viewAuditLog === true && (
+            <Link
+              to="/settings/audit"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+            >
+              <ScrollText aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+              Audit log
+            </Link>
+          )}
+        </nav>
+
+        <div className="min-w-0 flex-1 space-y-9">
+          {activeTab === 'general' && <OrgSection orgId={orgId} />}
+          {activeTab === 'members' && capabilities?.viewDirectory === true && (
+            <MemberSection orgId={orgId} />
+          )}
+          {activeTab === 'permissions' && capabilities?.manageMembers === true && (
+            <>
+              <PermissionsSection orgId={orgId} />
+              <RoleDefaultGrantsSection orgId={orgId} />
+            </>
+          )}
+          {activeTab === 'billing' && capabilities?.viewBilling === true && (
+            <BillingSection orgId={orgId} />
+          )}
+          {activeTab === 'teams' && capabilities?.viewTeams === true && (
+            <TeamSection orgId={orgId} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
