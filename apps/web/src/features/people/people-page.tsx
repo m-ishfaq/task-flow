@@ -86,32 +86,45 @@ export function PeoplePage() {
   );
 }
 
+/**
+ * The directory grid — Design Bible §11's own `.pc` profile card, replacing
+ * the earlier list-of-rows layout.
+ *
+ * Every field this card shows (name, role/title, department, the OOO line)
+ * was already on the wire before this pass — `DirectoryMemberSchema`
+ * (`apps/api/src/people/router.ts`) has carried `jobTitle`/`department`
+ * since Wave 2, this page simply never rendered them. The one thing the
+ * bible's own card shows that genuinely is NOT available is a live
+ * "Available" / "In a meeting" presence line: that needs an org-wide
+ * "who's online" broadcast this codebase does not have (the identical gap
+ * `chat-sidebar.tsx`'s own `DirectoryMessageRow` comment names for DM
+ * presence) — a real, separate follow-up, not something to fabricate here.
+ * The OOO line is the one genuinely LIVE status this directory can show
+ * honestly today, so it takes the bible's `.pc .st` slot instead.
+ */
 function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) {
   return (
-    <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (
-          <li
-            key={member.userId}
-            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/50"
-          >
-            <Avatar userId={member.userId} label={label} />
-
-            <div className="min-w-0 flex-1">
-              <Link
-                to="/people/$userId"
-                params={{ userId: member.userId }}
-                className="block truncate text-[13px] font-medium text-ink hover:text-accent"
-              >
-                {label}
-              </Link>
-              <p className="truncate text-[11px] text-ink-faint">{member.email}</p>
-            </div>
-
-            <OooBadge member={member} />
-
-            <Badge className="text-[11px]">{member.role}</Badge>
+          <li key={member.userId}>
+            <Link
+              to="/people/$userId"
+              params={{ userId: member.userId }}
+              className="flex flex-col items-center gap-1 rounded-card border border-line/50 bg-surface-raised p-4 text-center transition-colors hover:border-line-strong hover:bg-surface-hover/50"
+            >
+              <Avatar userId={member.userId} label={label} size="lg" className="mb-1" />
+              <span className="truncate text-sm font-semibold text-ink">{label}</span>
+              {member.jobTitle !== null && (
+                <span className="truncate text-xs text-ink-muted">{member.jobTitle}</span>
+              )}
+              {member.department !== null && (
+                <span className="truncate text-[11px] text-ink-faint">{member.department}</span>
+              )}
+              <Badge className="mt-1 text-[11px]">{member.role}</Badge>
+              <OooStatus member={member} />
+            </Link>
           </li>
         );
       })}
@@ -119,13 +132,17 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
   );
 }
 
-/** "Out of office" as a badge, only when the person is OOO right now. */
-function OooBadge({ member }: { readonly member: DirectoryMember }) {
+/** The one live status this directory can show honestly — see the grid's own header. */
+function OooStatus({ member }: { readonly member: DirectoryMember }) {
   if (!oooStatus(member.oooFrom, member.oooUntil)) return null;
 
   return (
-    <Badge tone="warning" {...(member.oooMessage === null ? {} : { title: member.oooMessage })}>
-      OOO
-    </Badge>
+    <span
+      className="mt-1.5 inline-flex items-center gap-1.5 text-[10.5px] font-medium text-warning"
+      {...(member.oooMessage === null ? {} : { title: member.oooMessage })}
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
+      Out of office
+    </span>
   );
 }

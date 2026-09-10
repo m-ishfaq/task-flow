@@ -368,7 +368,9 @@ export interface AvatarProps {
   readonly userId: string;
   /** Email or display name. Shown on hover and to assistive tech. */
   readonly label: string;
-  readonly size?: 'xs' | 'sm';
+  /** `lg` (52px) is the Design Bible's own `.pc .a` — a profile CARD's own
+      identity mark (People's directory grid), not a list row's. */
+  readonly size?: 'xs' | 'sm' | 'lg';
   readonly className?: string;
 }
 
@@ -403,8 +405,14 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
         'ring-1 ring-surface-raised',
         /* 10/11px initials, not the 9/10px this used to be — two characters in
            9px on a 20px disc are a smudge, and initials are the identifier a
-           stack of avatars is scanned by. */
-        size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+           stack of avatars is scanned by. `lg` is a real 52px, `.pc .a`'s own
+           value — not a Tailwind step (48/56), an arbitrary one matching the
+           bible exactly rather than the nearest round number. */
+        size === 'xs'
+          ? 'size-5 text-[10px]'
+          : size === 'lg'
+            ? 'size-[52px] text-[17px]'
+            : 'size-6 text-[11px]',
         className,
       )}
     >
