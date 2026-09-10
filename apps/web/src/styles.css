@@ -682,38 +682,41 @@
    * generous padding, and refined hover states. No gradients — the
    * modern look comes from clean surfaces, proper spacing, and subtle
    * elevation changes on interaction.
+   *
+   * Design Bible §07's own `.card` agrees: a flat `var(--raised)` fill, never
+   * a gradient — the diagonal accent-tinted gradient this rule used to paint
+   * (`135deg, raised, raised+8% accent`) directly contradicted the comment
+   * immediately above it, which has said "No gradients" since this block was
+   * first written. Flattened to match both. The machined `--shadow-top-light`
+   * edge (added to `@theme` for exactly this) now rides alongside the
+   * existing drop shadow at both rest and hover, the same composition every
+   * other raised control in the app picked up in the primitives pass.
    * ------------------------------------------------------------------------ */
   .card-tile {
     position: relative;
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-raised) 0%,
-      color-mix(in oklab, var(--color-surface-raised) 92%, var(--color-accent) 8%) 100%
-    );
+    background: var(--color-surface-raised);
     border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
     border-radius: calc(var(--radius-card) + 0.25rem);
     padding: 0.75rem 0.875rem;
     transition: all var(--motion-base) var(--motion-ease);
     box-shadow:
       0 1px 3px oklch(0% 0 0 / 12%),
-      0 1px 2px oklch(0% 0 0 / 8%);
+      0 1px 2px oklch(0% 0 0 / 8%),
+      var(--shadow-top-light);
   }
 
   .card-tile:hover {
     border-color: var(--color-line-strong);
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-hover) 0%,
-      color-mix(in oklab, var(--color-surface-hover) 90%, var(--color-accent) 10%) 100%
-    );
-    box-shadow: var(--shadow-md);
+    background: var(--color-surface-hover);
+    box-shadow: var(--shadow-md), var(--shadow-top-light);
     transform: translateY(-1px);
   }
 
   .card-tile.dragging {
     box-shadow:
       0 12px 32px oklch(0% 0 0 / 30%),
-      0 6px 12px oklch(0% 0 0 / 18%);
+      0 6px 12px oklch(0% 0 0 / 18%),
+      var(--shadow-top-light);
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-color: var(--color-accent);
@@ -832,6 +835,13 @@
  * form itself sits on the same `--color-surface` every other surface uses,
  * so contrast is unchanged from before this existed.
  * -------------------------------------------------------------------------- */
+/**
+ * The second glow is `--color-suite-chat`, not a second dose of accent — the
+ * Design Bible's own login backdrop (`.login`) is two-tone (an accent glow
+ * top-centre, a cooler cyan one bottom-right), the same two-hue signature its
+ * masthead radial gradients use. A single-hue backdrop reads flatter and
+ * more generic than a page meant to be the first thing anyone sees.
+ */
 .auth-backdrop {
   position: relative;
   background-image:
@@ -842,7 +852,7 @@
     ),
     radial-gradient(
       ellipse 45% 35% at 88% 108%,
-      color-mix(in oklab, var(--color-accent) 7%, transparent),
+      color-mix(in oklab, var(--color-suite-chat) 8%, transparent),
       transparent 70%
     );
 }

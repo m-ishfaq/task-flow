@@ -1,7 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import {
+  Folder,
+  Layers,
+  ListChecks,
+  Lock,
+  PanelLeftOpen,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  type LucideProps,
+} from 'lucide-react';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { useUi } from '../lib/ui-store.js';
@@ -91,10 +102,21 @@ export function CommandPalette() {
   );
 }
 
+/** A `lucide-react` icon component — matches sidebar.tsx's own alias. */
+type CommandIcon = ComponentType<LucideProps>;
+
 interface Command {
   readonly id: string;
   readonly label: string;
   readonly hint: string;
+  /** The Design Bible's own `.palette .opt` rows are icon-leading, not
+      bare text — every command gets one, in the color of the module it
+      leads to (suite-work for a project or sprint, neutral for everything
+      that isn't one of the five suite modules — the identical distinction
+      the sidebar itself already draws between a colored tree row and a
+      generic top-level link). */
+  readonly icon: CommandIcon;
+  readonly iconClassName?: string;
   readonly run: () => void;
 }
 
@@ -134,26 +156,47 @@ function PaletteDialog({
       };
 
     const navigation: Command[] = [
-      { id: 'home', label: 'My tasks', hint: 'Go to', run: go('/home') },
-      { id: 'projects', label: 'Projects', hint: 'Go to', run: go('/projects') },
-      { id: 'settings', label: 'Settings', hint: 'Go to', run: go('/settings') },
+      { id: 'home', label: 'My tasks', hint: 'Go to', icon: ListChecks, run: go('/home') },
+      { id: 'projects', label: 'Projects', hint: 'Go to', icon: Folder, run: go('/projects') },
+      {
+        id: 'settings',
+        label: 'Settings',
+        hint: 'Go to',
+        icon: SlidersHorizontal,
+        run: go('/settings'),
+      },
       ...(capabilities?.viewAuditLog === true
         ? [
-            { id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') },
+            {
+              id: 'audit',
+              label: 'Audit log',
+              hint: 'Go to',
+              icon: Lock,
+              run: go('/settings/audit'),
+            },
             {
               id: 'permissions',
               label: 'Permissions',
               hint: 'Go to',
+              icon: ShieldCheck,
               run: go('/admin/permissions'),
             },
           ]
         : []),
-      { id: 'toggle-sidebar', label: 'Toggle sidebar', hint: 'Action', run: toggleSidebar },
+      {
+        id: 'toggle-sidebar',
+        label: 'Toggle sidebar',
+        hint: 'Action',
+        icon: PanelLeftOpen,
+        run: toggleSidebar,
+      },
     ];
 
     const projectCommands: Command[] = (projects.data ?? [])
       .filter((project) => project.archivedAt === null)
       .map((project) => ({
+        icon: Folder,
+        iconClassName: 'text-suite-work',
         id: `project-${project.projectId}`,
         label: project.name,
         hint: 'Project',
@@ -179,6 +222,7 @@ function PaletteDialog({
               id: 'search',
               label: `Search for “${trimmed}”`,
               hint: 'Search',
+              icon: Search,
               run: () => {
                 void navigate({ to: '/search', search: { q: trimmed } });
               },
@@ -198,6 +242,8 @@ function PaletteDialog({
         id: `sprint-${sprint.sprintId}`,
         label: project === undefined ? sprint.name : `${sprint.name} — ${project.name}`,
         hint: 'Sprint',
+        icon: Layers,
+        iconClassName: 'text-suite-work',
         run: () => {
           void navigate({
             to: '/projects/$projectId/sprints',
@@ -252,65 +298,83 @@ function PaletteDialog({
           Jump to a page or project, or run an action.
         </ModalDescription>
 
-        {/* No `autoFocus` — Radix's `Dialog.Content` already moves focus to
-            the first focusable descendant when it opens, which is this
-            input, so a second, ESLint-flagged focus mechanism would be
-            redundant rather than additive. */}
-        <input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            // A fresh search invalidates whatever was highlighted — a
-            // direct consequence of the keystroke, not a derived effect.
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setActive((index) => Math.min(index + 1, filtered.length - 1));
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActive((index) => Math.max(index - 1, 0));
-            } else if (event.key === 'Enter') {
-              event.preventDefault();
-              runAt(active);
-            }
-          }}
-          placeholder="Jump to a project, or run an action…"
-          aria-label="Command palette"
-          className="w-full border-b border-line/50 bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-faint"
-        />
+        {/* The Design Bible's own `.palette .search` row — a leading glyph
+            beside the input, not a bare text box. Decorative only
+            (`aria-hidden`): the input already carries its own `aria-label`. */}
+        <div className="flex items-center gap-2.5 border-b border-line/50 px-4 py-3">
+          <Search
+            aria-hidden="true"
+            className="size-[18px] shrink-0 text-ink-faint"
+            strokeWidth={2}
+          />
+          {/* No `autoFocus` — Radix's `Dialog.Content` already moves focus to
+              the first focusable descendant when it opens, which is this
+              input, so a second, ESLint-flagged focus mechanism would be
+              redundant rather than additive. */}
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              // A fresh search invalidates whatever was highlighted — a
+              // direct consequence of the keystroke, not a derived effect.
+              setActive(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActive((index) => Math.min(index + 1, filtered.length - 1));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActive((index) => Math.max(index - 1, 0));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                runAt(active);
+              }
+            }}
+            placeholder="Jump to a project, or run an action…"
+            aria-label="Command palette"
+            className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
+          />
+        </div>
 
         <ul role="listbox" className="max-h-80 overflow-y-auto p-1">
           {filtered.length === 0 ? (
             <li className="px-3 py-6 text-center text-xs text-ink-faint">No matches</li>
           ) : (
-            filtered.map((command, index) => (
-              <li key={command.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={index === active}
-                  onMouseEnter={() => {
-                    setActive(index);
-                  }}
-                  onClick={() => {
-                    runAt(index);
-                  }}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                    index === active
-                      ? 'bg-accent/10 text-ink'
-                      : 'text-ink-muted hover:bg-surface-hover',
-                  )}
-                >
-                  <span className="truncate">{command.label}</span>
-                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">
-                    {command.hint}
-                  </span>
-                </button>
-              </li>
-            ))
+            filtered.map((command, index) => {
+              const Icon = command.icon;
+              return (
+                <li key={command.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === active}
+                    onMouseEnter={() => {
+                      setActive(index);
+                    }}
+                    onClick={() => {
+                      runAt(index);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                      index === active
+                        ? 'bg-accent/10 text-ink'
+                        : 'text-ink-muted hover:bg-surface-hover',
+                    )}
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      className={cn('size-4 shrink-0', command.iconClassName ?? 'text-ink-faint')}
+                      strokeWidth={2}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                    <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">
+                      {command.hint}
+                    </span>
+                  </button>
+                </li>
+              );
+            })
           )}
         </ul>
       </ModalContent>
