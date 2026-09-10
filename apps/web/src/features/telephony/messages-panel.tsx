@@ -80,8 +80,11 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
               }}
               className={cn(
                 'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
+                /* Calls' own suite hue for "this is the open thread" — the
+                   same module-identity fix already applied to Chat's active
+                   channel row and Docs' active page. */
                 thread.threadId === threadId
-                  ? 'border-accent/40 bg-accent/10'
+                  ? 'border-suite-calls/40 bg-suite-calls/10'
                   : 'border-transparent hover:bg-surface-hover',
               )}
             >

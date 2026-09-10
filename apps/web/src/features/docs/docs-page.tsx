@@ -517,8 +517,12 @@ function PageNode({
     <li>
       <div
         className={cn(
-          'group flex items-center rounded',
-          selected ? 'bg-surface-hover' : 'hover:bg-surface-hover',
+          'group flex items-center rounded-md',
+          /* The Design Bible's own `.doc-tree .dt.on` takes the Docs
+             module's own suite hue, not a plain hover tint — matching the
+             identical fix already applied to the sidebar's own Docs nav
+             item and Chat's active channel row. */
+          selected ? 'bg-suite-docs/10' : 'hover:bg-surface-hover',
         )}
       >
         {children.length > 0 ? (
@@ -548,11 +552,15 @@ function PageNode({
           }}
           className={cn(
             'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs',
-            selected ? 'font-medium text-ink' : 'text-ink-muted hover:text-ink',
+            selected ? 'font-medium text-suite-docs' : 'text-ink-muted hover:text-ink',
           )}
           title={page.title}
         >
-          <FileText aria-hidden="true" className="size-3 shrink-0 text-ink-faint" strokeWidth={2} />
+          <FileText
+            aria-hidden="true"
+            className={cn('size-3 shrink-0', selected ? 'text-suite-docs' : 'text-ink-faint')}
+            strokeWidth={2}
+          />
           <span className="truncate">{page.title}</span>
         </button>
 

@@ -162,7 +162,7 @@ export function ContactPicker({
                             onChange(person.phone);
                           }}
                           className={cn(
-                            'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                            'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs',
                             person.userId === matched?.userId
                               ? 'bg-accent text-accent-ink'
                               : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
