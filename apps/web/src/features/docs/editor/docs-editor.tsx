@@ -9,7 +9,7 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
-import { Button } from '../../../components/primitives.js';
+import { AvatarStack, Button } from '../../../components/primitives.js';
 import { useMembers } from '../../org/use-members.js';
 import {
   createMentionSuggestion,
@@ -193,7 +193,15 @@ function DocsEditorReady({
       }),
       CollaborationCaret.configure({
         provider,
-        user: { name: displayName, color },
+        /* `userId` rides alongside the `name`/`color` the caret itself
+           needs — `CollaborationCaretOptions.user` is a deliberately open
+           `Record<string, any>` ("feel free to add properties as needed"),
+           so this is the one place to publish it rather than a second
+           awareness field. `Presence` below reads it back to render real
+           `Avatar` discs instead of a bare count — the same identity key
+           `colorForUser` already falls back through (userId, then email,
+           then a fixed string) for a viewer with neither. */
+        user: { name: displayName, color, userId: userId ?? email ?? 'anonymous' },
       }),
     ],
     editorProps: {
@@ -366,16 +374,25 @@ function ConnectionPill({
 }
 
 /**
- * "N others viewing" from the shared awareness map.
+ * Who else is here, as faces — Design Bible §08's own "2 people here now"
+ * treatment, real `Avatar` discs rather than a bare count.
  *
- * CollaborationCaret publishes `{ name, color }` under each client's
- * awareness state, so everyone connected to the same page is visible here —
- * the same Yjs awareness channel the caret labels ride on. Cheap (an event
- * subscription, no polling), and it is the only presence surface this
- * feature needs for now; the avatars it could become are a styling change.
+ * CollaborationCaret publishes `{ name, color, userId }` under each client's
+ * awareness state (see the `user:` field above), so everyone connected to
+ * the same page is visible here — the same Yjs awareness channel the caret
+ * labels ride on. Cheap (an event subscription, no polling).
+ *
+ * Deduplicated by `userId`, not by connection: the same person open in two
+ * tabs is two awareness ENTRIES (one per Yjs client id) but one person, and
+ * showing them twice would misreport who is actually here. A viewer with no
+ * resolvable identity falls back to `client:<clientId>` (never colliding
+ * with a real userId), so a genuinely anonymous session still gets a
+ * distinct disc instead of silently merging with someone else's.
  */
 function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
-  const [others, setOthers] = useState(0);
+  const [others, setOthers] = useState<
+    readonly { readonly userId: string; readonly label: string }[]
+  >([]);
 
   useEffect(() => {
     const awareness = provider.awareness;
@@ -383,11 +400,16 @@ function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
 
     const update = () => {
       const local = awareness.clientID;
-      let count = 0;
-      for (const [clientId] of awareness.getStates()) {
-        if (clientId !== local) count += 1;
+      const byKey = new Map<string, string>();
+      for (const [clientId, state] of awareness.getStates()) {
+        if (clientId === local) continue;
+        const user = state['user'] as Record<string, unknown> | undefined;
+        const name = typeof user?.['name'] === 'string' ? user['name'] : 'Someone';
+        const key =
+          typeof user?.['userId'] === 'string' ? user['userId'] : `client:${String(clientId)}`;
+        byKey.set(key, name);
       }
-      setOthers(count);
+      setOthers([...byKey.entries()].map(([userId, label]) => ({ userId, label })));
     };
 
     awareness.on('change', update);
@@ -397,14 +419,13 @@ function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
     };
   }, [provider]);
 
-  if (others === 0) return null;
+  if (others.length === 0) return null;
 
   return (
     <span
-      className="text-[11px] text-ink-faint"
-      title={`${String(others)} other viewer${others === 1 ? '' : 's'}`}
+      title={`${String(others.length)} other ${others.length === 1 ? 'viewer' : 'viewers'} here now: ${others.map((person) => person.label).join(', ')}`}
     >
-      {others === 1 ? '1 other viewing' : `${String(others)} others viewing`}
+      <AvatarStack people={others} max={4} size="xs" />
     </span>
   );
 }
