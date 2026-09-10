@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
+import { Paperclip } from 'lucide-react';
 import type { AttachmentId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -64,11 +65,17 @@ export function MessageAttachments({
           <li
             key={attachment.attachmentId}
             className={cn(
-              'flex items-center gap-2 rounded border px-2 py-1 text-xs',
+              'flex items-center gap-2 rounded-md border px-2 py-1 text-xs',
               clean ? 'border-line bg-surface-raised' : 'border-warning/40 bg-warning/5',
             )}
           >
-            <span aria-hidden>📎</span>
+            {/* A real glyph, not a 📎 emoji — same reasoning as every other
+                emoji-as-icon fix in this pass. */}
+            <Paperclip
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-ink-faint"
+              strokeWidth={2}
+            />
             <span className="min-w-0 flex-1 truncate text-ink">{attachment.filename}</span>
 
             {clean ? (

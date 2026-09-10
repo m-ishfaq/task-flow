@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, User } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { Avatar, Input } from '../../components/primitives.js';
 import { cn } from '../../lib/cn.js';
@@ -117,15 +118,16 @@ export function ContactPicker({
                 aria-label="Choose a person"
                 title="Choose a person"
                 className={cn(
-                  'flex h-9 shrink-0 items-center gap-1 rounded border border-line px-2',
+                  'flex h-9 shrink-0 items-center gap-1 rounded-lg border border-line px-2',
                   'text-xs text-ink-muted hover:bg-surface-hover hover:text-ink',
                   'focus:border-accent focus:outline-none disabled:opacity-50',
                 )}
               >
-                <span aria-hidden="true">👤</span>
-                <span aria-hidden="true" className="text-[10px]">
-                  ▾
-                </span>
+                {/* Real glyphs, not an emoji — a 👤 renders at the OS's own
+                    size and weight, never matches the 1.75px-stroke icon
+                    language every other control in this app uses. */}
+                <User aria-hidden="true" className="size-3.5" strokeWidth={2} />
+                <ChevronDown aria-hidden="true" className="size-3" strokeWidth={2.25} />
               </button>
             </PopoverTrigger>
 

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Phone, Video } from 'lucide-react';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { formatCallDuration, formatRelative } from '../../lib/format.js';
@@ -129,7 +130,12 @@ export function CallTimelineCard({
           missed ? 'bg-danger/10 text-danger' : 'bg-surface-sunken text-ink-muted',
         )}
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {/* A real glyph, not 🎥/📞 emoji — same reasoning as every other emoji-as-icon fix in this pass. */}
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <span>
           {byViewer ? 'You called' : `${initiator.label} called`} · {text}
         </span>
@@ -162,7 +168,12 @@ function CallRow({
         }}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {/* A real glyph, not 🎥/📞 emoji — same reasoning as every other emoji-as-icon fix in this pass. */}
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-ink">{initiator.label}</p>
           <p className="text-[11px] text-ink-faint">

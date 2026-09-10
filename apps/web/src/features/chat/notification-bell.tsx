@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Bell } from 'lucide-react';
+import { AtSign, Bell, Mail, Pin, PhoneMissed, Reply, type LucideProps } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -201,6 +201,13 @@ function NotificationRow({
   readonly actorLabel: string | null;
   readonly onOpen: () => void;
 }) {
+  /* A direct object index, not `iconFor(notification.kind)` —
+     `react-hooks/static-components` flags a FUNCTION CALL feeding a JSX tag
+     as "creating a component during render" regardless of what the
+     function's own body does, so the lookup has to happen inline at the
+     call site rather than through a wrapper, even a trivial one. */
+  const Icon = ICON_FOR_KIND[notification.kind] ?? Bell;
+
   return (
     <li
       className={cn(
@@ -214,7 +221,7 @@ function NotificationRow({
         className="flex w-full flex-col gap-0.5 px-3 py-2 text-left"
       >
         <span className="flex items-center gap-1.5">
-          <span aria-hidden>{iconFor(notification.kind)}</span>
+          <Icon aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" strokeWidth={2} />
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
             {notification.title}
           </span>
@@ -235,18 +242,30 @@ function NotificationRow({
   );
 }
 
-/** A glyph per kind. Kept here rather than on the row: it is presentation. */
-function iconFor(kind: string): string {
-  if (
-    kind === 'chat.mention' ||
-    kind === 'card.comment_mention' ||
-    kind === 'page.comment_mention'
-  ) {
-    return '@';
-  }
-  if (kind === 'chat.direct') return '✉️';
-  if (kind === 'chat.thread_reply') return '↩️';
-  if (kind === 'card.assigned') return '📌';
-  if (kind === 'call.missed') return '📞';
-  return '🔔';
-}
+/** A `lucide-react` icon component — matches sidebar.tsx's own alias. */
+type NotificationIcon = ComponentType<LucideProps>;
+
+/**
+ * A glyph per kind. Real icon components, not the emoji strings
+ * ('✉️', '📌', '📞', '🔔' ...) this used to hold — the same emoji-as-icon
+ * issue already fixed once for this file's own bell trigger button, found a
+ * second time one level deeper: every row in the notification LIST was
+ * still rendering an emoji, which the trigger fix never touched.
+ *
+ * A plain lookup object, not a function returning a component from an `if`
+ * chain — `react-hooks/static-components` flags a function call feeding a
+ * JSX tag as "creating a component during render" even when every branch
+ * only ever selects among these same five stable, module-level references.
+ * An object index, read directly at the call site (the identical shape
+ * `command-palette.tsx`'s and `shell.tsx`'s own suite-icon lookups already
+ * use), is what the rule accepts as stable.
+ */
+const ICON_FOR_KIND: Readonly<Record<string, NotificationIcon>> = {
+  'chat.mention': AtSign,
+  'card.comment_mention': AtSign,
+  'page.comment_mention': AtSign,
+  'chat.direct': Mail,
+  'chat.thread_reply': Reply,
+  'card.assigned': Pin,
+  'call.missed': PhoneMissed,
+};

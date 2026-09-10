@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, Pin } from 'lucide-react';
+import { Check, Paperclip, Pin } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { cn } from '../../lib/cn.js';
 import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
@@ -661,7 +661,9 @@ export function AttachFileButton({
           inputRef.current?.click();
         }}
       >
-        📎
+        {/* A real glyph, not a 📎 emoji — same reasoning as every other
+            emoji-as-icon fix in this pass. */}
+        <Paperclip aria-hidden="true" className="size-4" strokeWidth={2} />
       </Button>
     </>
   );

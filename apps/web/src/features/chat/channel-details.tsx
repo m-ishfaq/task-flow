@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lock } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { useSession } from '../../lib/session.js';
@@ -141,8 +142,16 @@ export function ChannelDetailsPanel({
         ) : (
           <section className="flex flex-col gap-1">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-medium text-ink">
-                {data.type === 'public' ? '# ' : '🔒 '}
+              <h3 className="flex items-center gap-1 text-sm font-medium text-ink">
+                {/* `#` for a public channel is plain text — the bible's own
+                    channel rows use the literal character too — but a private
+                    channel used a 🔒 emoji instead of a real glyph, which is
+                    the one inconsistent piece here. */}
+                {data.type === 'public' ? (
+                  '# '
+                ) : (
+                  <Lock aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2.25} />
+                )}
                 {data.name}
               </h3>
               <Button
