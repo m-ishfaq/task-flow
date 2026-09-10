@@ -214,7 +214,7 @@ function TokenCreateForm({
           }}
           maxLength={120}
           placeholder="Release CI"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         />
       </Field>
 
@@ -239,7 +239,7 @@ function TokenCreateForm({
               No scopes available — you hold no org permissions.
             </p>
           ) : (
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded border border-line bg-surface p-2">
+            <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2">
               <label className="flex cursor-pointer items-center gap-2 px-1 text-[11px] font-medium text-ink">
                 <input
                   type="checkbox"
@@ -257,7 +257,7 @@ function TokenCreateForm({
                   <ul className="space-y-0.5">
                     {scopes.map((scope) => (
                       <li key={scope}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs text-ink hover:bg-surface-hover">
+                        <label className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-xs text-ink hover:bg-surface-hover">
                           <input
                             type="checkbox"
                             checked={selected.includes(scope)}
@@ -293,7 +293,7 @@ function TokenCreateForm({
           onChange={(event) => {
             setExpiresInDays(Number(event.target.value));
           }}
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
           <option value={30}>30 days</option>
           <option value={60}>60 days</option>
@@ -380,7 +380,7 @@ function TokenRow({
               {token.name}
             </span>
             {!active && (
-              <span className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger">
+              <span className="shrink-0 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger">
                 {status}
               </span>
             )}

@@ -173,7 +173,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                 onChange={(event) => {
                   setFromPhoneNumberId(event.target.value);
                 }}
-                className="h-9 min-w-36 rounded border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
+                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
               >
                 {owned.length === 0 && <option value="">No numbers yet</option>}
                 {owned.map((number) => (
@@ -209,7 +209,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
           {/* Gated on `!numbers.isPending` so the initial load doesn't flash a
               false "no numbers" warning at a caller who does own one. */}
           {!numbers.isPending && owned.length === 0 && (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded border border-warning/40 bg-warning/5 px-2.5 py-1.5">
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-1.5">
               <p className="text-xs text-warning">
                 No numbers yet — buy one before you can place a call.
               </p>
@@ -426,7 +426,7 @@ function Transcript({
   if (transcript.isPending || transcript.isError) return null;
 
   return (
-    <details className="rounded border border-line bg-surface-sunken px-2 py-1">
+    <details className="rounded-md border border-line bg-surface-sunken px-2 py-1">
       <summary className="cursor-pointer text-[11px] text-ink-muted">Transcript</summary>
       <p className="mt-1 text-xs whitespace-pre-wrap text-ink-muted">{transcript.data.text}</p>
     </details>

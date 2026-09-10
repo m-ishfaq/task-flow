@@ -154,7 +154,7 @@ function CallRow({
   );
 
   return (
-    <li className="rounded border border-line px-2 py-1.5">
+    <li className="rounded-md border border-line px-2 py-1.5">
       <button
         type="button"
         onClick={() => {
@@ -240,7 +240,7 @@ function RecordingRow({ recording }: { readonly recording: CallRecordingSummary 
   });
 
   return (
-    <div className="flex flex-col gap-1 rounded bg-surface-raised px-2 py-1.5">
+    <div className="flex flex-col gap-1 rounded-md bg-surface-raised px-2 py-1.5">
       <div className="flex items-center gap-2">
         <span aria-hidden="true">⏺</span>
         <span className="min-w-0 flex-1 truncate text-[11px] text-ink">
@@ -329,7 +329,7 @@ function ExcerptRow({
   readonly action: ReactNode;
 }) {
   return (
-    <li className="flex items-start gap-2 rounded border border-line px-2 py-1.5">
+    <li className="flex items-start gap-2 rounded-md border border-line px-2 py-1.5">
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 text-xs text-ink">
           {excerpt ?? <span className="italic text-ink-faint">Message deleted</span>}

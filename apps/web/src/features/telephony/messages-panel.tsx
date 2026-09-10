@@ -222,7 +222,7 @@ function ComposeView({
                 onChange={(event) => {
                   setFromPhoneNumberId(event.target.value);
                 }}
-                className="h-9 min-w-36 rounded border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none"
+                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none"
               >
                 {(numbers.data ?? []).map((number) => (
                   <option key={number.phoneNumberId} value={number.phoneNumberId}>
@@ -244,7 +244,7 @@ function ComposeView({
             onChange={(event) => {
               setBody(event.target.value);
             }}
-            className="w-full rounded border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+            className="w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
           />
         </Field>
 
@@ -304,7 +304,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
+        <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
           SMS
         </span>
         {/* The counterparty's number is already resolved here — this is the
@@ -365,7 +365,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
             onChange={(event) => {
               setFromPhoneNumberId(event.target.value);
             }}
-            className="h-9 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+            className="h-9 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
           >
             {(numbers.data ?? []).map((number) => (
               <option key={number.phoneNumberId} value={number.phoneNumberId}>

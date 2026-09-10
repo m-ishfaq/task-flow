@@ -120,7 +120,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                 className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover"
               >
                 <span className="font-mono text-sm text-ink">{String(number.e164)}</span>
-                <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                   {number.isoCountry}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
@@ -199,7 +199,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                       return (
                         <li
                           key={phoneNumber}
-                          className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                          className="group flex items-center gap-3 rounded-md border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
                         >
                           <span className="font-mono text-xs text-ink">{phoneNumber}</span>
                           <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">

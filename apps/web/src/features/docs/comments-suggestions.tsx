@@ -310,7 +310,7 @@ function CommentsTab({
       ) : (
         <ul className="space-y-2">
           {list.map((comment) => (
-            <li key={comment.commentId} className="rounded border border-line p-2">
+            <li key={comment.commentId} className="rounded-lg border border-line p-2">
               <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
                 {/* Matches `work/detail/comment-section.tsx`'s own comment
                     rows — a name with no face next to it here was the one
@@ -648,7 +648,7 @@ function SuggestionRow({
   const pending = suggestion.status === 'pending';
 
   return (
-    <li className="rounded border border-line p-2">
+    <li className="rounded-lg border border-line p-2">
       <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
         <Badge>{suggestion.kind}</Badge>
         {/* Same fix as the comment rows above — see that one's comment. */}

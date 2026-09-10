@@ -179,7 +179,7 @@ function ProviderRow({
               {PROVIDER_LABEL[provider] ?? provider}
             </span>
             {live.length > 0 && (
-              <span className="shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
+              <span className="shrink-0 rounded-md bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
                 {provider === 'github' && live.length > 1
                   ? `${String(live.length)} connected`
                   : 'Connected'}
@@ -239,7 +239,7 @@ function ProviderRow({
                     {row.providerScope}
                   </a>
                   {row.status === 'disconnected' && (
-                    <span className="shrink-0 rounded bg-surface-raised px-1 py-0.5 text-[10px] text-ink-faint">
+                    <span className="shrink-0 rounded-md bg-surface-raised px-1 py-0.5 text-[10px] text-ink-faint">
                       Disconnected
                     </span>
                   )}

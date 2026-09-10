@@ -130,7 +130,7 @@ export function ThreadPanel({
           type="button"
           onClick={onClose}
           aria-label="Close thread"
-          className="rounded p-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="rounded-lg p-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
           <X aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>

@@ -469,7 +469,7 @@ function AddMemberControl({
                 onClick={() => {
                   add.mutate(member.userId as UserId);
                 }}
-                className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-surface-hover disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-surface-hover disabled:opacity-50"
               >
                 <PersonLine
                   person={{
@@ -610,7 +610,7 @@ function GuestAccessSection({
                   onClick={() => {
                     invite.mutate(member.userId as UserId);
                   }}
-                  className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-surface-hover disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-surface-hover disabled:opacity-50"
                 >
                   <PersonLine
                     person={{

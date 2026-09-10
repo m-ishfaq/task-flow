@@ -358,7 +358,7 @@ function AdminSection({
       <Field label="Manager" htmlFor="person-manager">
         <select
           id="person-manager"
-          className="h-9 w-full rounded border border-line bg-surface-sunken px-2.5 text-sm text-ink focus:border-accent focus:outline-none"
+          className="h-9 w-full rounded-md border border-line bg-surface-sunken px-2.5 text-sm text-ink focus:border-accent focus:outline-none"
           value={managerId}
           onChange={(event) => {
             setManagerId(event.target.value);

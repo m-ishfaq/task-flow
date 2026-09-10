@@ -112,7 +112,12 @@ export function AuditPage() {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line/50">
+            {/* `overflow-x-auto` only, no border/radius of its own — `.data-table`
+                (styles.css) already draws both, at `--radius-card` (10px). A
+                wrapper border here used to add a second, MISMATCHED one at the
+                bare 4px `rounded`, so the table's own rounded corners sat
+                inside a visibly squarer outer box instead of nesting cleanly. */}
+            <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>

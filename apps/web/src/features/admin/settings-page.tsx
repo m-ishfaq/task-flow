@@ -1016,7 +1016,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                               onClick={() => {
                                 toggleUser(member.userId);
                               }}
-                              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                             >
                               <input
                                 type="checkbox"
@@ -1088,7 +1088,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                             onClick={() => {
                               togglePermission(entry);
                             }}
-                            className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                           >
                             <input
                               type="checkbox"
@@ -1363,7 +1363,7 @@ function PermissionGrantChip({
             onClick={() => {
               setConfirming(true);
             }}
-            className="ml-0.5 rounded text-ink-faint hover:text-danger disabled:opacity-50"
+            className="ml-0.5 rounded-md text-ink-faint hover:text-danger disabled:opacity-50"
           >
             ×
           </button>

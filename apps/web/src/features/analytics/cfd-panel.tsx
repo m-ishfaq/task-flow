@@ -108,7 +108,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
             onChange={(e) => {
               setSelectedBoardId(e.target.value);
             }}
-            className="rounded border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
+            className="rounded-md border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
           >
             {boardOptions.map((board) => (
               <option key={board.boardId} value={board.boardId}>

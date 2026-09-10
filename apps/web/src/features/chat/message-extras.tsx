@@ -110,7 +110,7 @@ export function MessagePreviews({ previews }: { readonly previews: readonly Mess
       {previews.map((preview) => (
         <li
           key={preview.url}
-          className="max-w-md overflow-hidden rounded border-l-2 border-accent bg-surface-raised"
+          className="max-w-md overflow-hidden rounded-lg border-l-2 border-accent bg-surface-raised"
         >
           <a
             href={preview.url}

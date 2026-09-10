@@ -51,7 +51,7 @@ export function BacklinksPanel({
                 onClick={() => {
                   onNavigate(backlink.sourceSpaceId as SpaceId, backlink.sourcePageId as PageId);
                 }}
-                className="w-full truncate rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                className="w-full truncate rounded-md px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                 title={backlink.sourceTitle}
               >
                 {backlink.sourceTitle}

@@ -584,7 +584,7 @@ function RuleRow({
             </span>
             {rule.conditionBroken && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
                 title="The stored condition no longer parses, so this rule is refused on every event"
               >
                 Broken
@@ -890,7 +890,7 @@ function RuleEditor({
           }}
           maxLength={120}
           placeholder="Notify the team when something ships"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         />
       </Field>
 
@@ -911,7 +911,7 @@ function RuleEditor({
             if (resourceForTrigger(next) !== resourceForTrigger(triggerEvent)) setCondition(null);
             setTriggerEvent(next);
           }}
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
           {TRIGGER_OPTIONS.map((option) => (
             <option key={option.event} value={option.event}>
@@ -1001,7 +1001,7 @@ function RuleEditor({
               onClick={() => {
                 setActions([...actions, blankAction()]);
               }}
-              className="rounded border border-dashed border-line px-2 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
+              className="rounded-md border border-dashed border-line px-2 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
             >
               + Add action
             </button>
@@ -1077,7 +1077,7 @@ function ActionRow({
           onChange(blankAction(event.target.value, action.key));
         }}
         aria-label="Action"
-        className="shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+        className="shrink-0 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
       >
         {options.map(([type, text]) => (
           <option key={type} value={type}>
@@ -1293,7 +1293,7 @@ function WebhookCreateForm({
           }}
           maxLength={120}
           placeholder="Release notifications"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         />
       </Field>
       <Field label="URL" htmlFor="webhook-url">
@@ -1306,7 +1306,7 @@ function WebhookCreateForm({
           }}
           maxLength={2048}
           placeholder="https://hooks.example.com/on-release"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         />
         <p className="text-[11px] text-ink-faint">
           Public endpoints only — internal and private addresses are refused, and every redirect is
@@ -1394,7 +1394,7 @@ function WebhookRow({
             </span>
             {!webhook.enabled && webhook.disabledAt !== null && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
                 title={`Auto-disabled after ${String(webhook.failureCount)} consecutive failed deliveries`}
               >
                 Disabled by failures

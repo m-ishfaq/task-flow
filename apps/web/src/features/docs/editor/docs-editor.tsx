@@ -83,7 +83,7 @@ export function DocsEditor({
 
   if (provider === null) {
     return (
-      <div className="flex h-40 items-center justify-center rounded border border-dashed border-line/50">
+      <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-line/50">
         <p className="text-xs text-ink-faint">Connecting…</p>
       </div>
     );
@@ -224,7 +224,7 @@ function DocsEditorReady({
   }, [editor, provider, onReady]);
 
   return (
-    <div className="overflow-hidden rounded border border-line bg-surface-sunken">
+    <div className="overflow-hidden rounded-md border border-line bg-surface-sunken">
       <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-1.5 pr-2">
         <Toolbar editor={editor} />
         <div className="flex shrink-0 items-center gap-3">

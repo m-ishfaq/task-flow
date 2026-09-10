@@ -458,7 +458,7 @@ function BrandingPreview({
             </span>
             <span className="ml-0.5 text-ink-faint">×</span>
           </div>
-          <div className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5">
+          <div className="flex items-center gap-1 rounded-md bg-surface-sunken px-2 py-0.5">
             <span className="text-[9px] text-ink-faint">🔒</span>
             <span className="max-w-25 truncate text-[9px] text-ink-muted">
               app.{(productName || 'taskflow').toLowerCase().replace(/\s+/g, '-')}.io/home
@@ -526,12 +526,12 @@ function BrandingPreview({
             </p>
             <div className="mt-1.5 flex gap-1">
               <span
-                className="rounded px-1 py-0.5 text-[9px] font-medium"
+                className="rounded-md px-1 py-0.5 text-[9px] font-medium"
                 style={{ backgroundColor: `${colors.base}20`, color: colors.base }}
               >
                 In progress
               </span>
-              <span className="rounded bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
+              <span className="rounded-md bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
                 Design
               </span>
             </div>

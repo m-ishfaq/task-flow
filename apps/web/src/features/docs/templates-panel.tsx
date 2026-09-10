@@ -136,7 +136,7 @@ export function TemplatesPanel({
           {list.map((template) => (
             <li
               key={template.templateId}
-              className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-surface-hover"
+              className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-surface-hover"
             >
               <span className="truncate text-ink-muted">{template.name}</span>
               {canManage && (

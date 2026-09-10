@@ -50,7 +50,7 @@ export function VelocityPanel() {
             style={{ height: `${String((p.count / maxCount) * 100)}%` }}
           >
             <div className="h-full rounded-t bg-accent/60 transition-colors group-hover:bg-accent" />
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-ink/80 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink/80 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
               {p.date}: {p.count}
             </div>
           </div>

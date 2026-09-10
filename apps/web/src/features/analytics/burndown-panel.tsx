@@ -62,7 +62,7 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
             onChange={(e) => {
               setSelectedProjectId(e.target.value);
             }}
-            className="rounded border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
+            className="rounded-md border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
           >
             {projectOptions.map((project) => (
               <option key={project.projectId} value={project.projectId}>

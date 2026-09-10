@@ -212,7 +212,7 @@ function SpaceTreePanel({
               onClick={toggleSpaces}
               aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
               aria-expanded={spacesOpen}
-              className="rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+              className="rounded-lg p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
             >
               {spacesOpen ? (
                 <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -360,7 +360,7 @@ function SpaceNode({
 
   return (
     <li>
-      <div className="group flex items-center rounded hover:bg-surface-hover">
+      <div className="group flex items-center rounded-md hover:bg-surface-hover">
         <button
           type="button"
           onClick={() => {
@@ -687,7 +687,7 @@ function CreatePageForm({
           onChange={(event) => {
             setTemplateId(event.target.value);
           }}
-          className="h-7 w-full rounded border border-line bg-surface-raised px-1.5 text-xs text-ink-muted"
+          className="h-7 w-full rounded-md border border-line bg-surface-raised px-1.5 text-xs text-ink-muted"
         >
           <option value="">Blank page</option>
           {(templates.data ?? []).map((template) => (
@@ -809,7 +809,7 @@ function PagePanel({
       <button
         type="button"
         onClick={onBack}
-        className="-ml-1.5 flex items-center gap-1 rounded p-1.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+        className="-ml-1.5 flex items-center gap-1 rounded-lg p-1.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
       >
         <span aria-hidden="true">←</span> Spaces
       </button>

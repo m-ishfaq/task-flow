@@ -273,7 +273,7 @@ function PinnedMessagesButton({
           aria-label={
             list.length > 0 ? `Pinned messages, ${String(list.length)}` : 'Pinned messages'
           }
-          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
             <Pin aria-hidden="true" className="size-3.5" strokeWidth={2} />
@@ -404,7 +404,7 @@ function SavedMessagesButton({
         <button
           type="button"
           aria-label={list.length > 0 ? `Saved messages, ${String(list.length)}` : 'Saved messages'}
-          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
             <span aria-hidden>🔖</span>
@@ -529,7 +529,7 @@ function NewChannelPopover({
         <button
           type="button"
           aria-label="New channel"
-          className="flex h-5 w-5 items-center justify-center rounded text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex h-5 w-5 items-center justify-center rounded-md text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
           +
         </button>
@@ -658,7 +658,7 @@ function NewDirectMessagePopover({
         <button
           type="button"
           aria-label="New direct message"
-          className="flex h-5 w-5 items-center justify-center rounded text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex h-5 w-5 items-center justify-center rounded-md text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
           +
         </button>
