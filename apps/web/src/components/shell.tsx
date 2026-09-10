@@ -3,10 +3,14 @@ import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-route
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
+  FileText,
   Keyboard,
+  MessageSquare,
   Menu,
+  Phone,
   ShieldCheck,
   SlidersHorizontal,
+  Users,
   type LucideProps,
 } from 'lucide-react';
 import {
@@ -28,6 +32,7 @@ import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
+import { SUITE_STYLES, suiteForPath, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
 import { Sidebar } from './sidebar.js';
@@ -420,9 +425,26 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
  * anything at all is a header that is blank on every cold load, and the sidebar
  * already highlights the active node with its real name.
  */
+/**
+ * The Design Bible's `.pf-bar .ttl .g` pattern — a module's icon takes its
+ * own suite hue while the TITLE TEXT beside it stays neutral `--ink` (the
+ * bible's own mockups never color the text itself, only the glyph in front
+ * of it). Only the four modules with their own suite hue get one; Work,
+ * Settings and every other destination stay text-only, exactly as before.
+ */
+const SUITE_ICON: Readonly<Partial<Record<Suite, NavIcon>>> = {
+  chat: MessageSquare,
+  docs: FileText,
+  calls: Phone,
+  people: Users,
+};
+
 function Breadcrumbs() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { productName } = useBranding();
+  const suite = suiteForPath(pathname);
+  const Icon = suite === undefined ? undefined : SUITE_ICON[suite];
+  const iconColor = suite === undefined ? '' : SUITE_STYLES[suite].text;
 
   const label = pathname.startsWith('/boards/')
     ? 'Board'
@@ -460,8 +482,15 @@ function Breadcrumbs() {
      header actually gets tight, which the desktop-only build before this wave
      never exercised. */
   return (
-    <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
-      {label}
+    <h1 className="flex min-w-0 items-center gap-1.5 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
+      {Icon !== undefined && (
+        <Icon
+          aria-hidden="true"
+          className={cn('size-3.5 shrink-0', iconColor)}
+          strokeWidth={2.25}
+        />
+      )}
+      <span className="truncate">{label}</span>
     </h1>
   );
 }

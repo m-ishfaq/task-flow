@@ -26,6 +26,7 @@ import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
+import { SUITE_STYLES, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
 import {
   activeSprintsQuery,
@@ -134,47 +135,13 @@ interface NavItem {
   /**
    * Design Bible §01's suite spectrum — which product module this item
    * belongs to, so its active indicator and icon take that module's own hue
-   * (`SUITE_STYLES` below) instead of the generic accent every item used
-   * before. Absent for "Where you start" items (My tasks, Search, Assistant)
+   * (`../lib/suite.ts`'s `SUITE_STYLES`) instead of the generic accent every
+   * item used before. Absent for "Where you start" items (My tasks, Search, Assistant)
    * and Automations: those are entry points and configuration, not a product
    * module competing for its own color the way Chat/Docs/Calls/People do.
    */
   readonly suite?: Suite;
 }
-
-/** A product module's own hue, per the Design Bible's suite spectrum (§01). */
-type Suite = 'work' | 'chat' | 'docs' | 'calls' | 'people';
-
-/**
- * Literal, fully-spelled class strings per suite — not built with template
- * interpolation (`` `text-suite-${suite}` ``) — because Tailwind's scanner
- * finds candidate classes by matching literal text in source files; a
- * dynamically-assembled class name is invisible to it and would compile away
- * silently, working in dev (arbitrary CSS var resolution) and vanishing in a
- * production build using only the classes it can actually see.
- */
-const SUITE_STYLES: Readonly<Record<Suite, { readonly active: string; readonly bar: string }>> = {
-  work: {
-    active: 'bg-suite-work/10 text-suite-work hover:bg-suite-work/10 hover:text-suite-work',
-    bar: 'before:from-suite-work before:to-suite-work/0',
-  },
-  chat: {
-    active: 'bg-suite-chat/10 text-suite-chat hover:bg-suite-chat/10 hover:text-suite-chat',
-    bar: 'before:from-suite-chat before:to-suite-chat/0',
-  },
-  docs: {
-    active: 'bg-suite-docs/10 text-suite-docs hover:bg-suite-docs/10 hover:text-suite-docs',
-    bar: 'before:from-suite-docs before:to-suite-docs/0',
-  },
-  calls: {
-    active: 'bg-suite-calls/10 text-suite-calls hover:bg-suite-calls/10 hover:text-suite-calls',
-    bar: 'before:from-suite-calls before:to-suite-calls/0',
-  },
-  people: {
-    active: 'bg-suite-people/10 text-suite-people hover:bg-suite-people/10 hover:text-suite-people',
-    bar: 'before:from-suite-people before:to-suite-people/0',
-  },
-};
 
 /** The active-row bar/tint for a given suite, or the generic accent when none. */
 function activeStylesFor(suite: Suite | undefined): string {
@@ -321,8 +288,10 @@ const ACTIVE_BAR =
  * (§01), so their "you are here" bar reads `--color-suite-work` rather than
  * the generic accent every other nav item without a `suite` falls back to.
  */
-const WORK_TREE_BAR =
-  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-suite-work before:to-suite-work/0';
+const WORK_TREE_BAR = cn(
+  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b',
+  SUITE_STYLES.work.bar,
+);
 
 /**
  * The tint, applied to the ROW rather than to the link.
