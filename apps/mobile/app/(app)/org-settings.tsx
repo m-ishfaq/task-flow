@@ -104,6 +104,20 @@ export default function OrgSettingsScreen(): React.JSX.Element {
   );
 }
 
+/**
+ * How many members/teams to render before the "Show all" expander.
+ *
+ * The whole screen is one ScrollView, so an unbounded roster used to push
+ * Teams and everything below it arbitrarily far down — a large org made the
+ * page scroll for pages before reaching the next section. Rendering a bounded
+ * preview by default and revealing the rest on demand keeps the default screen
+ * a fixed, scannable length (the same shape web's "Load more" rosters take)
+ * without a FlatList refactor that a multi-section screen like this cannot use
+ * cleanly (a virtualized list cannot itself live inside a parent ScrollView).
+ */
+const MEMBERS_PREVIEW = 8;
+const TEAMS_PREVIEW = 6;
+
 function OrgSettingsScreenContent() {
   const paddingTop = useTopInset();
   const queryClient = useQueryClient();
@@ -128,6 +142,8 @@ function OrgSettingsScreenContent() {
   const [inviteRole, setInviteRole] = useState<Role>('member');
   const [rolePickerFor, setRolePickerFor] = useState<Member | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [showAllMembers, setShowAllMembers] = useState(false);
+  const [showAllTeams, setShowAllTeams] = useState(false);
 
   const capabilities = org.data?.capabilities ?? {
     updateOrg: false,
@@ -424,44 +440,62 @@ function OrgSettingsScreenContent() {
                 {apiErrorOf(members.error)?.error.message ?? "Couldn't load members."}
               </Text>
             ) : (
-              members.data.map((member) => (
-                <View key={member.userId} style={styles.memberRow}>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberEmail} numberOfLines={1}>
-                      {member.displayName ?? member.email}
-                      {member.userId === currentUserId ? ' (you)' : ''}
-                    </Text>
-                    {member.status !== 'active' && (
-                      <Text style={styles.memberStatus}>{member.status}</Text>
-                    )}
-                  </View>
-                  {capabilities.manageMembers ? (
-                    <Pressable
-                      style={styles.roleBadge}
-                      disabled={changeRole.isPending || remove.isPending}
-                      onPress={() => {
-                        setRolePickerFor(member);
-                      }}
-                    >
-                      <Text style={styles.roleBadgeText}>{member.role}</Text>
-                    </Pressable>
-                  ) : (
-                    <View style={styles.roleBadge}>
-                      <Text style={styles.roleBadgeText}>{member.role}</Text>
+              <>
+                {(showAllMembers ? members.data : members.data.slice(0, MEMBERS_PREVIEW)).map(
+                  (member) => (
+                    <View key={member.userId} style={styles.memberRow}>
+                      <View style={styles.memberInfo}>
+                        <Text style={styles.memberEmail} numberOfLines={1}>
+                          {member.displayName ?? member.email}
+                          {member.userId === currentUserId ? ' (you)' : ''}
+                        </Text>
+                        {member.status !== 'active' && (
+                          <Text style={styles.memberStatus}>{member.status}</Text>
+                        )}
+                      </View>
+                      {capabilities.manageMembers ? (
+                        <Pressable
+                          style={styles.roleBadge}
+                          disabled={changeRole.isPending || remove.isPending}
+                          onPress={() => {
+                            setRolePickerFor(member);
+                          }}
+                        >
+                          <Text style={styles.roleBadgeText}>{member.role}</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.roleBadge}>
+                          <Text style={styles.roleBadgeText}>{member.role}</Text>
+                        </View>
+                      )}
+                      {capabilities.removeMembers && (
+                        <Pressable
+                          disabled={changeRole.isPending || remove.isPending}
+                          onPress={() => {
+                            runRemove(member.userId);
+                          }}
+                        >
+                          <Text style={styles.removeText}>Remove</Text>
+                        </Pressable>
+                      )}
                     </View>
-                  )}
-                  {capabilities.removeMembers && (
-                    <Pressable
-                      disabled={changeRole.isPending || remove.isPending}
-                      onPress={() => {
-                        runRemove(member.userId);
-                      }}
-                    >
-                      <Text style={styles.removeText}>Remove</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ))
+                  ),
+                )}
+                {members.data.length > MEMBERS_PREVIEW && (
+                  <Pressable
+                    style={styles.showMoreLink}
+                    onPress={() => {
+                      setShowAllMembers((current) => !current);
+                    }}
+                  >
+                    <Text style={styles.showMoreLinkText}>
+                      {showAllMembers
+                        ? 'Show fewer'
+                        : `Show all ${String(members.data.length)} members`}
+                    </Text>
+                  </Pressable>
+                )}
+              </>
             )}
             {remove.isError && (
               <Text style={styles.sectionError} accessibilityRole="alert">
@@ -520,21 +554,35 @@ function OrgSettingsScreenContent() {
             ) : teams.data.length === 0 ? (
               <Text style={styles.emptyHint}>No teams yet.</Text>
             ) : (
-              teams.data.map((team) => (
-                <TeamCard
-                  key={team.teamId}
-                  team={team}
-                  orgMembers={members.data ?? []}
-                  canManage={capabilities.manageTeams}
-                  busy={addTeamMember.isPending || removeTeamMember.isPending}
-                  onAdd={(userId) => {
-                    addTeamMember.mutate({ teamId: team.teamId, userId });
-                  }}
-                  onRemove={(userId) => {
-                    removeTeamMember.mutate({ teamId: team.teamId, userId });
-                  }}
-                />
-              ))
+              <>
+                {(showAllTeams ? teams.data : teams.data.slice(0, TEAMS_PREVIEW)).map((team) => (
+                  <TeamCard
+                    key={team.teamId}
+                    team={team}
+                    orgMembers={members.data ?? []}
+                    canManage={capabilities.manageTeams}
+                    busy={addTeamMember.isPending || removeTeamMember.isPending}
+                    onAdd={(userId) => {
+                      addTeamMember.mutate({ teamId: team.teamId, userId });
+                    }}
+                    onRemove={(userId) => {
+                      removeTeamMember.mutate({ teamId: team.teamId, userId });
+                    }}
+                  />
+                ))}
+                {teams.data.length > TEAMS_PREVIEW && (
+                  <Pressable
+                    style={styles.showMoreLink}
+                    onPress={() => {
+                      setShowAllTeams((current) => !current);
+                    }}
+                  >
+                    <Text style={styles.showMoreLinkText}>
+                      {showAllTeams ? 'Show fewer' : `Show all ${String(teams.data.length)} teams`}
+                    </Text>
+                  </Pressable>
+                )}
+              </>
             )}
             {addTeamMember.isError && (
               <Text style={styles.sectionError} accessibilityRole="alert">
@@ -1008,6 +1056,18 @@ const styles = StyleSheet.create({
   },
   transferLinkTextDisabled: {
     color: colors.inkFaint.hex,
+  },
+  showMoreLink: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
+  },
+  showMoreLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   teamCard: {
     backgroundColor: colors.surfaceRaised.hex,
