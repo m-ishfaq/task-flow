@@ -202,8 +202,17 @@ function ChannelRow({
         }}
         className={cn(
           'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+          /* The Design Bible's own `.chan.on` uses the module's own suite
+             hue (`--surf-hue`), not a generic accent tint — Chat's active
+             channel row takes `--color-suite-chat` for the identical
+             reason the sidebar's own Chat nav item does. The 15%-opacity
+             tint is the same non-text-safe pairing the sidebar already
+             uses; the text itself, at suite-chat's 66% lightness, clears
+             4.5:1 against every dark surface tone in this app with real
+             margin — lighter than the already-audited 55-58%-lightness
+             accent tokens, which pass the same bar. */
           active
-            ? 'bg-accent/15 text-accent'
+            ? 'bg-suite-chat/15 text-suite-chat'
             : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         )}
       >
@@ -555,7 +564,7 @@ function NewChannelPopover({
               setType('public');
             }}
             className={cn(
-              'flex-1 rounded px-2 py-1 text-xs',
+              'flex-1 rounded-md px-2 py-1 text-xs',
               type === 'public'
                 ? 'bg-accent text-accent-ink'
                 : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
@@ -569,7 +578,7 @@ function NewChannelPopover({
               setType('private');
             }}
             className={cn(
-              'flex-1 rounded px-2 py-1 text-xs',
+              'flex-1 rounded-md px-2 py-1 text-xs',
               type === 'private'
                 ? 'bg-accent text-accent-ink'
                 : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
