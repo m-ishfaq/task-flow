@@ -128,6 +128,7 @@ function OrgSettingsScreenContent() {
   const [inviteRole, setInviteRole] = useState<Role>('member');
   const [rolePickerFor, setRolePickerFor] = useState<Member | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState('');
 
   const capabilities = org.data?.capabilities ?? {
     updateOrg: false,
@@ -237,6 +238,26 @@ function OrgSettingsScreenContent() {
   const transferCandidates = (members.data ?? []).filter(
     (member) => member.userId !== currentUserId,
   );
+
+  /**
+   * Design Bible §20's own worked example is this exact screen: "the mobile
+   * members list is one ScrollView with an unbounded map, so 128 members
+   * scroll past forever and bury Teams below them." A client-side filter
+   * over the already-fetched roster is the minimal fix that actually closes
+   * the named complaint (no way to find one person in a long list) without
+   * the larger, device-untestable rewrite §20 also asks for — converting
+   * this screen to a virtualized FlatList and splitting Teams onto its own
+   * route. Both remain real, deliberately deferred follow-up work: this
+   * sandbox has no simulator to verify either change renders correctly, and
+   * getting a list's own scroll virtualization wrong is the kind of bug
+   * that only shows up on a real device with a real-sized roster.
+   */
+  const rosterQuery = rosterSearch.trim().toLowerCase();
+  const visibleRoster = (members.data ?? []).filter((member) => {
+    if (rosterQuery === '') return true;
+    const label = `${member.displayName ?? ''} ${member.email}`.toLowerCase();
+    return label.includes(rosterQuery);
+  });
 
   const refreshTeams = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: TEAMS_QUERY_KEY });
@@ -424,44 +445,59 @@ function OrgSettingsScreenContent() {
                 {apiErrorOf(members.error)?.error.message ?? "Couldn't load members."}
               </Text>
             ) : (
-              members.data.map((member) => (
-                <View key={member.userId} style={styles.memberRow}>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberEmail} numberOfLines={1}>
-                      {member.displayName ?? member.email}
-                      {member.userId === currentUserId ? ' (you)' : ''}
-                    </Text>
-                    {member.status !== 'active' && (
-                      <Text style={styles.memberStatus}>{member.status}</Text>
+              <>
+                {members.data.length > 15 && (
+                  <TextInput
+                    value={rosterSearch}
+                    onChangeText={setRosterSearch}
+                    placeholder="Search members…"
+                    placeholderTextColor={colors.inkFaint.hex}
+                    autoCapitalize="none"
+                    style={styles.pickerSearch}
+                  />
+                )}
+                {visibleRoster.length === 0 && (
+                  <Text style={styles.emptyHint}>No member matches “{rosterSearch}”.</Text>
+                )}
+                {visibleRoster.map((member) => (
+                  <View key={member.userId} style={styles.memberRow}>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberEmail} numberOfLines={1}>
+                        {member.displayName ?? member.email}
+                        {member.userId === currentUserId ? ' (you)' : ''}
+                      </Text>
+                      {member.status !== 'active' && (
+                        <Text style={styles.memberStatus}>{member.status}</Text>
+                      )}
+                    </View>
+                    {capabilities.manageMembers ? (
+                      <Pressable
+                        style={styles.roleBadge}
+                        disabled={changeRole.isPending || remove.isPending}
+                        onPress={() => {
+                          setRolePickerFor(member);
+                        }}
+                      >
+                        <Text style={styles.roleBadgeText}>{member.role}</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={styles.roleBadge}>
+                        <Text style={styles.roleBadgeText}>{member.role}</Text>
+                      </View>
+                    )}
+                    {capabilities.removeMembers && (
+                      <Pressable
+                        disabled={changeRole.isPending || remove.isPending}
+                        onPress={() => {
+                          runRemove(member.userId);
+                        }}
+                      >
+                        <Text style={styles.removeText}>Remove</Text>
+                      </Pressable>
                     )}
                   </View>
-                  {capabilities.manageMembers ? (
-                    <Pressable
-                      style={styles.roleBadge}
-                      disabled={changeRole.isPending || remove.isPending}
-                      onPress={() => {
-                        setRolePickerFor(member);
-                      }}
-                    >
-                      <Text style={styles.roleBadgeText}>{member.role}</Text>
-                    </Pressable>
-                  ) : (
-                    <View style={styles.roleBadge}>
-                      <Text style={styles.roleBadgeText}>{member.role}</Text>
-                    </View>
-                  )}
-                  {capabilities.removeMembers && (
-                    <Pressable
-                      disabled={changeRole.isPending || remove.isPending}
-                      onPress={() => {
-                        runRemove(member.userId);
-                      }}
-                    >
-                      <Text style={styles.removeText}>Remove</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ))
+                ))}
+              </>
             )}
             {remove.isError && (
               <Text style={styles.sectionError} accessibilityRole="alert">
