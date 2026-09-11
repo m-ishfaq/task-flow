@@ -56,7 +56,7 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   const showDetail = isDesktop || opened;
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col p-4">
+    <div className="mx-auto flex h-full min-h-0 max-w-[85%] flex-col p-4">
       {/* One bordered card holding both panes — the same unified shape
           `calls-panel.tsx` uses, replacing two independently floating
           columns (one boxed, one not) that used to sit directly in the

@@ -176,7 +176,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
   const showDetail = isDesktop || selectedCallId !== undefined;
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col p-4">
+    <div className="mx-auto flex h-full min-h-0 max-w-[85%] flex-col p-4">
       {/* One bordered card holding BOTH panes, the Design Bible's own §09
           shape — not two independently floating columns, one boxed and one
           not, which is what this used to be. `md:divide-x` draws the single
@@ -184,7 +184,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
           so this outer card never needs to. */}
       <div className="flex min-h-0 flex-1 divide-line overflow-hidden rounded-xl border border-line bg-surface-raised md:divide-x">
         {showList && (
-          <div className="flex min-h-0 w-full flex-col md:w-80 md:shrink-0">
+          <div className="flex min-h-0 w-full flex-col md:w-[70%] md:shrink-0">
             <div className="flex items-center gap-2 border-b border-line px-3.5 py-3">
               <h2 className="text-[13px] font-semibold text-ink">Calls</h2>
               {calls.data !== undefined && (

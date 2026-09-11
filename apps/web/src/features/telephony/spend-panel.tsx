@@ -60,7 +60,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const automationOver = automationRatio > 1;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-[85%] space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">This organization's spend</h2>

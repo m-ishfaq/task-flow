@@ -936,7 +936,7 @@ function PagePanel({
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-6">
+    <div className="mx-auto max-w-[85%] space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
           comment on the list/detail split this belongs to. */}
       <button
