@@ -665,7 +665,7 @@ export function PageContainer({
 const PAGE_CONTAINER_MAX_WIDTH: Readonly<Record<'md' | 'lg' | 'xl' | '2xl', string>> = {
   md: 'max-w-2xl',
   lg: 'max-w-4xl',
-  xl: 'max-w-5xl',
+  xl: 'max-w-[85%]',
   '2xl': 'max-w-7xl',
 };
 
