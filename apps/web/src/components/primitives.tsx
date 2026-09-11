@@ -145,7 +145,7 @@ export function Segmented<T extends string>({
             onChange(option.value);
           }}
           className={cn(
-            'rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-[var(--motion-fast)]',
+            'rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-(--motion-fast)',
             value === option.value
               ? 'bg-accent text-accent-ink shadow-sm'
               : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -411,7 +411,7 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
         size === 'xs'
           ? 'size-5 text-[10px]'
           : size === 'lg'
-            ? 'size-[52px] text-[17px]'
+            ? 'size-13 text-[17px]'
             : 'size-6 text-[11px]',
         className,
       )}
@@ -497,7 +497,7 @@ export function OrgBadge({
         backgroundImage: `linear-gradient(160deg, oklch(64% 0.13 ${String(hue)}), oklch(52% 0.13 ${String(hue)}))`,
       }}
       className={cn(
-        'inline-flex size-[22px] shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white',
+        'inline-flex size-5.5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white',
         className,
       )}
     >
@@ -702,7 +702,7 @@ export function PageHeader({
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="flex min-w-0 items-start gap-3">
         {icon !== undefined && (
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent/70 text-white shadow-xs">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-accent to-accent/70 text-white shadow-xs">
             {icon}
           </span>
         )}
