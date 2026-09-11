@@ -679,7 +679,16 @@ const analyticsRoute = createRoute({
   path: '/analytics',
   validateSearch: z.object({
     tab: z
-      .enum(['velocity', 'burndown', 'cfd', 'cycle-time', 'workload', 'volume', 'status'])
+      .enum([
+        'overview',
+        'velocity',
+        'burndown',
+        'cfd',
+        'cycle-time',
+        'workload',
+        'volume',
+        'status',
+      ])
       .optional()
       .catch(undefined),
   }),
