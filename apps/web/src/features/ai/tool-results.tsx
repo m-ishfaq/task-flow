@@ -127,7 +127,16 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
     optional, and left to each renderer to opt into, rather than forced on
     every call site: a one-row `CardActionResult` confirming a single write
     has nothing a tool-name-plus-count header would add over its own
-    "Assigned WEB-142 · Open card" text, which already names the action. */
+    "Assigned WEB-142 · Open card" text, which already names the action.
+
+    `rounded-xl` and a real `border-line` (not the fainter `/60`), plus a
+    `shadow-xs`, rather than the small, flat `rounded-lg` box this used to
+    be — the mockup's own result card reads as a genuine card sitting on
+    the transcript, the same visual weight `home-page.tsx`'s own list rows
+    and `card-detail-panel.tsx`'s sections already carry, not a dense debug
+    readout. `bg-surface` (not `-raised`, which the message list's own
+    background already is) is what keeps the card visible AS a card against
+    that backdrop rather than blending into it. */
 function ResultPanel({
   header,
   children,
@@ -136,9 +145,9 @@ function ResultPanel({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="space-y-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-xs">
+    <div className="space-y-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px] shadow-xs">
       {header !== undefined && (
-        <div className="flex items-center gap-1.5 border-b border-line/40 pb-1.5 text-[11px] font-medium text-ink-muted">
+        <div className="flex items-center gap-1.5 border-b border-line/60 pb-2 text-[12px] font-medium text-ink-muted">
           {header}
         </div>
       )}
@@ -168,8 +177,8 @@ const DEAD_GITHUB_TOKEN_MARKER = 'the connector token is invalid or was revoked'
 function ErrorNote({ message }: { readonly message: string }) {
   const isDeadGithubToken = message.includes(DEAD_GITHUB_TOKEN_MARKER);
   return (
-    <div className="flex items-start gap-1.5 rounded-lg border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger">
-      <XCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+    <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2.5 text-[13px] text-danger">
+      <XCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
       <span className="flex-1">
         {message}
         {isDeadGithubToken && (
@@ -190,7 +199,7 @@ function ErrorNote({ message }: { readonly message: string }) {
 }
 
 function EntityList({ children }: { readonly children: ReactNode }) {
-  return <ul className="space-y-1">{children}</ul>;
+  return <ul className="space-y-0.5">{children}</ul>;
 }
 
 function EntityRow({
@@ -210,7 +219,7 @@ function EntityRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-ink">{primary}</span>
         {secondary !== undefined && (
-          <span className="block truncate text-[11px] text-ink-faint">{secondary}</span>
+          <span className="block truncate text-[12px] text-ink-faint">{secondary}</span>
         )}
       </span>
     </>
@@ -219,12 +228,12 @@ function EntityRow({
   return (
     <li>
       {onClick === undefined ? (
-        <div className="flex items-center gap-2 rounded-md px-1.5 py-1">{content}</div>
+        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">{content}</div>
       ) : (
         <button
           type="button"
           onClick={onClick}
-          className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-hover"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
         >
           {content}
         </button>
@@ -381,31 +390,43 @@ function renderMyCards(result: ToolResultMessage, ctx: ToolResultRenderContext):
                 onClick={() => {
                   ctx.onOpenCard(card.cardId as CardId);
                 }}
-                className="flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-surface-hover"
+                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
               >
-                {priority !== null && (
-                  <span
-                    aria-hidden="true"
-                    title={PRIORITY_LABEL[priority]}
-                    className={cn(
-                      'mt-1 size-2 shrink-0 rounded-full ring-1 ring-ink/10',
-                      PRIORITY_SWATCH[priority],
-                    )}
-                  />
-                )}
-                <span className="shrink-0 font-mono text-[10px] text-ink-faint">
+                {/* A reference PILL, matching how a card reference already
+                    reads everywhere else in this app (`list-view.tsx`'s own
+                    row, `table-view.tsx`'s Ref column) — a bare mono string
+                    with no background read as debug output, not a card id
+                    someone recognizes. */}
+                <span className="mt-0.5 shrink-0 rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
                   {card.reference}
                 </span>
                 <span className="min-w-0 flex-1 break-words text-ink">{card.title}</span>
                 {card.dueDate !== null && (
                   <span
                     className={cn(
-                      'shrink-0 text-[10px] whitespace-nowrap',
+                      'mt-0.5 shrink-0 text-[11px] whitespace-nowrap',
                       isPastDue(card.dueDate) ? 'text-danger' : 'text-ink-faint',
                     )}
                   >
                     {formatDate(card.dueDate)}
                   </span>
+                )}
+                {/* A trailing colored bar rather than a leading dot — the
+                    Design Bible's own `my_cards` row (§12) marks priority at
+                    the row's TRAILING edge, the same "priority as an edge
+                    bar" language `card-tile.tsx`'s own board card already
+                    uses (there, the full tile's left edge; here, one row's
+                    right edge — a scaled-down version of the identical
+                    idea, not a different one). */}
+                {priority !== null && (
+                  <span
+                    aria-hidden="true"
+                    title={PRIORITY_LABEL[priority]}
+                    className={cn(
+                      'mt-0.5 h-4 w-[3px] shrink-0 rounded-full',
+                      PRIORITY_SWATCH[priority],
+                    )}
+                  />
                 )}
               </button>
             </li>

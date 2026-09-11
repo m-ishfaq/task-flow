@@ -678,25 +678,42 @@ const PAGE_CONTAINER_MAX_WIDTH: Readonly<Record<'md' | 'lg' | 'xl' | '2xl', stri
  * designed. One component, `font-display` (Geist) at `text-xl` like the login
  * page's own heading, description at `text-sm`, actions pinned right — the
  * same hierarchy Linear/ClickUp/Twilio use on every one of their pages.
+ *
+ * `icon` is optional and unused by every ordinary content page — a plain
+ * `<h1>` is right for "Settings" or "Sprints". It exists for the handful of
+ * pages that carry their own product identity the way the Design Bible's own
+ * mockup gives the Assistant a mark next to its name (§12): a small solid
+ * square, not the circular shape `Avatar`/`OrgBadge` already use for a
+ * PERSON or an ORG, so a page's own brand mark reads as a third, distinct
+ * kind of thing rather than colliding with either.
  */
 export function PageHeader({
   title,
   description,
+  icon,
   actions,
 }: {
   readonly title: string;
   readonly description?: string | undefined;
+  readonly icon?: ReactNode;
   readonly actions?: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {description !== undefined && (
-          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">
-            {description}
-          </p>
+      <div className="flex min-w-0 items-start gap-3">
+        {icon !== undefined && (
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent/70 text-white shadow-xs">
+            {icon}
+          </span>
         )}
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h1>
+          {description !== undefined && (
+            <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">
+              {description}
+            </p>
+          )}
+        </div>
       </div>
       {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

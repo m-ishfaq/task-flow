@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
-  Bot,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -14,12 +13,13 @@ import {
   SquarePen,
 } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
-import { Button, Empty, PageContainer, PageHeader } from '../../components/primitives.js';
+import { Avatar, Button, Empty, PageContainer, PageHeader } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
 import { CardQuickView } from '../work/card-quick-view.js';
+import { useMembers, type Person } from '../org/use-members.js';
 import { MarkdownLite } from './markdown-lite.js';
 import { AssistantComposer, type AssistantComposerHandle } from './assistant-composer.js';
 import { stripReferenceEmbeds } from './entity-reference.js';
@@ -210,6 +210,34 @@ const EXAMPLE_PROMPTS: readonly string[] = [
   'What did reviewers say on PR #',
 ];
 
+/**
+ * The assistant's own brand mark — a solid indigo square with a sparkle,
+ * Design Bible §12's own page-header identity mark, reused unchanged as the
+ * per-message avatar and the "Thinking…" indicator so every place this page
+ * speaks carries the identical mark, rather than the page header showing one
+ * icon and each reply showing a different one (a faint outlined circle with
+ * a `Bot` glyph, what this used to be). A circle would collide with
+ * `Avatar`'s own shape for a PERSON; staying square is what keeps "the
+ * assistant" reading as a distinct kind of thing from "a person" at a glance,
+ * the same distinction `OrgBadge`'s own square already draws against `Avatar`.
+ */
+function AiMark({ size = 'sm' }: { readonly size?: 'sm' | 'lg' }) {
+  return (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent/70 text-white shadow-xs',
+        size === 'lg' ? 'size-9' : 'size-6',
+      )}
+    >
+      <Sparkles
+        aria-hidden="true"
+        className={size === 'lg' ? 'size-4' : 'size-3.5'}
+        strokeWidth={2}
+      />
+    </span>
+  );
+}
+
 export function AssistantPage() {
   /* A seed set by the §6 bootstrap dialog before it navigated here — READ
      (not consumed) as the lazy initial value, so the page's very first
@@ -225,21 +253,20 @@ export function AssistantPage() {
   const [pendingToolCalls, setPendingToolCalls] = useState<readonly ToolCallWire[]>([]);
   const composerRef = useRef<AssistantComposerHandle>(null);
   const [draftEmpty, setDraftEmpty] = useState(true);
-  // Open by default on a fresh conversation — exactly when a person most
-  // needs to see what the assistant can do — and toggled from the header
-  // afterward via the same button.
-  const [showCapabilities, setShowCapabilities] = useState(
-    () =>
-      (useAssistantSeedStore.getState().seed ?? []).length === 0 &&
-      // On small screens the sidebar is hidden and the inline panel is
-      // toggled by the "What can I do?" button — open by default only on
-      // wide screens where the sidebar is always visible.  The 1024px
-      // threshold matches the `lg:` Tailwind breakpoint the sidebar's
-      // `hidden lg:block` / `lg:hidden` classes use.
-      typeof window !== 'undefined' &&
-      window.innerWidth >= 1024,
-  );
+  /* Closed by default, always — the wide-screen `<aside>` below is a SEPARATE,
+     unconditionally-rendered instance of this same panel (`variant="sidebar"`)
+     that never reads this state at all, so there was never anything for a
+     "true on wide screens" default to actually show. That stale true value
+     used to survive a resize: start wide (state initialized true, invisible —
+     the inline block is `lg:hidden` at that width), then shrink the window
+     below 1024px with no remount, and the now-relevant inline panel popped
+     open uninvited, on exactly the small/inline-variant screen this was
+     supposed to stay closed on. Starting `false` unconditionally means there
+     is no stale true value left to carry across a resize. */
+  const [showCapabilities, setShowCapabilities] = useState(false);
   const orgId = useSession((state) => state.orgId) ?? '';
+  const currentUserId = useSession((state) => state.userId) ?? '';
+  const { personOf } = useMembers();
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
@@ -354,10 +381,10 @@ export function AssistantPage() {
   const resetConversation = () => {
     setMessages([]);
     setPendingToolCalls([]);
-    // Re-derive the same desktop-vs-mobile default the initialiser uses:
-    // wide screens open the panel on a fresh conversation, narrow ones
-    // keep it collapsed so the toggle button is the entry point.
-    setShowCapabilities(typeof window !== 'undefined' && window.innerWidth >= 1024);
+    // Same default the initializer uses: closed, always — see its own
+    // comment for why a wide-screen "open" default here would be dead
+    // weight the inline panel doesn't need (the sidebar is separate).
+    setShowCapabilities(false);
     // `turn`'s own error/data from the PREVIOUS conversation otherwise
     // survives the reset — `useMutation` keeps its last result until a new
     // mutation runs or `reset()` is called, so without this a fresh, empty
@@ -389,6 +416,7 @@ export function AssistantPage() {
         <PageHeader
           title="Assistant"
           description="Ask about your work, or let it make a change — every write waits for your OK first."
+          icon={<Sparkles aria-hidden="true" className="size-4" strokeWidth={2} />}
           actions={
             <div className="flex items-center gap-2">
               <Button
@@ -447,15 +475,16 @@ export function AssistantPage() {
                   resultsById={resultsById}
                   orgId={orgId}
                   onOpenCard={setOpenCardId}
+                  currentUser={currentUserId === '' ? null : personOf(currentUserId)}
                 />
               ))
           )}
 
           {busy && (
             <div className="flex items-center gap-2.5">
-              <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-                <Bot aria-hidden="true" className="size-3.5 animate-pulse" strokeWidth={2} />
-              </div>
+              <span className="animate-pulse">
+                <AiMark />
+              </span>
               <span className="text-xs text-ink-faint">Thinking…</span>
             </div>
           )}
@@ -679,11 +708,17 @@ function MessageBubble({
   resultsById,
   orgId,
   onOpenCard,
+  currentUser,
 }: {
   readonly message: DisplayableMessage;
   readonly resultsById: ReturnType<typeof toolResultsById>;
   readonly orgId: string;
   readonly onOpenCard: (cardId: CardId) => void;
+  /** `null` while the member list hasn't loaded yet, or the caller is not
+      resolvable (a role with no `member:read`) — the bubble still renders,
+      just without the avatar, the same "degrade, don't block" `personOf`
+      itself already promises for an unknown id. */
+  readonly currentUser: Person | null;
 }) {
   switch (message.role) {
     case 'user':
@@ -691,10 +726,19 @@ function MessageBubble({
       // mention (`entity-reference.ts`'s own header) — real for the model
       // to read, never for a person to see in their own sent bubble.
       return (
-        <div className="flex justify-end">
+        <div className="flex items-end justify-end gap-2">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-white">
             {stripReferenceEmbeds(message.content)}
           </p>
+          {/* Matches Design Bible §12's own sent-message avatar — the same
+              `Avatar` every other surface in this app already uses for a
+              person, so "who sent this" reads identically here as it does
+              on a card's own comment thread. Omitted rather than shown as a
+              placeholder when unresolved, per `currentUser`'s own doc
+              comment above. */}
+          {currentUser !== null && (
+            <Avatar userId={currentUser.userId} label={currentUser.label} size="sm" />
+          )}
         </div>
       );
     case 'assistant':
@@ -702,11 +746,14 @@ function MessageBubble({
         <div className="flex items-start gap-2.5">
           {/* A small avatar mark, the same "who's speaking" cue Claude/
               ChatGPT both use — the user's own bubble needs none (it's
-              already right-aligned in accent color, unambiguous), but a
-              left-aligned assistant bubble with no mark reads as just
-              another block of page text rather than a reply. */}
-          <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <Bot aria-hidden="true" className="size-3.5" strokeWidth={2} />
+              already right-aligned in accent color, unambiguous, and now
+              carries its own avatar), but a left-aligned assistant reply
+              with no mark reads as just another block of page text rather
+              than a reply. The SAME mark (`AiMark`) the page header itself
+              carries, so the assistant reads as one consistent identity
+              wherever it speaks on this page. */}
+          <div className="mt-0.5">
+            <AiMark />
           </div>
           <div className="min-w-0 max-w-[85%] space-y-2">
             {/* Flat, not a bubble — Design Bible §12's own assistant reply
@@ -812,7 +859,7 @@ function PendingActions({
                     onClick={() => {
                       decide(call.id, true);
                     }}
-                    className="flex h-[30px] items-center rounded-lg bg-accent px-3.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     Approve · {describePendingAction(call)}
                   </button>
@@ -822,7 +869,7 @@ function PendingActions({
                     onClick={() => {
                       decide(call.id, false);
                     }}
-                    className="flex h-[30px] items-center rounded-lg border border-line bg-surface-raised px-3.5 text-[12.5px] font-medium text-ink-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    className="flex h-9 items-center rounded-lg border border-line bg-surface-raised px-4 text-[13px] font-medium text-ink-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -851,7 +898,7 @@ function PendingActions({
             onClick={() => {
               onRespond([...approved]);
             }}
-            className="flex h-[30px] items-center rounded-lg bg-accent px-3.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Continue
           </button>
