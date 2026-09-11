@@ -23,6 +23,15 @@ import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
  * Stat card shown in the summary overview at the top of the page.
  * An icon, a label, and a value — the same metric-widget shape every
  * SaaS admin console uses for at-a-glance numbers.
+ *
+ * `accent` reads danger-toned, not the ordinary brand accent — this
+ * component is used ONLY inside the platform-operator console (confirmed:
+ * the same-named `StatCard`s in analytics' volume-panel.tsx/cycle-time-
+ * panel.tsx are unrelated, locally-defined components), where the Design
+ * Bible's own §18 treats every warm-colored control as part of the same
+ * "you are in a cross-tenant tool" safety signal the page's banner and
+ * active-tab styling now carry. A highlighted stat here (e.g. "Suspended
+ * orgs") should read as a warning, never as an ordinary brand highlight.
  */
 export function StatCard({
   icon: Icon,
@@ -39,13 +48,13 @@ export function StatCard({
     <div
       className={cn(
         'flex items-center gap-3 rounded-xl border px-4 py-3',
-        accent ? 'border-accent/30 bg-accent/5' : 'border-line bg-surface-raised',
+        accent ? 'border-danger/30 bg-danger/5' : 'border-line bg-surface-raised',
       )}
     >
       <span
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-lg',
-          accent ? 'bg-accent/15 text-accent' : 'bg-surface-hover text-ink-muted',
+          accent ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
         )}
       >
         <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />

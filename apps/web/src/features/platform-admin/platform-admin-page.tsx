@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   Bot,
   Building2,
   CreditCard,
@@ -249,6 +250,29 @@ export function PlatformAdminPage() {
         }
       />
 
+      {/* Design Bible §18's own thesis, stated directly: "the danger-toned
+          band and left border make it impossible to forget you're in a
+          cross-tenant tool where one click changes another company's
+          access... a safety signal, not decoration." Nothing about the
+          access model changes here — `platformRoute` already gates every
+          query and mutation behind this page, step-up included, reads
+          included (this file's own header comment) — this is the one
+          thing that was missing: a permanently visible reminder that this
+          console is not an ordinary org-scoped page, for the entire time
+          someone is looking at it, not just on the one confirm dialog a
+          destructive action already shows. */}
+      <div className="flex items-center gap-3 rounded-xl border-l-4 border-danger bg-danger/10 px-4 py-2.5">
+        <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-danger" strokeWidth={2} />
+        <p className="flex-1 text-[13px] text-ink">
+          Operator mode — you&apos;re acting across{' '}
+          <span className="font-semibold">all organizations</span> as{' '}
+          <span className="font-mono text-ink-muted">taskflow_platform_admin</span>.
+        </p>
+        <span className="shrink-0 rounded-full bg-danger/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-danger uppercase">
+          Every action is logged
+        </span>
+      </div>
+
       {/* Summary stat cards — the at-a-glance dashboard every admin console leads with. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={Building2} label="Orgs" value={totalOrgs} accent={tab === 'orgs'} />
@@ -296,8 +320,12 @@ export function PlatformAdminPage() {
             }}
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
+              /* Danger-toned, not the generic accent every other tab bar in
+                 this app uses — the same "safety signal, not decoration"
+                 reasoning the banner above states, carried through to the
+                 one control a person touches on every single tab switch. */
               tab === value
-                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+                ? 'bg-danger/10 text-danger shadow-sm ring-1 ring-danger/20'
                 : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
             )}
           >
