@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock } from 'lucide-react';
+import { Lock, X } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { useSession } from '../../lib/session.js';
@@ -118,7 +118,12 @@ export function ChannelDetailsPanel({
   }
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line md:static md:w-72 bg-black">
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line bg-surface-raised md:static md:w-72">
+      {/* This panel was rendering on a literal `bg-black` — visible against
+          any theme, not just dark mode, and the single clearest reason this
+          panel read as "very simple" compared to the rest of the app: every
+          other panel in the app (the sidebar this one sits beside included)
+          uses a semantic surface token, never a hardcoded color. */}
       <PanelHeader title="Details" onClose={onClose} />
 
       <div className="flex flex-col gap-4 p-4">
@@ -274,7 +279,7 @@ function PanelHeader({ title, onClose }: { readonly title: string; readonly onCl
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
       <h2 className="text-sm font-medium text-ink">{title}</h2>
       <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close details">
-        ✕
+        <X aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
       </Button>
     </header>
   );

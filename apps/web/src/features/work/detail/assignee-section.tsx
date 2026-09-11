@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Users } from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -143,9 +143,9 @@ export function AssigneeSection({
               <button
                 type="button"
                 aria-label="Add assignee"
-                className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
+                className="flex size-6 items-center justify-center rounded-full text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
               >
-                +
+                <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-56 space-y-1.5 p-2">

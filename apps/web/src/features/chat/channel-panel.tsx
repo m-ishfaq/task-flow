@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Lock, Users } from 'lucide-react';
+import { ChevronLeft, Hash, Lock, Search, Users } from 'lucide-react';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, Empty, Skeleton } from '../../components/primitives.js';
+import { AvatarStack, Button, Empty, Skeleton } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { CallButton } from '../rtc/call-button.js';
 import { callHistoryQuery, type CallHistoryEntry } from '../rtc/api.js';
@@ -91,6 +91,24 @@ type TimelineItem =
       readonly entry: CallHistoryEntry;
     };
 
+/**
+ * Three staggered bouncing dots — the animated cue Design Bible §07's own
+ * typing indicator carries next to "Rosa is typing…", replacing what used to
+ * be plain italic text with no motion at all. Each dot uses Tailwind's own
+ * `animate-bounce` with a negative delay staggering the three by 150ms, the
+ * same "each one a beat behind the last" cadence a typing dot cluster reads
+ * as everywhere else this pattern is used.
+ */
+function TypingDots() {
+  return (
+    <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-300ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-150ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint" />
+    </span>
+  );
+}
+
 export function ChannelPanel({
   orgId,
   channelId,
@@ -112,7 +130,7 @@ export function ChannelPanel({
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -637,7 +655,55 @@ export function ChannelPanel({
                   {channelSubtitle(channel.data)}
                 </span>
               )}
+              {/* The member count, restored — Design Bible §07's own header
+                  shows it next to the name ("design-system · 12 members"),
+                  which is what prompted revisiting the "noise" reasoning this
+                  comment used to give for leaving it out. A 1:1 DM still
+                  omits it (the header title already names the one other
+                  person; "2 members" would say nothing new), but a real
+                  channel or a group DM's roster size is exactly the kind of
+                  glance-and-know fact the mockup treats as identity, not
+                  noise. `channel.data.memberIds` is already fetched by this
+                  same query for `channelTitle`/`channelSubtitle` above, so
+                  this costs no extra request. */}
+              {channel.data !== undefined && channel.data.type !== 'dm' && (
+                <span className="block text-xs leading-tight text-ink-faint">
+                  {channel.data.memberIds.length}{' '}
+                  {channel.data.memberIds.length === 1 ? 'member' : 'members'}
+                </span>
+              )}
             </span>
+          </button>
+          {/* A small overlapping-avatar preview of who's in this channel —
+              the same `AvatarStack` a board card's assignees already use,
+              here as a read-only "who's here" glance rather than a control.
+              Omitted for a 1:1 DM for the identical reason the member count
+              above is: the header already shows that one person. */}
+          {channel.data !== undefined && channel.data.type !== 'dm' && (
+            <AvatarStack
+              people={peopleOf(channel.data.memberIds)}
+              max={3}
+              className="hidden shrink-0 sm:flex"
+            />
+          )}
+          {/* A way into Search from wherever a conversation is open, matching
+              the mockup's own header search icon. Opens the app's real
+              search rather than a second, channel-scoped search
+              implementation — TQL's message fields (§8's own closed field
+              set) have no per-channel filter to scope a query to just this
+              conversation, so a second search surface here would either be a
+              plain client-side substring filter over whatever happens to be
+              loaded (not a real search) or duplicate backend work out of
+              scope for a header icon. */}
+          <button
+            type="button"
+            onClick={() => {
+              void navigate({ to: '/search', search: { q: 'type = message' } });
+            }}
+            aria-label="Search messages"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+          >
+            <Search aria-hidden="true" className="size-4" strokeWidth={2.25} />
           </button>
           {/* In-app voice (Phase 13). Public channels cannot start a call in
               Wave 1 — the ring list comes from the channel's member tuples and
@@ -648,9 +714,9 @@ export function ChannelPanel({
             <CallButton orgId={orgId} channelId={channelId} />
           )}
           {/* Channel details (members, media, retention). Icon-only — the
-              member COUNT is intentionally not shown here: it is one tap
-              away in the panel, and a number in the header is noise next to
-              the conversation's identity. */}
+              roster COUNT now has its own place next to the name above; this
+              button still opens the full panel (members, media, retention),
+              which a number or an avatar stack alone cannot replace. */}
           <button
             type="button"
             onClick={() => {
@@ -786,8 +852,9 @@ export function ChannelPanel({
         </div>
 
         {typingLabel !== null && (
-          <div className="h-5 shrink-0 px-3 text-xs text-ink-faint italic sm:px-4">
-            {typingLabel}
+          <div className="flex h-5 shrink-0 items-center gap-1.5 px-3 text-xs text-ink-faint sm:px-4">
+            <TypingDots />
+            <span className="italic">{typingLabel}</span>
           </div>
         )}
 

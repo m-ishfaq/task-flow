@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bookmark, Lock, Pin } from 'lucide-react';
+import { Bookmark, Lock, Pin, Plus } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -622,9 +622,9 @@ function NewChannelPopover({
         <button
           type="button"
           aria-label="New channel"
-          className="flex h-5 w-5 items-center justify-center rounded-md text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex size-5 items-center justify-center rounded-md text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          +
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-2 p-3">
@@ -751,9 +751,9 @@ function NewDirectMessagePopover({
         <button
           type="button"
           aria-label="New direct message"
-          className="flex h-5 w-5 items-center justify-center rounded-md text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex size-5 items-center justify-center rounded-md text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          +
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-1.5 p-2">

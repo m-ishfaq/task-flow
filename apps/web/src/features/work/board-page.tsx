@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
-import type { CardId, ProjectId } from '@taskflow/contracts';
+import { ChevronDown, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { unsafeAsId, type CardId, type ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
 import { useSession } from '../../lib/session.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
@@ -115,12 +115,12 @@ export function BoardPage() {
     ...boardsQuery(orgId, projectId ?? ('' as ProjectId)),
     enabled: projectId !== null,
   });
-  const canManageBoard =
-    boards.data?.find((board) => board.boardId === boardId)?.capabilities.update ?? false;
+  const currentBoard = boards.data?.find((board) => board.boardId === boardId);
+  const canManageBoard = currentBoard?.capabilities.update ?? false;
 
   const projects = useQuery(projectsQuery(orgId));
-  const canManageProject =
-    projects.data?.find((project) => project.projectId === projectId)?.capabilities.update ?? false;
+  const currentProject = projects.data?.find((project) => project.projectId === projectId);
+  const canManageProject = currentProject?.capabilities.update ?? false;
 
   /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
      and patches/invalidates the queries above live as the full Wave 2 event
@@ -224,6 +224,38 @@ export function BoardPage() {
           and anchoring it to the viewport would put it over the sidebar. */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-line/50 bg-surface-raised/80 backdrop-blur-sm">
+          {/* The real "Website Redesign › Delivery board" context line the
+              app shell's own top-bar breadcrumb deliberately does NOT show —
+              `shell.tsx`'s `breadcrumbsFor` stays generic ("Projects" ›
+              "Board") on purpose, to avoid giving the global shell a data
+              dependency on every navigation. This page already fetches
+              `projects`/`boards` for its own capability checks above, so
+              resolving the real names here costs no extra query — the same
+              "local, resolved breadcrumb below the generic global one"
+              pattern `project-settings-page.tsx` already established.
+              Renders nothing until at least one name has actually loaded,
+              rather than a "Loading…" placeholder that would just be
+              replaced a moment later. */}
+          {(currentProject !== undefined || currentBoard !== undefined) && (
+            <div className="flex min-w-0 items-center gap-1.5 px-4 pt-2.5 text-[13px]">
+              {currentProject !== undefined && (
+                <>
+                  <Link
+                    to="/projects/$projectId"
+                    params={{ projectId: unsafeAsId<'ProjectId'>(currentProject.projectId) }}
+                    className="truncate text-ink-faint transition-colors hover:text-ink"
+                  >
+                    {currentProject.name}
+                  </Link>
+                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+                </>
+              )}
+              <span className="truncate font-semibold text-ink">
+                {currentBoard?.name ?? 'Board'}
+              </span>
+            </div>
+          )}
+
           {/* Compact bar — small screens only (`isDesktop` false below `md:`).
               Always visible there regardless of `toolbarExpanded`, so there is
               always a way back to collapsing the full row again. Renders

@@ -212,6 +212,32 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
               )}
             </div>
 
+            {/* The colored progress meter `card-tile.tsx`'s own board card
+                already carries for the CARD's aggregate checklist total —
+                the exact same treatment, one level down, for each individual
+                checklist here. The panel used to show only the "7/9"
+                fraction above with nothing a person could read at a glance;
+                the bar answers "how close," the fraction still answers "how
+                many," same division of labor as the tile's own comment on
+                this. Absent for an empty checklist for the identical reason
+                the tile's own bar is absent for a card with none — a bar
+                at 0% reads as "behind," not "nothing to do yet." */}
+            {checklist.items.length > 0 && (
+              <div
+                className="h-1 overflow-hidden rounded-sm bg-surface-sunken"
+                role="progressbar"
+                aria-label={`${checklist.name} progress`}
+                aria-valuenow={done}
+                aria-valuemin={0}
+                aria-valuemax={checklist.items.length}
+              >
+                <div
+                  className="h-full rounded-sm bg-gradient-to-r from-success to-[oklch(74%_0.13_175)]"
+                  style={{ width: `${String((done / checklist.items.length) * 100)}%` }}
+                />
+              </div>
+            )}
+
             <ul className="space-y-0.5">
               {checklist.items.map((item) => (
                 <li key={item.itemId} className="group flex items-center gap-2">
