@@ -8,7 +8,7 @@ import { useStepUp } from '../auth/use-step-up.js';
 import { Button, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
-import { formatRelative } from '../../lib/format.js';
+import { formatCallDuration, formatRelative } from '../../lib/format.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 import { orgRecordingsPage, type OrgRecording } from './api.js';
 
@@ -53,12 +53,6 @@ function StatusPill({ status }: { readonly status: string }) {
       {STATUS_LABELS[status] ?? status}
     </span>
   );
-}
-
-function durationLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
 }
 
 export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
@@ -186,7 +180,7 @@ function RecordingRow({
         <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-faint">
           <span>{formatRelative(recording.createdAt)}</span>
           {recording.durationSeconds !== null && (
-            <span>· {durationLabel(recording.durationSeconds)}</span>
+            <span>· {formatCallDuration(recording.durationSeconds)}</span>
           )}
           {recording.attachedCardIds.length > 0 && (
             <button

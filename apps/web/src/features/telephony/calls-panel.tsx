@@ -1,13 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import {
+  Check,
+  ChevronLeft,
+  Copy,
+  Phone,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
+  Plus,
+} from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { Avatar, Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
-import { formatRelative } from '../../lib/format.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
+import { formatCallClock, formatCallDuration, formatRelative } from '../../lib/format.js';
 import {
   callRecordingsQuery,
   callTranscriptQuery,
@@ -15,17 +27,51 @@ import {
   invalidateAfterSpend,
   phoneContactsQuery,
   phoneNumbersQuery,
+  type CallRecord,
   type PhoneContact,
 } from './api.js';
 import { CallButton } from './call-button.js';
 import { ContactPicker } from './contact-picker.js';
 
 /**
- * Click-to-call and the call log (ai/phase-7-voice.md §3.5, §3.10, Wave 2).
+ * Click-to-call and the call log (ai/phase-7-voice.md §3.5, §3.10, Wave 2) —
+ * redesigned to the Design Bible's own §09 shape: a list on the left, one
+ * call's detail on the right, and a single "+ New call" entry point rather
+ * than an always-open dial form competing with the log for space.
  *
- * `record` is unchecked by default in the form, matching `router.ts`'s own
- * default and the reasoning stated there: recording by default with an
- * opt-out means forgetting a checkbox is an unlawfully recorded call.
+ * ## What "Connected · 4:12" can honestly mean here
+ *
+ * The Design Bible's in-call widget (also used by `features/rtc/call-
+ * surface.tsx`) shows live mic-mute and hang-up controls. A telephony call
+ * placed from here is bridged entirely by the carrier between two real phone
+ * lines — there is no browser audio path and no API in `apps/api/src/
+ * telephony` to mute or end a call already in progress (unlike an in-app RTC
+ * call, which this browser tab is actually a participant in). So the detail
+ * panel below borrows the widget's VISUAL language — a live, ticking clock
+ * next to a pulsing dot once the carrier reports `in_progress` — without the
+ * mic/hang-up controls, since offering a button with no real action behind
+ * it is worse than one fewer button (the same rule `card_create`'s own
+ * comment states for a tool with nothing to call).
+ *
+ * ## The selected call lives in the URL, not local state
+ *
+ * `call` (`routerRoute`'s own search schema) is what a transcript search hit
+ * already links to — reusing it as "which call is open" rather than adding a
+ * second piece of state is what makes a selected call a shareable,
+ * back-button-correct link, the same reasoning `chatRoute`'s `channel` and
+ * `docsRoute`'s `page` already establish. It also removes the previous
+ * version's "derived during render" dance that kept a separate `expanded`
+ * boolean in sync with this param — reading the param directly is simpler
+ * and cannot drift.
+ *
+ * ## Polling while a call is still moving
+ *
+ * Nothing pushes a call-status webhook to this tab (`apps/web/src/lib/
+ * socket.ts` has no telephony event at all), so a call sitting at `queued`
+ * or `ringing` would never visibly become `in_progress` — or `in_progress`
+ * become `completed` — without a manual reload. `refetchInterval` below
+ * polls only while at least one row in the log is still non-terminal, so a
+ * quiet call log stays completely idle.
  */
 
 const STATUS_LABELS: Readonly<Record<string, string>> = {
@@ -39,39 +85,8 @@ const STATUS_LABELS: Readonly<Record<string, string>> = {
   canceled: 'Canceled',
 };
 
-/** A coloured pill per carrier status — colour drives recognition, never meaning. */
-function StatusPill({ status }: { readonly status: string }) {
-  const tone =
-    status === 'in_progress'
-      ? 'bg-accent/15 text-accent'
-      : status === 'completed'
-        ? 'bg-success/15 text-success'
-        : status === 'failed' || status === 'canceled'
-          ? 'bg-danger/15 text-danger'
-          : status === 'busy' || status === 'no_answer'
-            ? 'bg-warning/15 text-warning'
-            : 'bg-surface-hover text-ink-muted';
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
-        tone,
-      )}
-    >
-      {STATUS_LABELS[status] ?? status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
-  );
-}
-
-/* Total, not `number | null -> string | null`. Both call sites already guard on
-   a null duration to decide whether to render the element at all, and a
-   nullable return made the second one interpolate `null` into a template
-   literal — the label read " · null" for a recording still being processed. */
-function durationLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
-}
+const TERMINAL_STATUSES = new Set(['completed', 'busy', 'no_answer', 'failed', 'canceled']);
+const MISSED_STATUSES = new Set(['busy', 'no_answer', 'failed', 'canceled']);
 
 /** Digits only, so `+1 415 555 0100` and `+14155550100` are one number —
  * the identical normalization `contact-picker.tsx` already uses, duplicated
@@ -90,8 +105,8 @@ function digitsOf(value: string): string {
  * looked up against the org directory rather than shown as a raw number
  * the caller has to recognize by memory. A call to or from a number that
  * matches no colleague (the common case — most calls are to customers, not
- * coworkers) still renders correctly: no avatar, the raw number as the
- * label, exactly what this panel already did before this pass.
+ * coworkers) still renders correctly: no resolved name, the raw number as
+ * both the avatar's identity and its label.
  */
 function contactFor(
   counterparty: string,
@@ -100,57 +115,441 @@ function contactFor(
   return byDigits.get(digitsOf(counterparty));
 }
 
+/** Forces a re-render once a second while `active` — the identical ticker
+ * `features/rtc/call-surface.tsx` uses for its own live call clock,
+ * duplicated rather than shared since it is three lines with no state of
+ * its own to keep in sync across files. */
+function useTicker(active: boolean): void {
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const interval = setInterval(() => {
+      forceRender((value) => value + 1);
+    }, 1000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [active]);
+}
+
+function elapsedSeconds(sinceMs: number): number {
+  return Math.max(0, Math.floor((Date.now() - sinceMs) / 1000));
+}
+
 export function CallsPanel({ orgId }: { readonly orgId: string }) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const toast = useToast();
+  const isDesktop = useIsDesktop();
   const numbers = useQuery(phoneNumbersQuery(orgId));
-  const calls = useQuery(callsQuery(orgId));
   const contacts = useQuery(phoneContactsQuery(orgId));
   const contactsByDigits = new Map(
     (contacts.data ?? []).map((contact) => [digitsOf(contact.phone), contact] as const),
   );
 
+  const calls = useQuery({
+    ...callsQuery(orgId),
+    refetchInterval: (query) => {
+      const rows = query.state.data;
+      return rows?.some((call) => !TERMINAL_STATUSES.has(call.status)) === true ? 4000 : false;
+    },
+  });
+
+  /* `?call=` — see this file's own header on why the selection lives here
+     rather than in local state. */
+  const selectedCallId = useSearch({ from: '/calls', select: (value) => value.call });
+  const selectedCall = calls.data?.find((call) => call.callId === selectedCallId);
+
+  const selectCall = (callId: string | undefined) => {
+    void navigate({ to: '/calls', search: { tab: 'calls', thread: undefined, call: callId } });
+  };
+
+  const owned = numbers.data ?? [];
+
+  const goBuyNumber = () => {
+    void navigate({ to: '/calls', search: { tab: 'numbers', thread: undefined, call: undefined } });
+  };
+
+  /* Below `md`, the list and the detail panel cannot share a phone-width
+     screen — the identical split `chat-page.tsx` already uses for channels,
+     driven by the same single source of truth (the URL) rather than a
+     second "which pane is active" flag. */
+  const showList = isDesktop || selectedCallId === undefined;
+  const showDetail = isDesktop || selectedCallId !== undefined;
+
+  return (
+    <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
+      {showList && (
+        <div className="flex min-h-0 w-full flex-col gap-2 md:w-80 md:shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-semibold text-ink">Calls</h2>
+            {calls.data !== undefined && (
+              <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                {calls.data.length}
+              </span>
+            )}
+            <div className="ml-auto">
+              <NewCallButton orgId={orgId} onPlaced={selectCall} />
+            </div>
+          </div>
+
+          {!numbers.isPending && owned.length === 0 && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-1.5">
+              <p className="text-xs text-warning">Buy a number before placing calls.</p>
+              <button
+                type="button"
+                onClick={goBuyNumber}
+                className="shrink-0 text-xs font-medium text-accent hover:underline"
+              >
+                Buy one
+              </button>
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {calls.isPending ? (
+              <SkeletonRows rows={4} />
+            ) : calls.isError ? (
+              <ErrorView error={calls.error} title="Could not load the call log" />
+            ) : calls.data.length === 0 ? (
+              <Empty
+                icon={<Phone aria-hidden="true" className="size-5" strokeWidth={2} />}
+                title="No calls yet"
+                description="Calls you place or receive appear here with their status and any recording."
+              />
+            ) : (
+              <ul className="space-y-1">
+                {calls.data.map((call) => (
+                  <CallListRow
+                    key={call.callId}
+                    call={call}
+                    contact={contactFor(String(call.counterparty), contactsByDigits)}
+                    selected={call.callId === selectedCallId}
+                    onSelect={() => {
+                      selectCall(call.callId);
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showDetail && (
+        <div className="min-h-0 min-w-0 flex-1">
+          {selectedCallId === undefined ? (
+            <Empty
+              icon={<Phone aria-hidden="true" className="size-5" strokeWidth={2} />}
+              title="No call selected"
+              description="Pick a call on the left, or place a new one."
+            />
+          ) : selectedCall === undefined ? (
+            calls.isPending ? (
+              <SkeletonRows rows={4} />
+            ) : (
+              <Empty title="Call not found" description="That call is no longer in the log." />
+            )
+          ) : (
+            <CallDetailPanel
+              orgId={orgId}
+              call={selectedCall}
+              contact={contactFor(String(selectedCall.counterparty), contactsByDigits)}
+              onBack={() => {
+                selectCall(undefined);
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DirectionGlyph({
+  direction,
+  missed,
+}: {
+  readonly direction: 'inbound' | 'outbound';
+  readonly missed: boolean;
+}) {
+  const Icon = missed ? PhoneMissed : direction === 'outbound' ? PhoneOutgoing : PhoneIncoming;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'flex size-6 shrink-0 items-center justify-center rounded-md',
+        missed
+          ? 'bg-danger/10 text-danger'
+          : direction === 'outbound'
+            ? 'bg-accent/10 text-accent'
+            : 'bg-success/10 text-success',
+      )}
+    >
+      <Icon className="size-3.5" strokeWidth={2.25} />
+    </span>
+  );
+}
+
+function CallListRow({
+  call,
+  contact,
+  selected,
+  onSelect,
+}: {
+  readonly call: CallRecord;
+  readonly contact: PhoneContact | undefined;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  const missed = MISSED_STATUSES.has(call.status);
+  const live = !TERMINAL_STATUSES.has(call.status);
+  const label = contact?.label ?? String(call.counterparty);
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected ? 'true' : undefined}
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors duration-[var(--motion-fast)]',
+          selected
+            ? 'border-suite-calls/40 bg-suite-calls/10'
+            : 'border-transparent hover:bg-surface-hover',
+        )}
+      >
+        <DirectionGlyph direction={call.direction} missed={missed} />
+        <span className="sr-only">
+          {missed ? 'Missed' : call.direction === 'outbound' ? 'Outbound' : 'Inbound'} call
+        </span>
+        <Avatar userId={contact?.userId ?? String(call.counterparty)} label={label} size="sm" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-medium text-ink">{label}</span>
+          {contact !== undefined && (
+            <span className="block truncate font-mono text-[10px] text-ink-faint">
+              {String(call.counterparty)}
+            </span>
+          )}
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-0.5">
+          {missed ? (
+            <span className="text-[11px] font-medium text-danger">
+              {STATUS_LABELS[call.status] ?? 'Missed'}
+            </span>
+          ) : live ? (
+            <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
+              <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-accent" />
+              {STATUS_LABELS[call.status] ?? 'Live'}
+            </span>
+          ) : call.durationSeconds !== null ? (
+            <span className="text-[11px] text-ink-muted">
+              {formatCallDuration(call.durationSeconds)}
+            </span>
+          ) : null}
+          {call.startedAt !== null && (
+            <span className="text-[10px] text-ink-faint">{formatRelative(call.startedAt)}</span>
+          )}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function CallDetailPanel({
+  orgId,
+  call,
+  contact,
+  onBack,
+}: {
+  readonly orgId: string;
+  readonly call: CallRecord;
+  readonly contact: PhoneContact | undefined;
+  readonly onBack: () => void;
+}) {
+  const isLive = call.status === 'in_progress';
+  useTicker(isLive);
+  const liveSeconds =
+    isLive && call.startedAt !== null ? elapsedSeconds(new Date(call.startedAt).getTime()) : 0;
+
+  const missed = MISSED_STATUSES.has(call.status);
+  const counterparty = String(call.counterparty);
+  const label = contact?.label ?? counterparty;
+
+  const statusLine =
+    call.status === 'queued'
+      ? 'Dialling…'
+      : call.status === 'ringing'
+        ? 'Ringing…'
+        : call.status === 'in_progress'
+          ? `Connected · ${formatCallClock(liveSeconds)}`
+          : call.status === 'completed' && call.durationSeconds !== null
+            ? `Completed · ${formatCallDuration(call.durationSeconds)}`
+            : (STATUS_LABELS[call.status] ?? call.status);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-raised">
+      <div className="flex items-center gap-3 border-b border-line px-4 py-3.5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to calls"
+          className="shrink-0 md:hidden"
+        >
+          <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
+        </button>
+        <Avatar userId={contact?.userId ?? counterparty} label={label} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold text-ink">{label}</p>
+          {contact !== undefined && (
+            <p className="truncate font-mono text-xs text-ink-faint">{counterparty}</p>
+          )}
+          <p
+            className={cn(
+              'mt-0.5 flex items-center gap-1.5 text-xs font-medium',
+              missed ? 'text-danger' : isLive ? 'text-success' : 'text-ink-muted',
+            )}
+          >
+            {isLive && (
+              <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-success" />
+            )}
+            {statusLine}
+          </p>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <CallButton orgId={orgId} to={counterparty} label="Call back" variant="primary" />
+          <CopyNumberButton number={counterparty} />
+        </div>
+
+        {call.startedAt !== null && (
+          <p className="text-xs text-ink-faint">
+            {call.direction === 'outbound' ? 'Placed' : 'Received'} {formatRelative(call.startedAt)}
+          </p>
+        )}
+
+        <div className="border-t border-line pt-3">
+          {call.recorded ? (
+            <CallRecordings orgId={orgId} callId={call.callId} />
+          ) : (
+            <p className="text-xs text-ink-faint">This call was not recorded.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CopyNumberButton({ number }: { readonly number: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="gap-1.5"
+      onClick={() => {
+        void navigator.clipboard.writeText(number).then(() => {
+          setCopied(true);
+          setTimeout(() => {
+            setCopied(false);
+          }, 1500);
+        });
+      }}
+    >
+      {copied ? (
+        <Check aria-hidden="true" className="size-3.5 text-success" strokeWidth={2.5} />
+      ) : (
+        <Copy aria-hidden="true" className="size-3.5" strokeWidth={2} />
+      )}
+      {copied ? 'Copied' : 'Copy number'}
+    </Button>
+  );
+}
+
+/**
+ * "+ New call" — the Design Bible's own single entry point, replacing the
+ * dial form that used to sit permanently above the log. Reports the placed
+ * call's own id back to the caller so the log can select it immediately
+ * rather than leaving the detail panel on whatever was open before.
+ */
+function NewCallButton({
+  orgId,
+  onPlaced,
+}: {
+  readonly orgId: string;
+  readonly onPlaced: (callId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <ModalRoot open={open} onOpenChange={setOpen}>
+      <Button
+        type="button"
+        size="sm"
+        variant="primary"
+        className="gap-1.5"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        <Plus aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+        New call
+      </Button>
+      {open && (
+        <NewCallDialogBody
+          orgId={orgId}
+          onClose={() => {
+            setOpen(false);
+          }}
+          onPlaced={(callId) => {
+            setOpen(false);
+            onPlaced(callId);
+          }}
+        />
+      )}
+    </ModalRoot>
+  );
+}
+
+/* A separate component, mounted only while `open` — matching
+   `pr-diff-dialog.tsx`'s own precedent: the form's queries and mutation have
+   no reason to exist before someone actually opens the dialog. */
+function NewCallDialogBody({
+  orgId,
+  onClose,
+  onPlaced,
+}: {
+  readonly orgId: string;
+  readonly onClose: () => void;
+  readonly onPlaced: (callId: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const numbers = useQuery(phoneNumbersQuery(orgId));
+
   const [to, setTo] = useState('');
   const [fromPhoneNumberId, setFromPhoneNumberId] = useState('');
   const [record, setRecord] = useState(false);
-  /* `?call=` opens one row expanded — how a transcript search hit lands here
-     (Phase 8 Wave 3). Seeded into state rather than read directly on every
-     render, because the row must stay collapsible afterward: deriving
-     `expanded` from the URL would make the collapse chevron do nothing while
-     the param is still in the address bar. The effect re-applies it when the
-     param CHANGES, which is the navigate-onto-an-already-mounted-page case. */
-  const linkedCallId = useSearch({ from: '/calls', select: (value) => value.call });
-  const [expanded, setExpanded] = useState<string | null>(linkedCallId ?? null);
 
-  /* Adjusted DURING RENDER, not in an effect — React's own documented pattern
-     for "a piece of state derives from a prop but stays independently
-     editable", and the one the repo's lint enforces (setState inside an effect
-     body triggers a cascading render). React re-runs this component
-     immediately with the new state and renders nothing in between. */
-  const [seenLink, setSeenLink] = useState(linkedCallId);
-  if (linkedCallId !== seenLink) {
-    setSeenLink(linkedCallId);
-    if (linkedCallId !== undefined) setExpanded(linkedCallId);
-  }
+  const owned = numbers.data ?? [];
+  /* What the select DISPLAYS is what gets submitted — see the original
+     dialler's own note on this: a caller who accepts the default must not
+     submit an empty id just because the state variable itself never changed. */
+  const activeNumber =
+    fromPhoneNumberId !== '' ? fromPhoneNumberId : (owned[0]?.phoneNumberId ?? '');
 
   const place = useMutation({
     mutationFn: () =>
       api.telephony.calls.place.mutate({
         to: to.trim(),
-        /* `activeNumber`, NOT the raw `fromPhoneNumberId` state.
-
-           The state starts '' and only becomes a real id when the user CHANGES
-           the dropdown. `activeNumber` is what the select renders and what the
-           submit button's enabled check consults — so a caller who accepts the
-           default sees a number selected, sees an enabled button, and submits
-           an empty string, which the route refuses as `Invalid uuid`. The
-           displayed value and the submitted value have to be the same value. */
         fromPhoneNumberId: activeNumber,
         record,
       }),
     onSuccess: async (result) => {
-      setTo('');
+      await invalidateAfterSpend(queryClient, orgId);
       if (result.announcementRequired) {
         toast.show('Call placed', {
           description: 'A recording announcement will play before it starts.',
@@ -158,97 +557,76 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
       } else {
         toast.show('Call placed');
       }
-      await invalidateAfterSpend(queryClient, orgId);
+      onPlaced(result.callId);
     },
     onError: (error) => {
       toast.failure('The call was not placed', error);
     },
   });
 
-  const owned = numbers.data ?? [];
-  const activeNumber =
-    fromPhoneNumberId !== '' ? fromPhoneNumberId : (owned[0]?.phoneNumberId ?? '');
-
-  const goBuyNumber = () => {
-    void navigate({ to: '/calls', search: { tab: 'numbers', thread: undefined } });
-  };
-
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">Place a call</h2>
+    <ModalContent size="lg">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          place.mutate();
+        }}
+      >
+        <div className="border-b border-line px-4 py-3">
+          <ModalTitle>New call</ModalTitle>
         </div>
-        <form
-          className="rounded-xl border border-line/50 bg-surface-raised p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            place.mutate();
-          }}
-        >
-          {/* `items-start`, not `items-end` — "To" has a hint and "From" does
-              not, so bottom-aligning would sit the From select, the Record
-              checkbox and the Call button a line below the To input. See
-              `Field`'s own note. */}
-          <div className="flex flex-wrap items-start gap-2">
-            {/* A person OR a raw number — see `contact-picker.tsx` on why the
-                free-text field stays primary rather than becoming the fallback
-                behind a select. */}
-            <Field label="To" htmlFor="call-to" hint="Pick a person, or type E.164">
-              <ContactPicker id="call-to" orgId={orgId} value={to} onChange={setTo} />
-            </Field>
+        <ModalDescription className="sr-only">
+          Place an outbound call from one of this organization&apos;s phone numbers.
+        </ModalDescription>
 
-            <Field label="From" htmlFor="call-from">
-              <select
-                id="call-from"
-                value={activeNumber}
-                disabled={owned.length === 0}
-                onChange={(event) => {
-                  setFromPhoneNumberId(event.target.value);
-                }}
-                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
-              >
-                {owned.length === 0 && <option value="">No numbers yet</option>}
-                {owned.map((number) => (
-                  <option key={number.phoneNumberId} value={number.phoneNumberId}>
-                    {String(number.e164)}
-                  </option>
-                ))}
-              </select>
-            </Field>
+        <div className="space-y-3 px-4 py-4">
+          <Field label="To" htmlFor="new-call-to" hint="Pick a person, or type E.164">
+            <ContactPicker id="new-call-to" orgId={orgId} value={to} onChange={setTo} />
+          </Field>
 
-            <label className="mt-5 flex h-9 cursor-pointer items-center gap-1.5 text-xs text-ink-muted select-none">
-              <input
-                type="checkbox"
-                checked={record}
-                onChange={(event) => {
-                  setRecord(event.target.checked);
-                }}
-                className="size-3.5 accent-accent"
-              />
-              Record
-            </label>
-
-            <Button
-              type="submit"
-              variant="primary"
-              className="mt-5"
-              disabled={place.isPending || activeNumber === '' || to.trim() === ''}
+          <Field label="From" htmlFor="new-call-from">
+            <select
+              id="new-call-from"
+              value={activeNumber}
+              disabled={owned.length === 0}
+              onChange={(event) => {
+                setFromPhoneNumberId(event.target.value);
+              }}
+              className="h-9 w-full rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
             >
-              {place.isPending ? 'Calling…' : 'Call'}
-            </Button>
-          </div>
+              {owned.length === 0 && <option value="">No numbers yet</option>}
+              {owned.map((number) => (
+                <option key={number.phoneNumberId} value={number.phoneNumberId}>
+                  {String(number.e164)}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-          {/* Gated on `!numbers.isPending` so the initial load doesn't flash a
-              false "no numbers" warning at a caller who does own one. */}
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-muted select-none">
+            <input
+              type="checkbox"
+              checked={record}
+              onChange={(event) => {
+                setRecord(event.target.checked);
+              }}
+              className="size-3.5 accent-accent"
+            />
+            Record this call
+          </label>
+
           {!numbers.isPending && owned.length === 0 && (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-1.5">
-              <p className="text-xs text-warning">
-                No numbers yet — buy one before you can place a call.
-              </p>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-1.5">
+              <p className="text-xs text-warning">Buy a number before placing calls.</p>
               <button
                 type="button"
-                onClick={goBuyNumber}
+                onClick={() => {
+                  onClose();
+                  void navigate({
+                    to: '/calls',
+                    search: { tab: 'numbers', thread: undefined, call: undefined },
+                  });
+                }}
                 className="shrink-0 text-xs font-medium text-accent hover:underline"
               >
                 Buy a number
@@ -256,137 +634,23 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
             </div>
           )}
           {place.isError && <ErrorText error={place.error} />}
-        </form>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">Call log</h2>
-          {calls.data !== undefined && (
-            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-              {calls.data.length}
-            </span>
-          )}
         </div>
 
-        {calls.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : calls.isError ? (
-          <ErrorView error={calls.error} title="Could not load the call log" />
-        ) : calls.data.length === 0 ? (
-          <Empty
-            title="No calls yet"
-            description="Calls you place appear here with their status, duration, and any recording."
-          />
-        ) : (
-          <ul className="space-y-1.5">
-            {calls.data.map((call) => {
-              const contact = contactFor(String(call.counterparty), contactsByDigits);
-              return (
-                <li
-                  key={call.callId}
-                  className={cn(
-                    'overflow-hidden rounded-lg border transition-colors',
-                    expanded === call.callId ? 'border-accent/40' : 'border-line',
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExpanded((current) => (current === call.callId ? null : call.callId));
-                    }}
-                    className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'text-sm leading-none',
-                        call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
-                      )}
-                    >
-                      {call.direction === 'outbound' ? '→' : '←'}
-                    </span>
-                    <span className="sr-only">
-                      {call.direction === 'outbound' ? 'Outbound' : 'Inbound'}
-                    </span>
-                    {/* A resolved colleague gets a face and a name, matching
-                      the Design Bible's own call-log row — the common case,
-                      a call with an external number nobody's directory
-                      lists, keeps the plain number-only rendering this
-                      panel always had, since there is no name or avatar to
-                      show for someone this org has no record of. */}
-                    {contact !== undefined ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Avatar userId={contact.userId} label={contact.label} size="xs" />
-                        <span className="flex min-w-0 flex-col">
-                          <span className="truncate text-xs font-medium text-ink">
-                            {contact.label}
-                          </span>
-                          <span className="truncate font-mono text-[10px] text-ink-faint">
-                            {String(call.counterparty)}
-                          </span>
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="font-mono text-xs text-ink">
-                        {String(call.counterparty)}
-                      </span>
-                    )}
-                    {call.durationSeconds !== null && (
-                      <span className="text-[11px] text-ink-faint">
-                        {durationLabel(call.durationSeconds)}
-                      </span>
-                    )}
-                    <span className="ml-auto flex items-center gap-2">
-                      {call.recorded && (
-                        <span className="text-[10px] font-medium text-ink-muted">● recorded</span>
-                      )}
-                      <StatusPill status={call.status} />
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'text-[10px] text-ink-faint transition-transform',
-                          expanded === call.callId && 'rotate-90',
-                        )}
-                      >
-                        ›
-                      </span>
-                    </span>
-                  </button>
-                  {expanded === call.callId && (
-                    <div className="border-t border-line bg-surface px-3 py-2">
-                      {call.startedAt !== null && (
-                        <p className="mb-1.5 text-[11px] text-ink-faint">
-                          {call.direction === 'outbound' ? 'Placed' : 'Received'}{' '}
-                          {formatRelative(call.startedAt)}
-                        </p>
-                      )}
-                      {call.recorded ? (
-                        <CallRecordings orgId={orgId} callId={call.callId} />
-                      ) : (
-                        <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
-                      )}
-                      {/* Redial lives in the expanded body, not on the row: the
-                        row IS a button, and nesting one inside it is invalid
-                        HTML that browsers resolve by dropping the inner
-                        control's activation — the click would toggle the row
-                        instead of dialling. */}
-                      <div className="mt-2 border-t border-line pt-2">
-                        <CallButton
-                          orgId={orgId}
-                          to={String(call.counterparty)}
-                          label={`Call ${String(call.counterparty)} back`}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-    </div>
+        <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={place.isPending || activeNumber === '' || to.trim() === ''}
+          >
+            {place.isPending ? 'Calling…' : 'Call'}
+          </Button>
+        </div>
+      </form>
+    </ModalContent>
   );
 }
 
@@ -429,7 +693,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
               <span className="text-[11px] text-ink-muted">
                 {recording.status}
                 {recording.durationSeconds !== null &&
-                  ` · ${durationLabel(recording.durationSeconds)}`}
+                  ` · ${formatCallDuration(recording.durationSeconds)}`}
               </span>
               {recording.status === 'stored' && (
                 <Button

@@ -441,11 +441,12 @@ const telephonyRoute = createRoute({
       .optional()
       .catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
-    /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
+    /* Which call in the log is selected — the master-detail split
+       `calls-panel.tsx` opens on the right. Added by Phase 8 Wave 3 so a
        TRANSCRIPT search hit has somewhere to land — a hit whose permalink
        cannot open the thing it found is a result that only proves the index
        works. `.catch(undefined)` per this file's convention: a malformed id in
-       a pasted link renders the log unexpanded, never an error page. */
+       a pasted link renders the log with nothing selected, never an error page. */
     call: z.string().uuid().optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/calls'),

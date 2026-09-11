@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { Hash, MessageSquare, Mic, Phone, Wallet } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
+import { PageHeader } from '../../components/primitives.js';
 import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { CallsPanel } from './calls-panel.js';
 import { NumbersPanel } from './numbers-panel.js';
@@ -14,7 +16,7 @@ import { SpendPanel } from './spend-panel.js';
  * Voice & Messaging (Phase 7 Wave 5 — the browser half of the phase; the API
  * itself is `apps/api/src/telephony`, Waves 1-4).
  *
- * Four tabs over one org-scoped resource, the identical shape `settings-page.tsx`
+ * Five tabs over one org-scoped resource, the identical shape `settings-page.tsx`
  * uses for its own sections — a search param rather than nested routes, so the
  * open tab is a shareable, back-button-correct link (the same reasoning
  * `chatRoute`'s `channel` and `docsRoute`'s `page` already establish).
@@ -37,15 +39,16 @@ import { SpendPanel } from './spend-panel.js';
  */
 
 const TABS = [
-  { id: 'calls', label: 'Calls', capability: 'readCalls' },
-  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers' },
-  { id: 'messages', label: 'Messages', capability: 'readSms' },
-  { id: 'recordings', label: 'Recordings', capability: 'readRecordings' },
-  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers' },
+  { id: 'calls', label: 'Calls', capability: 'readCalls', icon: Phone },
+  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers', icon: Hash },
+  { id: 'messages', label: 'Messages', capability: 'readSms', icon: MessageSquare },
+  { id: 'recordings', label: 'Recordings', capability: 'readRecordings', icon: Mic },
+  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers', icon: Wallet },
 ] as const satisfies readonly {
   id: string;
   label: string;
   capability: keyof SettingsCapabilities;
+  icon: typeof Phone;
 }[];
 
 type TabId = (typeof TABS)[number]['id'];
@@ -93,32 +96,39 @@ export function TelephonyPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line/50 px-4 pt-4 pb-2">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Voice &amp; Messaging
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Phone numbers, calls, SMS, and spend — one carrier account per organization.
-        </p>
-        <nav aria-label="Voice & Messaging sections" className="mt-3 flex gap-1">
+        <PageHeader
+          title="Voice & Messaging"
+          description="Phone numbers, calls, SMS, and spend — one carrier account per organization."
+          icon={<Phone aria-hidden="true" className="size-4" strokeWidth={2.25} />}
+        />
+        <div
+          role="tablist"
+          aria-label="Voice & Messaging sections"
+          className="mt-3 flex gap-1 overflow-x-auto"
+        >
           {visibleTabs.map((item) => (
             <button
               key={item.id}
               type="button"
-              aria-current={tab === item.id ? 'page' : undefined}
+              role="tab"
+              aria-selected={tab === item.id}
               onClick={() => {
                 selectTab(item.id);
               }}
               className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                /* The Calls suite hue — the same identity fix already applied
+                   to Docs' own tool tabs and Chat's active channel row. */
                 tab === item.id
-                  ? 'bg-accent text-accent-ink shadow-sm'
-                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                  ? 'bg-suite-calls/10 text-suite-calls'
+                  : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
             >
+              <item.icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
               {item.label}
             </button>
           ))}
-        </nav>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">

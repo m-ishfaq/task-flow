@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { ChevronLeft } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -8,6 +9,7 @@ import { Button, Empty, Field, Input, SkeletonRows } from '../../components/prim
 import { CallButton } from './call-button.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import {
   invalidateAfterMessage,
   messageThreadsQuery,
@@ -30,6 +32,7 @@ import {
 
 export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   const navigate = useNavigate();
+  const isDesktop = useIsDesktop();
   const threadId = useSearch({ from: '/calls', select: (value) => value.thread });
   const threads = useQuery(messageThreadsQuery(orgId));
 
@@ -43,93 +46,113 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
     void navigate({ to: '/calls', search: { tab: 'messages', thread: id } });
   };
 
+  /* Below `md`, the thread list and an open thread can't share a phone-width
+     screen — the identical split `chat-page.tsx` already uses for channels,
+     driven by whether anything is open rather than a second "which pane"
+     flag. At `md` and above both panes are always visible side by side,
+     unchanged from before this fix. */
+  const opened = composing || threadId !== undefined;
+  const showList = isDesktop || !opened;
+  const showDetail = isDesktop || opened;
+
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
-      <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
-        {/* Until this existed there was NO way to start an SMS from the UI —
-            the composer lived only inside an already-open thread, and threads
-            are created by inbound messages. So the first outbound message to
-            anyone required calling the API by hand. */}
-        <Button
-          variant="primary"
-          size="sm"
-          className="mb-2 w-full"
-          onClick={() => {
-            setComposing(true);
-          }}
-        >
-          New message
-        </Button>
+      {showList && (
+        <div className="w-full shrink-0 space-y-1 overflow-y-auto md:w-64">
+          {/* Until this existed there was NO way to start an SMS from the UI —
+              the composer lived only inside an already-open thread, and threads
+              are created by inbound messages. So the first outbound message to
+              anyone required calling the API by hand. */}
+          <Button
+            variant="primary"
+            size="sm"
+            className="mb-2 w-full"
+            onClick={() => {
+              setComposing(true);
+            }}
+          >
+            New message
+          </Button>
 
-        {threads.isPending ? (
-          <SkeletonRows rows={4} />
-        ) : threads.isError ? (
-          <ErrorView error={threads.error} title="Could not load threads" />
-        ) : threads.data.length === 0 ? (
-          <Empty
-            title="No SMS conversations yet"
-            description="Inbound texts to your numbers land here."
-          />
-        ) : (
-          threads.data.map((thread) => (
-            <button
-              key={thread.threadId}
-              type="button"
-              onClick={() => {
-                selectThread(thread.threadId);
-              }}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                /* Calls' own suite hue for "this is the open thread" — the
-                   same module-identity fix already applied to Chat's active
-                   channel row and Docs' active page. */
-                thread.threadId === threadId
-                  ? 'border-suite-calls/40 bg-suite-calls/10'
-                  : 'border-transparent hover:bg-surface-hover',
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-xs text-ink">
-                    {String(thread.counterparty)}
-                  </span>
-                  {thread.unreadCount > 0 && (
-                    <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
-                      {thread.unreadCount}
+          {threads.isPending ? (
+            <SkeletonRows rows={4} />
+          ) : threads.isError ? (
+            <ErrorView error={threads.error} title="Could not load threads" />
+          ) : threads.data.length === 0 ? (
+            <Empty
+              title="No SMS conversations yet"
+              description="Inbound texts to your numbers land here."
+            />
+          ) : (
+            threads.data.map((thread) => (
+              <button
+                key={thread.threadId}
+                type="button"
+                onClick={() => {
+                  selectThread(thread.threadId);
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
+                  /* Calls' own suite hue for "this is the open thread" — the
+                     same module-identity fix already applied to Chat's active
+                     channel row and Docs' active page. */
+                  thread.threadId === threadId
+                    ? 'border-suite-calls/40 bg-suite-calls/10'
+                    : 'border-transparent hover:bg-surface-hover',
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-xs text-ink">
+                      {String(thread.counterparty)}
                     </span>
+                    {thread.unreadCount > 0 && (
+                      <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
+                        {thread.unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  {thread.lastMessageAt !== null && (
+                    <p className="mt-0.5 text-[10px] text-ink-faint">
+                      {formatRelative(thread.lastMessageAt)}
+                    </p>
                   )}
                 </div>
-                {thread.lastMessageAt !== null && (
-                  <p className="mt-0.5 text-[10px] text-ink-faint">
-                    {formatRelative(thread.lastMessageAt)}
-                  </p>
-                )}
-              </div>
-            </button>
-          ))
-        )}
-      </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
 
-      <div className="min-w-0 flex-1">
-        {composing ? (
-          <ComposeView
-            orgId={orgId}
-            onSent={(newThreadId) => {
-              selectThread(newThreadId);
-            }}
-            onCancel={() => {
-              setComposing(false);
-            }}
-          />
-        ) : threadId === undefined ? (
-          <Empty
-            title="No conversation open"
-            description="Pick a thread on the left, or start a new message."
-          />
-        ) : (
-          <ThreadView key={threadId} orgId={orgId} threadId={threadId} />
-        )}
-      </div>
+      {showDetail && (
+        <div className="min-h-0 min-w-0 flex-1">
+          {composing ? (
+            <ComposeView
+              orgId={orgId}
+              onSent={(newThreadId) => {
+                selectThread(newThreadId);
+              }}
+              onCancel={() => {
+                setComposing(false);
+              }}
+            />
+          ) : threadId === undefined ? (
+            <Empty
+              title="No conversation open"
+              description="Pick a thread on the left, or start a new message."
+            />
+          ) : (
+            <ThreadView
+              key={threadId}
+              orgId={orgId}
+              threadId={threadId}
+              onBack={() => {
+                selectThread(undefined);
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -272,7 +295,16 @@ function ComposeView({
   );
 }
 
-function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly threadId: string }) {
+function ThreadView({
+  orgId,
+  threadId,
+  onBack,
+}: {
+  readonly orgId: string;
+  readonly threadId: string;
+  /** Below `md`, returns to the thread list — see `MessagesPanel`'s own comment. */
+  readonly onBack: () => void;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const numbers = useQuery(phoneNumbersQuery(orgId));
@@ -306,6 +338,14 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to conversations"
+          className="shrink-0 md:hidden"
+        >
+          <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
+        </button>
         <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
         <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
           SMS
