@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Check, X } from 'lucide-react';
 import { PERMISSIONS, RESOURCE_TYPES, type Permission, type ResourceType } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -204,13 +205,22 @@ export function PermissionDebugPage() {
             <span
               aria-hidden="true"
               className={cn(
-                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full',
                 explanation.data.allowed
                   ? 'bg-success/20 text-success'
                   : 'bg-danger/20 text-danger',
               )}
             >
-              {explanation.data.allowed ? '✓' : '✗'}
+              {/* Design Bible §19's own account of what changed here: "the old
+                  page was a text-lg developer tool with ✓/✗ text glyphs..."
+                  — real icons, not characters, matching the redesigned
+                  verdict banner the rest of this file's own trace stepper
+                  already uses colored circles for. */}
+              {explanation.data.allowed ? (
+                <Check className="size-3.5" strokeWidth={3} />
+              ) : (
+                <X className="size-3.5" strokeWidth={3} />
+              )}
             </span>
 
             <div className="min-w-0">

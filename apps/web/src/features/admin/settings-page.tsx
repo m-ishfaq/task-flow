@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Building2, CreditCard, ScrollText, Shield, Users, UsersRound } from 'lucide-react';
+import { Building2, Check, CreditCard, ScrollText, Shield, Users, UsersRound } from 'lucide-react';
 import {
   ModalContent,
   ModalDescription,
@@ -12,7 +12,15 @@ import {
   PopoverTrigger,
 } from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
-import { DIRECTLY_ASSIGNABLE_ROLES, GRANTABLE_PERMISSIONS, type Role } from '@taskflow/policy';
+import {
+  DIRECTLY_ASSIGNABLE_ROLES,
+  GRANTABLE_PERMISSIONS,
+  ROLES,
+  isGrantable,
+  roleGrants,
+  type Permission,
+  type Role,
+} from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
@@ -177,6 +185,7 @@ export function SettingsPage() {
           )}
           {activeTab === 'permissions' && capabilities?.manageMembers === true && (
             <>
+              <RoleReferenceTable />
               <PermissionsSection orgId={orgId} />
               <RoleDefaultGrantsSection orgId={orgId} />
             </>
@@ -817,6 +826,119 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * (`packages/policy/src/roles.ts`), so in practice this section is Owner-only
  * end to end, matching who can act on it anyway.
  */
+
+/**
+ * A static reference of what each role holds, at a glance — Design Bible
+ * §19's own thesis: "it's three real tools now: a role reference, individual
+ * grants, and a decision explainer." This is the first of the three, sitting
+ * above the individual-grants list (`PermissionsSection`, below) rather than
+ * replacing it: most "can this person do X" questions have an obvious answer
+ * once the shape of the four roles is visible on one screen, and the
+ * decision explainer (`/settings` → the permission debugger) stays for the
+ * ones that genuinely need a specific person and a specific resource traced
+ * through `can()`.
+ *
+ * Computed entirely from `packages/policy`'s own exported role/permission
+ * data (`roleGrants`, `isGrantable`) — never a second, hand-maintained
+ * copy of what `can()` actually decides. `ROLE_REFERENCE` below is the one
+ * hand-curated part: WHICH permissions to show, the same "written for a
+ * person, not a developer reference" trade `assistant-page.tsx`'s own
+ * `CAPABILITIES` constant already makes — eleven representative capabilities
+ * rather than every one of `PERMISSIONS`' ~60 entries.
+ *
+ * The Guest column is deliberately narrower than a full account of what a
+ * Guest can reach: it reflects only the ORG-LEVEL individual grant
+ * (`memberGrants.grant`, the exact mechanism the list below uses, and
+ * genuinely role-agnostic — nothing in that route restricts the recipient's
+ * role, confirmed against `member-grant.service.ts` and this page's own
+ * member-picker, which filters by nothing but a name/email search). A
+ * Guest's RESOURCE-scoped access — read, comment, or edit on one project via
+ * a relationship tuple — is a real, separate, already-shipped mechanism
+ * ("Guest access into Work", reached from that project's own Share panel),
+ * deliberately NOT modeled here: correctly reproducing which permissions a
+ * viewer/commenter/editor tuple can satisfy for an arbitrary resource type
+ * needs walking the exact ancestor-resolution `enforceOn` does, and
+ * asserting that without verifying it against the real engine risks this
+ * table showing something `can()` itself would refuse — a materially worse
+ * failure, on a human-review-flagged surface, than an incomplete legend.
+ */
+const ROLE_REFERENCE: readonly { readonly label: string; readonly permission: Permission }[] = [
+  { label: 'View projects & boards', permission: 'project:read' },
+  { label: 'Create & edit cards', permission: 'card:update' },
+  { label: 'Comment', permission: 'comment:create' },
+  { label: 'Manage boards & sprints', permission: 'board:update' },
+  { label: 'Manage members', permission: 'member:manage' },
+  { label: 'View analytics', permission: 'analytics:read' },
+  { label: 'Place calls · send SMS', permission: 'call:place' },
+  { label: 'Manage automations', permission: 'automation:manage' },
+  { label: 'Review pull requests', permission: 'pr:review' },
+  { label: 'Manage billing', permission: 'org:billing' },
+  { label: 'Delete organization', permission: 'org:delete' },
+];
+
+function RoleReferenceTable() {
+  return (
+    <Section title="Role reference" description="What each role holds, at a glance.">
+      <div className="overflow-x-auto rounded-xl border border-line">
+        <table className="w-full text-left text-[13px]">
+          <thead>
+            <tr className="border-b border-line bg-surface-sunken/60 text-[11px] font-medium tracking-wide text-ink-faint uppercase">
+              <th className="px-3 py-2">Capability</th>
+              {ROLES.map((role) => (
+                <th key={role} className="px-3 py-2 text-center capitalize">
+                  {role}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROLE_REFERENCE.map((row) => (
+              <tr key={row.permission} className="border-b border-line/60 last:border-b-0">
+                <td className="px-3 py-2 text-ink">{row.label}</td>
+                {ROLES.map((role) => (
+                  <td key={role} className="px-3 py-2 text-center">
+                    <RoleReferenceCell role={role} permission={row.permission} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-ink-faint">
+        A Guest&apos;s per-project access — invited to read, comment on, or edit one project&apos;s
+        own boards and cards — is a separate mechanism, granted from that project&apos;s own Share
+        panel rather than here.
+      </p>
+    </Section>
+  );
+}
+
+function RoleReferenceCell({
+  role,
+  permission,
+}: {
+  readonly role: Role;
+  readonly permission: Permission;
+}) {
+  if (roleGrants(role, permission)) {
+    return (
+      <span className="inline-flex items-center justify-center">
+        <Check aria-hidden="true" className="size-4 text-success" strokeWidth={2.5} />
+        <span className="sr-only">Included</span>
+      </span>
+    );
+  }
+  if (isGrantable(permission)) {
+    return <Badge tone="accent">Grant</Badge>;
+  }
+  return (
+    <span aria-hidden="true" className="text-ink-faint/40">
+      —
+    </span>
+  );
+}
+
 function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const members = useQuery(membersQuery(orgId));
