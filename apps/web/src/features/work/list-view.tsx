@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Calendar, ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
 import { AvatarStack, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
@@ -35,6 +35,16 @@ export interface ListViewProps {
   readonly onOpenCard: (cardId: string) => void;
   /** Overridden by `home-page.tsx`, which is not showing a board's filter. */
   readonly emptyDescription?: string;
+  /**
+   * Overridden by `home-page.tsx` — the generic "No cards" reads as the
+   * board's own empty state regardless of context, which is misleading on a
+   * cross-board page where the truly empty case ("nothing has ever been
+   * assigned to you") and the filtered-to-nothing case ("you have tasks,
+   * just none in this sprint") are different facts worth naming differently.
+   */
+  readonly emptyTitle?: string;
+  /** Same override reasoning as `emptyTitle` — omitted by every board caller, so nothing there changes. */
+  readonly emptyIcon?: ReactNode;
 }
 
 export function ListView({
@@ -46,6 +56,8 @@ export function ListView({
   sortBy,
   onOpenCard,
   emptyDescription = "Nothing matches this board's filter yet.",
+  emptyTitle = 'No cards',
+  emptyIcon,
 }: ListViewProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { peopleOf } = useMembers();
@@ -55,7 +67,7 @@ export function ListView({
   if (groups.length === 0) {
     return (
       <div className="flex-1 p-6">
-        <Empty title="No cards" description={emptyDescription} />
+        <Empty title={emptyTitle} description={emptyDescription} icon={emptyIcon} />
       </div>
     );
   }

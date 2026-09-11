@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { Inbox } from 'lucide-react';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { Segmented, Skeleton } from '../../components/primitives.js';
+import { PageContainer, PageHeader, Segmented, Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { activeSprintsQuery, myCardsQuery } from './api.js';
 import { ListView } from './list-view.js';
@@ -47,20 +48,22 @@ export function HomePage() {
 
   if (cards.isPending) {
     return (
-      <div aria-busy="true" className="mx-auto max-w-7xl space-y-2 px-6 py-8">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </div>
+      <PageContainer maxWidth="2xl">
+        <div aria-busy="true" className="space-y-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      </PageContainer>
     );
   }
 
   if (cards.isError) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <PageContainer maxWidth="2xl">
         <ErrorView error={cards.error} title="Could not load your tasks" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -83,40 +86,62 @@ export function HomePage() {
             (card) => card.sprintId !== null && runningSprintIds.has(card.sprintId),
           );
 
+  const description = `${String(visible.length)} ${visible.length === 1 ? 'card' : 'cards'}${
+    scope === 'all'
+      ? ' assigned to you, across every board.'
+      : scope === 'sprint'
+        ? ' assigned to you in a running sprint.'
+        : ' assigned to you and not in any sprint.'
+  }`;
+
+  /* The empty state used to be one fixed sentence ("Nothing is assigned to
+     you right now") regardless of WHY the list is empty — which is honest
+     when `cards.data` itself is empty, and actively misleading the moment a
+     scope filter (This sprint / Backlog) hides tasks that genuinely exist
+     under "All". The two cases get different wording so the second one
+     tells someone how to see what they know is there. */
+  const emptyTitle = cards.data.length === 0 ? 'No tasks assigned to you' : 'Nothing in this view';
+  const emptyDescription =
+    cards.data.length === 0
+      ? "When you're assigned a card on any board, it will show up here."
+      : scope === 'sprint'
+        ? 'None of your assigned cards are in a running sprint. Switch to "All" to see the rest.'
+        : 'None of your assigned cards are outside a sprint. Switch to "All" to see the rest.';
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* One column for the whole page — the header and the list share the same
-          max-width and horizontal padding, so the title, the filter and the
-          rows all start on the same edge. The header used to span the full
-          window while the list was a centered max-w-4xl, which put the title at
-          the far left and the rows ~170px in with nothing explaining the jump. */}
-      <div className="mx-auto w-full max-w-7xl shrink-0 px-6 py-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">My tasks</h1>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-              {visible.length} {visible.length === 1 ? 'card' : 'cards'}
-              {scope === 'all'
-                ? ' assigned to you, across every board.'
-                : scope === 'sprint'
-                  ? ' assigned to you in a running sprint.'
-                  : ' assigned to you and not in any sprint.'}
-            </p>
-          </div>
-
-          {/* Offered only when a sprint is actually running. A team that does
-              not use sprints would otherwise get two filters that both mean
-              "everything" and one that is always empty. */}
-          {runningSprintIds.size > 0 && (
-            <Segmented
-              value={scope}
-              onChange={setScope}
-              options={SPRINT_SCOPE_OPTIONS}
-              aria-label="Filter by sprint"
-            />
-          )}
-        </div>
-      </div>
+          max-width and horizontal padding (`PageContainer`'s own "2xl" tier,
+          matching `list-view.tsx`'s own hardcoded `max-w-7xl px-6`), so the
+          title, the filter and the rows all start on the same edge. The
+          header used to span the full window while the list was a centered
+          max-w-4xl, which put the title at the far left and the rows ~170px
+          in with nothing explaining the jump. */}
+      <PageContainer maxWidth="2xl" className="shrink-0">
+        <PageHeader
+          title="My tasks"
+          description={description}
+          /* A plain ternary is fine here, unlike `PageHeader`'s own
+             `description?: string | undefined` above — `ReactNode`'s type
+             already includes `undefined` as one of its members, so an
+             `actions?: ReactNode` prop tolerates an explicit `undefined`
+             under `exactOptionalPropertyTypes` with no conditional-spread
+             dance needed. Offered only when a sprint is actually running —
+             a team that does not use sprints would otherwise get two
+             filters that both mean "everything" and one that is always
+             empty. */
+          actions={
+            runningSprintIds.size > 0 ? (
+              <Segmented
+                value={scope}
+                onChange={setScope}
+                options={SPRINT_SCOPE_OPTIONS}
+                aria-label="Filter by sprint"
+              />
+            ) : undefined
+          }
+        />
+      </PageContainer>
 
       <ListView
         lists={[]}
@@ -125,7 +150,9 @@ export function HomePage() {
         people={[]}
         groupBy="due"
         sortBy="due"
-        emptyDescription="Nothing is assigned to you right now."
+        emptyTitle={emptyTitle}
+        emptyDescription={emptyDescription}
+        emptyIcon={<Inbox aria-hidden="true" className="size-6" strokeWidth={1.75} />}
         onOpenCard={(cardId) => {
           const boardId = boardOf.get(cardId);
           if (boardId === undefined) return;

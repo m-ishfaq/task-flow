@@ -16,11 +16,11 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Search } from 'lucide-react';
-import { Button, Empty, PageHeader, Skeleton } from '../../components/primitives.js';
+import { AlertCircle, Search, SearchX } from 'lucide-react';
+import { Button, Empty, PageContainer, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
-import { savedSearchesQuery, searchResultsQuery } from './api.js';
+import { SEARCH_LIMIT, savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
 
 /**
@@ -200,7 +200,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
+    <PageContainer maxWidth="xl" className="flex h-full flex-col gap-5 overflow-y-auto">
       <PageHeader
         title="Search"
         description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
@@ -283,6 +283,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
           />
         ) : errors.length > 0 ? (
           <Empty
+            icon={<AlertCircle aria-hidden="true" className="size-5" strokeWidth={1.75} />}
             title="Fix the query to search"
             description="The underlined tokens above need attention."
           />
@@ -295,7 +296,11 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         ) : results.isError ? (
           <ErrorView error={results.error} title="Could not search" />
         ) : results.data.length === 0 ? (
-          <Empty title="No results" description={`Nothing matched “${effectiveQuery.trim()}”.`} />
+          <Empty
+            icon={<SearchX aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+            title="No results"
+            description={`Nothing matched “${effectiveQuery.trim()}”.`}
+          />
         ) : (
           <ul className="space-y-1.5" role="listbox" aria-label="Search results">
             {results.data.map((hit, index) => (
@@ -346,13 +351,21 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 </button>
               </li>
             ))}
+            {/* `results.data.length} of at most {results.data.length}` used to
+                repeat the same number twice — a tautology true for every
+                result count, never actually disclosing the server's real
+                cap (`SEARCH_LIMIT`, §2.7). Only worth naming when the
+                result set genuinely landed AT that cap, which is the one
+                case where there might be more than what's on screen. */}
             <li className="pt-1 text-center text-[11px] text-ink-faint">
-              {results.data.length} of at most {results.data.length} results
+              {results.data.length === SEARCH_LIMIT
+                ? `Showing the first ${String(SEARCH_LIMIT)} results — narrow your query to see more.`
+                : `${String(results.data.length)} ${results.data.length === 1 ? 'result' : 'results'}`}
             </li>
           </ul>
         )}
       </main>
-    </div>
+    </PageContainer>
   );
 }
 

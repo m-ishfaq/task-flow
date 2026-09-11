@@ -620,6 +620,54 @@ export function Empty({
  * -------------------------------------------------------------------------- */
 
 /**
+ * The outer wrapper every ordinary content page (a form, a list, a
+ * dashboard) sits in — centred, one padding scale, one small set of
+ * max-width tiers to pick from instead of a free-form string.
+ *
+ * Before this, every page hand-rolled its own outer `<div>`, and they had
+ * drifted into at least six different combinations of padding (`p-4`, `p-6`,
+ * `p-8`, `px-6 py-6`, `px-6 py-8`, a responsive `p-4 md:p-8`) and max-width
+ * (`max-w-2xl` through `max-w-7xl`, one page carrying a literal one-off
+ * `max-w-350` found nowhere else) — the same "assembled, not designed"
+ * drift `PageHeader`'s own header already fixed once for heading typography,
+ * recurring one level up at the page's own outer shape. `maxWidth` is a
+ * closed set of named tiers, not an arbitrary string, for the identical
+ * reason `PageHeader` itself is a component and not a repeated `<h1>` — a
+ * new page reaches for one of four sizes instead of guessing a Tailwind
+ * value that happens to look right.
+ *
+ * Deliberately NOT used by a panel-managed, full-height layout (the board
+ * canvas, Chat, Docs' own editor) — those manage their own scrolling and
+ * spacing because their content is not a simple top-to-bottom column, and
+ * forcing a centred, padded box around them would break the real UI they
+ * already have, not fix an inconsistency.
+ */
+export function PageContainer({
+  maxWidth = 'xl',
+  className,
+  children,
+}: {
+  /** `md` = 42rem (a simple form), `lg` = 56rem, `xl` = 64rem (the default —
+      most settings/list pages), `2xl` = 80rem (a wide table or dashboard). */
+  readonly maxWidth?: 'md' | 'lg' | 'xl' | '2xl';
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={cn('mx-auto w-full p-6', PAGE_CONTAINER_MAX_WIDTH[maxWidth], className)}>
+      {children}
+    </div>
+  );
+}
+
+const PAGE_CONTAINER_MAX_WIDTH: Readonly<Record<'md' | 'lg' | 'xl' | '2xl', string>> = {
+  md: 'max-w-2xl',
+  lg: 'max-w-4xl',
+  xl: 'max-w-5xl',
+  '2xl': 'max-w-7xl',
+};
+
+/**
  * The page header — one pattern for every surface in the app.
  *
  * Before this, every page hand-rolled its own `h1 + p` block and they had

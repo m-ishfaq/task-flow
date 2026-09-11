@@ -12,6 +12,7 @@ import {
   Button,
   Field,
   Input,
+  PageContainer,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -56,12 +57,18 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
   const detail = useQuery(directoryMemberQuery(orgId, userId));
 
-  if (detail.isPending) return <SkeletonRows rows={5} className="mx-auto max-w-5xl p-6" />;
+  if (detail.isPending) {
+    return (
+      <PageContainer maxWidth="xl">
+        <SkeletonRows rows={5} />
+      </PageContainer>
+    );
+  }
   if (detail.isError) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <PageContainer maxWidth="xl">
         <ErrorView error={detail.error} title="Could not load this person" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -69,7 +76,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
   const label = displayName({ name: member.displayName, email: member.email });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-8">
       <header className="flex items-center gap-4">
         <Avatar userId={member.userId} label={label} size="sm" className="size-12 text-lg" />
         <div className="min-w-0">
@@ -127,7 +134,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
         ) : (
           <PersonFactsSummary member={member} />
         ))}
-    </div>
+    </PageContainer>
   );
 }
 

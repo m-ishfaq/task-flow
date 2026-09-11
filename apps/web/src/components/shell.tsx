@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-route
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
+  ChevronRight,
   FileText,
   Keyboard,
   MessageSquare,
@@ -423,7 +424,25 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
  *
  * Names are not resolved here. A breadcrumb that waits on `projects.list` to say
  * anything at all is a header that is blank on every cold load, and the sidebar
- * already highlights the active node with its real name.
+ * already highlights the active node with its real name. So a resource-scoped
+ * route (a project, a person) gets a generic segment ("Project", "Profile")
+ * rather than the real name — a real, known limitation, not an oversight.
+ *
+ * ## Why this used to be one `<h1>`, and why that was a real bug
+ *
+ * The whole "trail" used to collapse to a single current-page label, rendered
+ * as its own `<h1>` — which meant every page with its own `PageHeader` (also
+ * an `<h1>`, `primitives.tsx`) carried TWO level-one headings with often the
+ * IDENTICAL text ("My tasks" in the top bar, "My tasks" again as the page's
+ * own heading a few dozen pixels below it) — a real accessibility defect (two
+ * `<h1>`s is invalid document structure) and the literal thing a person
+ * reported seeing: the same name twice. `breadcrumbsFor` now returns a real,
+ * possibly multi-segment TRAIL (`Settings › Audit log`, `Projects › Sprints`),
+ * rendered as `<nav><ol>` — never an `<h1>` — at a visibly smaller, muted
+ * scale than any page's own heading, so even a single-segment trail whose
+ * text happens to match the page title (most pages — there is nothing to
+ * nest under "Chat" or "Search") reads as wayfinding chrome, not a second
+ * title competing with the real one.
  */
 /**
  * The Design Bible's `.pf-bar .ttl .g` pattern — a module's icon takes its
@@ -439,59 +458,122 @@ const SUITE_ICON: Readonly<Partial<Record<Suite, NavIcon>>> = {
   people: Users,
 };
 
+/** A route this trail can link an ANCESTOR segment back to — real navigation, not decoration. */
+export type CrumbTarget = '/projects' | '/settings' | '/people';
+
+export interface Crumb {
+  readonly label: string;
+  /** Present on every segment except the current page, which never links to itself. */
+  readonly to?: CrumbTarget;
+}
+
+/**
+ * Every route in `router.tsx` gets an entry here — the previous version's
+ * fallback to `productName` for anything unmatched silently swallowed six
+ * real routes (`/people`, `/assistant`, `/analytics`, `/automations`,
+ * `/calls`, `/account`), each showing the org/product name instead of where
+ * the person actually was. A route added to `router.tsx` without a matching
+ * case here still falls through to `productName` rather than throwing — a
+ * wrong-but-harmless label beats a crashed header — but every KNOWN route as
+ * of this pass has a real entry, checked directly against the route list
+ * rather than assumed.
+ */
+export function breadcrumbsFor(pathname: string, productName: string): readonly Crumb[] {
+  if (pathname.startsWith('/boards/')) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Board' }];
+  }
+  if (pathname.startsWith('/home')) return [{ label: 'My tasks' }];
+  if (pathname.startsWith('/search')) return [{ label: 'Search' }];
+  if (pathname.startsWith('/chat')) return [{ label: 'Chat' }];
+  if (pathname.startsWith('/docs')) return [{ label: 'Docs' }];
+  if (pathname.startsWith('/calls')) return [{ label: 'Calls' }];
+  if (pathname.startsWith('/analytics')) return [{ label: 'Analytics' }];
+  if (pathname.startsWith('/automations')) return [{ label: 'Automations' }];
+  if (pathname.startsWith('/assistant')) return [{ label: 'Assistant' }];
+  if (pathname.startsWith('/account')) return [{ label: 'Account' }];
+  if (pathname.startsWith('/people/')) {
+    return [{ label: 'People', to: '/people' }, { label: 'Profile' }];
+  }
+  if (pathname.startsWith('/people')) return [{ label: 'People' }];
+  if (/^\/projects\/[^/]+\/sprints/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project' }, { label: 'Sprints' }];
+  }
+  if (/^\/projects\/[^/]+\/standup/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project' }, { label: 'Standup' }];
+  }
+  if (/^\/projects\/[^/]+/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project settings' }];
+  }
+  if (pathname.startsWith('/projects')) return [{ label: 'Projects' }];
+  if (pathname.startsWith('/settings/audit')) {
+    return [{ label: 'Settings', to: '/settings' }, { label: 'Audit log' }];
+  }
+  if (pathname.startsWith('/settings')) return [{ label: 'Settings' }];
+  if (pathname.startsWith('/admin/permissions')) return [{ label: 'Permissions' }];
+  if (pathname.startsWith('/platform-admin')) return [{ label: 'Platform admin' }];
+  if (pathname.startsWith('/orgs')) return [{ label: 'Organizations' }];
+  return [{ label: productName }];
+}
+
 function Breadcrumbs() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { productName } = useBranding();
   const suite = suiteForPath(pathname);
   const Icon = suite === undefined ? undefined : SUITE_ICON[suite];
   const iconColor = suite === undefined ? '' : SUITE_STYLES[suite].text;
+  const crumbs = breadcrumbsFor(pathname, productName);
 
-  const label = pathname.startsWith('/boards/')
-    ? 'Board'
-    : pathname.startsWith('/home')
-      ? 'My tasks'
-      : pathname.startsWith('/search')
-        ? 'Search'
-        : pathname.startsWith('/chat')
-          ? 'Chat'
-          : pathname.startsWith('/docs')
-            ? 'Docs'
-            : pathname.startsWith('/projects/')
-              ? 'Project'
-              : pathname.startsWith('/projects')
-                ? 'Projects'
-                : pathname.startsWith('/settings/audit')
-                  ? 'Audit log'
-                  : pathname.startsWith('/settings')
-                    ? 'Settings'
-                    : pathname.startsWith('/admin/permissions')
-                      ? 'Permissions'
-                      : pathname.startsWith('/platform-admin')
-                        ? 'Platform admin'
-                        : pathname.startsWith('/orgs')
-                          ? 'Organizations'
-                          : productName;
-
-  /* `min-w-0` is load-bearing, not decorative: a flex item's default
-     min-width is `auto`, which means it will NOT shrink below its own content
-     size no matter how little room its siblings (the menu button, the
-     notification bell, the nav links) leave it — so `truncate`'s
-     `overflow-hidden` + `text-overflow: ellipsis` never actually engages on a
-     narrow header, and the row overflows the viewport instead of eliding the
-     label. This is the one-line fix for a bug that only shows up once the
-     header actually gets tight, which the desktop-only build before this wave
-     never exercised. */
+  /* `min-w-0` on the `nav` is load-bearing, not decorative — see the
+     original note this replaced: a flex item's default min-width is `auto`,
+     so without it `truncate` never actually engages on a narrow header and
+     the row overflows the viewport instead of eliding a long segment. */
   return (
-    <h1 className="flex min-w-0 items-center gap-1.5 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
-      {Icon !== undefined && (
-        <Icon
-          aria-hidden="true"
-          className={cn('size-3.5 shrink-0', iconColor)}
-          strokeWidth={2.25}
-        />
-      )}
-      <span className="truncate">{label}</span>
-    </h1>
+    <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <ol className="flex min-w-0 items-center gap-1">
+        {crumbs.map((crumb, index) => {
+          /* The LAST segment is the current page — not merely "has no `to`",
+             which an unlinked MIDDLE segment (e.g. the generic "Project" in
+             `Projects › Project › Sprints`) also satisfies without being the
+             page someone is actually looking at. */
+          const isCurrent = index === crumbs.length - 1;
+          return (
+            <li key={`${String(index)}-${crumb.label}`} className="flex min-w-0 items-center gap-1">
+              {index > 0 && (
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3 shrink-0 text-ink-faint/50"
+                  strokeWidth={2}
+                />
+              )}
+              {crumb.to !== undefined ? (
+                <Link
+                  to={crumb.to}
+                  className="shrink-0 truncate text-[13px] text-ink-faint transition-colors hover:text-ink"
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span
+                  className={cn(
+                    'flex min-w-0 items-center gap-1.5 truncate text-[13px]',
+                    isCurrent ? 'font-medium text-ink' : 'text-ink-faint',
+                  )}
+                >
+                  {isCurrent && Icon !== undefined && (
+                    <Icon
+                      aria-hidden="true"
+                      className={cn('size-3.5 shrink-0', iconColor)}
+                      strokeWidth={2.25}
+                    />
+                  )}
+                  {crumb.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 

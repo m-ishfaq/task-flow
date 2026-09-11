@@ -15,6 +15,7 @@ import {
   Field,
   FocusOnMountInput,
   Input,
+  PageContainer,
   PageHeader,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -63,17 +64,17 @@ export function ProjectsPage() {
 
   if (projects.isPending) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <PageContainer maxWidth="xl">
         <SkeletonRows rows={4} className="*:h-24" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (projects.isError) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <PageContainer maxWidth="xl">
         <ErrorView error={projects.error} title="Could not load projects" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -82,7 +83,7 @@ export function ProjectsPage() {
   const shown = showArchived ? projects.data : live;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-8">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-6">
       {/* Hidden rather than disabled: a create form nobody without
           project:create could submit is clutter, and the list below stays
           fully visible either way. */}
@@ -154,7 +155,7 @@ export function ProjectsPage() {
           {showArchived ? 'Hide archived projects' : `Show archived (${String(archived.length)})`}
         </button>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

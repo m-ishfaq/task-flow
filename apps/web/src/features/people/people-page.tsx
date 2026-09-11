@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   Empty,
+  PageContainer,
   PageHeader,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -44,7 +45,7 @@ export function PeoplePage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-7 p-8">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-7">
       <PageHeader
         title="People"
         description="Everyone in this organization, with their profile, role, and who they report to."
@@ -82,7 +83,7 @@ export function PeoplePage() {
           )}
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

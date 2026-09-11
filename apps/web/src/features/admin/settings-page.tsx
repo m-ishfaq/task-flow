@@ -35,6 +35,7 @@ import {
   Empty,
   Field,
   Input,
+  PageContainer,
   PageHeader,
   Section,
   SkeletonRows,
@@ -139,7 +140,7 @@ export function SettingsPage() {
   const activeTab = items.some((item) => item.id === tab) ? tab : (items[0]?.id ?? 'general');
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
+    <PageContainer maxWidth="xl">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
@@ -198,7 +199,7 @@ export function SettingsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

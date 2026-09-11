@@ -7,7 +7,14 @@ import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Avatar, Button, Empty, PageHeader, Spinner } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  Empty,
+  PageContainer,
+  PageHeader,
+  Spinner,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /**
@@ -45,7 +52,7 @@ export function AuditPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+    <PageContainer maxWidth="2xl" className="flex flex-col gap-7">
       <PageHeader
         title="Audit log"
         description="Append-only and hash-chained. Every state-changing action lands here."
@@ -177,7 +184,7 @@ export function AuditPage() {
             </div>
           </>
         ))}
-    </div>
+    </PageContainer>
   );
 }
 

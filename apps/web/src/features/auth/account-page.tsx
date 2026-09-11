@@ -16,6 +16,8 @@ import {
   Empty,
   Field,
   Input,
+  PageContainer,
+  PageHeader,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -49,13 +51,11 @@ import { profileQuery, updateProfile } from '../people/api.js';
  */
 export function AccountPage() {
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Account</h1>
-        <p className="text-xs text-ink-muted">
-          Yours alone — not tied to any organization, and the same wherever you sign in.
-        </p>
-      </div>
+    <PageContainer maxWidth="xl" className="flex flex-col gap-10">
+      <PageHeader
+        title="Account"
+        description="Yours alone — not tied to any organization, and the same wherever you sign in."
+      />
 
       <AccountSection />
       <WorkingHoursSection />
@@ -71,7 +71,7 @@ export function AccountPage() {
       <SessionsSection />
       <ExportDataSection />
       <OrganizationsSection />
-    </div>
+    </PageContainer>
   );
 }
 

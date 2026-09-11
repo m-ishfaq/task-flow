@@ -15,7 +15,14 @@ import type { CardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useFeatureGranted } from '../../lib/entitlements.js';
 import { formatDate } from '../../lib/format.js';
-import { Avatar, Button, Empty, PageHeader, SkeletonRows } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  Empty,
+  PageContainer,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
 import { projectsQuery } from '../work/api.js';
@@ -138,10 +145,14 @@ export function StandupPage() {
   const project = (projects.data ?? []).find((entry) => entry.projectId === projectId);
 
   if (standup.isError)
-    return <ErrorView error={standup.error} title="Could not load the standup" />;
+    return (
+      <PageContainer maxWidth="lg">
+        <ErrorView error={standup.error} title="Could not load the standup" />
+      </PageContainer>
+    );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <PageContainer maxWidth="lg" className="space-y-6">
       <PageHeader
         title="Standup"
         description={`${project?.name ?? 'This project'} — the last ${String(sinceHours)} hours, plus this sprint's urgent work.`}
@@ -275,7 +286,7 @@ export function StandupPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

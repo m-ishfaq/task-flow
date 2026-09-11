@@ -14,7 +14,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
-import { Button, Empty, PageHeader } from '../../components/primitives.js';
+import { Button, Empty, PageContainer, PageHeader } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
@@ -377,7 +377,14 @@ export function AssistantPage() {
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-350 gap-6 p-6 overflow-y-hidden">
+    /* `maxWidth="2xl"` — the same tier `platform-admin-page.tsx`/`audit-
+       page.tsx`/`home-page.tsx` use for their own widest content, replacing
+       a one-off `max-w-350` (87.5rem) found nowhere else in the app; the
+       two-column chat-plus-sidebar layout below fits comfortably in `2xl`'s
+       80rem. `overflow-y-hidden` stays a plain class here rather than
+       PageContainer's own concern — this is the one page whose OWN scroll
+       region is the message list, not the page itself. */
+    <PageContainer maxWidth="2xl" className="flex h-full gap-6 overflow-y-hidden">
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <PageHeader
           title="Assistant"
@@ -533,7 +540,7 @@ export function AssistantPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

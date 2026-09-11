@@ -19,6 +19,7 @@ import {
   Empty,
   Field,
   Input,
+  PageContainer,
   Section,
   SkeletonRows,
   Spinner,
@@ -57,15 +58,15 @@ export function ProjectSettingsPage() {
 
   if (projects.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <PageContainer maxWidth="md">
         <ErrorView error={projects.error} title="Could not load this project" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (project === undefined) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <PageContainer maxWidth="md">
         <Empty
           title="No such project"
           description="It may have been archived, or belong to another organization."
@@ -75,12 +76,12 @@ export function ProjectSettingsPage() {
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-8">
       <div className="flex items-center gap-2">
         <Link to="/projects" className="text-sm text-accent underline">
           Projects
@@ -107,7 +108,7 @@ export function ProjectSettingsPage() {
           manage the project has no use for a control that would just be
           refused. */}
       {project.capabilities.update && <GuestAccessSection orgId={orgId} projectId={projectId} />}
-    </div>
+    </PageContainer>
   );
 }
 

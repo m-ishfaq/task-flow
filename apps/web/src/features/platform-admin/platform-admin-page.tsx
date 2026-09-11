@@ -18,7 +18,7 @@ import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Button, PageHeader } from '../../components/primitives.js';
+import { Button, PageContainer, PageHeader } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
 import { StatCard, downloadCsv, money } from './shared.js';
@@ -133,7 +133,7 @@ export function PlatformAdminPage() {
     (billing.data?.orgs.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-8">
+    <PageContainer maxWidth="2xl" className="flex flex-col gap-6">
       <PageHeader
         title="Platform administration"
         description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
@@ -425,6 +425,6 @@ export function PlatformAdminPage() {
           onConfirmed={onProof}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

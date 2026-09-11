@@ -7,7 +7,7 @@ import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { cn } from '../../lib/cn.js';
-import { Button, Field, Input, Spinner } from '../../components/primitives.js';
+import { Button, Field, Input, PageContainer, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { membersQuery } from '../org/api.js';
 
@@ -75,7 +75,7 @@ export function PermissionDebugPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Permission debugger</h1>
         <p className="mt-1 text-sm text-ink-muted">
@@ -311,6 +311,6 @@ export function PermissionDebugPage() {
           </details>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
