@@ -44,7 +44,18 @@ export function CardIdentityBar({
   const branches = useQuery(cardBranchesQuery(orgId, cardId));
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    /* `flex-1` so this row — not the fixed-height header around it — is what
+       claims the space between the modal's left edge and the Archive/Close
+       buttons pinned to `ml-auto` on the right; `overflow-x-auto` alongside
+       `min-w-0` is what lets it actually SHRINK to that space rather than
+       forcing the header wider. Every chip inside stays `shrink-0`, so a
+       card carrying several linked PRs and branches scrolls horizontally
+       within its own row instead of pushing Close off the edge of the
+       panel — the failure mode a plain `flex` row with no wrap and no
+       overflow handling has no way to avoid once the content is wider than
+       the space, which a genuinely active card reaches sooner than it
+       looks. */
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
       <CopyableReference reference={reference} />
 
       {prs.data?.map((pr) => (

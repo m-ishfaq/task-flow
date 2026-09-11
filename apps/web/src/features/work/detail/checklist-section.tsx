@@ -173,12 +173,20 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
     },
   });
 
+  const empty = checklists.isSuccess && checklists.data.length === 0;
+
   return (
     <section className="space-y-3">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Checklists
       </h3>
+
+      {/* A viewer/commenter-relation guest gets neither the list below (there
+          is none) nor the "New checklist" form — without this, the section
+          is a bare header over nothing, which reads as broken rather than
+          as "there just isn't one yet". */}
+      {empty && !canEdit && <p className="text-xs text-ink-faint">No checklist yet.</p>}
 
       {(checklists.data ?? []).map((checklist) => {
         const done = checklist.items.filter((item) => item.done).length;

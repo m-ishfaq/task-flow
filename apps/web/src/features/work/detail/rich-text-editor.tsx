@@ -178,18 +178,76 @@ export function RichTextEditor({
     editor.commands.setContent(next as never, { emitUpdate: false });
   }, [editor, value]);
 
+  /* Read directly off the live editor rather than tracked in separate
+     state — the same thing `Toolbar`'s `editor.isActive(...)` checks below
+     already do, and for the identical reason: `useEditor` re-renders this
+     component on every transaction, so there is nothing an extra `useState`
+     plus an `onUpdate`/effect pair would buy here that isn't already true of
+     the editor instance itself on the very next render. Also the more
+     faithful definition for what a PLACEHOLDER should track — this is
+     exactly the check `@tiptap/extension-placeholder` itself uses — where
+     `isEmptyDocument`'s own special case (a message that is only a mention
+     still counts as "has content") is the right call for whether to WARN
+     about discarding a draft, not for whether to show hint text. */
+  const empty = editor.isEmpty;
+
   if (bare) {
-    return <EditorContent editor={editor} />;
+    return (
+      <div className="relative">
+        <EditorContent editor={editor} />
+        <PlaceholderOverlay text={placeholder} show={empty} bare />
+      </div>
+    );
   }
 
   return (
     <div className="rounded border border-line bg-surface-sunken">
       {editable && <Toolbar editor={editor} />}
-      <EditorContent editor={editor} />
+      <div className="relative">
+        <EditorContent editor={editor} />
+        <PlaceholderOverlay text={placeholder} show={empty} />
+      </div>
       {footer !== undefined && (
         <div className="flex gap-2 border-t border-line px-3 py-2">{footer}</div>
       )}
     </div>
+  );
+}
+
+/**
+ * `styles.css`'s `.rich-text .is-editor-empty:first-child::before` rule (the
+ * `content: attr(data-placeholder)` trick) has never actually fired in this
+ * component: that selector needs TipTap's official `Placeholder` extension,
+ * which adds `is-editor-empty` via a ProseMirror decoration — nothing here
+ * ever installed it, so every empty description, comment, chat message and
+ * Docs comment composer has been rendering as a blank box with no hint text
+ * at all. `assistant-composer.tsx` hit the identical gap building a second,
+ * unrelated composer and solved it the same way its own header explains:
+ * the live `editor.isEmpty` flag read above, plus an absolutely positioned
+ * overlay, rather than a new dependency for one small affordance.
+ * `pointer-events-none` so the overlay is never what a click actually lands
+ * on — the real, empty contentEditable node sits right underneath it.
+ */
+function PlaceholderOverlay({
+  text,
+  show,
+  bare = false,
+}: {
+  readonly text: string;
+  readonly show: boolean;
+  readonly bare?: boolean;
+}) {
+  if (!show || text === '') return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'pointer-events-none absolute text-sm text-ink-faint',
+        bare ? 'top-2 left-0' : 'top-2 left-3',
+      )}
+    >
+      {text}
+    </span>
   );
 }
 
@@ -261,16 +319,29 @@ function Toolbar({ editor }: { readonly editor: Editor }) {
 export function RichTextView({
   value,
   bare = false,
+  placeholder = '',
 }: {
   readonly value: unknown;
   /** See `RichTextEditorProps.bare`. */
   readonly bare?: boolean;
+  /**
+   * Shown in place of an empty document. Defaults to nothing rather than
+   * inheriting `RichTextEditor`'s own "Write something…" default — this
+   * component renders in many places that already have nothing to show for
+   * an empty value on purpose (a sent chat message, a published Docs page),
+   * and those must not start showing composer text merely because this file
+   * learned how to render a placeholder at all. Pass one explicitly (e.g.
+   * "No description.") only where an empty value is a real, expected state
+   * worth naming.
+   */
+  readonly placeholder?: string;
 }) {
   return (
     <RichTextEditor
       value={value}
       editable={false}
       bare={bare}
+      placeholder={placeholder}
       onChange={() => {
         /* Read-only: TipTap still calls onUpdate for its own internal
            normalization on mount, and there is nothing to persist. */

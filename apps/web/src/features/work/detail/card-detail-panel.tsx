@@ -420,7 +420,7 @@ function TitleAndDescription({
     return (
       <section className="space-y-2">
         <h2 className="text-base font-semibold text-ink">{card.title}</h2>
-        <RichTextView value={card.description} />
+        <RichTextView value={card.description} placeholder="No description." />
       </section>
     );
   }

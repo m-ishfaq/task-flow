@@ -296,6 +296,12 @@ export function CommentSection({
         Comments
       </h3>
 
+      {/* A viewer with no `comment:create` gets no composer below — without
+          this, a comment-free card shows this header over nothing. */}
+      {comments.isSuccess && topLevel.length === 0 && !canComment && (
+        <p className="text-xs text-ink-faint">No comments yet.</p>
+      )}
+
       <ul className="space-y-3">
         {topLevel.map((comment) => (
           <li key={comment.commentId} className="space-y-2">

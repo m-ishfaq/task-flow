@@ -140,12 +140,18 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
     onSuccess: refresh,
   });
 
+  const empty = attachments.isSuccess && attachments.data.length === 0;
+
   return (
     <section className="space-y-2">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <Paperclip aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Attachments
       </h3>
+
+      {/* A viewer/commenter-relation guest gets no file input below — without
+          this, an attachment-free card shows this header over nothing. */}
+      {empty && !canEdit && <p className="text-xs text-ink-faint">No attachments.</p>}
 
       <ul className="space-y-1">
         {(attachments.data ?? []).map((attachment) => {
