@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
@@ -176,90 +176,131 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
   const showDetail = isDesktop || selectedCallId !== undefined;
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
-      {showList && (
-        <div className="flex min-h-0 w-full flex-col gap-2 md:w-80 md:shrink-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-[13px] font-semibold text-ink">Calls</h2>
-            {calls.data !== undefined && (
-              <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                {calls.data.length}
-              </span>
+    <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col p-4">
+      {/* One bordered card holding BOTH panes, the Design Bible's own §09
+          shape — not two independently floating columns, one boxed and one
+          not, which is what this used to be. `md:divide-x` draws the single
+          vertical seam between them; each pane supplies its own scrolling,
+          so this outer card never needs to. */}
+      <div className="flex min-h-0 flex-1 divide-line overflow-hidden rounded-xl border border-line bg-surface-raised md:divide-x">
+        {showList && (
+          <div className="flex min-h-0 w-full flex-col md:w-80 md:shrink-0">
+            <div className="flex items-center gap-2 border-b border-line px-3.5 py-3">
+              <h2 className="text-[13px] font-semibold text-ink">Calls</h2>
+              {calls.data !== undefined && (
+                <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                  {calls.data.length}
+                </span>
+              )}
+              <div className="ml-auto">
+                <NewCallButton orgId={orgId} onPlaced={selectCall} />
+              </div>
+            </div>
+
+            {!numbers.isPending && owned.length === 0 && (
+              <div className="flex items-center justify-between gap-2 border-b border-line bg-warning/5 px-3.5 py-2">
+                <p className="text-xs text-warning">Buy a number before placing calls.</p>
+                <button
+                  type="button"
+                  onClick={goBuyNumber}
+                  className="shrink-0 text-xs font-medium text-accent hover:underline"
+                >
+                  Buy one
+                </button>
+              </div>
             )}
-            <div className="ml-auto">
-              <NewCallButton orgId={orgId} onPlaced={selectCall} />
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {calls.isPending ? (
+                <SkeletonRows rows={4} />
+              ) : calls.isError ? (
+                <ErrorView error={calls.error} title="Could not load the call log" />
+              ) : calls.data.length === 0 ? (
+                <Empty
+                  icon={<Phone aria-hidden="true" className="size-5" strokeWidth={2} />}
+                  title="No calls yet"
+                  description="Calls you place or receive appear here with their status and any recording."
+                />
+              ) : (
+                <ul className="space-y-1">
+                  {calls.data.map((call) => (
+                    <CallListRow
+                      key={call.callId}
+                      call={call}
+                      contact={contactFor(String(call.counterparty), contactsByDigits)}
+                      selected={call.callId === selectedCallId}
+                      onSelect={() => {
+                        selectCall(call.callId);
+                      }}
+                    />
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
+        )}
 
-          {!numbers.isPending && owned.length === 0 && (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-1.5">
-              <p className="text-xs text-warning">Buy a number before placing calls.</p>
-              <button
-                type="button"
-                onClick={goBuyNumber}
-                className="shrink-0 text-xs font-medium text-accent hover:underline"
-              >
-                Buy one
-              </button>
-            </div>
-          )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {calls.isPending ? (
-              <SkeletonRows rows={4} />
-            ) : calls.isError ? (
-              <ErrorView error={calls.error} title="Could not load the call log" />
-            ) : calls.data.length === 0 ? (
-              <Empty
+        {showDetail && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {selectedCallId === undefined ? (
+              <DetailPlaceholder
                 icon={<Phone aria-hidden="true" className="size-5" strokeWidth={2} />}
-                title="No calls yet"
-                description="Calls you place or receive appear here with their status and any recording."
+                title="No call selected"
+                description="Pick a call on the left, or place a new one."
               />
+            ) : selectedCall === undefined ? (
+              calls.isPending ? (
+                <div className="p-4">
+                  <SkeletonRows rows={4} />
+                </div>
+              ) : (
+                <DetailPlaceholder
+                  title="Call not found"
+                  description="That call is no longer in the log."
+                />
+              )
             ) : (
-              <ul className="space-y-1">
-                {calls.data.map((call) => (
-                  <CallListRow
-                    key={call.callId}
-                    call={call}
-                    contact={contactFor(String(call.counterparty), contactsByDigits)}
-                    selected={call.callId === selectedCallId}
-                    onSelect={() => {
-                      selectCall(call.callId);
-                    }}
-                  />
-                ))}
-              </ul>
+              <CallDetailPanel
+                orgId={orgId}
+                call={selectedCall}
+                contact={contactFor(String(selectedCall.counterparty), contactsByDigits)}
+                onBack={() => {
+                  selectCall(undefined);
+                }}
+              />
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {showDetail && (
-        <div className="min-h-0 min-w-0 flex-1">
-          {selectedCallId === undefined ? (
-            <Empty
-              icon={<Phone aria-hidden="true" className="size-5" strokeWidth={2} />}
-              title="No call selected"
-              description="Pick a call on the left, or place a new one."
-            />
-          ) : selectedCall === undefined ? (
-            calls.isPending ? (
-              <SkeletonRows rows={4} />
-            ) : (
-              <Empty title="Call not found" description="That call is no longer in the log." />
-            )
-          ) : (
-            <CallDetailPanel
-              orgId={orgId}
-              call={selectedCall}
-              contact={contactFor(String(selectedCall.counterparty), contactsByDigits)}
-              onBack={() => {
-                selectCall(undefined);
-              }}
-            />
-          )}
-        </div>
+/**
+ * The detail pane's own "nothing to show" state — plain centered text, not
+ * the boxed, dashed-border `Empty` component. `Empty` draws its own visible
+ * rectangle, which reads as a box nested inside the box this pane already
+ * sits in (the unified card above) — exactly the "two overlapping frames"
+ * look the redesign above exists to remove.
+ */
+function DetailPlaceholder({
+  icon,
+  title,
+  description,
+}: {
+  readonly icon?: ReactNode;
+  readonly title: string;
+  readonly description: string;
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+      {icon !== undefined && (
+        <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-surface-hover text-ink-faint">
+          {icon}
+        </span>
       )}
+      <p className="text-sm font-medium text-ink">{title}</p>
+      <p className="max-w-xs text-xs text-ink-muted">{description}</p>
     </div>
   );
 }
@@ -285,6 +326,41 @@ function DirectionGlyph({
       )}
     >
       <Icon className="size-3.5" strokeWidth={2.25} />
+    </span>
+  );
+}
+
+/**
+ * A colleague gets the app's real hashed-hue avatar disc; a number that
+ * matches nobody gets a plain neutral phone glyph instead — never that
+ * `Avatar`'s own initials logic run against raw digits. `initialsOf` reads
+ * an email-shaped label ("first.last@…" → "FL"); fed a bare E.164 string
+ * like `+14155550142` it produces the number's own leading digits ("14"),
+ * which is not an identity, just noise that reads as a rendering bug.
+ */
+function CallerAvatar({
+  contact,
+  counterparty,
+  size = 'sm',
+}: {
+  readonly contact: PhoneContact | undefined;
+  readonly counterparty: string;
+  readonly size?: 'sm' | 'lg';
+}) {
+  if (contact !== undefined) {
+    return <Avatar userId={contact.userId} label={contact.label} size={size} />;
+  }
+  return (
+    <span
+      role="img"
+      aria-label={counterparty}
+      title={counterparty}
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full bg-surface-hover text-ink-faint ring-1 ring-line/50',
+        size === 'lg' ? 'size-[52px]' : 'size-6',
+      )}
+    >
+      <Phone aria-hidden="true" className={size === 'lg' ? 'size-5' : 'size-3'} strokeWidth={2} />
     </span>
   );
 }
@@ -321,7 +397,7 @@ function CallListRow({
         <span className="sr-only">
           {missed ? 'Missed' : call.direction === 'outbound' ? 'Outbound' : 'Inbound'} call
         </span>
-        <Avatar userId={contact?.userId ?? String(call.counterparty)} label={label} size="sm" />
+        <CallerAvatar contact={contact} counterparty={String(call.counterparty)} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-ink">{label}</span>
           {contact !== undefined && (
@@ -386,7 +462,7 @@ function CallDetailPanel({
             : (STATUS_LABELS[call.status] ?? call.status);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-raised">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b border-line px-4 py-3.5">
         <button
           type="button"
@@ -396,7 +472,7 @@ function CallDetailPanel({
         >
           <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
         </button>
-        <Avatar userId={contact?.userId ?? counterparty} label={label} size="lg" />
+        <CallerAvatar contact={contact} counterparty={counterparty} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-semibold text-ink">{label}</p>
           {contact !== undefined && (

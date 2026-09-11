@@ -56,103 +56,115 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   const showDetail = isDesktop || opened;
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
-      {showList && (
-        <div className="w-full shrink-0 space-y-1 overflow-y-auto md:w-64">
-          {/* Until this existed there was NO way to start an SMS from the UI —
-              the composer lived only inside an already-open thread, and threads
-              are created by inbound messages. So the first outbound message to
-              anyone required calling the API by hand. */}
-          <Button
-            variant="primary"
-            size="sm"
-            className="mb-2 w-full"
-            onClick={() => {
-              setComposing(true);
-            }}
-          >
-            New message
-          </Button>
-
-          {threads.isPending ? (
-            <SkeletonRows rows={4} />
-          ) : threads.isError ? (
-            <ErrorView error={threads.error} title="Could not load threads" />
-          ) : threads.data.length === 0 ? (
-            <Empty
-              title="No SMS conversations yet"
-              description="Inbound texts to your numbers land here."
-            />
-          ) : (
-            threads.data.map((thread) => (
-              <button
-                key={thread.threadId}
-                type="button"
+    <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col p-4">
+      {/* One bordered card holding both panes — the same unified shape
+          `calls-panel.tsx` uses, replacing two independently floating
+          columns (one boxed, one not) that used to sit directly in the
+          page's own padding. */}
+      <div className="flex min-h-0 flex-1 divide-line overflow-hidden rounded-xl border border-line bg-surface-raised md:divide-x">
+        {showList && (
+          <div className="flex min-h-0 w-full flex-col md:w-64 md:shrink-0">
+            <div className="border-b border-line p-2">
+              {/* Until this existed there was NO way to start an SMS from the
+                  UI — the composer lived only inside an already-open thread,
+                  and threads are created by inbound messages. So the first
+                  outbound message to anyone required calling the API by hand. */}
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
                 onClick={() => {
-                  selectThread(thread.threadId);
+                  setComposing(true);
                 }}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                  /* Calls' own suite hue for "this is the open thread" — the
-                     same module-identity fix already applied to Chat's active
-                     channel row and Docs' active page. */
-                  thread.threadId === threadId
-                    ? 'border-suite-calls/40 bg-suite-calls/10'
-                    : 'border-transparent hover:bg-surface-hover',
-                )}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono text-xs text-ink">
-                      {String(thread.counterparty)}
-                    </span>
-                    {thread.unreadCount > 0 && (
-                      <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
-                        {thread.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                  {thread.lastMessageAt !== null && (
-                    <p className="mt-0.5 text-[10px] text-ink-faint">
-                      {formatRelative(thread.lastMessageAt)}
-                    </p>
-                  )}
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+                New message
+              </Button>
+            </div>
 
-      {showDetail && (
-        <div className="min-h-0 min-w-0 flex-1">
-          {composing ? (
-            <ComposeView
-              orgId={orgId}
-              onSent={(newThreadId) => {
-                selectThread(newThreadId);
-              }}
-              onCancel={() => {
-                setComposing(false);
-              }}
-            />
-          ) : threadId === undefined ? (
-            <Empty
-              title="No conversation open"
-              description="Pick a thread on the left, or start a new message."
-            />
-          ) : (
-            <ThreadView
-              key={threadId}
-              orgId={orgId}
-              threadId={threadId}
-              onBack={() => {
-                selectThread(undefined);
-              }}
-            />
-          )}
-        </div>
-      )}
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+              {threads.isPending ? (
+                <SkeletonRows rows={4} />
+              ) : threads.isError ? (
+                <ErrorView error={threads.error} title="Could not load threads" />
+              ) : threads.data.length === 0 ? (
+                <Empty
+                  title="No SMS conversations yet"
+                  description="Inbound texts to your numbers land here."
+                />
+              ) : (
+                threads.data.map((thread) => (
+                  <button
+                    key={thread.threadId}
+                    type="button"
+                    onClick={() => {
+                      selectThread(thread.threadId);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
+                      /* Calls' own suite hue for "this is the open thread" —
+                         the same module-identity fix already applied to
+                         Chat's active channel row and Docs' active page. */
+                      thread.threadId === threadId
+                        ? 'border-suite-calls/40 bg-suite-calls/10'
+                        : 'border-transparent hover:bg-surface-hover',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-xs text-ink">
+                          {String(thread.counterparty)}
+                        </span>
+                        {thread.unreadCount > 0 && (
+                          <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
+                            {thread.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      {thread.lastMessageAt !== null && (
+                        <p className="mt-0.5 text-[10px] text-ink-faint">
+                          {formatRelative(thread.lastMessageAt)}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {showDetail && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {composing ? (
+              <ComposeView
+                orgId={orgId}
+                onSent={(newThreadId) => {
+                  selectThread(newThreadId);
+                }}
+                onCancel={() => {
+                  setComposing(false);
+                }}
+              />
+            ) : threadId === undefined ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <p className="text-sm font-medium text-ink">No conversation open</p>
+                <p className="max-w-xs text-xs text-ink-muted">
+                  Pick a thread on the left, or start a new message.
+                </p>
+              </div>
+            ) : (
+              <ThreadView
+                key={threadId}
+                orgId={orgId}
+                threadId={threadId}
+                onBack={() => {
+                  selectThread(undefined);
+                }}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -207,7 +219,7 @@ function ComposeView({
 
   return (
     <form
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised"
+      className="flex min-h-0 flex-1 flex-col"
       onSubmit={(event) => {
         event.preventDefault();
         if (to.trim() !== '' && body.trim() !== '') send.mutate();
@@ -336,7 +348,7 @@ function ThreadView({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <button
           type="button"

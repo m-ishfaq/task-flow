@@ -131,17 +131,33 @@ export function TelephonyPage() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel orgId={orgId} />}
-        {tab === 'numbers' && capabilities?.readPhoneNumbers === true && (
-          <NumbersPanel orgId={orgId} />
-        )}
-        {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
-        {tab === 'recordings' && capabilities?.readRecordings === true && (
-          <RecordingsPanel orgId={orgId} />
-        )}
-        {tab === 'spend' && capabilities?.readPhoneNumbers === true && <SpendPanel orgId={orgId} />}
-      </div>
+      {/* Calls and Messages are panel-managed, full-height master-detail
+          views — the identical `PageContainer`-vs-panel distinction that
+          component's own header already draws for Chat/Board/Docs. Wrapping
+          them in this page's OWN `overflow-y-auto` (right, for the three
+          plain list tabs below) produced a real, reported bug: two
+          independently scrolling regions stacked on top of each other, the
+          page's own and the panel's own internal one. Each of these two
+          tabs supplies its own padding and its own single scroll region
+          instead. */}
+      {tab === 'calls' || tab === 'messages' ? (
+        <div className="min-h-0 flex-1">
+          {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel orgId={orgId} />}
+          {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {tab === 'numbers' && capabilities?.readPhoneNumbers === true && (
+            <NumbersPanel orgId={orgId} />
+          )}
+          {tab === 'recordings' && capabilities?.readRecordings === true && (
+            <RecordingsPanel orgId={orgId} />
+          )}
+          {tab === 'spend' && capabilities?.readPhoneNumbers === true && (
+            <SpendPanel orgId={orgId} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
