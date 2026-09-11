@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderKanban } from 'lucide-react';
+import { Check, FolderKanban } from 'lucide-react';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
+import { cn } from '../../lib/cn.js';
 import {
   Badge,
   Button,
@@ -19,7 +20,7 @@ import {
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { boardsQuery, projectsQuery } from './api.js';
-import { orgDetailQuery } from '../org/api.js';
+import { membersQuery, orgDetailQuery } from '../org/api.js';
 
 /**
  * Projects, and the boards inside them.
@@ -51,6 +52,14 @@ export function ProjectsPage() {
   const orgDetail = useQuery(orgDetailQuery(orgId));
   const canCreateProject = orgDetail.data?.capabilities.createProject ?? false;
   const [creating, setCreating] = useState(false);
+  /* Only needed for the getting-started panel's "invite a teammate" step
+     below, and only while that panel can even render (no live projects) —
+     `enabled` skips the request everywhere else, since every org past its
+     first project has no use for this list on this particular page. */
+  const members = useQuery({
+    ...membersQuery(orgId),
+    enabled: orgId !== '' && projects.data?.filter((p) => p.archivedAt === null).length === 0,
+  });
 
   if (projects.isPending) {
     return (
@@ -104,12 +113,21 @@ export function ProjectsPage() {
         />
       )}
 
-      {live.length === 0 && !showArchived ? (
-        <Empty
-          icon={<FolderKanban aria-hidden="true" className="size-5" strokeWidth={1.75} />}
-          title="No projects yet"
-          description="A project holds boards, labels and fields. Create one to get started."
-        />
+      {live.length === 0 && !showArchived && !creating ? (
+        canCreateProject ? (
+          <GettingStartedPanel
+            memberCount={members.data?.length}
+            onStart={() => {
+              setCreating(true);
+            }}
+          />
+        ) : (
+          <Empty
+            icon={<FolderKanban aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+            title="No projects yet"
+            description="A project holds boards, labels and fields. Create one to get started."
+          />
+        )
       ) : (
         <ul className="space-y-3">
           {shown.map((project) => (
@@ -137,6 +155,110 @@ export function ProjectsPage() {
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Design Bible §14's own "first run" thesis — a bare "No projects yet" empty
+ * state is the least useful thing a brand-new org's owner can see, since it
+ * names nothing about what to do next beyond the button already above it.
+ * The bible's own checklist has FOUR steps (org, first project, invite a
+ * teammate, add a card); this ships three. "Add a card to your board" is
+ * deliberately NOT included — there is no cheap, already-fetched, org-wide
+ * "does any card exist yet" signal to check it against (every existing
+ * card query is board- or project-scoped), and inventing a new cross-org
+ * existence check purely for one checklist row's checkmark is more surface
+ * than this pass should add for it. Fabricating a checkmark this app
+ * cannot actually verify would be worse than leaving the row out.
+ *
+ * "Let the assistant set it up," the mockup's second CTA, is ALSO
+ * deliberately not offered here: there is no `project_create` tool in the
+ * AI registry (`apps/api/src/ai/tools/index.ts`) — the assistant can create
+ * a CARD, a sprint, a Docs page, but not a project — so a button offering
+ * that would hand someone a dead end the model would have to decline. This
+ * is the identical "the model can only do what a tool in its list lets it
+ * do" discipline `assistant-page.tsx`'s own system-prompt rules already
+ * state; the UI-level analogue is not offering the button at all.
+ *
+ * Step 1 ("Create your organization") always renders done — reaching this
+ * page at all already proves it, the same reasoning the mockup's own
+ * screenshot gives ("you're the owner"). Step 3 ("Invite a teammate")
+ * reads real membership data (`membersQuery`, already used identically on
+ * `settings-page.tsx`): done once the org has more than the one member who
+ * created it. Its own CTA links to `/settings` rather than a specific tab —
+ * `SettingsPage`'s section switcher is local `useState`, not a URL param
+ * (that file's own header explains why), so there is no deep link into the
+ * Members section to offer.
+ */
+function GettingStartedPanel({
+  memberCount,
+  onStart,
+}: {
+  readonly memberCount: number | undefined;
+  readonly onStart: () => void;
+}) {
+  const invited = memberCount !== undefined && memberCount > 1;
+
+  return (
+    <div className="rounded-xl border border-line/50 bg-surface-raised p-5">
+      <h2 className="text-sm font-semibold text-ink">Getting started</h2>
+      <p className="mt-0.5 text-xs text-ink-muted">A few steps to get your team moving.</p>
+
+      <ul className="mt-4 divide-y divide-line/50">
+        <ChecklistRow label="Create your organization" done />
+        <ChecklistRow label="Create your first project" onAct={onStart} actLabel="Start" />
+        <ChecklistRow
+          label="Invite a teammate"
+          done={invited}
+          {...(invited ? {} : { to: '/settings' as const, actLabel: 'Settings' })}
+        />
+      </ul>
+    </div>
+  );
+}
+
+function ChecklistRow({
+  label,
+  done = false,
+  onAct,
+  to,
+  actLabel,
+}: {
+  readonly label: string;
+  readonly done?: boolean;
+  readonly onAct?: () => void;
+  readonly to?: '/settings';
+  readonly actLabel?: string;
+}) {
+  return (
+    <li className="flex items-center gap-2.5 py-2 first:pt-0 last:pb-0">
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex size-5 shrink-0 items-center justify-center rounded-full border',
+          done ? 'border-success bg-success/15 text-success' : 'border-line text-transparent',
+        )}
+      >
+        <Check className="size-3" strokeWidth={3} />
+      </span>
+      <span className={cn('flex-1 text-sm', done ? 'text-ink-faint line-through' : 'text-ink')}>
+        {label}
+      </span>
+      {!done && onAct !== undefined && (
+        <button
+          type="button"
+          onClick={onAct}
+          className="text-xs font-medium text-accent hover:underline"
+        >
+          {actLabel} →
+        </button>
+      )}
+      {!done && to !== undefined && (
+        <Link to={to} className="text-xs font-medium text-accent hover:underline">
+          {actLabel} →
+        </Link>
+      )}
+    </li>
   );
 }
 
