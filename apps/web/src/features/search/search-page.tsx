@@ -20,6 +20,7 @@ import { AlertCircle, Search, SearchX } from 'lucide-react';
 import { Button, Empty, PageContainer, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
+import { useMembers, type Person } from '../org/use-members.js';
 import { SEARCH_LIMIT, savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
 
@@ -81,9 +82,30 @@ const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }
   transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
 };
 
+/**
+ * The row's title text for a hit with no `title` of its own — every comment,
+ * message and transcript, none of which HAS one (`SearchHit.title` is
+ * genuinely `null` for these three types, not merely unloaded). This used to
+ * fall back to the hit's own raw `entityId` (`"Comment · 01a0780b-b6d4-…"`),
+ * a uuid with no meaning to anyone reading the results list — the type badge
+ * already says "Comment"; the id told a person nothing they could act on and
+ * nothing they were ever meant to see, unlike a card's own `WEB-142`
+ * reference, which IS meant to be read and typed. `personOf`'s own resolved
+ * name (the same lookup every avatar in this app already uses) is real
+ * information instead: who wrote it, matching what the snippet below already
+ * shows the CONTENT of.
+ */
+function titleFor(hit: SearchHit, personOf: (userId: string) => Person): string {
+  if (hit.title !== null) return hit.title;
+  if (hit.authorId !== null)
+    return `${TYPE_BADGE[hit.type].label} from ${personOf(hit.authorId).label}`;
+  return TYPE_BADGE[hit.type].label;
+}
+
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
   const orgId = useSession((state) => state.orgId) ?? '';
   const navigate = useNavigate();
+  const { personOf } = useMembers();
 
   /* Seeded ONCE from the URL so a shared `?q=` link opens with its query
      typed in. The URL is written back on debounce with `replace`, so it stays
@@ -344,7 +366,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                         {TYPE_BADGE[hit.type].label}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                        {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
+                        {titleFor(hit, personOf)}
                       </span>
                     </div>
 

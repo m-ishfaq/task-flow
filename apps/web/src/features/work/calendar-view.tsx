@@ -12,10 +12,11 @@ import {
   startOfWeek,
   subMonths,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarX2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { parseNullableInstant } from '@taskflow/client';
 import { cn } from '../../lib/cn.js';
+import { Empty } from '../../components/primitives.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
 import { PRIORITY_SWATCH } from './priority-colors.js';
 import type { CardSummary } from './api.js';
@@ -262,8 +263,12 @@ function AgendaList({
 
   if (rows.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm text-ink-faint">Nothing due this month.</p>
+      <div className="flex-1 p-6">
+        <Empty
+          icon={<CalendarX2 aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+          title="Nothing due this month"
+          description="No card in this board's filter has a due date in this window."
+        />
       </div>
     );
   }

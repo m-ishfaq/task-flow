@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Columns3, Plus } from 'lucide-react';
 import type { BoardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -131,6 +131,14 @@ export function AddListColumn({ orgId, boardId, canManage }: AddListProps) {
  * the existing lists at insert time, so three concurrent creates would race for
  * the same position and land in an arbitrary order — the one thing a Todo →
  * Doing → Done row must not do.
+ *
+ * The outer box matches `Empty`'s own visual language (dashed `rounded-xl`,
+ * the icon-in-a-ringed-disc, the same radial accent glow) rather than a plain
+ * bordered rectangle — this is the same "nothing here" moment as My Tasks' or
+ * a board's own List view, just with a real action attached instead of only
+ * text, so it is not `Empty` itself (whose `action` slot is sized for one
+ * button, not a create-list-column form that needs its own width and
+ * `Escape`-to-cancel state) but is styled to read as the same pattern.
  */
 export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
   const create = useCreateList(orgId, boardId);
@@ -150,11 +158,14 @@ export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
   };
 
   return (
-    <div className="flex h-full items-start p-3">
-      <div className="flex w-full max-w-md flex-col gap-3 rounded border border-dashed border-line p-6">
+    <div className="flex h-full items-start justify-center p-6">
+      <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,oklch(58%_0.17_285/7%),transparent_70%)] bg-surface-sunken/30 p-10 text-center">
+        <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
+          <Columns3 aria-hidden="true" className="size-5" strokeWidth={1.75} />
+        </span>
         <div>
-          <p className="text-sm font-medium text-ink">This board has no lists yet</p>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="text-[15px] font-semibold text-ink">This board has no lists yet</p>
+          <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-muted">
             {canManage
               ? 'Lists are the columns cards move between. Start with the usual three, or name your own.'
               : 'Lists are the columns cards move between. An admin or owner needs to set them up.'}
@@ -162,7 +173,7 @@ export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
         </div>
 
         {canManage && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
             <Button variant="primary" size="sm" disabled={busy} onClick={scaffold}>
               {busy ? 'Creating…' : 'Add Todo, Doing, Done'}
             </Button>
