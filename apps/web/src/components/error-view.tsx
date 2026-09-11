@@ -17,9 +17,22 @@ export interface ErrorViewProps {
   readonly className?: string;
   /** Shown above the message, e.g. "Could not save the card". */
   readonly title?: string;
+  /**
+   * Design Bible §17's own "Error · Retryable" state names the property
+   * this adds: a failed query — not a failed form submit — usually means
+   * "the request never reached the server," which a click can fix with no
+   * new input needed. Deliberately optional and additive rather than a
+   * redesign of this component's own layout: `ErrorView` renders at over a
+   * hundred call sites across this app, most of them a compact inline
+   * banner (a form's own validation error, a small dialog) where the
+   * mockup's larger, centered "state card" treatment would be actively
+   * wrong. A caller that HAS something to retry — almost always a React
+   * Query `refetch` — passes it; everyone else is unchanged, byte for byte.
+   */
+  readonly onRetry?: () => void;
 }
 
-export function ErrorView({ error, className, title }: ErrorViewProps) {
+export function ErrorView({ error, className, title, onRetry }: ErrorViewProps) {
   const api = apiErrorOf(error);
   const message = messageFor(error);
   const fields = fieldErrors(error);
@@ -43,6 +56,16 @@ export function ErrorView({ error, className, title }: ErrorViewProps) {
             </li>
           ))}
         </ul>
+      )}
+
+      {onRetry !== undefined && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-1.5 rounded-md border border-danger/30 bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-hover"
+        >
+          Try again
+        </button>
       )}
 
       {api !== null && (

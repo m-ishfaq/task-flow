@@ -187,7 +187,18 @@ export function BoardPage() {
   if (lists.isError || cards.isError) {
     return (
       <div className="mx-auto max-w-2xl p-6">
-        <ErrorView error={lists.error ?? cards.error} title="Could not load this board" />
+        <ErrorView
+          error={lists.error ?? cards.error}
+          title="Could not load this board"
+          onRetry={() => {
+            // Whichever query actually failed — the request almost never
+            // reached the server at all (Design Bible §17's own framing for
+            // this exact state), so a retry is just asking React Query to
+            // try both again rather than diagnosing which one to target.
+            if (lists.isError) void lists.refetch();
+            if (cards.isError) void cards.refetch();
+          }}
+        />
       </div>
     );
   }
