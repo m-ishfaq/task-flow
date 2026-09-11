@@ -452,28 +452,40 @@ export function AssistantPage() {
               <span className="text-xs text-ink-faint">Thinking…</span>
             </div>
           )}
-        </div>
 
-        {pendingToolCalls.length > 0 && (
-          <PendingActions
-            // Keyed by the batch's own call ids, not the array index or
-            // nothing at all — `pendingToolCalls` no longer becomes briefly
-            // empty between two batches (see `respondToPending`'s own
-            // comment), so this component no longer unmounts/remounts for
-            // free between them. Without a key tied to the batch's actual
-            // identity, its internal `decided`/`approved` state (keyed by
-            // call.id) would carry over into a NEW batch — usually harmless
-            // since a fresh completion mints fresh ids, but Gemini's own
-            // `AiToolCall.id`s are synthesized as `"<name>::<index>"`
-            // (`packages/ai/src/gemini.ts`), which two unrelated rounds can
-            // collide on, silently treating a brand-new pending call as
-            // already decided.
-            key={pendingToolCalls.map((call) => call.id).join('|')}
-            calls={pendingToolCalls}
-            disabled={busy}
-            onRespond={respondToPending}
-          />
-        )}
+          {/* Rendered INSIDE the scroll region, directly after the messages —
+              Design Bible §12's own `.pending` row sits inside the very
+              assistant bubble that proposed the action, not in a separate
+              box floating between the transcript and the composer. Nesting
+              it one level deeper than that (inside `MessageBubble` itself)
+              would need `pendingToolCalls` threaded per-message instead of
+              as one flat list — real, avoidable churn for what is, in
+              practice, always the tail end of the LAST assistant turn
+              (`assistant.ts`'s own contract: a deferred turn's toolCalls
+              are exactly the pending ones). Keeping it here, just moved
+              into the scrollable flow, gets the same visual proximity with
+              no state-shape change. */}
+          {pendingToolCalls.length > 0 && (
+            <PendingActions
+              // Keyed by the batch's own call ids, not the array index or
+              // nothing at all — `pendingToolCalls` no longer becomes briefly
+              // empty between two batches (see `respondToPending`'s own
+              // comment), so this component no longer unmounts/remounts for
+              // free between them. Without a key tied to the batch's actual
+              // identity, its internal `decided`/`approved` state (keyed by
+              // call.id) would carry over into a NEW batch — usually harmless
+              // since a fresh completion mints fresh ids, but Gemini's own
+              // `AiToolCall.id`s are synthesized as `"<name>::<index>"`
+              // (`packages/ai/src/gemini.ts`), which two unrelated rounds can
+              // collide on, silently treating a brand-new pending call as
+              // already decided.
+              key={pendingToolCalls.map((call) => call.id).join('|')}
+              calls={pendingToolCalls}
+              disabled={busy}
+              onRespond={respondToPending}
+            />
+          )}
+        </div>
 
         {turn.isError && <ErrorView error={turn.error} title="The assistant could not reply" />}
 
@@ -721,10 +733,34 @@ function MessageBubble({
 }
 
 /**
- * §4.2's confirm-before-execute, rendered. Each call is its own row with its
- * own Approve/Decline — not one blanket "Approve all" — because a batch of
- * proposed actions is exactly the shape a person should be able to say yes to
- * SOME of, per `assistant.ts`'s own per-id semantics.
+ * §4.2's confirm-before-execute, rendered.
+ *
+ * Design Bible §12's own `.pending` row is two small chips —
+ * "Approve · move to In Review" / "Decline" — sized like an ordinary inline
+ * control (30px tall, 8px radius), not a boxed warning panel with the raw
+ * tool name and JSON args spelled out. `describePendingAction` supplies the
+ * verb phrase after "Approve · ", the same hand-curated, deterministic
+ * mapping this file's own `CAPABILITIES` constant already is — real tool
+ * names read like an API reference, the wrong thing to put in front of a
+ * person deciding whether to click a button.
+ *
+ * The raw name/fields are NOT dropped, though — unlike the mockup's single-
+ * call example, this app's confirm step is the one place a person sees
+ * exactly what a cross-tenant write is about to do before it happens, and
+ * losing that for pure visual lightness would trade away real accountability
+ * for polish. They stay, as small dim text under the action row rather than
+ * a separate bulky block.
+ *
+ * The overwhelming common case is exactly ONE pending call (every write tool
+ * in this registry is confirmed individually; §4.1's own `card_create`
+ * bundling is the one exception, and even that is still ONE tool call) — for
+ * that case, clicking Approve or Decline resolves immediately, matching the
+ * mockup's actual one-click interaction. A batch of several DISTINCT write
+ * tools requested in the same round (real, if rarer — e.g. "create a card
+ * and post a message") still needs each call decided before the whole batch
+ * is sent in one `confirmedToolCallIds` list, per `assistant.ts`'s own
+ * per-id semantics — that per-call decide-then-continue flow is kept for
+ * that case, just restyled to match.
  */
 function PendingActions({
   calls,
@@ -739,29 +775,58 @@ function PendingActions({
   const [approved, setApproved] = useState<ReadonlySet<string>>(new Set());
 
   const decide = (id: string, approve: boolean) => {
+    if (calls.length === 1) {
+      onRespond(approve ? [id] : []);
+      return;
+    }
     setDecided((current) => new Set(current).add(id));
     if (approve) setApproved((current) => new Set(current).add(id));
   };
 
-  const allDecided = calls.every((call) => decided.has(call.id));
+  const allDecided = calls.length > 1 && calls.every((call) => decided.has(call.id));
 
   return (
-    <div className="space-y-2 rounded-xl border border-warning/40 bg-warning/10 p-3">
-      <p className="text-xs font-medium text-ink">The assistant wants to:</p>
-      <ul className="space-y-1.5">
-        {calls.map((call) => (
-          <li
-            key={call.id}
-            className="flex items-start justify-between gap-3 rounded-lg bg-surface px-2.5 py-2"
-          >
-            <div className="min-w-0">
-              <p className="font-mono text-xs font-medium text-ink">{call.name}</p>
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 size-6 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 max-w-[85%] space-y-2">
+        <ul className="space-y-2">
+          {calls.map((call) => (
+            <li key={call.id} className="space-y-1">
+              {decided.has(call.id) ? (
+                <span className="text-xs text-ink-faint">
+                  {approved.has(call.id) ? 'Approved' : 'Declined'} ·{' '}
+                  <span className="font-mono">{call.name}</span>
+                </span>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      decide(call.id, true);
+                    }}
+                    className="flex h-[30px] items-center rounded-lg bg-accent px-3.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    Approve · {describePendingAction(call)}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      decide(call.id, false);
+                    }}
+                    className="flex h-[30px] items-center rounded-lg border border-line bg-surface-raised px-3.5 text-[12.5px] font-medium text-ink-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    Decline
+                  </button>
+                </div>
+              )}
               {/* Each field its OWN small segment, not one run-on string —
                   `key: "value", key2: "value2"` reads as raw JSON; this
                   keeps the key dim and the value legible without the
                   quote-marks JSON.stringify adds around a plain string. */}
-              {Object.keys(call.input).length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+              {!decided.has(call.id) && Object.keys(call.input).length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                   {Object.entries(call.input).map(([key, value]) => (
                     <span key={key} className="text-[11px] text-ink-faint">
                       {key}: <span className="text-ink-muted">{formatCallValue(value)}</span>
@@ -769,52 +834,67 @@ function PendingActions({
                   ))}
                 </div>
               )}
-            </div>
-            {decided.has(call.id) ? (
-              <span className="shrink-0 text-xs text-ink-faint">
-                {approved.has(call.id) ? 'Approved' : 'Declined'}
-              </span>
-            ) : (
-              <span className="flex shrink-0 gap-1.5">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={disabled}
-                  onClick={() => {
-                    decide(call.id, true);
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={disabled}
-                  onClick={() => {
-                    decide(call.id, false);
-                  }}
-                >
-                  Decline
-                </Button>
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      {allDecided && (
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={disabled}
-          onClick={() => {
-            onRespond([...approved]);
-          }}
-        >
-          Continue
-        </Button>
-      )}
+            </li>
+          ))}
+        </ul>
+        {allDecided && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              onRespond([...approved]);
+            }}
+            className="flex h-[30px] items-center rounded-lg bg-accent px-3.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            Continue
+          </button>
+        )}
+      </div>
     </div>
   );
 }
+
+/**
+ * A short, hand-curated verb phrase per write tool — the same
+ * "hand-maintained, kept in sync by hand" trade this file's own
+ * `CAPABILITIES` constant already accepts, for the identical reason: a tool
+ * name is written for the model (`apps/api/src/ai/tools/index.ts`'s own
+ * registry keys), not for a person deciding whether to click Approve.
+ * Deliberately does not attempt to name the concrete target (e.g. the
+ * destination LIST's name for `card_move`) — the tool call carries only an
+ * id for that, with no name available on this page without a second lookup
+ * query the confirm step should not have to wait on. The card/PR reference
+ * that IS already on the call's own input (an id the model resolved earlier
+ * in the conversation) still shows below, in the dim field list.
+ */
+function describePendingAction(call: ToolCallWire): string {
+  const phrase = PENDING_ACTION_PHRASES[call.name];
+  return phrase ?? call.name.replaceAll('_', ' ');
+}
+
+const PENDING_ACTION_PHRASES: Readonly<Record<string, string>> = {
+  card_create: 'create this card',
+  card_update: 'update this card',
+  card_assign: 'assign this card',
+  card_unassign: 'unassign this card',
+  card_set_status: "change this card's status",
+  card_add_labels: 'add labels to this card',
+  card_remove_labels: 'remove labels from this card',
+  card_move: 'move this card',
+  card_add_comment: 'add a comment',
+  sprint_create: 'create this sprint',
+  sprint_add_cards: 'add cards to the sprint',
+  chat_post_message: 'post this message',
+  docs_create_page: 'create this page',
+  pr_post_comment: 'post this comment',
+  pr_comment_on_file: 'comment on this file',
+  pr_request_changes: 'request changes',
+  pr_approve: 'approve this PR',
+  pr_merge: 'merge this PR',
+  pr_close: 'close this PR',
+  card_link_pr: 'link this PR to the card',
+  create_branch_from_card: 'create a branch',
+};
 
 /** A plain string renders bare, without the quote marks `JSON.stringify`
     would wrap it in — a call.input value is overwhelmingly a plain string
