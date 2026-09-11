@@ -12,6 +12,7 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
   Share2,
 } from 'lucide-react';
@@ -27,12 +28,12 @@ import {
   Badge,
   Button,
   Empty,
-  Field,
   FocusOnMountInput,
   Skeleton,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
+import { useMembers } from '../org/use-members.js';
 import { DocsEditor, useDocsPresence, type DocsEditorHandle } from './editor/docs-editor.js';
 import { PublishPanel } from './publish-panel.js';
 import { VersionHistoryPanel } from './version-history.js';
@@ -367,6 +368,23 @@ function SpaceNode({
   const isArchived = space.archivedAt !== null;
   const live = (pages.data ?? []).filter((page) => page.archivedAt === null);
   const byParent = groupByParent(live);
+  /* Every `PageNode` used to mount already expanded (`useState(false)`),
+     regardless of depth or relevance — a real org's tree renders every
+     branch open at once, which is the "wall of truncated text" a real
+     screenshot showed: five or six levels deep, every sibling branch fanned
+     out, nothing to do with what's actually open. Two sources, combined,
+     decide what starts expanded instead: every ROOT page's own immediate
+     children (an ordinary two-level "Getting Started > Onboarding" list is
+     not the problem, and hiding it by default would be worse, not better),
+     plus the full ANCESTOR chain of the selected page, however deep it
+     goes (reusing `pageAncestors`, the same helper the page panel's own
+     breadcrumb walks) — so the active page's own location is always
+     visible. Everything else — a sibling branch nobody opened, a deep
+     chain with nothing selected in it — starts collapsed, matching how
+     Notion/Confluence's own tree behaves rather than a flat unroll. */
+  const rootPageIds = (byParent.get(null) ?? []).map((row) => row.pageId);
+  const ancestorIds = pageAncestors(live, selectedPage ?? '').map((row) => row.pageId);
+  const expandedPageIds = new Set([...rootPageIds, ...ancestorIds]);
 
   const restore = useMutation({
     mutationFn: () => archiveSpace({ spaceId, restore: true }),
@@ -476,6 +494,7 @@ function SpaceNode({
                   page={page}
                   byParent={byParent}
                   selectedPage={selectedPage}
+                  expandedPageIds={expandedPageIds}
                   onSelect={(pageId) => {
                     onSelectPage(spaceId, pageId);
                   }}
@@ -510,6 +529,7 @@ function PageNode({
   page,
   byParent,
   selectedPage,
+  expandedPageIds,
   onSelect,
   depth,
 }: {
@@ -518,11 +538,16 @@ function PageNode({
   readonly page: PageSummary;
   readonly byParent: ReadonlyMap<string | null, readonly PageSummary[]>;
   readonly selectedPage: PageId | undefined;
+  /** Ancestors of the selected page — see `SpaceNode`'s own comment. */
+  readonly expandedPageIds: ReadonlySet<string>;
   readonly onSelect: (pageId: PageId) => void;
   /** How far from a space root this page sits. Root pages are 0. */
   readonly depth: number;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  /* Seeded from the ancestor set once, on mount — not re-derived on every
+     render, so a person who manually opens a branch keeps it open even
+     after selecting a page elsewhere in the tree. */
+  const [collapsed, setCollapsed] = useState(() => !expandedPageIds.has(page.pageId));
   const [addingChild, setAddingChild] = useState(false);
   const pageId = page.pageId as PageId;
   const children = byParent.get(page.pageId) ?? [];
@@ -628,6 +653,7 @@ function PageNode({
                 page={child}
                 byParent={byParent}
                 selectedPage={selectedPage}
+                expandedPageIds={expandedPageIds}
                 onSelect={onSelect}
                 depth={depth + 1}
               />
@@ -833,10 +859,17 @@ function PagePanel({
 
   /* Design Bible §08's own "Edited N ago · 2 people here now" line — see
      `useDocsPresence`'s own header for why this hook, not a component, is
-     what moved here. `others` excludes the viewer themself, so the phrase
-     counts them back in: "2 people here now" reads as a true headcount of
-     the room, not "2 people besides you". */
+     what moved here. `others` excludes the viewer themself — real, but it
+     meant "who is live now" showed literally NOTHING for the overwhelming
+     common case (nobody else has the page open right now), which is exactly
+     the case where a person most needs to SEE the presence feature is
+     alive, not just take it on faith. The viewer's own avatar joins the
+     roster below so the presence UI is always demonstrably live, matching
+     the mockup's own always-visible avatar pair. */
   const others = useDocsPresence(editorHandle?.provider ?? null);
+  const viewerId = useSession((state) => state.userId);
+  const { personOf } = useMembers();
+  const presenceRoster = viewerId === null ? others : [personOf(viewerId), ...others];
 
   const rename = useMutation({
     mutationFn: (nextTitle: string) => renamePage({ pageId, title: nextTitle }),
@@ -889,6 +922,19 @@ function PagePanel({
 
   const isArchived = page.archivedAt !== null;
 
+  /* Click-to-edit, not a separate "Rename" form — the mockup's own ask is a
+     title that behaves like the rest of a Google Docs page: click it, type,
+     it's saved. Skips the mutation entirely for an unchanged or blanked-out
+     value rather than round-tripping a no-op write. */
+  const commitTitle = () => {
+    const trimmed = title.trim();
+    if (trimmed.length === 0 || trimmed === page.title) {
+      setEditingTitle(false);
+      return;
+    }
+    rename.mutate(trimmed);
+  };
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
@@ -934,109 +980,109 @@ function PagePanel({
       </nav>
 
       <div className="flex items-start justify-between gap-3">
-        {editingTitle ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (title.trim().length === 0) return;
-              rename.mutate(title);
-            }}
-            className="flex flex-1 items-end gap-2"
-          >
-            <div className="flex-1">
-              <Field label="Title" htmlFor="page-title">
-                <FocusOnMountInput
-                  id="page-title"
-                  value={title}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                  }}
-                />
-              </Field>
-            </div>
-            <Button type="submit" size="sm" variant="primary" disabled={rename.isPending}>
-              Save
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setEditingTitle(false);
+        <div className="min-w-0 flex-1">
+          {editingTitle ? (
+            <FocusOnMountInput
+              value={title}
+              onChange={(event) => {
+                setTitle(event.target.value);
               }}
+              onBlur={commitTitle}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitTitle();
+                } else if (event.key === 'Escape') {
+                  setEditingTitle(false);
+                }
+              }}
+              aria-label="Page title"
+              className="h-auto w-full border-0 bg-transparent px-0 font-display text-3xl font-bold tracking-tight text-ink focus:bg-transparent focus:ring-0"
+            />
+          ) : (
+            /* Click-to-edit, not a separate "Rename" form/button — the
+               Design Bible §08 mockup's own ask: a title that behaves like
+               the rest of a real document, editable in place. Still a real
+               `<h1>` (heading role, accessible name = the title) wrapped in
+               a plain clickable button rather than a `contenteditable`
+               element, so the actual EDIT still goes through the same
+               validated `renamePage` mutation every other rename in this
+               app uses — never raw DOM content trusted as the new title. */
+            <button
+              type="button"
+              onClick={() => {
+                setTitle(page.title);
+                setEditingTitle(true);
+              }}
+              /* Explicit, distinct from the plain title text: the tree
+                 panel's own row for this same page (`PageNode`) is ALSO a
+                 button whose accessible name is the bare title, and both
+                 can be on screen at once (the desktop layout keeps the tree
+                 mounted beside an open page) — an unlabelled button here
+                 would be indistinguishable from that unrelated control to
+                 anything that queries by accessible name, screen readers
+                 included. */
+              aria-label={`Rename "${page.title}"`}
+              className="group -mx-1.5 flex max-w-full items-center gap-2 rounded-lg px-1.5 py-0.5 text-left hover:bg-surface-hover"
             >
-              Cancel
-            </Button>
-          </form>
-        ) : (
-          <>
-            <div className="min-w-0">
-              {/* `text-3xl` — Design Bible §08's own page title is a real
-                  headline, not the `text-xl` (20px) form-field-adjacent size
-                  this used to share with every other small heading in the
-                  panel. */}
-              <h1 className="flex items-center gap-2 font-display text-3xl font-bold tracking-tight text-ink">
+              <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
                 {page.title}
                 {isArchived && <Badge tone="warning">archived</Badge>}
               </h1>
-              {/* "Edited N ago · 2 people here now" — the mockup's own
-                  metadata line, absent before this. `page.updatedAt` is
-                  bumped on rename/move/archive, never a body edit (the
-                  router's own output-schema comment explains why), so this
-                  is honest about what it can see rather than promising a
-                  live "last edited" instant no route here actually tracks. */}
-              <p className="mt-1 text-xs text-ink-faint">
-                Edited {formatRelative(page.updatedAt)}
-                {others.length > 0 && ` · ${String(others.length + 1)} people here now`}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              {/* The mockup's own top-right avatar pair — real faces, not a
-                  count, the same `AvatarStack` a board card's assignees
-                  already use. */}
-              {others.length > 0 && (
-                <span
-                  title={`${String(others.length)} other ${others.length === 1 ? 'viewer' : 'viewers'} here now: ${others.map((person) => person.label).join(', ')}`}
-                >
-                  <AvatarStack people={others} max={4} size="xs" />
-                </span>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setTitle(page.title);
-                  setEditingTitle(true);
-                }}
-              >
-                Rename
-              </Button>
-              {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
-                  per page — `page.capabilities.archive` is the server's own
-                  answer, not a rule re-derived here. Hidden entirely for a
-                  Member with no grant, rather than shown and left to answer
-                  FORBIDDEN (Phase 15 §1's sweep). */}
-              {page.capabilities.archive && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    // `restore: true` means "un-archive" — when the page is
-                    // NOT currently archived, this button archives it, so the
-                    // mutation's `restore` argument is `isArchived` itself,
-                    // not its negation. (Caught by an end-to-end smoke test:
-                    // the flipped version silently no-oped on every click,
-                    // since "restore" on a live page has nothing to undo.)
-                    archive.mutate(isArchived);
-                  }}
-                  disabled={archive.isPending}
-                >
-                  {isArchived ? 'Restore' : 'Archive'}
-                </Button>
-              )}
-            </div>
-          </>
-        )}
+              <Pencil
+                aria-hidden="true"
+                className="size-4 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+                strokeWidth={2}
+              />
+            </button>
+          )}
+          {/* "Edited N ago · N people here now" — the mockup's own metadata
+              line. `page.updatedAt` is bumped on rename/move/archive, never
+              a body edit (the router's own output-schema comment explains
+              why), so this is honest about what it can see rather than
+              promising a live "last edited" instant no route here actually
+              tracks. The headcount now always includes the viewer — see
+              `presenceRoster`'s own comment above. */}
+          <p className="mt-1 text-xs text-ink-faint">
+            Edited {formatRelative(page.updatedAt)}
+            {presenceRoster.length > 0 &&
+              ` · ${String(presenceRoster.length)} ${presenceRoster.length === 1 ? 'person' : 'people'} here now`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {/* The mockup's own top-right avatar pair — real faces, not a
+              count, the same `AvatarStack` a board card's assignees already
+              use. Includes the viewer's own avatar (`presenceRoster`), so
+              this is never empty for anyone with the page open. */}
+          {presenceRoster.length > 0 && (
+            <span title={`Here now: ${presenceRoster.map((person) => person.label).join(', ')}`}>
+              <AvatarStack people={presenceRoster} max={4} size="xs" />
+            </span>
+          )}
+          {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
+              per page — `page.capabilities.archive` is the server's own
+              answer, not a rule re-derived here. Hidden entirely for a
+              Member with no grant, rather than shown and left to answer
+              FORBIDDEN (Phase 15 §1's sweep). */}
+          {page.capabilities.archive && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                // `restore: true` means "un-archive" — when the page is
+                // NOT currently archived, this button archives it, so the
+                // mutation's `restore` argument is `isArchived` itself,
+                // not its negation. (Caught by an end-to-end smoke test:
+                // the flipped version silently no-oped on every click,
+                // since "restore" on a live page has nothing to undo.)
+                archive.mutate(isArchived);
+              }}
+              disabled={archive.isPending}
+            >
+              {isArchived ? 'Restore' : 'Archive'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <DocsEditor
@@ -1076,7 +1122,14 @@ function PagePanel({
           ))}
         </div>
 
-        <div className="rounded-xl border border-line bg-surface-raised p-4">
+        {/* `min-h-64` — a real report, not a hypothesis: switching between a
+            tall tab (Comments, once a thread or two exists) and a short one
+            (Publish, Backlinks on a page nothing links to) collapsed the
+            whole panel down to a couple of lines and back, which yanks
+            everything below it (nothing here today, but the panel itself)
+            and reads as the page reflowing under you. A floor, not a fixed
+            height — a genuinely long Comments thread still grows past it. */}
+        <div className="min-h-64 rounded-xl border border-line bg-surface-raised p-4">
           {tool === 'comments' && (
             <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
           )}

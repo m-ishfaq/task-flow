@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../../lib/query.js';
@@ -45,6 +45,7 @@ const listSpaces = vi.fn<() => Promise<SpaceListItem[]>>();
 const listPages = vi.fn<(input: { spaceId: string }) => Promise<PageListItem[]>>();
 const archivePageMutate =
   vi.fn<(input: { pageId: string; restore: boolean }) => Promise<unknown>>();
+const renamePageMutate = vi.fn<(input: { pageId: string; title: string }) => Promise<unknown>>();
 const navigate = vi.fn();
 
 let search: { space: string | undefined; page: string | undefined } = {
@@ -68,7 +69,7 @@ vi.mock('../../lib/trpc.js', () => ({
       pages: {
         list: { query: (input: { spaceId: string }) => listPages(input) },
         create: { mutate: vi.fn() },
-        update: { mutate: vi.fn() },
+        update: { mutate: (input: { pageId: string; title: string }) => renamePageMutate(input) },
         archive: {
           mutate: (input: { pageId: string; restore: boolean }) => archivePageMutate(input),
         },
@@ -179,6 +180,7 @@ beforeEach(() => {
   listSpaces.mockReset();
   listPages.mockReset();
   archivePageMutate.mockReset();
+  renamePageMutate.mockReset();
   navigate.mockReset();
   search = { space: undefined, page: undefined };
 
@@ -294,7 +296,16 @@ describe('the tree', () => {
     await waitFor(() => {
       expect(screen.getByText('Level 1')).toBeInTheDocument();
     });
-    // Ten levels deep, the innermost page still renders.
+    // A root page's own first level of children shows automatically
+    // (`Level 2`, a child of the root `Level 1`) — but nothing PAST that
+    // auto-expands with no page selected, per the tree's own "don't dump
+    // every branch open at once" fix. Reaching ten levels deep from here is
+    // a real click per level, the same as a person would actually do.
+    for (let level = 2; level <= 9; level += 1) {
+      // Sequential on purpose — each click must land before the next
+      // level's toggle exists in the DOM.
+      await user.click(screen.getByRole('button', { name: `Expand Level ${String(level)}` }));
+    }
     expect(screen.getByText('Level 10')).toBeInTheDocument();
 
     /* The indent is the SUM of every ancestor ul's margin + padding, so a
@@ -325,6 +336,68 @@ describe('the tree', () => {
       'margin-left': '0px',
       'padding-left': '0px',
     });
+  });
+});
+
+describe('editing the title inline', () => {
+  it('clicking the title, typing, and pressing Enter renames the page', async () => {
+    search = { space: SPACE_ID, page: ROOT_PAGE_ID };
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Rename "Getting Started"' }));
+
+    const input = screen.getByRole('textbox', { name: 'Page title' });
+    await user.clear(input);
+    await user.type(input, 'Getting Started, Fast{Enter}');
+
+    await waitFor(() => {
+      expect(renamePageMutate).toHaveBeenCalledWith({
+        pageId: ROOT_PAGE_ID,
+        title: 'Getting Started, Fast',
+      });
+    });
+  });
+
+  it('blurring without changing the title does not call the mutation', async () => {
+    search = { space: SPACE_ID, page: ROOT_PAGE_ID };
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Rename "Getting Started"' }));
+    // Blur without typing anything — the same value round-tripped.
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Page title' }));
+
+    // Back to the plain, clickable title — never a pointless write.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
+    });
+    expect(renamePageMutate).not.toHaveBeenCalled();
+  });
+
+  it('pressing Escape discards the edit', async () => {
+    search = { space: SPACE_ID, page: ROOT_PAGE_ID };
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Rename "Getting Started"' }));
+    await user.type(screen.getByRole('textbox', { name: 'Page title' }), ' — draft');
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
+    expect(renamePageMutate).not.toHaveBeenCalled();
   });
 });
 
@@ -395,10 +468,11 @@ describe('archiving and restoring a page', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Getting Started' })).toBeInTheDocument();
     });
-    // Rename stays visible — `page:update` is a plain-Member role permission —
-    // only the archive/restore control, gated on the tuple-shareable
-    // `page:delete`, is withheld.
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    // Renaming stays available — `page:update` is a plain-Member role
+    // permission — only the archive/restore control, gated on the
+    // tuple-shareable `page:delete`, is withheld. The title itself is the
+    // rename control now (click-to-edit, not a separate "Rename" button).
+    expect(screen.getByRole('button', { name: 'Rename "Getting Started"' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
   });
 });
