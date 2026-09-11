@@ -432,10 +432,12 @@ export function AvatarStack({
   people,
   max = 3,
   size = 'xs',
+  className,
 }: {
   readonly people: readonly { userId: string; label: string }[];
   readonly max?: number;
   readonly size?: 'xs' | 'sm';
+  readonly className?: string;
 }) {
   if (people.length === 0) return null;
 
@@ -443,7 +445,7 @@ export function AvatarStack({
   const hidden = people.slice(max);
 
   return (
-    <span className="flex items-center -space-x-1">
+    <span className={cn('flex items-center -space-x-1', className)}>
       {shown.map((person) => (
         <Avatar key={person.userId} userId={person.userId} label={person.label} size={size} />
       ))}

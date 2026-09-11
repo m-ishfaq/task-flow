@@ -356,7 +356,17 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   }).data?.capabilities.viewAuditLog;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
+    /* `shadow-xs`, on top of the border this header always had — a single
+       1px hairline reads as a boundary on paper but is nearly invisible
+       against a large flat surface color scheme like this one; the shell's
+       own sidebar and card surfaces all lean on a border ALONE only where
+       they sit directly against the page background, never where they are
+       the one fixed element every scrollable region passes underneath. A
+       barely-there shadow is what actually separates "the frame" from "the
+       content currently scrolled up under it" without adding any real
+       visual weight — the same reasoning a sticky table header gets a
+       shadow the rows beneath it don't. */
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4 shadow-xs">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
           permanent trigger of its own — this is the only way to open it.
           `showMenuButton` is false in the org-picker's pre-org state, where
@@ -366,7 +376,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           type="button"
           onClick={toggleMobileNav}
           aria-label="Open navigation"
-          className="-ml-1 shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
+          className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
         >
           <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
         </button>
@@ -382,9 +392,18 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           the smallest phone this has been checked against is a 320px-wide
           viewport, where these four items plus the hamburger button and a
           short breadcrumb still fit without scrolling; scrolling is the
-          fallback for narrower or zoomed cases, not the primary path. */}
+          fallback for narrower or zoomed cases, not the primary path.
+
+          Split into two groups with a hairline divider between them —
+          previously one undifferentiated row of four icons with no visual
+          logic to their order. The first group is things that change
+          without you asking (a new mention, a reply); the second is places
+          you go on purpose (Settings, the permission debugger). Grouping by
+          what they're FOR, not just spacing them evenly, is what turns "four
+          icons in a row" into something a person can scan rather than read
+          one at a time. */}
       <nav
-        className="ml-auto flex flex-nowrap items-center gap-1.5 overflow-x-auto"
+        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
         aria-label="Settings"
       >
         {/* Mentions and direct messages. In the shell rather than on the chat
@@ -402,10 +421,13 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
+
+        <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-line/60" />
+
         <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
         {canDebugPermissions === true && (
           <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
@@ -594,7 +616,13 @@ function NavLink({
       to={to}
       aria-label={label}
       title={label}
-      className="shrink-0 rounded-lg p-2 text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+      /* `flex size-8 items-center justify-center`, matching every other
+         icon button in this header (`NotificationBell`'s own trigger,
+         the shortcuts button below) — this one used to be `p-2` (a
+         36px footprint) next to siblings at `p-1.5` (32px) and a fixed
+         `h-8 w-8`, three slightly different sizes in one row that read
+         as uneven rather than as one deliberate set of controls. */
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
       activeProps={{ className: 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent' }}
     >
       <Icon aria-hidden="true" className="size-4" strokeWidth={2} />

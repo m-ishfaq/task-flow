@@ -146,73 +146,94 @@ export function ListView({
                           onClick={() => {
                             onOpenCard(card.cardId);
                           }}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover/60"
+                          /* One row on `md:`+ (the original layout, unchanged
+                             there), two on a narrow screen — packing the
+                             reference, a title `flex-1` had to fight five
+                             other siblings for, and every metadata pill onto
+                             one unwrapped line left the title truncated to a
+                             handful of characters ("Cac…", "Add attachm…")
+                             the moment the row was narrower than a tablet.
+                             Below `md:`, the reference+title pair gets its
+                             own full-width line and the pills wrap onto a
+                             second rather than forcing a horizontal
+                             scrollbar — `flex-wrap` costs nothing on a wide
+                             screen where everything already fits on one
+                             line, since nothing there is close to wrapping. */
+                          className="flex w-full flex-col gap-1.5 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover/60 md:flex-row md:items-center md:gap-3"
                         >
-                          <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
-                            {card.reference}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
-                            {card.title}
-                          </span>
+                          <div className="flex min-w-0 items-center gap-2 md:flex-1">
+                            <span className="shrink-0 rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+                              {card.reference}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                              {card.title}
+                            </span>
+                          </div>
 
-                          {card.priority !== null && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                                'bg-surface-hover text-ink-muted',
-                              )}
-                            >
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {card.priority !== null && (
                               <span
-                                aria-hidden="true"
                                 className={cn(
-                                  'size-1.5 rounded-full',
-                                  PRIORITY_SWATCH[card.priority],
+                                  'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                  'bg-surface-hover text-ink-muted',
                                 )}
-                              />
-                              {PRIORITY_LABEL[card.priority]}
-                            </span>
-                          )}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'size-1.5 rounded-full',
+                                    PRIORITY_SWATCH[card.priority],
+                                  )}
+                                />
+                                {PRIORITY_LABEL[card.priority]}
+                              </span>
+                            )}
 
-                          {due !== null && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                                due.overdue
-                                  ? 'bg-danger/15 text-danger'
-                                  : 'bg-surface-hover text-ink-muted',
-                              )}
-                            >
-                              <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
-                              {due.label}
-                            </span>
-                          )}
+                            {due !== null && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                  due.overdue
+                                    ? 'bg-danger/15 text-danger'
+                                    : 'bg-surface-hover text-ink-muted',
+                                )}
+                              >
+                                <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
+                                {due.label}
+                              </span>
+                            )}
 
-                          {card.checklistTotal > 0 && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                                card.checklistDone === card.checklistTotal
-                                  ? 'bg-success/10 text-success'
-                                  : 'bg-surface-hover text-ink-muted',
-                              )}
-                            >
-                              <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
-                              {card.checklistDone}/{card.checklistTotal}
-                            </span>
-                          )}
+                            {card.checklistTotal > 0 && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                  card.checklistDone === card.checklistTotal
+                                    ? 'bg-success/10 text-success'
+                                    : 'bg-surface-hover text-ink-muted',
+                                )}
+                              >
+                                <SquareCheck
+                                  aria-hidden="true"
+                                  className="size-3"
+                                  strokeWidth={2}
+                                />
+                                {card.checklistDone}/{card.checklistTotal}
+                              </span>
+                            )}
 
-                          {card.commentCount > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted">
-                              <MessageSquare
-                                aria-hidden="true"
-                                className="size-3"
-                                strokeWidth={2}
-                              />
-                              {card.commentCount}
-                            </span>
-                          )}
+                            {card.commentCount > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+                                <MessageSquare
+                                  aria-hidden="true"
+                                  className="size-3"
+                                  strokeWidth={2}
+                                />
+                                {card.commentCount}
+                              </span>
+                            )}
 
-                          <AvatarStack people={assignees} />
+                            <AvatarStack people={assignees} className="ml-auto md:ml-0" />
+                          </div>
                         </button>
                       </li>
                     );
