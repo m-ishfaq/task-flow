@@ -6,9 +6,14 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  History,
+  Link2,
+  LayoutTemplate,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Share2,
 } from 'lucide-react';
 import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -127,6 +132,12 @@ export function DocsPage() {
             onBack={() => {
               void navigate({ to: '/docs', search: { space: search.space, page: undefined } });
             }}
+            onNavigatePage={(pageId) => {
+              // Re-checked rather than asserted: `search.space` narrows fine
+              // as a direct prop value above, but not through this closure.
+              if (search.space === undefined) return;
+              selectPage(search.space, pageId);
+            }}
           />
         )}
       </div>
@@ -186,7 +197,14 @@ function SpaceTreePanel({
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line/50 px-2">
-        {spacesOpen && <h2 className="truncate px-1 text-sm font-semibold text-ink">Spaces</h2>}
+        {/* Same uppercase, tracked-out eyebrow `sidebar.tsx`'s own section
+            labels already use — the Design Bible's own tree header reads as
+            a wiki title, not a plain sub-heading. */}
+        {spacesOpen && (
+          <h2 className="truncate px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+            Spaces
+          </h2>
+        )}
         <div className={cn('flex items-center gap-1', spacesOpen ? 'ml-auto' : 'mx-auto')}>
           {spacesOpen && canCreateSpace && (
             <Button
@@ -370,7 +388,7 @@ function SpaceNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${space.name}` : `Collapse ${space.name}`}
-          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
         >
           {collapsed ? (
             <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
@@ -385,7 +403,7 @@ function SpaceNode({
             setCollapsed((value) => !value);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs font-medium',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs font-medium',
             isArchived ? 'text-ink-faint' : 'text-ink-muted hover:text-ink',
           )}
           title={space.name}
@@ -535,7 +553,7 @@ function PageNode({
             }}
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Expand ${page.title}` : `Collapse ${page.title}`}
-            className="flex w-4 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+            className="flex w-4 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
           >
             {collapsed ? (
               <ChevronRight aria-hidden="true" className="size-3" strokeWidth={2.25} />
@@ -553,7 +571,7 @@ function PageNode({
             onSelect(pageId);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs',
             selected ? 'font-medium text-suite-docs' : 'text-ink-muted hover:text-ink',
           )}
           title={page.title}
@@ -729,25 +747,75 @@ function groupByParent(
  * Page panel
  * -------------------------------------------------------------------------- */
 
+/**
+ * Every ancestor of `pageId`, ROOT first — walked client-side over the same
+ * flat, already-fetched `pages` list `groupByParent` builds the tree from,
+ * rather than a second request. This is the Design Bible §08 mockup's own
+ * "breadcrumbs" ask: a page nested three deep should say where it lives
+ * ("Design system › Foundations"), not just its own title. Deliberately
+ * does not include `pageId` itself — its title is already the big `h1`
+ * right below, so repeating it as the trail's own last crumb would be the
+ * exact "duplicate heading" shape this codebase already fixed once for the
+ * app shell (`shell.tsx`'s `breadcrumbsFor`).
+ */
+function pageAncestors(pages: readonly PageSummary[], pageId: string): readonly PageSummary[] {
+  const byId = new Map(pages.map((page) => [page.pageId, page] as const));
+  const chain: PageSummary[] = [];
+  let current = byId.get(pageId);
+  while (current !== undefined && current.parentPageId !== null) {
+    const parent = byId.get(current.parentPageId);
+    if (parent === undefined) break;
+    chain.unshift(parent);
+    current = parent;
+  }
+  return chain;
+}
+
+/**
+ * The utility strip below the document body — Publish/Version history/
+ * Comments & suggestions/Templates/Backlinks used to render as five
+ * always-visible, always-fetching panels stacked with `space-y-6`, which is
+ * the literal "rest is beneath that is very simple" complaint: a page of
+ * real prose followed by five boxy mini-sections nobody asked to see yet.
+ * One tab active at a time — matching `platform-admin-page.tsx`'s own
+ * `role="tablist"` icon-strip shape — means only the tab someone actually
+ * opens ever fires its query, the same "don't fetch what nobody asked to
+ * see" instinct behind Comments' own inner Comments/Suggestions split.
+ */
+const DOC_TOOLS = [
+  ['comments', 'Comments', MessageSquare],
+  ['history', 'Version history', History],
+  ['publish', 'Publish', Share2],
+  ['templates', 'Templates', LayoutTemplate],
+  ['backlinks', 'What links here', Link2],
+] as const;
+
+type DocTool = (typeof DOC_TOOLS)[number][0];
+
 function PagePanel({
   orgId,
   spaceId,
   pageId,
   onBack,
+  onNavigatePage,
 }: {
   readonly orgId: string;
   readonly spaceId: SpaceId;
   readonly pageId: PageId;
   /** Below `md`, returns to the space tree — see `DocsPage`'s comment. */
   readonly onBack: () => void;
+  /** The breadcrumb trail's own navigation — a click on the space name or an ancestor page. `undefined` means "back to the space, no page open". */
+  readonly onNavigatePage: (pageId: PageId | undefined) => void;
 }) {
   const navigate = useNavigate();
   const pages = useQuery(pagesQuery(orgId, spaceId));
+  const spaces = useQuery(spacesQuery(orgId));
   const queryClient = useQueryClient();
   const toast = useToast();
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState('');
   const [editorHandle, setEditorHandle] = useState<DocsEditorHandle | null>(null);
+  const [tool, setTool] = useState<DocTool>('comments');
   /* Bumped after a version restore to force `DocsEditor` to remount with a
      fresh Hocuspocus connection — `version-history.tsx`'s own header on why
      a restore is otherwise invisible until the next reload. */
@@ -760,6 +828,8 @@ function PagePanel({
   }, []);
 
   const page = (pages.data ?? []).find((row) => row.pageId === pageId);
+  const spaceName = spaces.data?.find((row) => row.spaceId === spaceId)?.name ?? 'Space';
+  const ancestors = pageAncestors(pages.data ?? [], pageId);
 
   /* Design Bible §08's own "Edited N ago · 2 people here now" line — see
      `useDocsPresence`'s own header for why this hook, not a component, is
@@ -830,6 +900,38 @@ function PagePanel({
       >
         <span aria-hidden="true">←</span> Spaces
       </button>
+
+      {/* The mockup's own breadcrumb — "Design system › Foundations" above
+          the title, at every viewport (unlike the mobile-only ← Spaces link
+          just above). The space name is always known once `spaces` has
+          loaded; ancestors are only there for a page nested under another
+          page. */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
+        <button
+          type="button"
+          onClick={() => {
+            onNavigatePage(undefined);
+          }}
+          className="-mx-1 truncate rounded px-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+        >
+          {spaceName}
+        </button>
+        {ancestors.map((ancestor) => (
+          <span key={ancestor.pageId} className="flex min-w-0 shrink items-center gap-1">
+            <ChevronRight aria-hidden="true" className="size-3 shrink-0 text-ink-faint" />
+            <button
+              type="button"
+              onClick={() => {
+                onNavigatePage(ancestor.pageId as PageId);
+              }}
+              title={ancestor.title}
+              className="-mx-1 truncate rounded px-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+            >
+              {ancestor.title}
+            </button>
+          </span>
+        ))}
+      </nav>
 
       <div className="flex items-start justify-between gap-3">
         {editingTitle ? (
@@ -945,33 +1047,72 @@ function PagePanel({
         onReady={handleEditorReady}
       />
 
-      <div className="space-y-6 border-t border-line pt-4">
-        <PublishPanel
-          orgId={orgId}
-          spaceId={spaceId}
-          pageId={pageId}
-          publishedAt={page.publishedAt}
-        />
+      {/* One tool at a time, not five stacked panels — see `DOC_TOOLS`'s own
+          header for why. */}
+      <div className="space-y-3 border-t border-line pt-4">
+        <div role="tablist" aria-label="Page tools" className="flex gap-1 overflow-x-auto">
+          {DOC_TOOLS.map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tool === value}
+              onClick={() => {
+                setTool(value);
+              }}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                /* The Docs suite hue, not a generic accent — the same fix
+                   already applied to a selected page in the tree and Chat's
+                   own active channel row. */
+                tool === value
+                  ? 'bg-suite-docs/10 text-suite-docs'
+                  : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
+              {label}
+            </button>
+          ))}
+        </div>
 
-        <VersionHistoryPanel
-          orgId={orgId}
-          pageId={pageId}
-          onRestored={() => {
-            setEditorGeneration((generation) => generation + 1);
-          }}
-        />
-
-        <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
-
-        <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
-
-        <BacklinksPanel
-          orgId={orgId}
-          pageId={pageId}
-          onNavigate={(targetSpaceId, targetPageId) => {
-            void navigate({ to: '/docs', search: { space: targetSpaceId, page: targetPageId } });
-          }}
-        />
+        <div className="rounded-xl border border-line bg-surface-raised p-4">
+          {tool === 'comments' && (
+            <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
+          )}
+          {tool === 'history' && (
+            <VersionHistoryPanel
+              orgId={orgId}
+              pageId={pageId}
+              onRestored={() => {
+                setEditorGeneration((generation) => generation + 1);
+              }}
+            />
+          )}
+          {tool === 'publish' && (
+            <PublishPanel
+              orgId={orgId}
+              spaceId={spaceId}
+              pageId={pageId}
+              publishedAt={page.publishedAt}
+            />
+          )}
+          {tool === 'templates' && (
+            <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
+          )}
+          {tool === 'backlinks' && (
+            <BacklinksPanel
+              orgId={orgId}
+              pageId={pageId}
+              onNavigate={(targetSpaceId, targetPageId) => {
+                void navigate({
+                  to: '/docs',
+                  search: { space: targetSpaceId, page: targetPageId },
+                });
+              }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

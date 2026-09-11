@@ -29,8 +29,8 @@ export function BacklinksPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[13px] font-semibold text-ink">What links here</h3>
-
+      {/* No own heading — the tab strip above already labels this "What
+          links here"; see `docs-page.tsx`'s `DOC_TOOLS`. */}
       {backlinks.isPending ? (
         <div aria-busy="true" className="space-y-1.5">
           <Skeleton className="h-5 w-3/4" />

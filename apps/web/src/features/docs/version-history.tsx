@@ -84,8 +84,9 @@ export function VersionHistoryPanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-ink">Version history</h3>
+      {/* No own heading — the tab strip above already labels this "Version
+          history"; see `docs-page.tsx`'s `DOC_TOOLS`. */}
+      <div className="flex justify-end">
         <Button
           size="sm"
           variant="ghost"

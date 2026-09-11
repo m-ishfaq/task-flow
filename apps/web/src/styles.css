@@ -613,6 +613,53 @@
   }
 
   /**
+   * A DOCUMENT reading of `.rich-text`, not a second stylesheet — Docs'
+   * own page body (`docs-editor.tsx`) applies this alongside `.rich-text`,
+   * never instead of it, so every node-type rule above still applies; only
+   * the type scale and spacing widen. Chat messages, card descriptions and
+   * comments stay on the compact `.rich-text` alone — a chat bubble reading
+   * at document type scale would be absurd, and this file's own base rules
+   * are tuned for exactly that compact context. Docs' own complaint was the
+   * opposite: a page of prose at bubble/comment scale reads as a form field,
+   * not a document, which is the literal "simple editor box" gap the
+   * Design Bible's §08 mockup calls out — Google Docs-style body copy is
+   * bigger and more spaced out than a comment ever needs to be.
+   */
+  .rich-text-doc {
+    font-size: 1.0625rem;
+    line-height: 1.75;
+  }
+  .rich-text-doc h1,
+  .rich-text-doc h2,
+  .rich-text-doc h3 {
+    margin-block: 1.75rem 0.75rem;
+  }
+  .rich-text-doc h1 {
+    font-size: 1.875rem;
+  }
+  .rich-text-doc h2 {
+    font-size: 1.375rem;
+  }
+  .rich-text-doc h3 {
+    font-size: 1.1875rem;
+  }
+  .rich-text-doc p {
+    margin-block: 0.75rem;
+  }
+  .rich-text-doc ul,
+  .rich-text-doc ol {
+    margin-block: 0.75rem;
+  }
+  .rich-text-doc pre {
+    /* A code block is the one node type that still needs its own visible
+       edge once the page around it loses its outer box (`docs-editor.tsx`'s
+       header) — otherwise it reads as a plain grey paragraph, not a block
+       of code. */
+    border: 1px solid var(--color-line);
+    padding: 1rem;
+  }
+
+  /**
    * A data table — the org directory, the user directory, the audit log.
    *
    * The redesign pass's standardization of the three hand-rolled `<table>`s

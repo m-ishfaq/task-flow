@@ -6,6 +6,19 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
+  ListTodo,
+  Quote,
+  Strikethrough,
+  Underline,
+} from 'lucide-react';
 import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
@@ -206,7 +219,11 @@ function DocsEditorReady({
     ],
     editorProps: {
       attributes: {
-        class: cn('rich-text focus:outline-none min-h-40 px-3 py-2'),
+        /* `rich-text-doc` alongside `rich-text` — a genuine document reading
+           (bigger type, more line-height and block spacing), not the compact
+           scale a chat bubble or card description needs. See that class's
+           own header in styles.css. */
+        class: cn('rich-text rich-text-doc min-h-[60vh] px-1 py-6 focus:outline-none sm:px-2'),
         'data-placeholder': 'Write something…',
       },
     },
@@ -232,8 +249,15 @@ function DocsEditorReady({
   }, [editor, provider, onReady]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface-sunken">
-      <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-1.5 pr-2">
+    /* No outer box (no border, no `bg-surface-sunken`) — the Design Bible's
+       §08 mockup has the document flow directly on the page background, not
+       sit inside a bordered "editor" rectangle. The toolbar is the one thing
+       that still needs a visible edge to separate it from the prose below,
+       so it alone keeps a hairline `border-b`; `sticky` so it behaves like a
+       real document app's formatting bar while the page (not this component
+       — `docs-page.tsx`'s own `overflow-y-auto` pane) scrolls underneath it. */
+    <div>
+      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-line bg-surface/95 px-1 py-1.5 backdrop-blur sm:-mx-2 sm:px-2">
         <Toolbar editor={editor} />
         {/* Presence moved to the page header (`docs-page.tsx`'s `PagePanel`,
             via `useDocsPresence`) — see that hook's own comment for why it
@@ -246,79 +270,82 @@ function DocsEditorReady({
 }
 
 function Toolbar({ editor }: { readonly editor: Editor }) {
-  const item = (label: string, active: boolean, run: () => void, title: string) => (
+  const item = (Icon: typeof Bold, active: boolean, run: () => void, title: string) => (
     <Button
-      key={label}
+      key={title}
       size="sm"
       variant="ghost"
       title={title}
+      aria-label={title}
       aria-pressed={active}
-      className={cn('h-6 px-1.5', active && 'bg-surface-hover text-ink')}
+      className={cn('h-7 w-7 px-0', active && 'bg-surface-hover text-ink')}
       onClick={run}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
     </Button>
   );
 
   return (
     <div className="flex flex-wrap items-center gap-0.5">
-      {item('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
+      {item(Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
       {item(
-        'I',
+        Italic,
         editor.isActive('italic'),
         () => editor.chain().focus().toggleItalic().run(),
         'Italic',
       )}
       {item(
-        'U',
+        Underline,
         editor.isActive('underline'),
         () => editor.chain().focus().toggleUnderline().run(),
         'Underline',
       )}
       {item(
-        'S',
+        Strikethrough,
         editor.isActive('strike'),
         () => editor.chain().focus().toggleStrike().run(),
         'Strikethrough',
       )}
       {item(
-        '</>',
+        Code2,
         editor.isActive('code'),
         () => editor.chain().focus().toggleCode().run(),
         'Inline code',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        'H1',
+        Heading1,
         editor.isActive('heading', { level: 1 }),
         () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
         'Heading 1',
       )}
       {item(
-        'H2',
+        Heading2,
         editor.isActive('heading', { level: 2 }),
         () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         'Heading 2',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        '•',
+        List,
         editor.isActive('bulletList'),
         () => editor.chain().focus().toggleBulletList().run(),
         'Bullet list',
       )}
       {item(
-        '1.',
+        ListOrdered,
         editor.isActive('orderedList'),
         () => editor.chain().focus().toggleOrderedList().run(),
         'Numbered list',
       )}
       {item(
-        '☑',
+        ListTodo,
         editor.isActive('taskList'),
         () => editor.chain().focus().toggleTaskList().run(),
         'Task list',
       )}
       {item(
-        '❝',
+        Quote,
         editor.isActive('blockquote'),
         () => editor.chain().focus().toggleBlockquote().run(),
         'Quote',

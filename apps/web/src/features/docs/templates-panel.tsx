@@ -76,8 +76,8 @@ export function TemplatesPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[13px] font-semibold text-ink">Templates</h3>
-
+      {/* No own heading — the tab strip above already labels this
+          "Templates"; see `docs-page.tsx`'s `DOC_TOOLS`. */}
       {saving ? (
         <form
           onSubmit={(event) => {
