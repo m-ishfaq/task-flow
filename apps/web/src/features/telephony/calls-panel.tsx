@@ -11,6 +11,7 @@ import {
   PhoneMissed,
   PhoneOutgoing,
   Plus,
+  User,
 } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -94,6 +95,26 @@ const MISSED_STATUSES = new Set(['busy', 'no_answer', 'failed', 'canceled']);
  * export for. */
 function digitsOf(value: string): string {
   return value.replace(/\D/g, '');
+}
+
+/**
+ * A raw E.164 string, punctuated the way a real phone's call log shows it —
+ * "(415) 555-0142" rather than "+14155550142" — for the two shapes this
+ * app's own seed numbers (and the overwhelming majority of real ones) take:
+ * NANP (`+1` — US/Canada) and the UK. Anything else is returned unchanged
+ * rather than guessed at with a wrong grouping; there is no phone-number
+ * library in this project, and adding one for cosmetic grouping alone is a
+ * bigger dependency than this polish is worth.
+ */
+function formatPhoneDisplay(e164: string): string {
+  const digits = digitsOf(e164);
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('44')) {
+    return `+44 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8, 12)}`;
+  }
+  return e164;
 }
 
 /**
@@ -305,6 +326,14 @@ function DetailPlaceholder({
   );
 }
 
+/**
+ * The small call-direction arrow every real phone's call log shows inline,
+ * next to the name — not a second icon competing with the avatar for
+ * attention. Red for a missed call is the one color that carries meaning on
+ * its own (iOS colors the whole row's name red for exactly this reason);
+ * inbound/outbound otherwise read by their arrow direction alone, the same
+ * way a phone's own log expects to be scanned.
+ */
 function DirectionGlyph({
   direction,
   missed,
@@ -314,37 +343,34 @@ function DirectionGlyph({
 }) {
   const Icon = missed ? PhoneMissed : direction === 'outbound' ? PhoneOutgoing : PhoneIncoming;
   return (
-    <span
+    <Icon
       aria-hidden="true"
       className={cn(
-        'flex size-6 shrink-0 items-center justify-center rounded-md',
-        missed
-          ? 'bg-danger/10 text-danger'
-          : direction === 'outbound'
-            ? 'bg-accent/10 text-accent'
-            : 'bg-success/10 text-success',
+        'size-3 shrink-0',
+        missed ? 'text-danger' : direction === 'outbound' ? 'text-accent' : 'text-success',
       )}
-    >
-      <Icon className="size-3.5" strokeWidth={2.25} />
-    </span>
+      strokeWidth={2.5}
+    />
   );
 }
 
 /**
  * A colleague gets the app's real hashed-hue avatar disc; a number that
- * matches nobody gets a plain neutral phone glyph instead — never that
- * `Avatar`'s own initials logic run against raw digits. `initialsOf` reads
- * an email-shaped label ("first.last@…" → "FL"); fed a bare E.164 string
- * like `+14155550142` it produces the number's own leading digits ("14"),
- * which is not an identity, just noise that reads as a rendering bug.
+ * matches nobody gets a plain "unsaved contact" silhouette instead — the
+ * identical placeholder a real phone shows for a number with no photo, and
+ * never `Avatar`'s own initials logic run against raw digits. `initialsOf`
+ * reads an email-shaped label ("first.last@…" → "FL"); fed a bare E.164
+ * string like `+14155550142` it produced the number's own leading digits
+ * ("14"), which is not an identity, just noise. A generic phone glyph here
+ * was the first fix and was still wrong: it duplicated the row's own
+ * direction arrow right next to it, reading as two unrelated "this is a
+ * phone call" icons rather than one avatar and one indicator.
  */
 function CallerAvatar({
   contact,
-  counterparty,
   size = 'sm',
 }: {
   readonly contact: PhoneContact | undefined;
-  readonly counterparty: string;
   readonly size?: 'sm' | 'lg';
 }) {
   if (contact !== undefined) {
@@ -352,15 +378,13 @@ function CallerAvatar({
   }
   return (
     <span
-      role="img"
-      aria-label={counterparty}
-      title={counterparty}
+      aria-hidden="true"
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full bg-surface-hover text-ink-faint ring-1 ring-line/50',
+        'flex shrink-0 items-center justify-center rounded-full bg-surface-hover text-ink-faint',
         size === 'lg' ? 'size-[52px]' : 'size-6',
       )}
     >
-      <Phone aria-hidden="true" className={size === 'lg' ? 'size-5' : 'size-3'} strokeWidth={2} />
+      <User className={size === 'lg' ? 'size-6' : 'size-3.5'} strokeWidth={2} />
     </span>
   );
 }
@@ -378,7 +402,8 @@ function CallListRow({
 }) {
   const missed = MISSED_STATUSES.has(call.status);
   const live = !TERMINAL_STATUSES.has(call.status);
-  const label = contact?.label ?? String(call.counterparty);
+  const counterparty = String(call.counterparty);
+  const label = contact?.label ?? formatPhoneDisplay(counterparty);
 
   return (
     <li>
@@ -393,16 +418,23 @@ function CallListRow({
             : 'border-transparent hover:bg-surface-hover',
         )}
       >
-        <DirectionGlyph direction={call.direction} missed={missed} />
-        <span className="sr-only">
-          {missed ? 'Missed' : call.direction === 'outbound' ? 'Outbound' : 'Inbound'} call
-        </span>
-        <CallerAvatar contact={contact} counterparty={String(call.counterparty)} />
+        <CallerAvatar contact={contact} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-ink">{label}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <DirectionGlyph direction={call.direction} missed={missed} />
+            <span className="sr-only">
+              {missed ? 'Missed' : call.direction === 'outbound' ? 'Outbound' : 'Inbound'}{' '}
+              call,{' '}
+            </span>
+            <span
+              className={cn('truncate text-xs font-semibold', missed ? 'text-danger' : 'text-ink')}
+            >
+              {label}
+            </span>
+          </span>
           {contact !== undefined && (
             <span className="block truncate font-mono text-[10px] text-ink-faint">
-              {String(call.counterparty)}
+              {formatPhoneDisplay(counterparty)}
             </span>
           )}
         </span>
@@ -448,7 +480,7 @@ function CallDetailPanel({
 
   const missed = MISSED_STATUSES.has(call.status);
   const counterparty = String(call.counterparty);
-  const label = contact?.label ?? counterparty;
+  const label = contact?.label ?? formatPhoneDisplay(counterparty);
 
   const statusLine =
     call.status === 'queued'
@@ -472,11 +504,13 @@ function CallDetailPanel({
         >
           <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
         </button>
-        <CallerAvatar contact={contact} counterparty={counterparty} size="lg" />
+        <CallerAvatar contact={contact} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-semibold text-ink">{label}</p>
           {contact !== undefined && (
-            <p className="truncate font-mono text-xs text-ink-faint">{counterparty}</p>
+            <p className="truncate font-mono text-xs text-ink-faint">
+              {formatPhoneDisplay(counterparty)}
+            </p>
           )}
           <p
             className={cn(

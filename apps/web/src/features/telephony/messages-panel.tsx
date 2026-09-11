@@ -30,6 +30,25 @@ import {
  * rather than silently sending from the wrong one.
  */
 
+/**
+ * A raw E.164 string, punctuated the way a real phone shows it —
+ * "(415) 555-0142" rather than "+14155550142" — the identical formatter
+ * `calls-panel.tsx` uses for its own call log, duplicated rather than
+ * shared since it is a small, self-contained function (the same "one-line
+ * pure function, not worth a cross-file export for" precedent `digitsOf`
+ * already sets in that file).
+ */
+function formatPhoneDisplay(e164: string): string {
+  const digits = e164.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('44')) {
+    return `+44 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8, 12)}`;
+  }
+  return e164;
+}
+
 export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
@@ -112,7 +131,7 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate font-mono text-xs text-ink">
-                          {String(thread.counterparty)}
+                          {formatPhoneDisplay(String(thread.counterparty))}
                         </span>
                         {thread.unreadCount > 0 && (
                           <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
@@ -358,7 +377,9 @@ function ThreadView({
         >
           <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
         </button>
-        <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
+        <span className="font-mono text-xs font-medium text-ink">
+          {counterparty === undefined ? '…' : formatPhoneDisplay(counterparty)}
+        </span>
         <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
           SMS
         </span>

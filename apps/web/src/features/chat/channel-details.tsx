@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, X } from 'lucide-react';
+import { Hash, Lock, Pencil, Search, Users, X } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
-import { cn } from '../../lib/cn.js';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../components/primitives.js';
@@ -126,107 +125,86 @@ export function ChannelDetailsPanel({
           uses a semantic surface token, never a hardcoded color. */}
       <PanelHeader title="Details" onClose={onClose} />
 
-      <div className="flex flex-col gap-4 p-4">
-        {isDirect ? (
-          <DirectMessageIdentity
-            orgId={orgId}
-            memberIds={data.memberIds}
-            viewerId={viewerId}
-            personOf={personOf}
-          />
-        ) : editingSettings ? (
-          <ChannelSettingsForm
-            orgId={orgId}
-            channelId={channelId}
-            name={data.name ?? ''}
-            topic={data.topic}
-            onDone={() => {
-              setEditingSettings(false);
-            }}
-          />
-        ) : (
-          <section className="flex flex-col gap-1">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="flex items-center gap-1 text-sm font-medium text-ink">
-                {/* `#` for a public channel is plain text — the bible's own
-                    channel rows use the literal character too — but a private
-                    channel used a 🔒 emoji instead of a real glyph, which is
-                    the one inconsistent piece here. */}
-                {data.type === 'public' ? (
-                  '# '
-                ) : (
-                  <Lock aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2.25} />
-                )}
-                {data.name}
-              </h3>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditingSettings(true);
-                }}
-              >
-                Edit
-              </Button>
-            </div>
-            <p className={cn('text-xs', data.topic === null ? 'text-ink-faint' : 'text-ink-muted')}>
-              {data.topic ?? 'No topic set.'}
-            </p>
-            {data.archivedAt !== null && (
-              <p className="text-xs font-medium text-warning">
-                Archived — no new messages can be posted.
-              </p>
-            )}
-          </section>
-        )}
-
-        <MemberRoster
-          memberIds={data.memberIds}
-          viewerId={viewerId}
-          personOf={personOf}
-          /* A DM's roster is informational: the service refuses both add and
-             remove on one, so a control here could only ever produce an error. */
-          removable={!isDirect}
-          onRemove={(userId) => {
-            remove.mutate(userId);
-          }}
-        />
-
-        {!isDirect && (
-          <AddMemberControl
-            orgId={orgId}
-            channelId={channelId}
-            memberIds={data.memberIds}
-            onAdded={refresh}
-          />
-        )}
-
-        {/* The "just like WhatsApp" group-info surfaces — what has been
-            called, pinned, starred by you, and shared, all in this one
-            conversation. Shown for a DM exactly as for any other channel:
-            none of these four are moderation or membership controls, so
-            there is nothing about a fixed two-person roster that should
-            hide them. */}
-        <CallsSection orgId={orgId} channelId={channelId} />
-        <PinnedSection orgId={orgId} channelId={channelId} personOf={personOf} />
-        <SavedSection orgId={orgId} channelId={channelId} />
-        <FilesSection orgId={orgId} channelId={channelId} />
-
-        {!isDirect && data.capabilities.manage && (
-          <ComplianceAndGuests orgId={orgId} channelId={channelId} channel={data} />
-        )}
-
-        {!isDirect && (
-          <section className="border-t border-line pt-3">
-            <ConfirmButton
-              label={data.archivedAt === null ? 'Archive channel' : 'Restore channel'}
-              confirmLabel={data.archivedAt === null ? 'Archive it' : 'Restore it'}
-              onConfirm={() => {
-                archive.mutate();
+      <div className="flex flex-col gap-4 pb-4">
+        {editingSettings ? (
+          <div className="px-4 pt-4">
+            <ChannelSettingsForm
+              orgId={orgId}
+              channelId={channelId}
+              name={data.name ?? ''}
+              topic={data.topic}
+              onDone={() => {
+                setEditingSettings(false);
               }}
             />
-          </section>
+          </div>
+        ) : (
+          <IdentityHeader
+            orgId={orgId}
+            data={data}
+            viewerId={viewerId}
+            personOf={personOf}
+            onEdit={() => {
+              setEditingSettings(true);
+            }}
+          />
         )}
+
+        <div className="flex flex-col gap-4 px-4">
+          {/* A true 1:1 DM has nothing left to list here — the header above
+              already shows the only other person, and "you" is implied. A
+              group DM or an ordinary channel gets the real roster. */}
+          {data.type !== 'dm' && (
+            <MemberRoster
+              memberIds={data.memberIds}
+              viewerId={viewerId}
+              personOf={personOf}
+              /* A DM's roster is informational: the service refuses both add
+                 and remove on one, so a control here could only ever produce
+                 an error. */
+              removable={!isDirect}
+              onRemove={(userId) => {
+                remove.mutate(userId);
+              }}
+            />
+          )}
+
+          {!isDirect && (
+            <AddMemberControl
+              orgId={orgId}
+              channelId={channelId}
+              memberIds={data.memberIds}
+              onAdded={refresh}
+            />
+          )}
+
+          {/* The "just like WhatsApp" group-info surfaces — what has been
+              called, pinned, starred by you, and shared, all in this one
+              conversation. Shown for a DM exactly as for any other channel:
+              none of these four are moderation or membership controls, so
+              there is nothing about a fixed two-person roster that should
+              hide them. */}
+          <CallsSection orgId={orgId} channelId={channelId} />
+          <PinnedSection orgId={orgId} channelId={channelId} personOf={personOf} />
+          <SavedSection orgId={orgId} channelId={channelId} />
+          <FilesSection orgId={orgId} channelId={channelId} />
+
+          {!isDirect && data.capabilities.manage && (
+            <ComplianceAndGuests orgId={orgId} channelId={channelId} channel={data} />
+          )}
+
+          {!isDirect && (
+            <section className="border-t border-line pt-3">
+              <ConfirmButton
+                label={data.archivedAt === null ? 'Archive channel' : 'Restore channel'}
+                confirmLabel={data.archivedAt === null ? 'Archive it' : 'Restore it'}
+                onConfirm={() => {
+                  archive.mutate();
+                }}
+              />
+            </section>
+          )}
+        </div>
       </div>
     </aside>
   );
@@ -252,13 +230,15 @@ export function ChannelDetailsPanel({
 function PersonLine({
   person,
   suffix,
+  avatarSize = 'xs',
 }: {
   readonly person: Person;
   readonly suffix?: string | null;
+  readonly avatarSize?: 'xs' | 'sm';
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <Avatar userId={person.userId} label={person.label} size="xs" />
+      <Avatar userId={person.userId} label={person.label} size={avatarSize} />
       <div className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate text-sm text-ink">
           {person.label}
@@ -286,7 +266,25 @@ function PanelHeader({ title, onClose }: { readonly title: string; readonly onCl
 }
 
 /**
- * Who you are talking to, for a DM.
+ * The panel's own "who/what is this" header — the WhatsApp/Telegram "Group
+ * info" shape: a large centered identity mark, the name, and a short line of
+ * context, rather than the small left-aligned row this used to be. Three
+ * real shapes, not one component papering over them:
+ *
+ * - A true 1:1 DM shows the OTHER PERSON's own avatar and name — the
+ *   contact-info screen a real phone shows, not a generic "conversation"
+ *   icon. `MemberRoster` below is skipped entirely for this case (see
+ *   `ChannelDetailsPanel`'s own comment) since there is nobody left to list.
+ * - A group DM has no single identity to show, so it gets a generic
+ *   people-mark instead, with the real roster in `MemberRoster` below —
+ *   which now also carries the viewer's own row (labelled "(you)"), closing
+ *   a real duplication this used to have: the old version listed every
+ *   OTHER member here AND every member again, including the viewer, in the
+ *   roster section beneath it.
+ * - An ordinary channel keeps its `#`/lock mark (matching `channel-panel.tsx`'s
+ *   own header glyph choice exactly, not a literal `'# '` string) and adds
+ *   the Edit control here, centered under the name, instead of floating at
+ *   the corner of a cramped single row.
  *
  * ## Only an email, and that is not a shortcut
  *
@@ -295,34 +293,76 @@ function PanelHeader({ title, onClose }: { readonly title: string; readonly onCl
  * surface." So a two-line "name over email" treatment would render the address
  * twice, which reads as a rendering bug rather than as missing data. One line,
  * honestly labelled, until there is a second field to show.
- *
- * A group DM lists everyone except the viewer: "you and three others" is what
- * the sidebar shows, and the panel is where the actual names belong.
  */
-function DirectMessageIdentity({
+function IdentityHeader({
   orgId,
-  memberIds,
+  data,
   viewerId,
   personOf,
+  onEdit,
 }: {
   readonly orgId: string;
-  readonly memberIds: readonly string[];
+  readonly data: ChannelDetail;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => Person;
+  readonly onEdit: () => void;
 }) {
-  const others = memberIds.filter((userId) => userId !== viewerId);
-  const only = others.length === 1 ? others[0] : undefined;
+  if (data.type === 'dm') {
+    const others = data.memberIds.filter((userId) => userId !== viewerId);
+    const only = others[0];
+    if (only === undefined) {
+      return <div className="border-b border-line px-4 pt-5 pb-5" />;
+    }
+    const person = personOf(only);
+
+    return (
+      <div className="flex flex-col items-center gap-1 border-b border-line px-4 pt-5 pb-5 text-center">
+        <Avatar userId={person.userId} label={person.label} size="lg" />
+        <p className="mt-2 text-base font-semibold text-ink">{person.label}</p>
+        {person.named && person.email !== null && (
+          <p className="text-xs text-ink-faint">{person.email}</p>
+        )}
+        <div className="mt-2">
+          <DirectCallAction orgId={orgId} userId={only} />
+        </div>
+      </div>
+    );
+  }
+
+  if (data.type === 'group_dm') {
+    return (
+      <div className="flex flex-col items-center gap-1 border-b border-line px-4 pt-5 pb-5 text-center">
+        <span className="flex size-14 items-center justify-center rounded-full bg-suite-chat/10 text-suite-chat">
+          <Users aria-hidden="true" className="size-6" strokeWidth={1.75} />
+        </span>
+        <p className="mt-2 text-base font-semibold text-ink">Group conversation</p>
+        <p className="text-xs text-ink-faint">{data.memberIds.length} people</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold text-ink-muted">
-        {others.length === 1 ? 'Direct message with' : 'Group conversation'}
-      </h3>
-      {others.map((userId) => (
-        <PersonLine key={userId} person={personOf(userId)} />
-      ))}
-      {only !== undefined && <DirectCallAction orgId={orgId} userId={only} />}
-    </section>
+    <div className="flex flex-col items-center gap-1 border-b border-line px-4 pt-5 pb-5 text-center">
+      <span className="flex size-14 items-center justify-center rounded-full bg-suite-chat/10 text-suite-chat">
+        {data.type === 'public' ? (
+          <Hash aria-hidden="true" className="size-6" strokeWidth={1.75} />
+        ) : (
+          <Lock aria-hidden="true" className="size-6" strokeWidth={1.75} />
+        )}
+      </span>
+      <p className="mt-2 max-w-full truncate text-base font-semibold text-ink">{data.name}</p>
+      <p className="text-xs text-ink-faint">{data.memberIds.length} members</p>
+      {data.topic !== null && <p className="max-w-xs text-xs text-ink-muted">{data.topic}</p>}
+      {data.archivedAt !== null && (
+        <p className="text-xs font-medium text-warning">
+          Archived — no new messages can be posted.
+        </p>
+      )}
+      <Button size="sm" variant="ghost" className="mt-1 gap-1" onClick={onEdit}>
+        <Pencil aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Edit
+      </Button>
+    </div>
   );
 }
 
@@ -356,6 +396,11 @@ function DirectCallAction({ orgId, userId }: { readonly orgId: string; readonly 
   );
 }
 
+/** Below this many members, a search box is pure clutter — the "Long lists"
+ * precedent this app already sets elsewhere (the mobile org-members screen)
+ * for a client-side filter shown only once a roster is actually long. */
+const MEMBER_SEARCH_THRESHOLD = 8;
+
 function MemberRoster({
   memberIds,
   viewerId,
@@ -369,30 +414,72 @@ function MemberRoster({
   readonly removable: boolean;
   readonly onRemove: (userId: UserId) => void;
 }) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+
+  const rows = memberIds
+    .map((userId) => ({ userId, person: personOf(userId) }))
+    .filter(
+      ({ person }) =>
+        needle === '' ||
+        person.label.toLowerCase().includes(needle) ||
+        (person.email?.toLowerCase().includes(needle) ?? false),
+    );
+
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-xs font-semibold text-ink-muted">Members · {memberIds.length}</h3>
 
+      {memberIds.length > MEMBER_SEARCH_THRESHOLD && (
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-faint"
+            strokeWidth={2}
+          />
+          <Input
+            value={query}
+            placeholder="Search members"
+            className="pl-7"
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+          />
+        </div>
+      )}
+
       {memberIds.length === 0 ? (
         <Empty title="Nobody yet" description="This channel has no members." />
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-ink-faint">No match.</p>
       ) : (
-        <ul className="flex flex-col gap-1">
-          {memberIds.map((userId) => {
+        <ul className="flex flex-col gap-0.5">
+          {rows.map(({ userId, person }) => {
             const isViewer = userId === viewerId;
             return (
-              <li key={userId} className="flex items-center gap-2">
-                <PersonLine person={personOf(userId)} suffix={isViewer ? ' (you)' : null} />
+              <li
+                key={userId}
+                className="group flex items-center gap-2 rounded-md px-1 py-1 transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
+              >
+                <PersonLine person={person} suffix={isViewer ? ' (you)' : null} avatarSize="sm" />
                 {removable && (
                   /* One route, two labels. `removeMember` is the same call
                      either way — the service decides that leaving needs only
                      `channel:read` while removing somebody else needs
                      `channel:manage`. The wording here follows the target, not
                      the permission, because the client knows the target for
-                     certain and knows the permission not at all. */
+                     certain and knows the permission not at all.
+
+                     Hidden until hover/focus on a pointer-driven screen —
+                     the same `focus-visible:opacity-100 md:opacity-0
+                     md:group-hover:opacity-100` shape `numbers-panel.tsx`
+                     already uses for its own per-row destructive action —
+                     but always visible below `md`, where there is no hover
+                     to reveal it from. */
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="shrink-0 text-xs"
+                    className="shrink-0 text-xs focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
                     onClick={() => {
                       onRemove(userId as UserId);
                     }}
