@@ -200,7 +200,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <PageContainer maxWidth="xl" className="flex h-full flex-col gap-5 overflow-y-auto">
+    <PageContainer maxWidth="2xl" className="flex h-full flex-col gap-5 overflow-y-auto">
       <PageHeader
         title="Search"
         description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
@@ -322,26 +322,42 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                       : 'border-line/50 bg-surface-raised hover:border-line-strong hover:bg-surface-hover',
                   )}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
-                        TYPE_BADGE[hit.type].className,
-                      )}
-                    >
-                      {TYPE_BADGE[hit.type].label}
-                    </span>
-                    {hit.archived && (
-                      <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-faint">
-                        Archived
+                  {/* Two lines below `md:` — the badge+title pair on one row,
+                      the archived flag and relative time on a second. On one
+                      unwrapped row, the title's own `flex-1 truncate` span has
+                      no real minimum width, so it simply gave up its space
+                      rather than wrap to a second line the moment the type
+                      badge, an "Archived" badge and the timestamp all sat
+                      next to it — cutting a long title down to a handful of
+                      characters on a narrow screen (the same shape this
+                      codebase already fixed once for My Tasks' own card
+                      rows). `md:flex-row` collapses both lines back into the
+                      single row this row has always had at desktop width. */}
+                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                    <div className="flex min-w-0 items-center gap-2 md:flex-1">
+                      <span
+                        className={cn(
+                          'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                          TYPE_BADGE[hit.type].className,
+                        )}
+                      >
+                        {TYPE_BADGE[hit.type].label}
                       </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                      {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">
-                      {formatRelative(hit.updatedAt)}
-                    </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                        {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {hit.archived && (
+                        <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-faint">
+                          Archived
+                        </span>
+                      )}
+                      <span className="ml-auto shrink-0 text-[11px] text-ink-faint md:ml-0">
+                        {formatRelative(hit.updatedAt)}
+                      </span>
+                    </div>
                   </div>
                   {hit.snippet !== null && (
                     <p className="line-clamp-2 text-xs text-ink-muted">
