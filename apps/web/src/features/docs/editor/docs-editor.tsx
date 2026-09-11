@@ -9,7 +9,7 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
-import { AvatarStack, Button } from '../../../components/primitives.js';
+import { Button } from '../../../components/primitives.js';
 import { useMembers } from '../../org/use-members.js';
 import {
   createMentionSuggestion,
@@ -235,10 +235,10 @@ function DocsEditorReady({
     <div className="overflow-hidden rounded-md border border-line bg-surface-sunken">
       <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-1.5 pr-2">
         <Toolbar editor={editor} />
-        <div className="flex shrink-0 items-center gap-3">
-          <Presence provider={provider} />
-          <ConnectionPill status={status} synced={synced} />
-        </div>
+        {/* Presence moved to the page header (`docs-page.tsx`'s `PagePanel`,
+            via `useDocsPresence`) — see that hook's own comment for why it
+            no longer renders itself here. */}
+        <ConnectionPill status={status} synced={synced} />
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -374,8 +374,7 @@ function ConnectionPill({
 }
 
 /**
- * Who else is here, as faces — Design Bible §08's own "2 people here now"
- * treatment, real `Avatar` discs rather than a bare count.
+ * Who else is here — Design Bible §08's own "2 people here now" treatment.
  *
  * CollaborationCaret publishes `{ name, color, userId }` under each client's
  * awareness state (see the `user:` field above), so everyone connected to
@@ -388,13 +387,36 @@ function ConnectionPill({
  * resolvable identity falls back to `client:<clientId>` (never colliding
  * with a real userId), so a genuinely anonymous session still gets a
  * distinct disc instead of silently merging with someone else's.
+ *
+ * A HOOK, not a component that renders itself — moved out of this file's
+ * own toolbar (where it used to live, next to the "Live" pill) so
+ * `docs-page.tsx`'s `PagePanel` can build BOTH the "N people here now" TEXT
+ * next to the page title and the avatar discs from the identical live data,
+ * rather than one component owning a rendering the mockup wants used twice
+ * for two different things. `provider` is nullable because `PagePanel` only
+ * has one once `DocsEditor`'s own `onReady` has fired.
  */
-function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
+export function useDocsPresence(
+  provider: HocuspocusProvider | null,
+): readonly { readonly userId: string; readonly label: string }[] {
   const [others, setOthers] = useState<
     readonly { readonly userId: string; readonly label: string }[]
   >([]);
 
   useEffect(() => {
+    /* No unconditional `setOthers([])` here for a null provider — that would
+       be a synchronous `setState` with no external system behind it, which
+       `react-hooks/set-state-in-effect` correctly refuses (unlike the
+       `update()` call below, which IS syncing this hook's state with the
+       Yjs awareness channel, the rule's own stated exception). `PagePanel`
+       remounts this hook fresh per page (`key={search.page}`), so the
+       common case already starts at `[]`; the one exception — the SAME
+       `PagePanel` instance's `DocsEditor` remounting after a version
+       restore — briefly keeps the previous page's own presence until the
+       new provider's `update()` below overwrites it, a transient staleness
+       worth accepting over a lint-refused state reset with nothing to
+       subscribe to. */
+    if (provider === null) return;
     const awareness = provider.awareness;
     if (awareness === null) return;
 
@@ -419,13 +441,5 @@ function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
     };
   }, [provider]);
 
-  if (others.length === 0) return null;
-
-  return (
-    <span
-      title={`${String(others.length)} other ${others.length === 1 ? 'viewer' : 'viewers'} here now: ${others.map((person) => person.label).join(', ')}`}
-    >
-      <AvatarStack people={others} max={4} size="xs" />
-    </span>
-  );
+  return others;
 }

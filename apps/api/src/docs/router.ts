@@ -115,6 +115,17 @@ export function createDocsRouter() {
                 rank: z.string(),
                 archivedAt: z.date().nullable(),
                 publishedAt: z.date().nullable(),
+                /* The page's OWN row's `updated_at` — bumped on rename,
+                   move, and archive/restore (`page.service.ts`'s own write
+                   paths), never on a body edit (that goes through
+                   `apps/collab`'s Yjs sync, a separate write path onto
+                   `docs.yjs_updates`/`docs.page_versions`, not this row).
+                   "Edited N ago" in the page header is therefore honest
+                   about what it can see — a person who only ever edits a
+                   page's prose, never its title/location, will not move
+                   this timestamp, the same way a file's own directory-entry
+                   mtime does not always track its content. */
+                updatedAt: z.date(),
                 /* Read by the client to hide the page-level Archive/Restore
                    control from a viewer who cannot use it — see
                    `listPages`'s own comment. */

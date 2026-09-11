@@ -16,7 +16,9 @@ import { useUi } from '../../lib/ui-store.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
+import { formatRelative } from '../../lib/format.js';
 import {
+  AvatarStack,
   Badge,
   Button,
   Empty,
@@ -26,7 +28,7 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
-import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
+import { DocsEditor, useDocsPresence, type DocsEditorHandle } from './editor/docs-editor.js';
 import { PublishPanel } from './publish-panel.js';
 import { VersionHistoryPanel } from './version-history.js';
 import { CommentsSuggestionsPanel } from './comments-suggestions.js';
@@ -759,6 +761,13 @@ function PagePanel({
 
   const page = (pages.data ?? []).find((row) => row.pageId === pageId);
 
+  /* Design Bible §08's own "Edited N ago · 2 people here now" line — see
+     `useDocsPresence`'s own header for why this hook, not a component, is
+     what moved here. `others` excludes the viewer themself, so the phrase
+     counts them back in: "2 people here now" reads as a true headcount of
+     the room, not "2 people besides you". */
+  const others = useDocsPresence(editorHandle?.provider ?? null);
+
   const rename = useMutation({
     mutationFn: (nextTitle: string) => renamePage({ pageId, title: nextTitle }),
     onSuccess: () => {
@@ -859,11 +868,37 @@ function PagePanel({
           </form>
         ) : (
           <>
-            <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
-              {page.title}
-              {isArchived && <Badge tone="warning">archived</Badge>}
-            </h1>
-            <div className="flex shrink-0 gap-2">
+            <div className="min-w-0">
+              {/* `text-3xl` — Design Bible §08's own page title is a real
+                  headline, not the `text-xl` (20px) form-field-adjacent size
+                  this used to share with every other small heading in the
+                  panel. */}
+              <h1 className="flex items-center gap-2 font-display text-3xl font-bold tracking-tight text-ink">
+                {page.title}
+                {isArchived && <Badge tone="warning">archived</Badge>}
+              </h1>
+              {/* "Edited N ago · 2 people here now" — the mockup's own
+                  metadata line, absent before this. `page.updatedAt` is
+                  bumped on rename/move/archive, never a body edit (the
+                  router's own output-schema comment explains why), so this
+                  is honest about what it can see rather than promising a
+                  live "last edited" instant no route here actually tracks. */}
+              <p className="mt-1 text-xs text-ink-faint">
+                Edited {formatRelative(page.updatedAt)}
+                {others.length > 0 && ` · ${String(others.length + 1)} people here now`}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              {/* The mockup's own top-right avatar pair — real faces, not a
+                  count, the same `AvatarStack` a board card's assignees
+                  already use. */}
+              {others.length > 0 && (
+                <span
+                  title={`${String(others.length)} other ${others.length === 1 ? 'viewer' : 'viewers'} here now: ${others.map((person) => person.label).join(', ')}`}
+                >
+                  <AvatarStack people={others} max={4} size="xs" />
+                </span>
+              )}
               <Button
                 size="sm"
                 variant="ghost"

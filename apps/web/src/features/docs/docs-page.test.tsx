@@ -37,6 +37,7 @@ interface PageListItem {
   rank: string;
   archivedAt: string | null;
   publishedAt: string | null;
+  updatedAt: string;
   capabilities: { archive: boolean };
 }
 
@@ -150,6 +151,11 @@ vi.mock('../../lib/trpc.js', () => ({
    a placeholder keeps them focused on exactly that. */
 vi.mock('./editor/docs-editor.js', () => ({
   DocsEditor: () => <div data-testid="docs-editor" />,
+  // `PagePanel` calls this directly (not just via `DocsEditor`) to build
+  // the "N people here now" header line — mocked the same "placeholder,
+  // no live provider" way `DocsEditor` itself is, since this suite is
+  // about the tree and the archive/restore argument, not live presence.
+  useDocsPresence: () => [],
 }));
 
 const { DocsPage } = await import('./docs-page.js');
@@ -201,6 +207,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      updatedAt: '2026-08-01T00:00:00.000Z',
       capabilities: { archive: true },
     },
     {
@@ -210,6 +217,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      updatedAt: '2026-08-01T00:00:00.000Z',
       capabilities: { archive: true },
     },
   ]);
@@ -270,6 +278,7 @@ describe('the tree', () => {
         rank: 'a0',
         archivedAt: null,
         publishedAt: null,
+        updatedAt: '2026-08-01T00:00:00.000Z',
         capabilities: { archive: true },
       });
       parent = pageId;
@@ -346,6 +355,7 @@ describe('archiving and restoring a page', () => {
         rank: 'a0',
         archivedAt: '2026-08-01T00:00:00.000Z',
         publishedAt: null,
+        updatedAt: '2026-08-01T00:00:00.000Z',
         capabilities: { archive: true },
       },
     ]);
@@ -376,6 +386,7 @@ describe('archiving and restoring a page', () => {
         rank: 'a0',
         archivedAt: null,
         publishedAt: null,
+        updatedAt: '2026-08-01T00:00:00.000Z',
         capabilities: { archive: false },
       },
     ]);
