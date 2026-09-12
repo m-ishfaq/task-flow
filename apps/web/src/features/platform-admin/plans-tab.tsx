@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { LayoutGrid, ShieldAlert } from 'lucide-react';
+import { CreditCard, LayoutGrid, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire, type Wire } from '@taskflow/client';
@@ -16,7 +16,14 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { LIMIT_COPY, featureDescription, featureLabel } from '../../lib/feature-labels.js';
-import { SectionHeader, StepUpGate, TableSearch, ceiling, money } from './shared.js';
+import {
+  ModalIconHeader,
+  SectionHeader,
+  StepUpGate,
+  TableSearch,
+  ceiling,
+  money,
+} from './shared.js';
 import { cn } from '../../lib/cn.js';
 
 /**
@@ -467,18 +474,13 @@ function RetirePlanDialog({
       }}
     >
       <ModalContent size="sm" className="p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger/15 text-danger">
-            <ShieldAlert className="size-5" strokeWidth={2} />
-          </span>
-          <div>
-            <ModalTitle>Retire {plan.name}?</ModalTitle>
-            <ModalDescription>
-              This plan has {String(plan.orgCount)} active organization
-              {plan.orgCount === 1 ? '' : 's'}.
-            </ModalDescription>
-          </div>
-        </div>
+        <ModalIconHeader icon={ShieldAlert} tone="danger">
+          <ModalTitle>Retire {plan.name}?</ModalTitle>
+          <ModalDescription>
+            This plan has {String(plan.orgCount)} active organization
+            {plan.orgCount === 1 ? '' : 's'}.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="space-y-3 text-sm text-ink">
           <p>
@@ -659,11 +661,13 @@ function EditLimitsDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>{plan.name} limits</ModalTitle>
-        <ModalDescription>
-          These are <strong>ceilings, not values</strong> — the most an org on this plan may be
-          raised to. Leave a field empty for unlimited; enter 0 for none at all.
-        </ModalDescription>
+        <ModalIconHeader icon={LayoutGrid} tone="accent">
+          <ModalTitle>{plan.name} limits</ModalTitle>
+          <ModalDescription>
+            These are <strong>ceilings, not values</strong> — the most an org on this plan may be
+            raised to. Leave a field empty for unlimited; enter 0 for none at all.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {limitField(
@@ -867,11 +871,13 @@ function EditFeaturesDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>{plan.name} features</ModalTitle>
-        <ModalDescription>
-          Which modules this tier includes. Turning one off does not delete anything — orgs on this
-          plan keep their data and lose access to it until the module is included again.
-        </ModalDescription>
+        <ModalIconHeader icon={ShieldCheck} tone="accent">
+          <ModalTitle>{plan.name} features</ModalTitle>
+          <ModalDescription>
+            Which modules this tier includes. Turning one off does not delete anything — orgs on
+            this plan keep their data and lose access to it until the module is included again.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {registry.isPending && <SkeletonRows rows={4} className="*:h-10" />}
@@ -978,11 +984,13 @@ function CreatePlanDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>New plan</ModalTitle>
-        <ModalDescription>
-          The id is permanent — it is written onto every org that subscribes, and it appears in logs
-          and support conversations. Features and ceilings are edited after creation.
-        </ModalDescription>
+        <ModalIconHeader icon={LayoutGrid} tone="accent">
+          <ModalTitle>New plan</ModalTitle>
+          <ModalDescription>
+            The id is permanent — it is written onto every org that subscribes, and it appears in
+            logs and support conversations. Features and ceilings are edited after creation.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           <Field label="Id" htmlFor="plan-id">
@@ -1103,24 +1111,26 @@ function SetPriceDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>Set {plan.name} price</ModalTitle>
-        <ModalDescription>
-          {existing === undefined ? (
-            <>No {interval}ly price yet — this creates the first one.</>
-          ) : (
-            <>
-              Currently {money(existing.amountCents, existing.currency)}/{interval}. Saving retires
-              that price and creates a new one.{' '}
-              <strong>
-                The {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} on this plan keep paying
-                what they signed up for
-              </strong>{' '}
-              — only new subscriptions get the new amount.
-            </>
-          )}
-        </ModalDescription>
+        <ModalIconHeader icon={CreditCard} tone="accent">
+          <ModalTitle>Set {plan.name} price</ModalTitle>
+          <ModalDescription>
+            {existing === undefined ? (
+              <>No {interval}ly price yet — this creates the first one.</>
+            ) : (
+              <>
+                Currently {money(existing.amountCents, existing.currency)}/{interval}. Saving
+                retires that price and creates a new one.{' '}
+                <strong>
+                  The {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} on this plan keep paying
+                  what they signed up for
+                </strong>{' '}
+                — only new subscriptions get the new amount.
+              </>
+            )}
+          </ModalDescription>
+        </ModalIconHeader>
 
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <Field label="Interval" htmlFor="plan-interval">
             <div className="flex gap-1.5">
               {(['month', 'year'] as const).map((value) => (

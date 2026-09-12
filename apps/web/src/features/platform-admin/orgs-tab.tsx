@@ -20,6 +20,7 @@ import {
 import { ErrorView } from '../../components/error-view.js';
 import {
   MemberBar,
+  ModalIconHeader,
   OrgDetailDialog,
   Pagination,
   RowActionsMenu,
@@ -435,15 +436,17 @@ export function OrgsTab({
           }}
         >
           <ModalContent size="sm" className="p-4">
-            <ModalTitle>Delete {deleteTarget.name}?</ModalTitle>
-            <ModalDescription>
-              This permanently deletes the organization and everything it owns — projects, channels,
-              documents, memberships, and its audit history. There is no undo. Type{' '}
-              <code className="rounded bg-surface-sunken px-1 font-mono text-[11px]">
-                {deleteTarget.slug}
-              </code>{' '}
-              to confirm.
-            </ModalDescription>
+            <ModalIconHeader icon={ShieldAlert} tone="danger">
+              <ModalTitle>Delete {deleteTarget.name}?</ModalTitle>
+              <ModalDescription>
+                This permanently deletes the organization and everything it owns — projects,
+                channels, documents, memberships, and its audit history. There is no undo. Type{' '}
+                <code className="rounded bg-surface-sunken px-1 font-mono text-[11px]">
+                  {deleteTarget.slug}
+                </code>{' '}
+                to confirm.
+              </ModalDescription>
+            </ModalIconHeader>
 
             <form
               className="mt-4 space-y-3"
@@ -596,12 +599,14 @@ function ChangeOrgPlanDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent size="sm" className="p-4">
-        <ModalTitle>{org.name} plan</ModalTitle>
-        <ModalDescription>
-          Currently <strong>{org.planId ?? 'no plan'}</strong>. This changes what the org is
-          entitled to — it does <strong>not</strong> change their subscription or what they are
-          charged.
-        </ModalDescription>
+        <ModalIconHeader icon={Building2} tone="accent">
+          <ModalTitle>{org.name} plan</ModalTitle>
+          <ModalDescription>
+            Currently <strong>{org.planId ?? 'no plan'}</strong>. This changes what the org is
+            entitled to — it does <strong>not</strong> change their subscription or what they are
+            charged.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {plans.isPending && <SkeletonRows rows={3} className="*:h-8" />}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { Bot, ChevronDown, ChevronRight } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, KeyRound } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -19,7 +19,7 @@ import {
   Spinner,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { SectionHeader, StepUpGate } from './shared.js';
+import { ModalIconHeader, SectionHeader, StepUpGate } from './shared.js';
 
 /**
  * The AI provider catalog and its per-org overrides (Phase 15 §2.3, §3.3).
@@ -223,13 +223,15 @@ function CreateProviderDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>New provider</ModalTitle>
-        <ModalDescription>
-          The key is encrypted at rest under its own data key and never sent back to this console
-          once saved — rotating it is the only way to change it later.
-        </ModalDescription>
+        <ModalIconHeader icon={Bot} tone="accent">
+          <ModalTitle>New provider</ModalTitle>
+          <ModalDescription>
+            The key is encrypted at rest under its own data key and never sent back to this console
+            once saved — rotating it is the only way to change it later.
+          </ModalDescription>
+        </ModalIconHeader>
 
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <Field label="Provider" htmlFor="ai-provider-kind">
             <select
               id="ai-provider-kind"
@@ -355,13 +357,15 @@ function RotateKeyDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>Rotate key — {target.label}</ModalTitle>
-        <ModalDescription>
-          Replaces the stored key immediately. Every completion this row serves after this saves
-          uses the new key; there is no grace period.
-        </ModalDescription>
+        <ModalIconHeader icon={KeyRound} tone="danger">
+          <ModalTitle>Rotate key — {target.label}</ModalTitle>
+          <ModalDescription>
+            Replaces the stored key immediately. Every completion this row serves after this saves
+            uses the new key; there is no grace period.
+          </ModalDescription>
+        </ModalIconHeader>
 
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <Field label="New API key" htmlFor="ai-provider-rotate-key">
             <Input
               id="ai-provider-rotate-key"

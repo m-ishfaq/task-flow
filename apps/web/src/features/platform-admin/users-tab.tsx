@@ -1,16 +1,24 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { Search, Users } from 'lucide-react';
+import { Building2, Search, Users } from 'lucide-react';
 import type { UserId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { Avatar, Badge, Button, ConfirmButton, SkeletonRows } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  ConfirmButton,
+  OrgBadge,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import {
   DetailRow,
+  ModalIconHeader,
   Pagination,
   SectionHeader,
   StepUpGate,
@@ -292,18 +300,35 @@ function UserDetailDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="max-h-[85vh] overflow-y-auto p-5">
-        <ModalTitle>{data?.name ?? data?.email ?? 'Account'}</ModalTitle>
-        <ModalDescription>
-          {data === undefined ? 'Loading…' : `${data.email} · joined ${formatDate(data.createdAt)}`}
-        </ModalDescription>
+        <ModalIconHeader
+          icon={Users}
+          tone="accent"
+          identity={
+            data !== undefined && (
+              <Avatar userId={data.userId} label={data.name ?? data.email} size="lg" />
+            )
+          }
+        >
+          <ModalTitle>{data?.name ?? data?.email ?? 'Account'}</ModalTitle>
+          <ModalDescription>
+            {data === undefined
+              ? 'Loading…'
+              : `${data.email} · joined ${formatDate(data.createdAt)}`}
+          </ModalDescription>
+        </ModalIconHeader>
 
         {detail.isPending && <SkeletonRows rows={4} className="mt-4 *:h-10" />}
         {detail.isError && <ErrorView error={detail.error} title="Could not load this account" />}
 
         {data !== undefined && (
-          <div className="mt-4 flex flex-col gap-5">
+          <div className="flex flex-col gap-5">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <DetailRow label="Account status" value={data.status} />
+              <div className="contents">
+                <dt className="text-ink-faint">Account status</dt>
+                <dd>
+                  <UserStatusBadge status={data.status} />
+                </dd>
+              </div>
               <DetailRow
                 label="Email verified"
                 value={data.emailVerifiedAt === null ? 'no' : formatDate(data.emailVerifiedAt)}
@@ -312,9 +337,11 @@ function UserDetailDialog({
             </dl>
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">
-                Organizations ({data.memberships.length})
-              </h3>
+              <SectionHeader
+                icon={Building2}
+                title="Organizations"
+                subtitle={`${String(data.memberships.length)} membership${data.memberships.length === 1 ? '' : 's'}`}
+              />
 
               {data.memberships.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-line bg-surface-sunken/40 p-4 text-center text-xs text-ink-faint">
@@ -329,6 +356,7 @@ function UserDetailDialog({
                       className="px-3 py-2.5 text-xs transition-colors hover:bg-surface-hover/30"
                     >
                       <div className="flex items-center gap-2">
+                        <OrgBadge orgId={membership.orgId} name={membership.orgName} />
                         <span className="min-w-0 flex-1 truncate font-medium text-ink">
                           {membership.orgName}
                         </span>
