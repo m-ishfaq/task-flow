@@ -448,7 +448,7 @@ export function PlatformAdminPage() {
           </div>
         )}
 
-        <div className="mx-auto max-w-6xl space-y-5 px-4 py-4 sm:px-6 sm:py-6">
+        <div className="mx-auto max-w-[85%] space-y-5 px-4 py-4 sm:px-6 sm:py-6">
           <header className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-lg font-semibold tracking-tight text-ink">
