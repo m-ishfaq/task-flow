@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -94,7 +95,15 @@ function AutomationsScreenContent() {
     void queryClient.invalidateQueries({ queryKey: AUTOMATIONS_QUERY_KEY });
   };
 
+  const [search, setSearch] = useState('');
   const rows = rules.data?.pages.flatMap((page) => page.automations) ?? [];
+  const needle = search.trim().toLowerCase();
+  // A filter over pages already LOADED, not a server-side search — this
+  // list already pages by cursor, so narrowing is a client-side pass over
+  // what has been fetched so far, the same shape `recordings-panel.tsx`
+  // (apps/web) already uses for its own cursor-paginated list.
+  const visibleRows =
+    needle === '' ? rows : rows.filter((rule) => rule.name.toLowerCase().includes(needle));
 
   return (
     <View style={[styles.container, { paddingTop }]}>
@@ -135,8 +144,22 @@ function AutomationsScreenContent() {
         </Text>
       )}
 
+      {rows.length > 8 && (
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search rules…"
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.searchInput}
+          autoCapitalize="none"
+        />
+      )}
+      {rows.length > 0 && needle !== '' && visibleRows.length === 0 && (
+        <Text style={styles.emptyHint}>No rules match your search.</Text>
+      )}
+
       <FlatList<AutomationSummary>
-        data={rows}
+        data={visibleRows}
         keyExtractor={(rule) => rule.automationId}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
@@ -427,6 +450,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkFaint.hex,
     paddingHorizontal: 20,
+  },
+  searchInput: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
   },
   list: {
     paddingHorizontal: 20,
