@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bot,
   Building2,
+  ChevronDown,
   CreditCard,
   Flag,
   LayoutGrid,
@@ -20,6 +21,7 @@ import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import { Button } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
@@ -125,6 +127,25 @@ export function PlatformAdminPage() {
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
   const [tab, setTab] = useState<PlatformAdminTab>('orgs');
+
+  /**
+   * A permanent left sidebar reported as unusable below `md`: at phone width
+   * a fixed `w-60` column left the actual content squeezed into what was
+   * left of the screen, which is where the visible symptoms (a search input
+   * truncated to "Filte…", "Export CSV" wrapping onto two lines, a metrics
+   * row with ragged blank gaps where a row of cells wrapped short) all
+   * traced back to — not bugs in those controls, but in never having given
+   * them room. `useIsDesktop()` is the same 768px `md:` breakpoint
+   * `board-page.tsx`'s own toolbar-collapse and `calendar-view.tsx`'s own
+   * month-grid/agenda-list swap already coordinate against, reused rather
+   * than a new breakpoint invented for this one page. Below it, the sidebar
+   * does not render at all — the content pane gets the full width back —
+   * and `navOpen` (mirroring `board-page.tsx`'s own `toolbarExpanded`)
+   * gates a compact, collapsible nav list in its place.
+   */
+  const isDesktop = useIsDesktop();
+  const [navOpen, setNavOpen] = useState(false);
+  const currentLabel = NAV_ITEMS.find(([value]) => value === tab)?.[1] ?? '';
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
      same login the mutation dialog runs; invalidating every `['platform']` key
@@ -286,64 +307,148 @@ export function PlatformAdminPage() {
     <div className="flex h-full overflow-hidden text-ink">
       {/* The sidebar, replacing the horizontal tab strip — see this file's
           own header comment for why a structural change, not just a color
-          swap, is what actually answers "looks like the same client". */}
-      <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-sunken">
-        <div className="flex items-center gap-2.5 border-b border-line px-4 py-4">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-ink-muted">
-            <TerminalSquare aria-hidden="true" className="size-4.5" strokeWidth={2} />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold text-ink">Operator console</p>
-            <p className="truncate font-mono text-[10px] text-ink-faint">taskflow_platform_admin</p>
+          swap, is what actually answers "looks like the same client". Only
+          at `md:` and above: below it, the compact bar in the content pane
+          takes over navigation, per the `isDesktop`/`navOpen` comment on
+          this component's own state. */}
+      {isDesktop && (
+        <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-sunken">
+          <div className="flex items-center gap-2.5 border-b border-line px-4 py-4">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-ink-muted">
+              <TerminalSquare aria-hidden="true" className="size-4.5" strokeWidth={2} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold text-ink">Operator console</p>
+              <p className="truncate font-mono text-[10px] text-ink-faint">
+                taskflow_platform_admin
+              </p>
+            </div>
           </div>
-        </div>
 
-        <nav aria-label="Platform administration sections" className="flex-1 space-y-0.5 p-2">
-          {NAV_ITEMS.map(([value, label, Icon]) => (
-            <button
-              key={value}
-              type="button"
-              aria-current={tab === value ? 'page' : undefined}
-              onClick={() => {
-                setTab(value);
-              }}
-              className={cn(
-                'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors duration-150',
-                tab === value
-                  ? 'bg-accent/10 text-accent'
-                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-              )}
-            >
-              <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
-        </nav>
+          <nav aria-label="Platform administration sections" className="flex-1 space-y-0.5 p-2">
+            {NAV_ITEMS.map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                aria-current={tab === value ? 'page' : undefined}
+                onClick={() => {
+                  setTab(value);
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors duration-150',
+                  tab === value
+                    ? 'bg-accent/10 text-accent'
+                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+                <span className="truncate">{label}</span>
+              </button>
+            ))}
+          </nav>
 
-        {/* The one persistent safety notice — in the sidebar footer rather
-            than a banner atop scrolling content, so it stays on screen for
-            as long as this console is open, not just until someone scrolls
-            past it. Nothing about the access model changes here —
-            `platformRoute` already gates every query and mutation behind
-            this page, step-up included, reads included (this file's own
-            top header comment) — this is only where the reminder lives. */}
-        <div className="border-t border-line p-3">
-          <div className="flex items-start gap-2 rounded-lg border-l-2 border-danger bg-danger/10 px-2.5 py-2">
-            <AlertTriangle
-              aria-hidden="true"
-              className="mt-0.5 size-3.5 shrink-0 text-danger"
-              strokeWidth={2}
-            />
-            <p className="text-[11px] leading-snug text-ink-muted">
-              Acting across <span className="font-medium text-ink">all organizations</span>. Every
-              action is logged.
-            </p>
+          {/* The one persistent safety notice — in the sidebar footer rather
+              than a banner atop scrolling content, so it stays on screen for
+              as long as this console is open, not just until someone scrolls
+              past it. Nothing about the access model changes here —
+              `platformRoute` already gates every query and mutation behind
+              this page, step-up included, reads included (this file's own
+              top header comment) — this is only where the reminder lives. */}
+          <div className="border-t border-line p-3">
+            <div className="flex items-start gap-2 rounded-lg border-l-2 border-danger bg-danger/10 px-2.5 py-2">
+              <AlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 size-3.5 shrink-0 text-danger"
+                strokeWidth={2}
+              />
+              <p className="text-[11px] leading-snug text-ink-muted">
+                Acting across <span className="font-medium text-ink">all organizations</span>. Every
+                action is logged.
+              </p>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl space-y-5 px-6 py-6">
+        {/* The sidebar's mobile stand-in: a compact bar always shown, an
+            optional expanded section list, and the same safety notice,
+            never gated behind the toggle — the one thing that is supposed
+            to be impossible to forget should not be one tap from hidden. */}
+        {!isDesktop && (
+          <div className="border-b border-line bg-surface-sunken">
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-hover text-ink-muted">
+                <TerminalSquare aria-hidden="true" className="size-3.5" strokeWidth={2} />
+              </span>
+              <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+                Operator console
+              </p>
+              <button
+                type="button"
+                aria-expanded={navOpen}
+                aria-label={navOpen ? 'Hide sections' : 'Show sections'}
+                onClick={() => {
+                  setNavOpen((previous) => !previous);
+                }}
+                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line/60 bg-surface/40 px-2.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+              >
+                {currentLabel}
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn(
+                    'size-3.5 transition-transform duration-[var(--motion-fast)]',
+                    navOpen && 'rotate-180',
+                  )}
+                />
+              </button>
+            </div>
+
+            {navOpen && (
+              <nav
+                aria-label="Platform administration sections"
+                className="space-y-0.5 border-t border-line/60 p-2"
+              >
+                {NAV_ITEMS.map(([value, label, Icon]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-current={tab === value ? 'page' : undefined}
+                    onClick={() => {
+                      setTab(value);
+                      setNavOpen(false);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors duration-150',
+                      tab === value
+                        ? 'bg-accent/10 text-accent'
+                        : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                    )}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            <div className="border-t border-line/60 px-3 py-2">
+              <div className="flex items-center gap-1.5 rounded-md border-l-2 border-danger bg-danger/10 px-2 py-1.5">
+                <AlertTriangle
+                  aria-hidden="true"
+                  className="size-3 shrink-0 text-danger"
+                  strokeWidth={2}
+                />
+                <p className="text-[10px] leading-snug text-ink-muted">
+                  Acting across <span className="font-medium text-ink">all organizations</span>.
+                  Every action is logged.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mx-auto max-w-6xl space-y-5 px-4 py-4 sm:px-6 sm:py-6">
           <header className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-lg font-semibold tracking-tight text-ink">
@@ -357,10 +462,16 @@ export function PlatformAdminPage() {
             {hasExportData && exportButton}
           </header>
 
-          {/* Metrics strip — a dense, bordered row rather than six separate
-              rounded cards: a status bar an operator scans, not a product
-              dashboard's own hero widgets. */}
-          <div className="flex flex-wrap divide-x divide-line rounded-lg border border-line bg-surface-raised">
+          {/* Metrics strip — a CSS grid, not a `flex-wrap` row: a wrapped
+              flex row leaves whatever blank space is left in a short last
+              row untouched, which is exactly the ragged gap reported
+              alongside the sidebar bug. A grid's cells always fill their
+              column tracks, wrapped or not. Hairlines are drawn with a
+              `gap-px` background peeking through opaque cells (`bg-line`
+              behind, `bg-surface-raised` on each `ConsoleMetric`) rather
+              than `divide-x`/`divide-y`, since dividers alone don't draw a
+              line under a row that isn't full. */}
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
             <ConsoleMetric label="Orgs" value={totalOrgs} />
             <ConsoleMetric label="Active" value={activeOrgs} />
             <ConsoleMetric label="Users" value={totalUsers} />
@@ -481,8 +592,10 @@ function ConsoleMetric({
   readonly value: string | number;
 }) {
   return (
-    <div className="min-w-[6.5rem] flex-1 px-4 py-2.5">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+    <div className="min-w-0 bg-surface-raised px-3 py-2.5 sm:px-4">
+      <p className="truncate text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+        {label}
+      </p>
       <p className="truncate font-mono text-base font-semibold tabular-nums text-ink">{value}</p>
     </div>
   );
