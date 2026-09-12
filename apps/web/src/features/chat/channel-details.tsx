@@ -1,10 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hash, Lock, Pencil, Search, Users, X } from 'lucide-react';
+import { Hash, Lock, Pencil, Users, X } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  Input,
+  SearchInput,
+} from '../../components/primitives.js';
 import { useMembers, type Person } from '../org/use-members.js';
 import { CallButton } from '../telephony/call-button.js';
 import { directoryMemberQuery } from '../people/api.js';
@@ -431,21 +439,7 @@ function MemberRoster({
       <h3 className="text-xs font-semibold text-ink-muted">Members · {memberIds.length}</h3>
 
       {memberIds.length > MEMBER_SEARCH_THRESHOLD && (
-        <div className="relative">
-          <Search
-            aria-hidden="true"
-            className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-faint"
-            strokeWidth={2}
-          />
-          <Input
-            value={query}
-            placeholder="Search members"
-            className="pl-7"
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-          />
-        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Search members" />
       )}
 
       {memberIds.length === 0 ? (

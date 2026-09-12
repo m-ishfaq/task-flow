@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
+import { KeyRound, Plug, Webhook, Workflow, Zap } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -10,7 +11,14 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
@@ -205,14 +213,15 @@ export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
  * not have permission to do that" for anyone with a partial grant.
  */
 const TABS = [
-  { id: 'rules', label: 'Rules', capability: 'manageAutomations' },
-  { id: 'webhooks', label: 'Webhooks', capability: 'manageWebhooks' },
-  { id: 'apiTokens', label: 'API tokens', capability: 'createApiTokens' },
-  { id: 'integrations', label: 'Integrations', capability: 'manageIntegrations' },
+  { id: 'rules', label: 'Rules', capability: 'manageAutomations', icon: Workflow },
+  { id: 'webhooks', label: 'Webhooks', capability: 'manageWebhooks', icon: Webhook },
+  { id: 'apiTokens', label: 'API tokens', capability: 'createApiTokens', icon: KeyRound },
+  { id: 'integrations', label: 'Integrations', capability: 'manageIntegrations', icon: Plug },
 ] as const satisfies readonly {
   id: string;
   label: string;
   capability: keyof SettingsCapabilities;
+  icon: typeof Workflow;
 }[];
 
 type TabId = AutomationTabId;
@@ -310,30 +319,36 @@ export function AutomationsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2 md:px-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Automations</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          When something happens, check a condition, then act. Rules run with the permissions of
-          whoever created them.
-        </p>
+        <PageHeader
+          title="Automations"
+          description="When something happens, check a condition, then act. Rules run with the permissions of whoever created them."
+          icon={<Zap aria-hidden="true" className="size-4" strokeWidth={2.25} />}
+        />
 
-        <nav aria-label="Automation sections" className="mt-3 flex gap-1">
+        <div
+          role="tablist"
+          aria-label="Automation sections"
+          className="mt-3 flex gap-1 overflow-x-auto"
+        >
           {visibleTabs.map((item) => {
             const count = counts[item.id];
             return (
               <button
                 key={item.id}
                 type="button"
-                aria-current={tab === item.id ? 'page' : undefined}
+                role="tab"
+                aria-selected={tab === item.id}
                 onClick={() => {
                   selectTab(item.id);
                 }}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                   tab === item.id
-                    ? 'bg-accent text-accent-ink shadow-sm'
-                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                    ? 'bg-accent/10 text-accent'
+                    : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
                 )}
               >
+                <item.icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
                 {item.label}
                 {/* Deliberately rendered only once the query has settled. A
                     zero that is really "still loading" is the one number worth
@@ -343,7 +358,7 @@ export function AutomationsPage() {
                   <span
                     className={cn(
                       'rounded-md px-1 text-[10px] tabular-nums',
-                      tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
+                      tab === item.id ? 'bg-accent/15' : 'bg-surface-sunken text-ink-faint',
                     )}
                   >
                     {count}
@@ -352,7 +367,7 @@ export function AutomationsPage() {
               </button>
             );
           })}
-        </nav>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -13,7 +13,7 @@ import {
   Empty,
   Field,
   FocusOnMountInput,
-  Input,
+  SearchInput,
   Skeleton,
 } from '../../components/primitives.js';
 import { useMembers, type Person } from '../org/use-members.js';
@@ -757,14 +757,12 @@ function NewDirectMessagePopover({
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
-        <Input
+        <SearchInput
           aria-label="Search people"
           placeholder="Search people…"
           value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          className="h-7 text-xs"
+          onChange={setQuery}
+          className="h-7"
         />
 
         {selected.length > 0 && (

@@ -49,6 +49,7 @@ import {
   OrgBadge,
   PageContainer,
   PageHeader,
+  SearchInput,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -662,14 +663,12 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       {members.data !== undefined && (
         <>
           {members.data.length > 8 && (
-            <Input
+            <SearchInput
               aria-label="Search members"
               placeholder="Search by name or email…"
               value={memberSearch}
-              onChange={(event) => {
-                setMemberSearch(event.target.value);
-              }}
-              className="mb-2 h-9 max-w-xs text-sm"
+              onChange={setMemberSearch}
+              className="mb-2 max-w-xs"
             />
           )}
 
@@ -1253,14 +1252,12 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
-                    <Input
+                    <SearchInput
                       aria-label="Search members"
                       placeholder="Search by name or email…"
                       value={memberQuery}
-                      onChange={(event) => {
-                        setMemberQuery(event.target.value);
-                      }}
-                      className="h-8 text-xs"
+                      onChange={setMemberQuery}
+                      className="h-8"
                     />
                     {matches.length === 0 ? (
                       <p className="p-1 text-xs text-ink-faint">No matches.</p>
@@ -2065,24 +2062,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                 : 'Everyone in the organization is on this team.'}
             </p>
           ) : (
-            <select
-              aria-label={`Add someone to ${team.name}`}
-              value=""
-              disabled={busy}
-              onChange={(event) => {
-                const userId = event.target.value;
-                if (userId === '') return;
-                onAdd(userId as UserId);
-              }}
-              className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-xs text-ink"
-            >
-              <option value="">Add member…</option>
-              {candidates.map((member) => (
-                <option key={member.userId} value={member.userId}>
-                  {member.email}
-                </option>
-              ))}
-            </select>
+            <TeamAddPicker teamName={team.name} candidates={candidates} busy={busy} onAdd={onAdd} />
           )}
         </div>
       )}
@@ -2160,6 +2140,83 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
         </ul>
       )}
     </li>
+  );
+}
+
+/**
+ * The "Add member" control for one team card, as a searchable popover rather
+ * than a native `<select>` — the same shape `PermissionsSection`'s own member
+ * picker already uses a few hundred lines up in this file, applied here for
+ * the identical reason: a plain `<select>` scales to a scrollable native
+ * dropdown with no way to type past the first few candidates, where a real
+ * org can hold far more members than a picker like this should ask someone
+ * to scroll through by eye.
+ */
+function TeamAddPicker({
+  teamName,
+  candidates,
+  busy,
+  onAdd,
+}: {
+  readonly teamName: string;
+  readonly candidates: readonly { readonly userId: string; readonly email: string }[];
+  readonly busy: boolean;
+  readonly onAdd: (userId: UserId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const matches = candidates.filter((member) => member.email.toLowerCase().includes(needle));
+
+  return (
+    <PopoverRoot
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery('');
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Add someone to ${teamName}`}
+          className="flex h-8 w-full items-center rounded-lg border border-line/50 bg-surface-sunken px-2 text-left text-xs text-ink-muted transition-colors hover:border-line hover:text-ink"
+        >
+          Add member…
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search by email…"
+          className="h-8"
+        />
+        {matches.length === 0 ? (
+          <p className="p-1 text-xs text-ink-faint">No matches.</p>
+        ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+            {matches.map((member) => (
+              <li key={member.userId}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    onAdd(member.userId as UserId);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-ink transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  <Avatar userId={member.userId} label={member.email} size="xs" />
+                  <span className="truncate">{member.email}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 

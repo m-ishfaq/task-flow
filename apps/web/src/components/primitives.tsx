@@ -6,6 +6,7 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from 'react';
+import { Search, X } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 
 /**
@@ -203,6 +204,66 @@ export function FocusOnMountInput({ className, ...props }: InputProps) {
   }, []);
 
   return <Input ref={ref} className={className} {...props} />;
+}
+
+/**
+ * The one search box every long list in this app should reach for, instead of
+ * each surface growing its own copy of "a bare `Input` above a filter" — a
+ * pattern that had genuinely drifted three separate ways (channel-details.tsx's
+ * member roster, settings-page.tsx's member list, and every new list this
+ * pass added) before this existed. A leading `Search` glyph and a clear
+ * button once there is something to clear are the two things a plain
+ * `<Input placeholder="Search…">` never had, and are most of what made a
+ * long, unfiltered list read as "cheap" in the first place — a control that
+ * announces what it does at a glance, not a label doing all the work.
+ *
+ * Deliberately a controlled `value`/`onChange(string)` pair, not a raw input
+ * event, since every caller only ever wants the string.
+ */
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  'aria-label': ariaLabel,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly className?: string;
+  readonly 'aria-label'?: string;
+}) {
+  return (
+    <div className={cn('relative h-9', className)}>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-faint"
+        strokeWidth={2}
+      />
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel ?? placeholder}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="h-full w-full rounded-lg border border-line/50 bg-surface-sunken pr-8 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+      />
+      {value !== '' && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => {
+            onChange('');
+          }}
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-ink-faint transition-colors hover:text-ink"
+        >
+          <X aria-hidden="true" className="size-3.5" strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export type TextareaProps = ComponentPropsWithoutRef<'textarea'>;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useSession } from '../../lib/session.js';
@@ -13,6 +14,7 @@ import {
   Empty,
   PageContainer,
   PageHeader,
+  SearchInput,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
@@ -31,9 +33,33 @@ import type { DirectoryMember } from './api.js';
  * Nothing here checks a role — `member:read` is the server's answer to who
  * sees the list, and a caller without it gets an empty page, not an error
  * (§8.2: the UI never re-derives authorization).
+ *
+ * ## A real search box, not just pagination
+ *
+ * Prompted directly against the "long lists" pattern this app already holds
+ * itself to elsewhere (channel-details.tsx's member roster, settings-page.tsx's
+ * member list) — this was the one screen literally named "People" with NO
+ * way to search for one, just a "Load more" button and a scroll. `people.
+ * directory.list` has no server-side name/email filter at all (checked
+ * directly) — cursor pagination answers "how do we page through everyone
+ * without skipping or repeating a row," not "how do we find one person," and
+ * building a real server-side search is separate, larger work than this
+ * pass's scope.
+ *
+ * So the fix is honest about that limit rather than pretending a client
+ * filter over 50 loaded rows searches the whole org: typing anything
+ * non-empty triggers `fetchNextPage` on a loop (the effect below) until
+ * either every page is loaded or the query is cleared, so a search always
+ * ends up checked against the FULL directory, never just whatever happened
+ * to be paged in first. This trades a bigger one-time fetch for a search
+ * that cannot silently miss someone near the end of a large org — the
+ * honest trade given no server-side filter exists to ask for a narrower
+ * one instead.
  */
 export function PeoplePage() {
   const orgId = useSession((state) => state.orgId) ?? '';
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
 
   const directory = useInfiniteQuery({
     queryKey: keys.directoryAll(orgId),
@@ -44,11 +70,35 @@ export function PeoplePage() {
     enabled: orgId !== '',
   });
 
+  const loaded = directory.data?.pages.flatMap((page) => page.members) ?? [];
+
+  useEffect(() => {
+    if (needle === '' || !directory.hasNextPage || directory.isFetchingNextPage) return;
+    void directory.fetchNextPage();
+    // `directory` is a fresh object every render; only the three fields read
+    // above decide whether this fires, so those are the real dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needle, directory.hasNextPage, directory.isFetchingNextPage]);
+
+  const filtered =
+    needle === ''
+      ? loaded
+      : loaded.filter((member) => {
+          const label = displayName({ name: member.displayName, email: member.email });
+          return (
+            label.toLowerCase().includes(needle) ||
+            member.email.toLowerCase().includes(needle) ||
+            (member.jobTitle?.toLowerCase().includes(needle) ?? false) ||
+            (member.department?.toLowerCase().includes(needle) ?? false)
+          );
+        });
+
   return (
-    <PageContainer maxWidth="xl" className="flex flex-col gap-7">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-5">
       <PageHeader
         title="People"
         description="Everyone in this organization, with their profile, role, and who they report to."
+        icon={<Users aria-hidden="true" className="size-4" strokeWidth={2.25} />}
       />
 
       {directory.isPending && <SkeletonRows rows={6} />}
@@ -58,17 +108,35 @@ export function PeoplePage() {
 
       {directory.data !== undefined && (
         <>
-          {directory.data.pages[0]?.members.length === 0 ? (
+          {loaded.length === 0 ? (
             <Empty
               icon={<Users aria-hidden="true" className="size-5" strokeWidth={1.75} />}
               title="No one here yet"
               description="Members appear here as soon as they join the organization."
             />
           ) : (
-            <DirectoryRows rows={directory.data.pages.flatMap((page) => page.members)} />
+            <>
+              <div className="flex items-center gap-3">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search by name, email, title, or department…"
+                  className="max-w-sm"
+                />
+                {needle !== '' && directory.isFetchingNextPage && (
+                  <p className="text-xs text-ink-faint">Searching the rest of the directory…</p>
+                )}
+              </div>
+
+              {filtered.length === 0 ? (
+                <Empty title="No one matches your search" />
+              ) : (
+                <DirectoryRows rows={filtered} />
+              )}
+            </>
           )}
 
-          {directory.hasNextPage && (
+          {needle === '' && directory.hasNextPage && (
             <div className="flex justify-center">
               <Button
                 size="sm"
