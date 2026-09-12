@@ -1,28 +1,47 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3 } from 'lucide-react';
+import { Activity, BarChart3, Clock, Layers, RefreshCw, TrendingDown, Users } from 'lucide-react';
 import type { ProjectId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
+import { formatRelative } from '../../lib/format.js';
 import { Empty, Segmented, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { projectsQuery, sprintsQuery, type Sprint } from '../work/api.js';
-import { burndownQuery, cycleTimeQuery, velocityQuery } from './api.js';
+import { burndownQuery, cycleTimeQuery, statusQuery, velocityQuery } from './api.js';
 import { VelocityChart } from './velocity-chart.js';
 import { BurndownPanel } from './burndown-panel.js';
+import { CfdPanel } from './cfd-panel.js';
+import { CycleTimePanel } from './cycle-time-panel.js';
 import { WorkloadPanel } from './workload-panel.js';
+import { VolumePanel } from './volume-panel.js';
 
 /**
- * Analytics overview (Design Bible §10 — prompted directly with a fresh
- * screenshot of the mockup: "this is the analytics page lets start this").
+ * Analytics: one consolidated dashboard (Design Bible §10).
  *
- * The mockup shows one page, not seven tabs: a "Velocity & flow" hero card
- * (a 4-tile KPI row, a Sprint/Quarter toggle, and the area-fill velocity
- * chart) over a two-column row of Burndown and Workload. This is that page,
- * added as a new, DEFAULT first tab — additive, not a replacement. The
- * existing seven dashboards (Velocity, Burndown, Flow, Cycle Time, Workload,
- * Volume, Status) stay reachable exactly as they were for anyone who wants
- * one metric's own full-width view; this is the landing summary that used
- * to not exist at all.
+ * REDESIGNED after shipping — the first version (a "Velocity & flow" hero
+ * plus Burndown/Workload) was itself additive: a new default tab sitting
+ * ahead of seven other, still-separate per-metric tabs. Reported back
+ * directly against a screenshot of that result: check whether the bible
+ * means for every metric to live on ONE screen, and if so build that,
+ * properly — not the fragmented multi-tab shape this page had instead.
+ *
+ * It does. There is no tab strip anymore — `analytics-page.tsx` renders
+ * this component directly, and every one of the seven dashboards that used
+ * to sit behind its own tab (Velocity, Burndown, Flow, Cycle Time,
+ * Workload, Volume, Status) is a section on this one page. Nothing was
+ * deleted: every panel component below is the same one the old tabs
+ * rendered, each still doing its own real query and its own project/board
+ * picker where it needs one — only the navigation around them changed.
+ *
+ * ## Card chrome, not tabs
+ *
+ * `DashboardCard` is the one shared shell every secondary section uses — an
+ * icon, a title, and the panel's own content beneath, all inside the same
+ * bordered `rounded-xl` card the hero section already established. Panels
+ * that used to render their own bare `<h2>` (Burndown, Flow, Workload,
+ * Cycle Time, Volume) had that heading stripped out — see each file's own
+ * updated header comment — since a title now belongs to the card wrapping
+ * it, never printed twice.
  *
  * ## "Points completed per sprint" — an honest relabelling
  *
@@ -35,23 +54,23 @@ import { WorkloadPanel } from './workload-panel.js';
  * a card count) rather than borrowing the mockup's own vocabulary for a
  * concept that does not exist in this codebase's data model.
  *
- * ## Where each tile's number actually comes from
+ * ## Where each hero tile's number actually comes from
  *
- * The velocity CHART stays org-wide (unchanged from the standalone Velocity
- * tab) — a broader throughput trend, not scoped to one project's sprint.
- * The KPI row is deliberately narrower and more precise: sourced from the
- * SAME sprint-mode burndown query the Burndown card below already uses
- * (`queryBurndown`'s sprint mode filters to cards that were actually IN the
- * sprint via `card_transitions`, the semantically correct source — unlike
- * the org-wide velocity endpoint, which has no project or sprint filter at
- * all and would double-count another project's cards completed on the same
- * calendar days). "This sprint" and "Completed" are both derived from the
- * SAME burndown series already being fetched for the chart below, not a
- * second query — `first.remaining - last.remaining` is exactly the count of
- * cards that left "remaining" since the sprint's own tracked start. "Cycle
- * time" is the existing `cycleTimeQuery`'s median, in days. The "▲/▼" delta
- * on "This sprint" compares against the most recently COMPLETED sprint's
- * own identical calculation — a second burndown query, only fired when a
+ * The velocity CHART stays org-wide — a broader throughput trend, not
+ * scoped to one project's sprint. The KPI row is deliberately narrower and
+ * more precise: sourced from the SAME sprint-mode burndown query the
+ * Burndown card below already uses (`queryBurndown`'s sprint mode filters
+ * to cards that were actually IN the sprint via `card_transitions`, the
+ * semantically correct source — unlike the org-wide velocity endpoint,
+ * which has no project or sprint filter at all and would double-count
+ * another project's cards completed on the same calendar days). "This
+ * sprint" and "Completed" are both derived from the SAME burndown series
+ * already being fetched for the chart below, not a second query —
+ * `first.remaining - last.remaining` is exactly the count of cards that
+ * left "remaining" since the sprint's own tracked start. "Cycle time" is
+ * the existing `cycleTimeQuery`'s median, in days. The "▲/▼" delta on
+ * "This sprint" compares against the most recently COMPLETED sprint's own
+ * identical calculation — a second burndown query, only fired when a
  * previous sprint actually exists — and is omitted entirely rather than
  * showing a fabricated 0% when there is nothing real to compare against.
  *
@@ -60,6 +79,18 @@ import { WorkloadPanel } from './workload-panel.js';
  * A project with no active sprint has nothing sprint-scoped to show: the
  * KPI row reads "—" throughout and the Sprint/Quarter toggle only offers
  * Quarter — there is no sprint window to switch INTO.
+ *
+ * ## Status, as a footer line rather than a card
+ *
+ * The old Status tab (§6) is rollup-freshness diagnostics — "when did the
+ * background worker last refresh this org's numbers" — not a metric a
+ * project lead reads alongside Velocity or Workload. Giving it the same
+ * card weight as everything else would bury the KPIs this page actually
+ * exists to show under an operational detail nobody but this codebase's
+ * own maintainers cares about day to day. It is still real data from the
+ * same `statusQuery()` the old tab used, just demoted to one small, muted
+ * line under everything else — present, honest about staleness, and out
+ * of the way.
  */
 
 type Window = 'sprint' | 'quarter';
@@ -169,7 +200,7 @@ export function OverviewPanel({ orgId }: { readonly orgId: string }) {
   const velocityPoints = velocity.data ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
       <section className="rounded-xl border border-line bg-surface-raised p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -238,14 +269,98 @@ export function OverviewPanel({ orgId }: { readonly orgId: string }) {
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-line bg-surface-raised p-4">
+        <DashboardCard
+          icon={
+            <TrendingDown aria-hidden="true" className="size-4 text-accent" strokeWidth={2.25} />
+          }
+          title="Burndown"
+        >
           <BurndownPanel orgId={orgId} />
-        </div>
-        <div className="rounded-xl border border-line bg-surface-raised p-4">
-          <WorkloadPanel />
-        </div>
+        </DashboardCard>
+        <DashboardCard
+          icon={<Layers aria-hidden="true" className="size-4 text-accent" strokeWidth={2.25} />}
+          title="Cumulative flow"
+        >
+          <CfdPanel orgId={orgId} />
+        </DashboardCard>
       </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <DashboardCard
+          icon={<Users aria-hidden="true" className="size-4 text-accent" strokeWidth={2.25} />}
+          title="Workload"
+        >
+          <WorkloadPanel />
+        </DashboardCard>
+        <DashboardCard
+          icon={<Clock aria-hidden="true" className="size-4 text-accent" strokeWidth={2.25} />}
+          title="Cycle time"
+        >
+          <CycleTimePanel />
+        </DashboardCard>
+      </div>
+
+      <DashboardCard
+        icon={<Activity aria-hidden="true" className="size-4 text-accent" strokeWidth={2.25} />}
+        title="Activity"
+      >
+        <VolumePanel />
+      </DashboardCard>
+
+      <StatusFooter />
     </div>
+  );
+}
+
+/**
+ * The shared card shell every secondary section (Burndown, Flow, Workload,
+ * Cycle Time, Activity) renders inside — the same icon+title header
+ * language the hero "Velocity & flow" card above already established,
+ * applied consistently rather than each panel inventing its own heading
+ * style. `children` is the panel's own returned JSX unchanged; only the
+ * title it used to print itself moved up into this shell.
+ */
+function DashboardCard({
+  icon,
+  title,
+  children,
+}: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-line bg-surface-raised p-4">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      </div>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * The old Status tab, demoted to one line — see this file's own header
+ * comment for why rollup-freshness diagnostics do not get a card of their
+ * own on a page meant to be read as a set of KPIs. Renders nothing at all
+ * while loading or on error: a status footer that itself shows a loading
+ * skeleton or an error box would be a bigger visual claim than this data
+ * is worth making.
+ */
+function StatusFooter() {
+  const status = useQuery(statusQuery());
+  if (status.data === undefined) return null;
+
+  const refreshedAt = status.data.rollupLastRefreshedAt;
+
+  return (
+    <p className="flex items-center justify-center gap-1.5 px-1 py-1 text-center text-[11px] text-ink-faint">
+      <RefreshCw aria-hidden="true" className="size-3" strokeWidth={2} />
+      {refreshedAt === null
+        ? 'Rollups have not run for this organization yet.'
+        : `Data current as of ${formatRelative(refreshedAt)} · ${String(status.data.totalTransitions)} transitions indexed`}
+    </p>
   );
 }
 

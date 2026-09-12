@@ -4,7 +4,12 @@ import { volumeQuery } from './api.js';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.6 — Volume: messages, calls, and in-app calls per day. */
+/**
+ * §3.6 — Volume: messages, calls, and in-app calls per day.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Volume tab is gone.
+ */
 export function VolumePanel() {
   const [days] = useState(30);
   const { start, end } = useMemo(() => {
@@ -36,8 +41,6 @@ export function VolumePanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Volume</h2>
-
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Messages" value={String(totalMessages)} />
         <StatCard label="PSTN Calls" value={String(totalCalls)} />

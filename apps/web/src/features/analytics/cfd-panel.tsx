@@ -18,7 +18,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   done: 'Done',
 };
 
-/** §3.3 — Cumulative Flow Diagram: cards in each category per day. */
+/**
+ * §3.3 — Cumulative Flow Diagram: cards in each category per day.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Flow tab is gone.
+ */
 export function CfdPanel({ orgId }: { readonly orgId: string }) {
   const [days] = useState(30);
   // The board this chart is scoped to. Defaults to the first board below, but a
@@ -100,24 +105,21 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline gap-3">
-        <h2 className="text-sm font-medium text-ink/80">Cumulative Flow</h2>
-        {boardOptions.length > 1 && (
-          <select
-            value={boardId}
-            onChange={(e) => {
-              setSelectedBoardId(e.target.value);
-            }}
-            className="rounded-md border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
-          >
-            {boardOptions.map((board) => (
-              <option key={board.boardId} value={board.boardId}>
-                {board.label}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      {boardOptions.length > 1 && (
+        <select
+          value={boardId}
+          onChange={(e) => {
+            setSelectedBoardId(e.target.value);
+          }}
+          className="rounded-md border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
+        >
+          {boardOptions.map((board) => (
+            <option key={board.boardId} value={board.boardId}>
+              {board.label}
+            </option>
+          ))}
+        </select>
+      )}
 
       {/* Stacked area chart */}
       <svg

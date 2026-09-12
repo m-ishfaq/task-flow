@@ -659,10 +659,12 @@ const platformAdminRoute = createRoute({
 });
 
 /**
- * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
+ * Analytics dashboard (Phase 11, ai/phase-11-analytics.md §3, §5).
  *
- * `tab` is a search param — same pattern as telephony and automations — so
- * the open dashboard is shareable and back-button-correct.
+ * No search param anymore — `overview-panel.tsx`'s own header explains why:
+ * this used to be seven per-metric tabs plus a summary tab in front of
+ * them, each a `tab` search value; it is now one consolidated page with no
+ * tab strip, so there is nothing left for a search param to select.
  *
  * `analytics:read` is Admin-and-Owner-only by role, with no way for a Member
  * to earn it via plan upgrade (unlike telephony, which every Member holds by
@@ -677,21 +679,6 @@ const platformAdminRoute = createRoute({
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analytics',
-  validateSearch: z.object({
-    tab: z
-      .enum([
-        'overview',
-        'velocity',
-        'burndown',
-        'cfd',
-        'cycle-time',
-        'workload',
-        'volume',
-        'status',
-      ])
-      .optional()
-      .catch(undefined),
-  }),
   beforeLoad: () => requireOrg('/analytics'),
   component: () => (
     <CapabilityGate capability="viewAnalytics">

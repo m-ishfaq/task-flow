@@ -6,7 +6,14 @@ import { wire } from '@taskflow/client';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.2 — Burndown: remaining not-done work over time. */
+/**
+ * §3.2 — Burndown: remaining not-done work over time.
+ *
+ * Renders no title of its own — the consolidated Analytics dashboard
+ * (`overview-panel.tsx`'s `DashboardCard`) supplies the icon+heading for
+ * every secondary panel now that this is the only place `BurndownPanel`
+ * mounts (the standalone per-metric tab it used to sit behind is gone).
+ */
 export function BurndownPanel({ orgId }: { readonly orgId: string }) {
   const [days] = useState(30);
   // The project this chart is scoped to. Defaults to the first below; the
@@ -55,7 +62,6 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline gap-3">
-        <h2 className="text-sm font-medium text-ink/80">Burndown</h2>
         {projectOptions.length > 1 && (
           <select
             value={projectId}

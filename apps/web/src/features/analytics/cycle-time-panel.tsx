@@ -3,7 +3,12 @@ import { cycleTimeQuery } from './api.js';
 import { SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.4 — Cycle Time: median and p85 time from active to done. */
+/**
+ * §3.4 — Cycle Time: median and p85 time from active to done.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Cycle Time tab is gone.
+ */
 export function CycleTimePanel() {
   const { data, isLoading, error } = useQuery(cycleTimeQuery());
 
@@ -21,8 +26,6 @@ export function CycleTimePanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Cycle Time</h2>
-
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Median" value={formatHours(result.medianHours)} />
         <StatCard label="P85" value={formatHours(result.p85Hours)} />
