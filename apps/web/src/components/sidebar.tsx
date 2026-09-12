@@ -443,7 +443,7 @@ export function Sidebar() {
             onClick={toggleSidebar}
             aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
             aria-expanded={open}
-            className="ml-auto rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+            className="ml-auto rounded p-1.5 text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
           >
             {open ? (
               <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -498,6 +498,7 @@ export function Sidebar() {
               to="/projects"
               className={cn(
                 'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
+                'transition-colors duration-[var(--motion-fast)]',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -595,7 +596,7 @@ function ProjectNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
-          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
         >
           {collapsed ? (
             <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
@@ -607,7 +608,7 @@ function ProjectNode({
         <Link
           to="/projects/$projectId"
           params={{ projectId }}
-          className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted hover:text-ink"
+          className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted transition-colors duration-[var(--motion-fast)] hover:text-ink"
           activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
           title={`${name} (${projectKey}) — open project settings`}
         >
@@ -680,7 +681,7 @@ function ActiveSprintLine({
     <Link
       to="/projects/$projectId/sprints"
       params={{ projectId }}
-      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint hover:text-ink"
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
       activeProps={{ className: 'text-accent' }}
       title={`${sprint.name} — ends ${sprint.endsOn}`}
     >
@@ -754,7 +755,7 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
         >
           <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
           {isFirst ? 'Add the first board' : 'Board'}
@@ -813,7 +814,7 @@ function BoardLink({
   return (
     <li
       className={cn(
-        'group relative flex items-center rounded-md hover:bg-surface-hover',
+        'group relative flex items-center rounded-md transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover',
         ACTIVE_ROW,
       )}
     >
@@ -830,7 +831,7 @@ function BoardLink({
            un-highlights the board you are looking at. The path is what
            identifies a board; `view` and `project` are state on top of it. */
         activeOptions={{ includeSearch: false }}
-        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
+        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted transition-colors duration-[var(--motion-fast)] hover:text-ink"
         activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
       >
         {board.name}
@@ -847,7 +848,7 @@ function BoardLink({
            hover puts it out of reach of the keyboard entirely, which is the
            standard way this pattern excludes people. */
         className={cn(
-          'shrink-0 px-1.5 py-1 focus-visible:opacity-100',
+          'shrink-0 px-1.5 py-1 transition-[color,opacity] duration-[var(--motion-fast)] focus-visible:opacity-100',
           pinned
             ? 'text-warning opacity-100'
             : 'text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink',

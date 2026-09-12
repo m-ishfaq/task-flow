@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as RadixToast from '@radix-ui/react-toast';
 import { messageFor } from '../lib/error-message.js';
 import { apiErrorOf } from '../lib/trpc.js';
@@ -58,8 +58,32 @@ const TONES: Readonly<Record<ToastTone, string>> = {
   danger: 'border-danger/30 bg-danger/10',
 };
 
+/**
+ * How long the exit motion (below) plays before a toast is actually dropped
+ * from state — matches `--motion-base` (styles.css), the same duration
+ * `.ui-fade` uses for Modal/Popover/DropdownMenu entrances. There is no way
+ * to read a CSS custom property's numeric value from this file, so the
+ * coupling is by convention rather than a shared constant; if `--motion-base`
+ * ever changes, this should move with it.
+ */
+const EXIT_MS = 200;
+
 export function ToastProvider({ children }: { readonly children: ReactNode }) {
   const [toasts, setToasts] = useState<readonly ToastRecord[]>([]);
+
+  /**
+   * `exitTimers` is what actually keeps a dismissed toast in `toasts` for
+   * `EXIT_MS` rather than removing it in the same commit `onOpenChange`
+   * fires in. Radix's own `data-state` attribute already flips to
+   * `'closed'` the instant that happens (`forceMount` below is what stops
+   * Radix's OWN `Presence` wrapper from unmounting the toast's children
+   * right then, independent of this) — `.toast-motion`'s CSS keys off that
+   * attribute directly, so no second, JS-side "is this closing" flag needs
+   * to exist here just to drive a class name. A `Map`, not a `Set`, because
+   * each entry IS the pending removal timer — checking `.has(id)` before
+   * scheduling a second one is the whole idempotency guard `dismiss` needs.
+   */
+  const exitTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   /* A ref rather than a module or closure variable. React Compiler rejects
      reassigning a captured `let` after render, and it is right to: a counter
@@ -70,7 +94,32 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
   const nextId = useRef(0);
 
   const dismiss = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
+    /* Idempotent — `RadixToast.Root`'s own `duration` timer and a person
+       clicking Close in the same instant could both call this for the same
+       id; scheduling the removal timer twice would just mean the second one
+       finds nothing left to remove, but there is no reason to let it. */
+    if (exitTimers.current.has(id)) return;
+
+    exitTimers.current.set(
+      id,
+      setTimeout(() => {
+        exitTimers.current.delete(id);
+        setToasts((current) => current.filter((toast) => toast.id !== id));
+      }, EXIT_MS),
+    );
+  }, []);
+
+  /* Every pending exit timer is for a toast this provider itself owns, so
+     unmounting the provider (never actually happens in this app — it wraps
+     the whole tree for its whole lifetime — but a test harness mounts and
+     unmounts it per case) must not go on to remove a toast from a component
+     that no longer exists. */
+  useEffect(() => {
+    const timers = exitTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
   }, []);
 
   const api = useMemo<ToastApi>(() => {
@@ -118,8 +167,21 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             onOpenChange={(open) => {
               if (!open) dismiss(toast.id);
             }}
+            /* Without this, Radix's own internal `Presence` — which every
+               `Toast.Root` wraps its rendered children in — unmounts them
+               the instant its internal `open` state goes false, checking
+               for a real, running CSS `animation` on the node first and
+               skipping the wait entirely when it finds none (this app's
+               test environment included, where no stylesheet is ever
+               loaded into jsdom at all). `forceMount` disables that
+               decision outright: Presence always renders, and `.toast-motion`
+               below — plus `exitTimers` above, which is what actually
+               decides when this record leaves `toasts` — become the only
+               thing controlling how long the exit motion gets to play, in
+               a real browser and in a test alike. */
+            forceMount
             className={cn(
-              'relative rounded-xl border px-3.5 py-2.5 pr-7 shadow-lg backdrop-blur-sm',
+              'toast-motion relative rounded-xl border px-3.5 py-2.5 pr-7 shadow-lg backdrop-blur-sm',
               TONES[toast.tone],
             )}
           >
@@ -133,7 +195,7 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             )}
             <RadixToast.Close
               aria-label="Dismiss"
-              className="absolute right-1.5 top-1.5 rounded px-1 text-xs text-ink-faint hover:text-ink"
+              className="absolute right-1.5 top-1.5 rounded px-1 text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
             >
               ✕
             </RadixToast.Close>

@@ -568,6 +568,49 @@ body.platform-admin-active {
   }
 
   /**
+   * Toast enter/exit motion (`toast.tsx`) — a slide-plus-fade in the same
+   * direction the toast's own `swipeDirection="right"` dismisses in, so
+   * arriving and leaving read as the same axis of motion rather than two
+   * unrelated effects.
+   *
+   * Entrance reuses `.ui-fade`'s own mechanism, `@starting-style`, for the
+   * identical reason: a toast mounts fresh into the DOM exactly like a
+   * Modal/Popover/DropdownMenu does, so "the frame before this element's
+   * real styles apply" is exactly the entrance frame here too.
+   *
+   * Exit keys off Radix's own `data-state="closed"` — safe to rely on here,
+   * unlike a naive reading of Modal/Popover's own `.ui-fade` might suggest,
+   * because `toast.tsx` passes `Toast.Root` its `forceMount` prop. Without
+   * it, Radix's internal `Presence` wrapper unmounts a toast's children the
+   * instant its own `open` state goes false — checking for a REAL, running
+   * CSS `animation` first and skipping straight to removal when it finds
+   * none, which is exactly what happens here (this rule is a `transition`,
+   * which `Presence`'s detection does not recognize at all, and which
+   * plain has no stylesheet loaded to evaluate in this app's own jsdom test
+   * environment regardless). `forceMount` removes Radix from that decision
+   * entirely: `toast.tsx`'s own `exitTimers`-driven delay is what actually
+   * keeps a closed toast mounted for one `--motion-base` before dropping it
+   * from state, and this rule only has to describe what it should look
+   * like while that's happening.
+   */
+  .toast-motion {
+    transition:
+      opacity var(--motion-base) var(--motion-ease),
+      transform var(--motion-base) var(--motion-ease);
+  }
+  @starting-style {
+    .toast-motion {
+      opacity: 0;
+      transform: translateX(0.75rem);
+    }
+  }
+  .toast-motion[data-state='closed'] {
+    opacity: 0;
+    transform: translateX(0.75rem);
+    pointer-events: none;
+  }
+
+  /**
    * TipTap's rendered output.
    *
    * Scoped to `.rich-text` and written as plain CSS because the editor produces

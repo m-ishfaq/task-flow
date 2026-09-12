@@ -46,7 +46,7 @@ export function SecretReveal({
           type="button"
           onClick={onDismiss}
           aria-label="Done with the secret"
-          className="text-xs text-ink-faint hover:text-ink"
+          className="text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
         >
           Done
         </button>

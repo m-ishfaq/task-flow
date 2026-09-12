@@ -853,7 +853,7 @@ function AccountMenu() {
         <button
           type="button"
           aria-label="Account"
-          className="shrink-0 rounded p-0.5 hover:bg-surface-hover"
+          className="shrink-0 rounded p-0.5 transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
         >
           {/* `email` is in memory only and is null after a reload — see
               session.ts on why it is deliberately not persisted. The session id

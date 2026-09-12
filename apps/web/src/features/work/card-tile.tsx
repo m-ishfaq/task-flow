@@ -292,7 +292,8 @@ export function CardTile({
 
 const ICON_BUTTON =
   'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
-  'ring-1 ring-line hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
+  'ring-1 ring-line transition-colors duration-[var(--motion-fast)] ' +
+  'hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
 
 /**
  * Quick-assign, straight from the tile.
@@ -356,7 +357,7 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
                       toggle(member.userId);
                     }}
                     className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition-colors duration-[var(--motion-fast)]',
                       on
                         ? 'bg-accent text-accent-ink'
                         : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
