@@ -68,6 +68,47 @@ export function StatCard({
 }
 
 /**
+ * The icon-square-plus-inline-subtitle header every content block in the
+ * Design Bible's §18 mockup opens with — "Users · global directory, suspend,
+ * security signals", "Plans · catalog, limits, entitlements", "AI models ·
+ * provider catalog, per-org override, cross-org spend", "Operator audit ·
+ * global, hash-chained — reads logged too". Every tab file before this
+ * either had no header at all inside its own content (the tab strip's own
+ * label was the only thing naming it) or a bare `<p>` of prose with no
+ * visual anchor, which is a real part of why this console read as "cheap
+ * for a SaaS company" next to a mockup where every block opens the same way.
+ *
+ * The icon square is danger-toned, unconditionally, never per-tab — the
+ * same "every warm-colored control is part of the one cross-tenant safety
+ * signal" reasoning `platform-admin-page.tsx`'s own banner and active-tab
+ * styling already state; a rotating rainbow of per-tab icon colors here
+ * would compete with that signal rather than reinforce it.
+ */
+export function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  className,
+}: {
+  readonly icon: React.ComponentType<LucideProps>;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly className?: string;
+}) {
+  return (
+    <div className={cn('mb-3 flex items-center gap-2.5', className)}>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-danger/10 text-danger">
+        <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
+      </span>
+      <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+        {title}
+        <span className="font-normal text-ink-faint"> · {subtitle}</span>
+      </h3>
+    </div>
+  );
+}
+
+/**
  * A small search input with an icon, used above tables to filter rows
  * client-side. Not debounced — the filter is client-side against already-
  * loaded data, so every keystroke is instant.

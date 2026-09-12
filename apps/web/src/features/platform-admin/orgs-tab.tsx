@@ -13,6 +13,7 @@ import {
   ConfirmButton,
   Field,
   Input,
+  OrgBadge,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
@@ -230,10 +231,15 @@ export function OrgsTab({
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
-                      {org.name}
-                    </p>
-                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                    <div className="flex items-center gap-2">
+                      <OrgBadge orgId={org.orgId} name={org.name} />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink transition-colors group-hover:text-accent">
+                          {org.name}
+                        </p>
+                        <p className="truncate font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     {org.ownerEmail === null ? (

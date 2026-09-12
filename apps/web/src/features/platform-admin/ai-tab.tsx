@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
 import { money } from './shared.js';
 import {
   Badge,
@@ -18,7 +19,7 @@ import {
   Spinner,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { StepUpGate } from './shared.js';
+import { SectionHeader, StepUpGate } from './shared.js';
 
 /**
  * The AI provider catalog and its per-org overrides (Phase 15 §2.3, §3.3).
@@ -69,6 +70,11 @@ export function AiTab({
   return (
     <section aria-label="AI Models" className="space-y-6">
       <div>
+        <SectionHeader
+          icon={Bot}
+          title="AI models"
+          subtitle="provider catalog, per-org override, cross-org spend"
+        />
         <div className="flex items-start justify-between gap-3">
           <p className="max-w-2xl text-xs text-ink-muted">
             The model catalog every org's assistant, standup narration, and other AI features
@@ -104,6 +110,7 @@ export function AiTab({
                   key={row.id}
                   className="flex flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
                 >
+                  <ProviderMark provider={row.provider} />
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                       {row.label}
@@ -646,6 +653,20 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(spend.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  /* The Design Bible's own "CROSS-ORG SPEND · THIS MONTH" — three totals a
+     person otherwise has to add up from the per-row table below by hand.
+     Computed client-side from the same rows the table already fetched, not
+     a second query — there is nothing here `spend.data` doesn't already
+     carry per row. */
+  const totals = (spend.data ?? []).reduce(
+    (acc, row) => ({
+      cents: acc.cents + row.totalCents,
+      input: acc.input + row.totalInputTokens,
+      output: acc.output + row.totalOutputTokens,
+    }),
+    { cents: 0, input: 0, output: 0 },
+  );
+
   return (
     <div>
       <h3 className="text-sm font-semibold text-ink">Spend, last {sinceDays} days</h3>
@@ -653,6 +674,14 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
         Grouped by org and model. Expand a row for the token counts and rate the cost was computed
         from — never the prompt or response text itself, which this deployment does not store.
       </p>
+
+      {spend.data !== undefined && spend.data.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-6 rounded-xl border border-line bg-surface-sunken/40 px-4 py-3">
+          <SpendStat label="Total AI spend" value={money(totals.cents, 'usd')} />
+          <SpendStat label="Input tokens" value={formatTokenCount(totals.input)} />
+          <SpendStat label="Output tokens" value={formatTokenCount(totals.output)} />
+        </div>
+      )}
 
       {spend.isPending && <SkeletonRows rows={3} className="mt-3 *:h-10" />}
       {spend.isError && <ErrorView error={spend.error} title="Could not load the spend report" />}
@@ -735,4 +764,51 @@ function SpendRowDetail({ row }: { readonly row: SpendRow }) {
 /** `250` (cents per million) -> `"$2.50 / 1M tokens"`. */
 function formatRate(centsPerMillion: number): string {
   return `$${(centsPerMillion / 100).toFixed(2)} / 1M tokens`;
+}
+
+/** `7_300_000` -> `"7.3M"`, `342` -> `"342"`. Matches `money`'s own compactness for the stat row above. */
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
+  return String(count);
+}
+
+function SpendStat({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div>
+      <p className="text-lg font-semibold tracking-tight text-ink">{value}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+    </div>
+  );
+}
+
+/**
+ * A provider's own colored letter square — the mockup's own "A" / "O" / "G"
+ * marks, one per provider — so the model catalog reads as three distinct
+ * services at a glance instead of three identical rows differing only in
+ * their text. Hue is fixed per provider name, not hashed like `OrgBadge`'s:
+ * unlike an organization, there are exactly three of these and they never
+ * change identity, so a stable, memorable color per name (matching each
+ * provider's own real brand family loosely — purple/green/blue) is more
+ * useful here than a hash that could coincidentally collide or vary between
+ * renders of the same provider.
+ */
+function ProviderMark({ provider }: { readonly provider: string }) {
+  const style =
+    provider === 'anthropic'
+      ? 'bg-accent/15 text-accent'
+      : provider === 'openai'
+        ? 'bg-success/15 text-success'
+        : 'bg-suite-chat/15 text-suite-chat';
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-semibold uppercase',
+        style,
+      )}
+    >
+      {provider.charAt(0)}
+    </span>
+  );
 }

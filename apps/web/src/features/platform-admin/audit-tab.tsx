@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Shield } from 'lucide-react';
+import { Link2, Search, Shield } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
 import { SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { Pagination, StepUpGate, TableSearch } from './shared.js';
+import { Pagination, SectionHeader, StepUpGate, TableSearch } from './shared.js';
 
 export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
   const [before, setBefore] = useState<string | null>(null);
@@ -32,6 +33,11 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   return (
     <section aria-label="Operator audit">
+      <SectionHeader
+        icon={Shield}
+        title="Operator audit"
+        subtitle="global, hash-chained — reads logged too"
+      />
       <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
         Every platform-admin call lands in a global hash chain — the accountability record of this
         tier itself. Reading it is recorded too.
@@ -85,6 +91,9 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                       Operator
                     </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Chain
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/50">
@@ -98,9 +107,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                         {formatDateTime(entry.occurredAt)}
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink">
-                          {entry.action}
-                        </span>
+                        <ActionBadge action={entry.action} />
                       </td>
                       <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
@@ -110,11 +117,25 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                           {entry.operatorEmail}
                         </span>
                       </td>
+                      <td className="px-3 py-2.5">
+                        {/* Not a link — there is no verifier page for this to
+                            open. The glyph is a visual reminder that this row
+                            is cryptographically chained to the one before
+                            it (the trigger's own `prev_hash`/`hash`
+                            columns), not a control. */}
+                        <span
+                          className="inline-flex items-center gap-1 font-mono text-[11px] text-ink-faint"
+                          title={entry.hash}
+                        >
+                          <Link2 aria-hidden="true" className="size-3" strokeWidth={2} />
+                          {entry.hash.slice(0, 4)}…{entry.hash.slice(-3)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {(filteredEntries ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-12 text-center">
+                      <td colSpan={6} className="px-3 py-12 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
                           <p className="text-sm text-ink-faint">No entries match your search.</p>
@@ -143,5 +164,35 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
           </>
         ))}
     </section>
+  );
+}
+
+/**
+ * Colors an action by what it DOES, not by a hardcoded map of every action
+ * string this log can ever contain — the registry of action names lives in
+ * every route that calls `recordOperatorAction`, and a hardcoded switch here
+ * would silently fall back to "neutral" for the next one added, forever.
+ * Three verb classes cover the real blast radius a reader actually cares
+ * about at a glance: `.suspend`/`.remove`/`.delete` (danger — takes access
+ * away or destroys something), `.set`/`.grant`/`.create`/`.update`/
+ * `.reactivate` (accent — grants or changes something), and everything else,
+ * including every `.list`/`.get` read, as a plain neutral chip.
+ */
+function ActionBadge({ action }: { readonly action: string }) {
+  const isDanger = /\.(suspend|remove|delete)/.test(action);
+  const isChange = /\.(set|grant|create|update|reactivate)/.test(action);
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs font-medium',
+        isDanger
+          ? 'bg-danger/10 text-danger'
+          : isChange
+            ? 'bg-accent/10 text-accent'
+            : 'bg-surface-hover text-ink-muted',
+      )}
+    >
+      {action}
+    </span>
   );
 }

@@ -345,6 +345,7 @@ export function PlatformAdminPage() {
       )}
       {tab === 'users' && (
         <UsersTab
+          guard={guard}
           onStepUp={() => {
             setGateOpen(true);
           }}

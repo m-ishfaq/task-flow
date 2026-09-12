@@ -59,6 +59,13 @@ export interface OperatorAuditEntry {
   readonly action: string;
   readonly target: unknown;
   readonly occurredAt: Date;
+  /** Hex-encoded `hash` — the chain link itself, per this table's own
+      trigger. Exposed read-only so the console can show that every row is
+      cryptographically linked, not merely claim it in prose (Design Bible
+      §18's own "Chain" column). Never used to VERIFY anything client-side —
+      the trigger and a real verifier are what prove the chain, this is
+      only a visible reminder that one exists. */
+  readonly hash: string;
 }
 
 /**
@@ -85,6 +92,7 @@ export async function readOperatorAudit(input: {
         action: schema.operatorAuditLog.action,
         target: schema.operatorAuditLog.target,
         occurredAt: schema.operatorAuditLog.occurredAt,
+        hash: schema.operatorAuditLog.hash,
       })
       .from(schema.operatorAuditLog)
       .innerJoin(schema.users, eq(schema.users.id, schema.operatorAuditLog.operatorId))
@@ -101,6 +109,7 @@ export async function readOperatorAudit(input: {
       action: row.action,
       target: row.target,
       occurredAt: row.occurredAt,
+      hash: Buffer.from(row.hash).toString('hex'),
     }));
   });
 }
