@@ -2,6 +2,7 @@ import { useEffect, useRef, type ComponentType } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -36,6 +37,7 @@ import { useBranding } from '../lib/branding-context.js';
 import { SUITE_STYLES, suiteForPath, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button, OrgBadge } from './primitives.js';
+import { BrandMark } from './brand-mark.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
@@ -95,9 +97,31 @@ export function Shell() {
     status !== 'authenticated';
 
   /* The org picker is authenticated but pre-org, so the tree has nothing to
-     show and every query behind it would answer NOT_A_MEMBER. It keeps the
-     footer — that is where the switcher lives — and drops the tree. */
+     show and every query behind it would answer NOT_A_MEMBER. */
   const hasOrg = orgId !== null;
+
+  /**
+   * Platform Admin is "the ONE place in the app that is relative to no
+   * organization" (`platform-admin-page.tsx`'s own header) — reachable from
+   * inside an ordinary org session, so `hasOrg` alone does not distinguish
+   * it. Rendering it inside the ordinary org frame regardless of `hasOrg`
+   * used to leave either a stale org's own project tree sitting next to a
+   * console whose entire point is "no organization is selected here", or —
+   * for an operator with zero org memberships — a tall, empty sidebar
+   * column with nothing but the switcher parked at its bottom. Both read as
+   * "this is broken", not "this is a deliberately different console", which
+   * is the real complaint: reported directly as looking like part of the
+   * same product rather than a distinct operator surface.
+   */
+  const isPlatformAdmin = pathname.startsWith('/platform-admin');
+
+  /* Neither state has a project tree to show — pre-org because there is
+     nothing to show one FOR, Platform Admin because it spans every org and
+     showing any one of them would misstate that. Both get the same minimal
+     top bar (`TopBar`) instead of the ordinary sidebar+header frame, so
+     "nothing to show" never renders as an empty column that looks like a
+     rendering bug. */
+  const topBarOnly = !hasOrg || isPlatformAdmin;
 
   /* Closes the mobile drawer on every navigation, not on each Link's own
      click handler. Threading `onClick={closeMobileNav}` through every link in
@@ -178,41 +202,43 @@ export function Shell() {
     );
   }
 
+  if (topBarOnly) {
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <TopBar isPlatformAdmin={isPlatformAdmin} />
+        <main className="relative min-h-0 flex-1 overflow-auto bg-surface">
+          <Outlet />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={cn(
-        /* `h-dvh`, not `h-full`. `h-full` is `height: 100%`, which only
-           resolves if EVERY ancestor has a definite height — html, body and
-           #root each carry `h-full` for exactly that reason, and the chain
-           holds today. It is still the wrong tool for the outermost frame:
-           the whole layout below depends on this element having a real
-           height, and a percentage makes that a property of four elements in
-           two files rather than of this one.
+      /* `h-dvh`, not `h-full`. `h-full` is `height: 100%`, which only
+         resolves if EVERY ancestor has a definite height — html, body and
+         #root each carry `h-full` for exactly that reason, and the chain
+         holds today. It is still the wrong tool for the outermost frame:
+         the whole layout below depends on this element having a real
+         height, and a percentage makes that a property of four elements in
+         two files rather than of this one.
 
-           When the chain breaks, nothing errors. Every height falls back to
-           `auto`, so the sidebar collapses to the height of its own tree and
-           `main` grows past the viewport — which means a page that manages
-           its own scrolling (`h-full` root, `flex-1 overflow-y-auto` body)
-           has its inner region grow instead of scroll, and its `shrink-0`
-           header scrolls away with the rest. A sticky header sliding off the
-           top is the visible symptom of a height that was never definite.
+         When the chain breaks, nothing errors. Every height falls back to
+         `auto`, so the sidebar collapses to the height of its own tree and
+         `main` grows past the viewport — which means a page that manages
+         its own scrolling (`h-full` root, `flex-1 overflow-y-auto` body)
+         has its inner region grow instead of scroll, and its `shrink-0`
+         header scrolls away with the rest. A sticky header sliding off the
+         top is the visible symptom of a height that was never definite.
 
-           `dvh` is viewport-relative, so it resolves unconditionally. */
-        'flex h-dvh overflow-hidden',
-        /* The pre-org state has no drawer, so its switcher is an ordinary flex
-           child with a fixed width — which below `md` left the org picker about
-           180px to render "Choose an organization" in, header and all. Stacking
-           is the fix rather than a narrower column: at this width there is no
-           room for two, and the switcher is the one thing on this screen that
-           is not the choice being made. */
-        !hasOrg && 'flex-col md:flex-row',
-      )}
+         `dvh` is viewport-relative, so it resolves unconditionally. */
+      className="flex h-dvh overflow-hidden"
     >
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
           drawer closes it — the same "tap away to dismiss" a Radix Popover
           gives for free, restated by hand because this isn't a Radix
           component, it's the app's own persistent chrome. */}
-      {hasOrg && mobileNavOpen && (
+      {mobileNavOpen && (
         <div
           aria-hidden="true"
           onClick={closeMobileNav}
@@ -238,7 +264,7 @@ export function Shell() {
            kill the slide transition outright. Never inert at `md`+, where
            the drawer classes below don't apply and the sidebar is always the
            ordinary, always-interactive one Phase 3.5 built. */
-        inert={hasOrg && !isDesktop && !mobileNavOpen}
+        inert={!isDesktop && !mobileNavOpen}
         className={cn(
           'flex flex-col',
           /* Below `md`: an off-canvas drawer, fixed to the viewport and
@@ -246,44 +272,38 @@ export function Shell() {
              an ordinary flex child with no fixed positioning at all — the
              desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
              handles is untouched by anything here. */
-          hasOrg &&
-            cn(
-              'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
-              mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
-            ),
-          /* Stacked (pre-org, below `md`) it belongs UNDER the choice, not
-             above it: source order puts it first because at `md`+ it is the
-             left column, and `order-last` restores the reading order the
-             layout implies without moving it in the DOM. */
-          !hasOrg && 'order-last md:order-0',
+          'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        {hasOrg && <Sidebar />}
-        <SidebarFooter standalone={!hasOrg} />
+        <Sidebar />
+        <SidebarFooter />
       </div>
 
       {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
           just the sidebar it visually sits near. */}
-      {hasOrg && <CommandPalette />}
+      <CommandPalette />
 
       {/* In-app voice (Phase 13). Mounted in the FRAME, not on the chat page:
           a ringing call has to be answerable from wherever someone happens to
           be, and a call in progress has to survive navigating away from the
           conversation it started in. A microphone that stops when a route
           unmounts is not a phone. */}
-      {hasOrg && <CallSurface />}
+      <CallSurface />
 
       {/* The §6 new-org Docs bootstrap offer (ai/phase-15-ai-copilot-and-
           permissions.md §6). Mounted in the frame rather than on `/projects`
           specifically: the component's own effect is a no-op unless THIS
           tab just created the current org, so it costs nothing to keep
-          mounted everywhere `hasOrg` is true, and it means the offer still
-          appears even if `choose()` ever routes somewhere other than
-          `/projects` after creation. */}
-      {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
+          mounted everywhere this branch renders, and it means the offer
+          still appears even if `choose()` ever routes somewhere other than
+          `/projects` after creation. `orgId` is non-null here — this branch
+          only ever renders when `topBarOnly` (which subsumes `!hasOrg`) is
+          false. */}
+      <NewOrgSetupDialog orgId={orgId} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header showMenuButton={hasOrg} />
+        <Header />
         {/* `relative` establishes a containing block, and it is load-bearing.
             An `position: absolute` descendant with no positioned ancestor
             resolves against the INITIAL containing block instead — which means
@@ -305,28 +325,76 @@ export function Shell() {
 }
 
 /**
- * Identity, pinned to the bottom of the frame.
- *
- * Split from `Sidebar` rather than nested in it because it must survive the one
- * state the tree cannot render — no org selected — which is exactly the state in
- * which someone needs the switcher most. That is the same dead end CLAUDE.md
- * records: an empty org list used to hide the switcher entirely, leaving sign-out
- * as the only way out.
+ * The minimal frame for the two states with no project tree to show —
+ * pre-org (nothing exists yet for one to name) and Platform Admin (the
+ * console spans every org, so showing any one tree would misstate that).
+ * A slim top bar rather than an empty sidebar column: the old layout kept
+ * reserving a full-height left column for `SidebarFooter` alone, which put
+ * two small controls at the very bottom of an otherwise blank strip — the
+ * exact shape of "the sidebar failed to render", not a deliberately
+ * different console. See `Shell`'s own `topBarOnly` comment for why these
+ * two states share this one treatment.
  */
-function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
+function TopBar({ isPlatformAdmin }: { readonly isPlatformAdmin: boolean }) {
+  const navigate = useNavigate();
+
   return (
-    <div
-      className={cn(
-        'mt-auto flex shrink-0 items-center gap-1 border-t border-line bg-surface-raised p-2',
-        /* With no tree above it there is nothing to inherit a width from, and a
-           switcher sized to the word "Select organization" is not a layout. The
-           fixed width is `md`+ ONLY: below that the pre-org shell stacks, and a
-           240px column there consumed more than half a phone's width, leaving
-           the org picker to wrap "Choose an organization" over three lines and
-           truncating the header to "Orga…" and "Settir". */
-        standalone ? 'w-full border-r-0 md:w-60 md:border-r' : 'border-r',
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4 shadow-xs">
+      <Link
+        to={isPlatformAdmin ? '/platform-admin' : '/orgs'}
+        aria-label="Home"
+        className="shrink-0"
+      >
+        <BrandMark size={26} className="text-accent" />
+      </Link>
+
+      {isPlatformAdmin ? (
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-danger uppercase">
+          <ShieldCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Platform admin
+        </span>
+      ) : (
+        <div className="min-w-0 max-w-64 flex-1">
+          <OrgSwitcher />
+        </div>
       )}
-    >
+
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {/* The one way back once "no organization is selected here" is no
+            longer true — every other route this bar covers (pre-org) has
+            nowhere to go back TO yet, which is exactly why it has no
+            equivalent button. */}
+        {isPlatformAdmin && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void navigate({ to: '/projects' });
+            }}
+          >
+            <ArrowLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
+            Back to app
+          </Button>
+        )}
+        <AccountMenu />
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Identity, pinned to the bottom of the sidebar.
+ *
+ * Split from `Sidebar` rather than nested in it so the two can be told apart
+ * as separate concerns (the tree vs. who's looking at it and as whom) — the
+ * one state the tree itself cannot render (no org selected) no longer
+ * reaches this component at all: `Shell`'s own `topBarOnly` branch renders
+ * `TopBar` instead, which is where `OrgSwitcher` and `AccountMenu` live for
+ * that case now.
+ */
+function SidebarFooter() {
+  return (
+    <div className="mt-auto flex shrink-0 items-center gap-1 border-t border-r border-line bg-surface-raised p-2">
       <OrgSwitcher />
       <AccountMenu />
     </div>
@@ -341,7 +409,7 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
  * page-specific controls becomes a second navigation bar that is wrong on every
  * page but one.
  */
-function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
+function Header() {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
   const orgId = useSession((state) => state.orgId);
@@ -369,18 +437,17 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4 shadow-xs">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
           permanent trigger of its own — this is the only way to open it.
-          `showMenuButton` is false in the org-picker's pre-org state, where
-          Shell renders no drawer at all for this to open. */}
-      {showMenuButton && (
-        <button
-          type="button"
-          onClick={toggleMobileNav}
-          aria-label="Open navigation"
-          className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
-        >
-          <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
-        </button>
-      )}
+          `Header` only ever renders inside the ordinary org frame now (the
+          pre-org and Platform Admin states use `TopBar` instead), so the
+          drawer this opens always exists. */}
+      <button
+        type="button"
+        onClick={toggleMobileNav}
+        aria-label="Open navigation"
+        className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
+      >
+        <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
+      </button>
 
       <Breadcrumbs />
 
