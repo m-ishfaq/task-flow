@@ -735,11 +735,22 @@ export function PageHeader({
  */
 export function Section({
   title,
+  icon,
   count,
   description,
   children,
 }: {
   readonly title: string;
+  /**
+   * An optional small tinted-square mark before the title, the same "icon
+   * as identity" language `PageHeader`'s own icon slot already uses one
+   * level up — a page gets a full gradient-filled square, a section inside
+   * it gets a lighter, flat-tinted one, so the two read as a hierarchy
+   * rather than two competing page-level marks stacked on top of each
+   * other. Optional and additive: every existing caller with no icon
+   * renders byte-for-byte as it did before this prop existed.
+   */
+  readonly icon?: ReactNode;
   /* `| undefined` explicitly, not just `?`. Under `exactOptionalPropertyTypes`
      an optional prop rejects an explicitly-passed `undefined`, and callers pass
      `data?.length` — which is exactly that while the query is loading. */
@@ -749,7 +760,12 @@ export function Section({
 }) {
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
+        {icon !== undefined && (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
+            {icon}
+          </span>
+        )}
         <h2 className="text-base font-semibold text-ink">{title}</h2>
         {count !== undefined && <Badge>{count}</Badge>}
       </div>

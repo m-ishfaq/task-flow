@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Building2, Check, CreditCard, ScrollText, Shield, Users, UsersRound } from 'lucide-react';
+import {
+  Building2,
+  Check,
+  CreditCard,
+  ScrollText,
+  Settings2,
+  Shield,
+  SlidersHorizontal,
+  UserCog,
+  Users,
+  UsersRound,
+} from 'lucide-react';
 import {
   ModalContent,
   ModalDescription,
@@ -35,6 +46,7 @@ import {
   Empty,
   Field,
   Input,
+  OrgBadge,
   PageContainer,
   PageHeader,
   Section,
@@ -144,10 +156,14 @@ export function SettingsPage() {
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
+        icon={<SlidersHorizontal aria-hidden="true" className="size-4" strokeWidth={2.25} />}
       />
 
       <div className="mt-7 flex gap-6">
-        <nav aria-label="Settings sections" className="w-44 shrink-0 space-y-0.5">
+        <nav
+          aria-label="Settings sections"
+          className="w-52 shrink-0 space-y-0.5 self-start rounded-xl border border-line bg-surface-raised p-2"
+        >
           {items.map((item) => (
             <button
               key={item.id}
@@ -157,25 +173,34 @@ export function SettingsPage() {
                 setTab(item.id);
               }}
               className={cn(
-                'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+                'relative flex w-full items-center gap-2.5 rounded-lg py-2 pr-2.5 pl-3 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
                 activeTab === item.id
                   ? 'bg-accent/10 font-medium text-accent'
                   : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
               )}
             >
+              {activeTab === item.id && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"
+                />
+              )}
               <item.icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
               {item.label}
             </button>
           ))}
 
           {capabilities?.viewAuditLog === true && (
-            <Link
-              to="/settings/audit"
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
-            >
-              <ScrollText aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
-              Audit log
-            </Link>
+            <>
+              <div aria-hidden="true" className="my-2 border-t border-line/60" />
+              <Link
+                to="/settings/audit"
+                className="flex w-full items-center gap-2.5 rounded-lg py-2 pr-2.5 pl-3 text-[13px] text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+              >
+                <ScrollText aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+                Audit log
+              </Link>
+            </>
           )}
         </nav>
 
@@ -231,42 +256,61 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
   const canRename = org.data.capabilities.updateOrg;
 
   return (
-    <Section title="Organization">
-      <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
-          }}
-        >
-          <div className="flex-1">
-            <Field label="Name" htmlFor="org-name">
-              <Input
-                id="org-name"
-                value={current}
-                disabled={!canRename}
-                title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-              />
-            </Field>
+    <Section
+      title="Organization"
+      icon={<Building2 aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+    >
+      <div className="overflow-hidden rounded-xl border border-line bg-surface-raised">
+        {/* An identity row — the same "avatar/name/facts" shape the org
+            switcher already gives every org, made big here instead of the
+            switcher's own compact list row. A settings page that only ever
+            showed a bare text input had no visual sense that this screen is
+            ABOUT a specific organization at all. */}
+        <div className="flex items-center gap-3 border-b border-line/60 bg-surface-sunken/40 px-4 py-4">
+          <OrgBadge orgId={orgId} name={org.data.name} className="size-12 rounded-xl text-lg" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{org.data.name}</p>
+            <p className="text-xs text-ink-faint">
+              <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
+              {formatDate(org.data.createdAt)}
+            </p>
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!canRename || rename.isPending || current === org.data.name}
-          >
-            Save
-          </Button>
-        </form>
+        </div>
 
-        <p className="mt-2 text-xs text-ink-faint">
-          Slug <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
-          {formatDate(org.data.createdAt)}. The slug is fixed — it appears in links that already
-          exist.
-        </p>
+        <div className="p-4">
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
+            }}
+          >
+            <div className="flex-1">
+              <Field label="Organization name" htmlFor="org-name">
+                <Input
+                  id="org-name"
+                  value={current}
+                  disabled={!canRename}
+                  title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                />
+              </Field>
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!canRename || rename.isPending || current === org.data.name}
+            >
+              Save
+            </Button>
+          </form>
+
+          <p className="mt-2 text-xs text-ink-faint">
+            The slug is fixed — it appears in links that already exist.
+          </p>
+        </div>
       </div>
 
       {rename.isError && <ErrorText error={rename.error} />}
@@ -462,6 +506,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Members"
+      icon={<Users aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={members.data?.length}
       description="Everyone with access to this organization. A role decides what they can do across it; a team grant can narrow or widen that on one resource."
     >
@@ -879,7 +924,11 @@ const ROLE_REFERENCE: readonly { readonly label: string; readonly permission: Pe
 
 function RoleReferenceTable() {
   return (
-    <Section title="Role reference" description="What each role holds, at a glance.">
+    <Section
+      title="Role reference"
+      icon={<Shield aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+      description="What each role holds, at a glance."
+    >
       <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full text-left text-[13px]">
           <thead>
@@ -1159,6 +1208,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Individual permissions"
+      icon={<UserCog aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={grants.data.length}
       description="On top of a member's role, one specific ability can be given to (or taken from) one person — e.g. letting one guest place calls without promoting them to Member."
     >
@@ -1667,6 +1717,7 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Role defaults"
+      icon={<Settings2 aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={roleGrants.data.length}
       description="What a new Member or Guest gets automatically, if an automation rule on 'Someone joins the organization' uses it — this list configures the bundle, it does not grant anything by itself."
     >
@@ -1868,6 +1919,7 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Teams"
+      icon={<UsersRound aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={teams.data?.length}
       description="A team is a subject a grant can name. Adding someone to a team gives them everything that team has been granted, immediately — which is why it is an authorization change and is audited as one."
     >

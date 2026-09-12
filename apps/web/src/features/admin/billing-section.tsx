@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CreditCard } from 'lucide-react';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -157,7 +158,11 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
   const hasSubscription = data?.hasSubscription ?? false;
 
   return (
-    <Section title="Billing" description="What this organization pays, and how to change it.">
+    <Section
+      title="Billing"
+      icon={<CreditCard aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+      description="What this organization pays, and how to change it."
+    >
       {overview.isPending && <SkeletonRows rows={2} className="*:h-12" />}
       {overview.isError && <ErrorView error={overview.error} title="Could not load billing" />}
 
