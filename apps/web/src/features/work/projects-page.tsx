@@ -82,14 +82,32 @@ export function ProjectsPage() {
   const archived = projects.data.filter((project) => project.archivedAt !== null);
   const shown = showArchived ? projects.data : live;
 
+  /* Design Bible §14's own first-run mockup: "Welcome to {org}" and "Three
+     steps to get your team moving.", not the ordinary "Projects" heading —
+     a brand-new org's owner is not yet asking "what does a project own",
+     they are asking "what do I do first", and the getting-started panel
+     below answers exactly that. Swapped only for as long as that panel is
+     the thing actually showing (the identical condition it renders under),
+     so the page reverts to its ordinary identity the moment there is a real
+     project list to show instead. */
+  const showingGettingStarted = live.length === 0 && !showArchived && !creating && canCreateProject;
+
   return (
     <PageContainer maxWidth="xl" className="flex flex-col gap-6">
       {/* Hidden rather than disabled: a create form nobody without
           project:create could submit is clutter, and the list below stays
           fully visible either way. */}
       <PageHeader
-        title="Projects"
-        description="A project owns its boards, labels, statuses and card numbering."
+        title={
+          showingGettingStarted
+            ? `Welcome to ${orgDetail.data?.name ?? 'your organization'}`
+            : 'Projects'
+        }
+        description={
+          showingGettingStarted
+            ? 'Three steps to get your team moving.'
+            : 'A project owns its boards, labels, statuses and card numbering.'
+        }
         actions={
           canCreateProject ? (
             <Button
@@ -115,7 +133,7 @@ export function ProjectsPage() {
       )}
 
       {live.length === 0 && !showArchived && !creating ? (
-        canCreateProject ? (
+        showingGettingStarted ? (
           <GettingStartedPanel
             memberCount={members.data?.length}
             onStart={() => {

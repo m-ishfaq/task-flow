@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { KeyRound } from 'lucide-react';
 import { api, apiErrorOf, errorCodeOf } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
@@ -24,6 +25,7 @@ import {
   useOAuthProviders,
   type OAuthProvider,
 } from './oauth.js';
+import { OAUTH_PROVIDER_ICON } from './oauth-marks.js';
 import type { SessionBody } from '../../lib/session.js';
 
 /**
@@ -152,8 +154,17 @@ export function LoginPage() {
             </h1>
             {/* Body copy is Geist too — the redesign moved the whole app onto
                 the self-hosted face (`styles.css` `--font-sans`), so there is
-                no system-stack line to keep. */}
-            <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
+                no system-stack line to keep. Design Bible §14's own thesis
+                names this line directly: "brand mark, PRODUCT PROMISE, invite
+                context, passkey-first." A functional instruction ("use your
+                email and password") answers a question nobody visiting a
+                sign-in page is asking; the form fields already say what to
+                type. What the bible puts here instead is the one thing a
+                brand-new visitor cannot infer from a login form alone — what
+                this product actually is. */}
+            <p className="mt-1.5 text-sm text-ink-muted">
+              Projects, chat, docs and calls — one workspace.
+            </p>
           </div>
         </div>
 
@@ -260,12 +271,13 @@ export function LoginPage() {
           {passkeySupported ? (
             <Button
               variant="secondary"
-              className="w-full"
+              className="w-full gap-2"
               disabled={signInWithPasskeyMutation.isPending}
               onClick={() => {
                 signInWithPasskeyMutation.mutate();
               }}
             >
+              <KeyRound aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
               {signInWithPasskeyMutation.isPending
                 ? 'Waiting for your passkey…'
                 : 'Sign in with a passkey'}
@@ -295,25 +307,34 @@ export function LoginPage() {
 
           {/* An unconfigured provider renders no button at all (§3.3) rather
             than one that always fails — `oauthProviders.data` is undefined
-            while loading, so nothing here flashes on then off. */}
-          {(['google', 'github'] as const).map(
-            (provider) =>
+            while loading, so nothing here flashes on then off. "Continue
+            with X", not "Sign in with X" — the Design Bible's own copy for
+            this button, and the more accurate one besides: for someone
+            arriving with no account yet, the same button also creates one
+            (`auth.oauth.start` links or registers, whichever the provider's
+            own email resolves to), so "sign in" overpromises what a
+            first-time click actually does. */}
+          {(['google', 'github'] as const).map((provider) => {
+            const ProviderMark = OAUTH_PROVIDER_ICON[provider];
+            return (
               oauthProviders.data?.[provider] === true && (
                 <Button
                   key={provider}
                   variant="secondary"
-                  className="w-full"
+                  className="w-full gap-2"
                   disabled={startOAuth.isPending}
                   onClick={() => {
                     startOAuth.mutate(provider);
                   }}
                 >
+                  <ProviderMark className="size-4 shrink-0" />
                   {startOAuth.isPending && startOAuth.variables === provider
                     ? 'Redirecting…'
-                    : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
+                    : `Continue with ${OAUTH_PROVIDER_LABEL[provider]}`}
                 </Button>
-              ),
-          )}
+              )
+            );
+          })}
           {startOAuth.isError && <ErrorView error={startOAuth.error} />}
         </div>
 
