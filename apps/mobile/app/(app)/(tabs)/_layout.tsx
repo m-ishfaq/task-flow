@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -74,6 +75,7 @@ import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
  * real history entry for `back()` to return to.
  */
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
   const org = useQuery({
     queryKey: ORG_DETAIL_QUERY_KEY,
     queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
@@ -120,11 +122,19 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.accent.hex,
+        tabBarActiveTintColor: colors.suiteWork.hex,
         tabBarInactiveTintColor: colors.inkMuted.hex,
+        /* Design Bible §15: "Bar to 56px with safe-area inset" — the platform
+           defaults (49pt content on iOS, 56dp on Android) already land close
+           to this, but neither reserves the inset AND holds icons at a
+           consistent height the way an explicit height does; this makes both
+           platforms agree rather than each guessing its own total. */
         tabBarStyle: {
           backgroundColor: colors.surfaceRaised.hex,
           borderTopWidth: 0,
+          height: 56 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: insets.bottom,
           ...Platform.select({
             ios: {
               shadowColor: '#000',
@@ -143,6 +153,14 @@ export default function TabsLayout() {
         },
       }}
     >
+      {/* Each tab's `tabBarActiveTintColor` override is the Design Bible §15
+          "suite spectrum" fix: Home & Boards keep the Work hue (the
+          `screenOptions` default above), Chat/Docs/Calls each override to
+          their own product hue — the identical hue every sidebar entry,
+          module icon and "you are here" indicator already carries on web
+          (`packages/tokens`' own `suiteChat`/`suiteDocs`/`suiteCalls`),
+          replacing the one flat `colors.accent.hex` every tab used to share
+          regardless of which product surface it opened. */}
       <Tabs.Screen
         name="home"
         options={{
@@ -169,6 +187,7 @@ export default function TabsLayout() {
         name="chat"
         options={{
           title: 'Chat',
+          tabBarActiveTintColor: colors.suiteChat.hex,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
@@ -183,6 +202,7 @@ export default function TabsLayout() {
         name="docs"
         options={{
           title: 'Docs',
+          tabBarActiveTintColor: colors.suiteDocs.hex,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'document-text' : 'document-text-outline'}
@@ -196,6 +216,7 @@ export default function TabsLayout() {
         name="calls"
         options={{
           title: 'Calls',
+          tabBarActiveTintColor: colors.suiteCalls.hex,
           // `exactOptionalPropertyTypes` refuses an explicit `undefined` for
           // `href` (it wants the key omitted, not set to undefined) — so the
           // "show" case spreads no override at all rather than `href: undefined`.

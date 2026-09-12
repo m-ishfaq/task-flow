@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
-import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
+import { DIRECTLY_ASSIGNABLE_ROLES, isAdminTierRole, type Role } from '@taskflow/policy';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
@@ -28,6 +28,10 @@ import {
   type Team,
 } from '../../src/lib/org-settings.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { ScreenHeader } from '../../src/lib/screen-header.js';
+import { ErrorView } from '../../src/lib/error-view.js';
+import { SkeletonList } from '../../src/lib/skeleton.js';
+import { Avatar } from '../../src/lib/avatar.js';
 
 /**
  * Organization settings — the org itself, its members, and its teams,
@@ -285,41 +289,37 @@ function OrgSettingsScreenContent() {
 
   return (
     <ScrollView style={[styles.container, { paddingTop }]} contentContainerStyle={styles.content}>
-      <Pressable
-        style={styles.backButton}
-        onPress={() => {
-          router.back();
-        }}
-      >
-        <Text style={styles.backButtonText}>← Back</Text>
-      </Pressable>
-      <View style={styles.titleRow}>
-        <Text style={styles.screenTitle}>Organization settings</Text>
-        {/* `org:billing` is Owner-only and nothing ever turns it on for
-            anyone else (no tuple, no plan upgrade, no member grant) — see
-            `billing.tsx`'s own header, updated alongside this one (Phase 15
-            §1's audit of the old "render unconditionally, let it 403"
-            doctrine). Hidden entirely rather than shown-and-refused: a
-            non-owner tapping this would only ever see their own org's
-            billing configuration answer FORBIDDEN, never anything useful. */}
-        {capabilities.viewBilling && (
-          <Pressable
-            style={styles.billingLink}
-            onPress={() => {
-              router.push('/billing');
-            }}
-          >
-            <Text style={styles.billingLinkText}>Billing</Text>
-          </Pressable>
-        )}
-      </View>
+      {/* `ScreenHeader` deliberately has no trailing-action slot — see its
+          own header comment. "Billing" used to sit in this same row,
+          right-aligned, at the exact height `top-bar.tsx`'s persistent
+          icon cluster occupies; it now renders as its own row directly
+          below the title, which is what actually fixes the collision
+          rather than merely nudging it. */}
+      <ScreenHeader title="Organization settings" />
+      {/* `org:billing` is Owner-only and nothing ever turns it on for
+          anyone else (no tuple, no plan upgrade, no member grant) — see
+          `billing.tsx`'s own header, updated alongside this one (Phase 15
+          §1's audit of the old "render unconditionally, let it 403"
+          doctrine). Hidden entirely rather than shown-and-refused: a
+          non-owner tapping this would only ever see their own org's
+          billing configuration answer FORBIDDEN, never anything useful. */}
+      {capabilities.viewBilling && (
+        <Pressable
+          style={styles.billingLink}
+          onPress={() => {
+            router.push('/billing');
+          }}
+        >
+          <Text style={styles.billingLinkText}>Billing</Text>
+        </Pressable>
+      )}
 
       {org.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={2} />
       ) : org.isError ? (
-        <Text style={styles.sectionError} accessibilityRole="alert">
-          {apiErrorOf(org.error)?.error.message ?? "Couldn't load this organization."}
-        </Text>
+        <ErrorView
+          message={apiErrorOf(org.error)?.error.message ?? "Couldn't load this organization."}
+        />
       ) : (
         <>
           <View style={styles.section}>
@@ -439,11 +439,11 @@ function OrgSettingsScreenContent() {
             )}
 
             {members.isPending ? (
-              <ActivityIndicator color={colors.accent.hex} />
+              <SkeletonList count={3} />
             ) : members.isError ? (
-              <Text style={styles.sectionError} accessibilityRole="alert">
-                {apiErrorOf(members.error)?.error.message ?? "Couldn't load members."}
-              </Text>
+              <ErrorView
+                message={apiErrorOf(members.error)?.error.message ?? "Couldn't load members."}
+              />
             ) : (
               <>
                 {members.data.length > 15 && (
@@ -459,44 +459,37 @@ function OrgSettingsScreenContent() {
                 {visibleRoster.length === 0 && (
                   <Text style={styles.emptyHint}>No member matches “{rosterSearch}”.</Text>
                 )}
-                {visibleRoster.map((member) => (
-                  <View key={member.userId} style={styles.memberRow}>
-                    <View style={styles.memberInfo}>
-                      <Text style={styles.memberEmail} numberOfLines={1}>
-                        {member.displayName ?? member.email}
-                        {member.userId === currentUserId ? ' (you)' : ''}
+                {/* Design Bible §15's own "MEMBERS — WHAT WAS WRONG" callout,
+                    fixed as it names: role SECTIONS with counts (owners/admins
+                    separated from members, the mockup's own "ADMINS · 2" /
+                    "MEMBERS · 123"), an avatar per row instead of none, and
+                    Remove moved OFF the row — every row used to carry its own
+                    red Remove text, "an accidental-tap hazard on 128 rows";
+                    now a single "Manage" affordance opens the sheet, and
+                    Remove lives inside it as one more deliberate tap, not the
+                    row's own default action. */}
+                {ROSTER_GROUPS.map(({ key, label, test }) => {
+                  const rows = visibleRoster.filter(test);
+                  if (rows.length === 0) return null;
+                  return (
+                    <View key={key} style={styles.rosterGroup}>
+                      <Text style={styles.rosterGroupLabel}>
+                        {label} · {rows.length}
                       </Text>
-                      {member.status !== 'active' && (
-                        <Text style={styles.memberStatus}>{member.status}</Text>
-                      )}
+                      {rows.map((member) => (
+                        <MemberRow
+                          key={member.userId}
+                          member={member}
+                          isSelf={member.userId === currentUserId}
+                          canManage={capabilities.manageMembers || capabilities.removeMembers}
+                          onManage={() => {
+                            setRolePickerFor(member);
+                          }}
+                        />
+                      ))}
                     </View>
-                    {capabilities.manageMembers ? (
-                      <Pressable
-                        style={styles.roleBadge}
-                        disabled={changeRole.isPending || remove.isPending}
-                        onPress={() => {
-                          setRolePickerFor(member);
-                        }}
-                      >
-                        <Text style={styles.roleBadgeText}>{member.role}</Text>
-                      </Pressable>
-                    ) : (
-                      <View style={styles.roleBadge}>
-                        <Text style={styles.roleBadgeText}>{member.role}</Text>
-                      </View>
-                    )}
-                    {capabilities.removeMembers && (
-                      <Pressable
-                        disabled={changeRole.isPending || remove.isPending}
-                        onPress={() => {
-                          runRemove(member.userId);
-                        }}
-                      >
-                        <Text style={styles.removeText}>Remove</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
             {remove.isError && (
@@ -587,12 +580,20 @@ function OrgSettingsScreenContent() {
         </>
       )}
 
-      <RolePickerModal
+      <ManageMemberSheet
         member={rolePickerFor}
-        pending={changeRole.isPending}
-        onPick={(next) => {
+        canChangeRole={capabilities.manageMembers}
+        canRemove={capabilities.removeMembers && rolePickerFor?.userId !== currentUserId}
+        rolePending={changeRole.isPending}
+        removePending={remove.isPending}
+        onPickRole={(next) => {
           if (rolePickerFor === null) return;
           runChangeRole({ userId: rolePickerFor.userId, role: next });
+        }}
+        onRemove={() => {
+          if (rolePickerFor === null) return;
+          runRemove(rolePickerFor.userId);
+          setRolePickerFor(null);
         }}
         onClose={() => {
           setRolePickerFor(null);
@@ -615,21 +616,39 @@ function OrgSettingsScreenContent() {
 }
 
 /**
+ * One member's own actions, in one sheet — Design Bible §15's own
+ * "MEMBERS — WHAT WAS WRONG" fix ("Remove moved into a per-member Manage
+ * sheet"), replacing what used to be two separate on-row affordances (tap
+ * the role badge to change role; a permanently-visible red "Remove" text
+ * beside it) with one deliberate tap to open, then a second to act — the
+ * same two-tap-not-one shape this codebase's own `ConfirmButton` uses for
+ * every other destructive action, applied here at the sheet level instead
+ * of the button level since Remove is one of several actions this sheet
+ * can take, not the only one.
+ *
  * The CURRENT role is always offered even when it is not directly
  * assignable — an Owner's row would otherwise offer no way to leave the
  * picker without silently reading as "demote to admin," the same
  * reasoning `settings-page.tsx`'s own `MemberRow` documents for its
  * `<select>` deduping `[member.role, ...DIRECTLY_ASSIGNABLE_ROLES]`.
  */
-function RolePickerModal({
+function ManageMemberSheet({
   member,
-  pending,
-  onPick,
+  canChangeRole,
+  canRemove,
+  rolePending,
+  removePending,
+  onPickRole,
+  onRemove,
   onClose,
 }: {
   readonly member: Member | null;
-  readonly pending: boolean;
-  readonly onPick: (role: Role) => void;
+  readonly canChangeRole: boolean;
+  readonly canRemove: boolean;
+  readonly rolePending: boolean;
+  readonly removePending: boolean;
+  readonly onPickRole: (role: Role) => void;
+  readonly onRemove: () => void;
   readonly onClose: () => void;
 }) {
   const roles =
@@ -639,27 +658,105 @@ function RolePickerModal({
     <Modal visible={member !== null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>
-            Role for {member?.displayName ?? member?.email ?? ''}
-          </Text>
-          {roles.map((entry) => (
-            <Pressable
-              key={entry}
-              style={styles.modalRow}
-              disabled={pending}
-              onPress={() => {
-                onPick(entry as Role);
-              }}
-            >
-              <Text style={styles.modalRowText}>{entry}</Text>
+          <View style={styles.manageSheetHeader}>
+            {member !== null && (
+              <Avatar label={member.displayName ?? member.email} size={36} seed={member.userId} />
+            )}
+            <View style={styles.manageSheetHeaderText}>
+              <Text style={styles.modalTitle}>{member?.displayName ?? member?.email ?? ''}</Text>
+              {member !== null && <Text style={styles.sectionHint}>{member.email}</Text>}
+            </View>
+          </View>
+
+          {canChangeRole && (
+            <>
+              <Text style={styles.modalSectionLabel}>Role</Text>
+              {roles.map((entry) => (
+                <Pressable
+                  key={entry}
+                  style={styles.modalRow}
+                  disabled={rolePending}
+                  onPress={() => {
+                    onPickRole(entry as Role);
+                  }}
+                >
+                  <Text style={styles.modalRowText}>{entry}</Text>
+                  {member?.role === entry && <Text style={styles.modalRowCheck}>✓</Text>}
+                </Pressable>
+              ))}
+            </>
+          )}
+
+          {canRemove && (
+            <Pressable style={styles.manageSheetRemove} disabled={removePending} onPress={onRemove}>
+              <Text style={styles.removeText}>Remove from organization</Text>
             </Pressable>
-          ))}
+          )}
+
           <Pressable style={styles.modalCancel} onPress={onClose}>
             <Text style={styles.modalCancelText}>Cancel</Text>
           </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+/**
+ * Design Bible §15's own mockup — "ADMINS · 2" / "MEMBERS · 123" as two
+ * separate sections rather than one flat list — so scanning "who runs this
+ * org" doesn't mean reading past 120 ordinary members first.
+ */
+const ROSTER_GROUPS: readonly {
+  readonly key: string;
+  readonly label: string;
+  readonly test: (member: Member) => boolean;
+}[] = [
+  {
+    key: 'admins',
+    label: 'Admins',
+    test: (member) => isAdminTierRole(member.role),
+  },
+  {
+    key: 'members',
+    label: 'Members',
+    test: (member) => !isAdminTierRole(member.role),
+  },
+];
+
+function MemberRow({
+  member,
+  isSelf,
+  canManage,
+  onManage,
+}: {
+  readonly member: Member;
+  readonly isSelf: boolean;
+  readonly canManage: boolean;
+  readonly onManage: () => void;
+}) {
+  const label = member.displayName ?? member.email;
+
+  return (
+    <View style={styles.memberRow}>
+      <Avatar label={label} size={32} seed={member.userId} />
+      <View style={styles.memberInfo}>
+        <Text style={styles.memberEmail} numberOfLines={1}>
+          {label}
+          {isSelf ? ' (you)' : ''}
+        </Text>
+        {member.status !== 'active' && <Text style={styles.memberStatus}>{member.status}</Text>}
+      </View>
+      {canManage ? (
+        <Pressable style={styles.roleBadge} onPress={onManage}>
+          <Text style={styles.roleBadgeText}>{member.role}</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.roleBadge}>
+          <Text style={styles.roleBadgeText}>{member.role}</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -696,7 +793,7 @@ function TransferOwnershipModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>Transfer ownership</Text>
+          <Text style={[styles.modalTitle, styles.modalTitleSpaced]}>Transfer ownership</Text>
           <Text style={styles.sectionHint}>
             The new owner gets everything Owner allows, immediately. You become {selfNewRole} in the
             same transaction — there is never a moment with no owner.
@@ -849,19 +946,13 @@ function TeamCard({
     <View style={styles.teamCard}>
       <View style={styles.teamCardHeader}>
         <View style={styles.teamAvatarStack}>
-          {visibleMembers.map((member, i) => {
-            const initials = (member.email[0] ?? '?').toUpperCase();
-            return (
-              <View
-                key={member.userId}
-                style={[styles.teamAvatar, { marginLeft: i === 0 ? 0 : -8 }]}
-              >
-                <Text style={styles.teamAvatarText}>{initials}</Text>
-              </View>
-            );
-          })}
+          {visibleMembers.map((member, i) => (
+            <View key={member.userId} style={i === 0 ? undefined : styles.teamAvatarOverlap}>
+              <Avatar label={member.email} size={30} seed={member.userId} />
+            </View>
+          ))}
           {overflow > 0 && (
-            <View style={[styles.teamAvatar, styles.teamAvatarOverflow, { marginLeft: -8 }]}>
+            <View style={[styles.teamAvatar, styles.teamAvatarOverflow, styles.teamAvatarOverlap]}>
               <Text style={styles.teamAvatarOverflowText}>+{overflow}</Text>
             </View>
           )}
@@ -894,11 +985,7 @@ function TeamCard({
         <View style={styles.teamMemberList}>
           {team.members.map((member) => (
             <View key={member.userId} style={styles.teamMemberRow}>
-              <View style={styles.teamMemberAvatar}>
-                <Text style={styles.teamMemberAvatarText}>
-                  {(member.email[0] ?? '?').toUpperCase()}
-                </Text>
-              </View>
+              <Avatar label={member.email} size={26} seed={member.userId} />
               <Text style={styles.teamMemberEmail} numberOfLines={1}>
                 {member.email}
               </Text>
@@ -948,11 +1035,11 @@ function TeamCard({
                         setMemberSearch('');
                       }}
                     >
-                      <View style={styles.teamMemberAvatar}>
-                        <Text style={styles.teamMemberAvatarText}>
-                          {(member.email[0] ?? '?').toUpperCase()}
-                        </Text>
-                      </View>
+                      <Avatar
+                        label={member.displayName ?? member.email}
+                        size={26}
+                        seed={member.userId}
+                      />
                       <Text style={styles.modalRowText}>{member.displayName ?? member.email}</Text>
                     </Pressable>
                   ))
@@ -994,28 +1081,9 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 8,
   },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 4,
-  },
-  backButtonText: {
-    color: colors.accent.hex,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.ink.hex,
-    letterSpacing: -0.3,
-  },
   billingLink: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: colors.accent.hex + '30',
     borderRadius: radiusCard,
@@ -1072,10 +1140,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  teamAvatarText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.accent.hex,
+  teamAvatarOverlap: {
+    marginLeft: -8,
   },
   teamAvatarOverflow: {
     backgroundColor: colors.line.hex,
@@ -1127,19 +1193,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingVertical: 5,
-  },
-  teamMemberAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.accent.hex + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  teamMemberAvatarText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.accent.hex,
   },
   teamMemberEmail: {
     flex: 1,
@@ -1289,6 +1342,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.danger.hex,
   },
+  rosterGroup: {
+    gap: 4,
+    marginBottom: 4,
+  },
+  rosterGroupLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkFaint.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: 6,
+  },
+  manageSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  manageSheetHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  manageSheetRemove: {
+    paddingVertical: 14,
+    marginTop: 4,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: '#00000099',
@@ -1304,17 +1383,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.ink.hex,
+  },
+  modalTitleSpaced: {
     marginBottom: 12,
   },
+  modalSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+    marginTop: 10,
+    marginBottom: 4,
+  },
   modalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
   },
   modalRowText: {
+    flex: 1,
     fontSize: 15,
     color: colors.ink.hex,
     textTransform: 'capitalize',
+  },
+  modalRowCheck: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.accent.hex,
   },
   modalCancel: {
     paddingVertical: 14,

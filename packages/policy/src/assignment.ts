@@ -80,3 +80,22 @@ export function sameRole(left: Role, right: Role): boolean {
 export function isGuestRole(role: string): boolean {
   return role === 'guest';
 }
+
+/**
+ * Whether a role sits in the org's own administrative tier (Owner or
+ * Admin) — the same trivial shape as `isGuestRole`, for the identical
+ * reason: guardrail 7 cannot tell `role === 'admin'` apart from a real
+ * authorization shortcut, so even a purely PRESENTATIONAL grouping (which
+ * roster section a member's row sorts into on `apps/mobile`'s org-settings
+ * screen, Design Bible §15's own "ADMINS · N / MEMBERS · N" mockup) has to
+ * ask this module rather than compare inline.
+ *
+ * Takes a plain `string`, like `isGuestRole` and for the identical reason:
+ * its mobile caller reads `role` off a Wire-typed tRPC result, which is
+ * `string` on the wire, not the branded `Role` — there is nothing to
+ * validate-and-narrow first, and an unrecognized value here just isn't
+ * admin-tier, the same answer `false` already gives.
+ */
+export function isAdminTierRole(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}

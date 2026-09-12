@@ -158,7 +158,7 @@ export function TelephonyContactPicker({
 
       {matched !== undefined && (
         <View style={styles.matchedRow}>
-          <Avatar label={matched.label} size={16} />
+          <Avatar label={matched.label} size={16} seed={matched.userId} />
           <Text style={styles.matchedText} numberOfLines={1}>
             {matched.label}
           </Text>
@@ -208,7 +208,7 @@ export function TelephonyContactPicker({
                         setPickerOpen(false);
                       }}
                     >
-                      <Avatar label={person.label} size={20} />
+                      <Avatar label={person.label} size={20} seed={person.userId} />
                       <View style={styles.modalRowText}>
                         <Text style={styles.modalRowName} numberOfLines={1}>
                           {person.label}

@@ -1539,7 +1539,7 @@ function MessageGroupRow({
 
   return (
     <View style={styles.groupRow}>
-      <Avatar label={authorLabel} />
+      <Avatar label={authorLabel} seed={group.authorId ?? undefined} />
       <View style={styles.groupBody}>
         <View style={styles.groupHeader}>
           <Text style={styles.groupAuthor}>{isOwn ? 'You' : authorLabel}</Text>

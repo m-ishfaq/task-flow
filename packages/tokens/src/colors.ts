@@ -70,6 +70,25 @@ export const colors = {
   priorityMedium: { oklch: { l: 60, c: 0.17, h: 285 }, hex: '#796ce0' },
 
   /**
+   * Suite spectrum — Design Bible §01: one hue per product module, ported
+   * from `styles.css`'s own `--color-suite-*` block (285/220/158/66/350),
+   * so the Design Bible §15 mobile pass ("each tab takes its product hue
+   * when active — Home & Boards indigo, Chat cyan, Docs green, Calls
+   * amber") has real tokens to read instead of the one flat
+   * `tabBarActiveTintColor` every tab shared before this. `suiteWork` is
+   * deliberately a different, lighter tint from `accent` even though both
+   * sit at hue 285 — `styles.css`'s own comment on this block explains why
+   * the two may share a hue while still being separate tokens (Work
+   * borrows the brand hue rather than claiming a new one, but is tuned as
+   * an icon/indicator swatch, not a solid-fill-with-text color).
+   */
+  suiteWork: { oklch: { l: 64, c: 0.16, h: 285 }, hex: '#847ae8' },
+  suiteChat: { oklch: { l: 66, c: 0.12, h: 220 }, hex: '#01a2c5' },
+  suiteDocs: { oklch: { l: 66, c: 0.13, h: 158 }, hex: '#3baa73' },
+  suiteCalls: { oklch: { l: 74, c: 0.13, h: 66 }, hex: '#e29948' },
+  suitePeople: { oklch: { l: 66, c: 0.14, h: 350 }, hex: '#d06b9e' },
+
+  /**
    * `styles.css`'s own token also carries `/ 60%` alpha, dropped here: a
    * single hex cannot express it, and a modal scrim is exactly where the
    * DIFFERENCE between "opaque dark color" and "60%-transparent dark color"
