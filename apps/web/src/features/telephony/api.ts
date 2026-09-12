@@ -49,10 +49,15 @@ export function phoneNumbersQuery(orgId: string) {
   });
 }
 
+/** `listCalls` (`apps/api/src/telephony/call.service.ts`) takes a hard
+ *  limit, never a cursor — `calls-panel.tsx`'s own disclosure note, shown
+ *  when a page comes back exactly this size, reads this same constant. */
+export const CALL_LOG_LIMIT = 50;
+
 export function callsQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.calls(orgId),
-    queryFn: async () => wire(await api.telephony.calls.list.query({ limit: 50 })),
+    queryFn: async () => wire(await api.telephony.calls.list.query({ limit: CALL_LOG_LIMIT })),
   });
 }
 
@@ -173,10 +178,16 @@ export function phoneContactsQuery(orgId: string) {
   });
 }
 
+/** `listThreads` (the route behind `messages.threads`) takes a hard limit
+ *  too — `messages-panel.tsx`'s own disclosure note reads this constant,
+ *  the identical shape `CALL_LOG_LIMIT` gives its sibling above. */
+export const MESSAGE_THREADS_LIMIT = 50;
+
 export function messageThreadsQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.messageThreads(orgId),
-    queryFn: async () => wire(await api.telephony.messages.threads.query({ limit: 50 })),
+    queryFn: async () =>
+      wire(await api.telephony.messages.threads.query({ limit: MESSAGE_THREADS_LIMIT })),
   });
 }
 

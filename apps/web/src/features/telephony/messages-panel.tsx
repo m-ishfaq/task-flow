@@ -5,12 +5,20 @@ import { ChevronLeft } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, Empty, Field, Input, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  Empty,
+  Field,
+  Input,
+  SearchInput,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { CallButton } from './call-button.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
 import {
+  MESSAGE_THREADS_LIMIT,
   invalidateAfterMessage,
   messageThreadsQuery,
   phoneNumbersQuery,
@@ -65,6 +73,13 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
     void navigate({ to: '/calls', search: { tab: 'messages', thread: id } });
   };
 
+  const [threadSearch, setThreadSearch] = useState('');
+  const threadNeedle = threadSearch.trim().toLowerCase();
+  const visibleThreads = (threads.data ?? []).filter(
+    (thread) =>
+      threadNeedle === '' || String(thread.counterparty).toLowerCase().includes(threadNeedle),
+  );
+
   /* Below `md`, the thread list and an open thread can't share a phone-width
      screen — the identical split `chat-page.tsx` already uses for channels,
      driven by whether anything is open rather than a second "which pane"
@@ -100,6 +115,16 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
               </Button>
             </div>
 
+            {threads.data !== undefined && threads.data.length > 8 && (
+              <div className="border-b border-line p-2">
+                <SearchInput
+                  value={threadSearch}
+                  onChange={setThreadSearch}
+                  placeholder="Search by number…"
+                />
+              </div>
+            )}
+
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
               {threads.isPending ? (
                 <SkeletonRows rows={4} />
@@ -110,8 +135,10 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                   title="No SMS conversations yet"
                   description="Inbound texts to your numbers land here."
                 />
+              ) : visibleThreads.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-ink-faint">No threads match your search.</p>
               ) : (
-                threads.data.map((thread) => (
+                visibleThreads.map((thread) => (
                   <button
                     key={thread.threadId}
                     type="button"
@@ -147,6 +174,14 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                     </div>
                   </button>
                 ))
+              )}
+              {/* `listThreads` takes a hard limit, never a cursor — the
+                  identical "no load-more to offer, so say where the list
+                  stops" disclosure `calls-panel.tsx` gives its own log. */}
+              {threads.data?.length === MESSAGE_THREADS_LIMIT && (
+                <p className="px-2 py-2 text-center text-[11px] text-ink-faint">
+                  Showing your most recent {MESSAGE_THREADS_LIMIT} threads.
+                </p>
               )}
             </div>
           </div>

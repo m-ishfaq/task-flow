@@ -142,6 +142,10 @@ export async function unsaveMessage(
  * something to show without a second round trip per row from whatever renders
  * the list.
  */
+/** The same unbounded-otherwise gap `PINNED_LIST_LIMIT` closes for pins,
+ *  one table over — Design Bible §20. */
+export const SAVED_LIST_LIMIT = 200;
+
 export async function listSaved(actor: ChatActor): Promise<readonly SavedMessage[]> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const rows = await tx
@@ -152,7 +156,8 @@ export async function listSaved(actor: ChatActor): Promise<readonly SavedMessage
       })
       .from(schema.savedMessages)
       .where(eq(schema.savedMessages.userId, userOf(actor)))
-      .orderBy(desc(schema.savedMessages.savedAt));
+      .orderBy(desc(schema.savedMessages.savedAt))
+      .limit(SAVED_LIST_LIMIT);
 
     if (rows.length === 0) return [];
 

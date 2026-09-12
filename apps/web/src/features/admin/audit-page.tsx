@@ -13,6 +13,7 @@ import {
   Empty,
   PageContainer,
   PageHeader,
+  SearchInput,
   Spinner,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
@@ -41,6 +42,7 @@ import { ErrorView } from '../../components/error-view.js';
 export function AuditPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const [before, setBefore] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const entries = useQuery({
     queryKey: [...keys.org(orgId), 'audit', before ?? 'latest'],
@@ -49,6 +51,17 @@ export function AuditPage() {
 
   const verify = useMutation({
     mutationFn: () => api.tenancy.audit.verify.query(undefined),
+  });
+
+  const needle = search.trim().toLowerCase();
+  const visibleEntries = (entries.data ?? []).filter((entry) => {
+    if (needle === '') return true;
+    return (
+      entry.action.toLowerCase().includes(needle) ||
+      (entry.actorEmail?.toLowerCase().includes(needle) ?? false) ||
+      (entry.resourceType?.toLowerCase().includes(needle) ?? false) ||
+      (entry.resourceId?.toLowerCase().includes(needle) ?? false)
+    );
   });
 
   return (
@@ -119,6 +132,21 @@ export function AuditPage() {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
+            {/* A client-side filter over the fetched PAGE, not a server-side
+                search — `tenancy.audit.list` takes only `limit`/`before`
+                (keyset on `seq`, §8.6's own reasoning against an offset that
+                could skip rows as the log grows), the identical shape
+                `platform-admin/audit-tab.tsx`'s own `TableSearch` already
+                filters this way for the operator-tier sibling of this exact
+                table. Narrowing what's on screen within the current page is
+                still the win a long, scrolling table needs most. */}
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Filter by action, resource, or actor…"
+              className="max-w-sm"
+            />
+
             {/* `overflow-x-auto` only, no border/radius of its own — `.data-table`
                 (styles.css) already draws both, at `--radius-card` (10px). A
                 wrapper border here used to add a second, MISMATCHED one at the
@@ -136,26 +164,34 @@ export function AuditPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.data.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="whitespace-nowrap text-ink-muted">
-                        {formatDateTime(entry.occurredAt)}
-                      </td>
-                      <td className="font-medium text-ink">{entry.action}</td>
-                      <td className="text-ink-muted">
-                        {entry.resourceType ?? '—'}
-                        {entry.resourceId !== null && (
-                          <span className="ml-1 font-mono text-[11px] text-ink-faint">
-                            {entry.resourceId.slice(0, 8)}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
+                  {visibleEntries.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center text-sm text-ink-faint">
+                        No entries match your search.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    visibleEntries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="font-mono text-ink-faint">{entry.seq}</td>
+                        <td className="whitespace-nowrap text-ink-muted">
+                          {formatDateTime(entry.occurredAt)}
+                        </td>
+                        <td className="font-medium text-ink">{entry.action}</td>
+                        <td className="text-ink-muted">
+                          {entry.resourceType ?? '—'}
+                          {entry.resourceId !== null && (
+                            <span className="ml-1 font-mono text-[11px] text-ink-faint">
+                              {entry.resourceId.slice(0, 8)}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

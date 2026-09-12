@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -109,6 +110,11 @@ function ShareModal({
   const [mode, setMode] = useState<'form' | 'pickPerson'>('form');
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [relation, setRelation] = useState<Relation>(RELATIONS[0]);
+  // Design Bible §20: a search box earns its place once the org roster is
+  // long enough that scrolling to find one person stops being quick — the
+  // same 8-person threshold `channel-details`'s own `MemberRoster` and
+  // `board-filter-sheet.tsx`'s assignee picker already use.
+  const [personQuery, setPersonQuery] = useState('');
 
   const grantsQueryKey = ['tenancy.grants.list', 'board', boardId] as const;
 
@@ -154,11 +160,20 @@ function ShareModal({
   const close = (): void => {
     setMode('form');
     setSubjectId(null);
+    setPersonQuery('');
     onClose();
   };
 
   const rows = grants.data ?? [];
   const selectedLabel = subjectId === null ? 'Choose someone…' : personOf(subjectId).label;
+
+  const personNeedle = personQuery.trim().toLowerCase();
+  const visiblePeople =
+    personNeedle === ''
+      ? people
+      : people.filter((member) =>
+          personOf(member.userId).label.toLowerCase().includes(personNeedle),
+        );
 
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
@@ -169,13 +184,28 @@ function ShareModal({
           {mode === 'pickPerson' ? (
             <>
               <Text style={styles.modalTitle}>Choose someone</Text>
+              {people.length > 8 && (
+                <TextInput
+                  value={personQuery}
+                  onChangeText={setPersonQuery}
+                  placeholder="Search members…"
+                  placeholderTextColor={colors.inkFaint.hex}
+                  style={styles.pickerSearch}
+                  autoCapitalize="none"
+                  autoFocus
+                />
+              )}
               <ScrollView style={styles.pickerList}>
-                {people.map((member) => (
+                {visiblePeople.length === 0 && (
+                  <Text style={styles.sectionEmptyHint}>No match.</Text>
+                )}
+                {visiblePeople.map((member) => (
                   <Pressable
                     key={member.userId}
                     style={styles.modalRow}
                     onPress={() => {
                       setSubjectId(member.userId);
+                      setPersonQuery('');
                       setMode('form');
                     }}
                   >
@@ -186,6 +216,7 @@ function ShareModal({
               <Pressable
                 style={styles.modalCancel}
                 onPress={() => {
+                  setPersonQuery('');
                   setMode('form');
                 }}
               >
@@ -475,6 +506,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.inkMuted.hex,
+  },
+  pickerSearch: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    marginBottom: 8,
   },
   pickerList: {
     flex: 1,

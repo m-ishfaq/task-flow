@@ -16,12 +16,20 @@ import {
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Avatar, Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  Empty,
+  Field,
+  SearchInput,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
 import { formatCallClock, formatCallDuration, formatRelative } from '../../lib/format.js';
 import {
+  CALL_LOG_LIMIT,
   callRecordingsQuery,
   callTranscriptQuery,
   callsQuery,
@@ -183,6 +191,17 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
     void navigate({ to: '/calls', search: { tab: 'calls', thread: undefined, call: callId } });
   };
 
+  const [callSearch, setCallSearch] = useState('');
+  const callNeedle = callSearch.trim().toLowerCase();
+  const visibleCalls = (calls.data ?? []).filter((call) => {
+    if (callNeedle === '') return true;
+    const contact = contactFor(String(call.counterparty), contactsByDigits);
+    return (
+      String(call.counterparty).toLowerCase().includes(callNeedle) ||
+      (contact?.label.toLowerCase().includes(callNeedle) ?? false)
+    );
+  });
+
   const owned = numbers.data ?? [];
 
   const goBuyNumber = () => {
@@ -231,6 +250,16 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
               </div>
             )}
 
+            {calls.data !== undefined && calls.data.length > 8 && (
+              <div className="border-b border-line px-3.5 py-2">
+                <SearchInput
+                  value={callSearch}
+                  onChange={setCallSearch}
+                  placeholder="Search by number or contact…"
+                />
+              </div>
+            )}
+
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {calls.isPending ? (
                 <SkeletonRows rows={4} />
@@ -242,9 +271,11 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                   title="No calls yet"
                   description="Calls you place or receive appear here with their status and any recording."
                 />
+              ) : visibleCalls.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-ink-faint">No calls match your search.</p>
               ) : (
                 <ul className="space-y-1">
-                  {calls.data.map((call) => (
+                  {visibleCalls.map((call) => (
                     <CallListRow
                       key={call.callId}
                       call={call}
@@ -256,6 +287,15 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                     />
                   ))}
                 </ul>
+              )}
+              {/* `listCalls` takes a hard limit, never a cursor — there is no
+                  "load more" to offer, so the honest fix is telling the
+                  person their log stops here rather than letting a full page
+                  read as "that's everything". */}
+              {calls.data?.length === CALL_LOG_LIMIT && (
+                <p className="px-2 py-2 text-center text-[11px] text-ink-faint">
+                  Showing your most recent {CALL_LOG_LIMIT} calls.
+                </p>
               )}
             </div>
           </div>

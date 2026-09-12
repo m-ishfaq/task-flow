@@ -8,7 +8,7 @@ import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import { onNotification } from '../../lib/socket.js';
-import { Button, Empty } from '../../components/primitives.js';
+import { Button, Empty, SearchInput } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import {
   invalidateNotifications,
@@ -62,6 +62,7 @@ export function NotificationBell() {
   const toast = useToast();
   const { personOf } = useMembers();
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const count = useQuery({ ...notificationCountQuery(orgId), enabled: orgId !== '' });
   const list = useQuery({ ...notificationsQuery(orgId), enabled: orgId !== '' });
@@ -128,7 +129,13 @@ export function NotificationBell() {
   const unread = count.data?.unread ?? 0;
 
   return (
-    <PopoverRoot open={open} onOpenChange={setOpen}>
+    <PopoverRoot
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch('');
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -165,14 +172,27 @@ export function NotificationBell() {
           )}
         </header>
 
+        {/* Design Bible §20: a search box earns its place once this small
+            panel is actually long enough to scroll through — `listMine`'s
+            own PAGE_SIZE (`apps/api/src/platform/notifications.ts`) caps
+            this at 50, and this popover has no room for a second control
+            below ~15 rows anyway. */}
+        {(list.data?.length ?? 0) > 15 && (
+          <div className="border-b border-line px-3 py-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search notifications…" />
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           {(list.data ?? []).length === 0 ? (
             <div className="p-3">
               <Empty title="Nothing yet" description="Mentions and direct messages show up here." />
             </div>
+          ) : visibleNotifications(list.data, search).length === 0 ? (
+            <p className="p-3 text-sm text-ink-faint">No notifications match your search.</p>
           ) : (
             <ul>
-              {(list.data ?? []).map((notification) => (
+              {visibleNotifications(list.data, search).map((notification) => (
                 <NotificationRow
                   key={notification.notificationId}
                   notification={notification}
@@ -189,6 +209,22 @@ export function NotificationBell() {
         </div>
       </PopoverContent>
     </PopoverRoot>
+  );
+}
+
+/** A client-side filter over the already-fetched page — `listMine` has no
+ *  search param of its own, and this panel is too small a surface to
+ *  justify adding one. */
+function visibleNotifications(
+  notifications: readonly ChatNotification[] | undefined,
+  query: string,
+): readonly ChatNotification[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return notifications ?? [];
+  return (notifications ?? []).filter(
+    (notification) =>
+      notification.title.toLowerCase().includes(needle) ||
+      (notification.excerpt?.toLowerCase().includes(needle) ?? false),
   );
 }
 

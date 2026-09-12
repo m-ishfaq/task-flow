@@ -83,6 +83,14 @@ export interface PageVersionSummary {
   readonly createdAt: Date;
 }
 
+/** A page edited over months, with autosave running the whole time, has no
+ *  natural ceiling on how many rows this query could otherwise return —
+ *  every other list-style read in this codebase caps itself (Design Bible
+ *  §20), and this one had not. 200 is generous relative to a real editing
+ *  session's autosave cadence; `version-history.tsx`'s own disclosure note
+ *  reads this same constant rather than a number restated by hand. */
+export const PAGE_VERSION_LIST_LIMIT = 200;
+
 export async function listPageVersions(
   actor: DocsActor,
   input: { readonly pageId: PageId },
@@ -100,7 +108,8 @@ export async function listPageVersions(
       })
       .from(schema.pageVersions)
       .where(eq(schema.pageVersions.pageId, input.pageId))
-      .orderBy(desc(schema.pageVersions.createdAt));
+      .orderBy(desc(schema.pageVersions.createdAt))
+      .limit(PAGE_VERSION_LIST_LIMIT);
 
     return rows.map((row) => ({
       versionId: row.id,

@@ -42,6 +42,7 @@ import {
   threadMessagesQueryKey,
   type AvailableNumber,
   type CallRecord,
+  type MessageThread,
 } from '../../../src/lib/telephony.js';
 
 /**
@@ -175,6 +176,22 @@ export default function CallsScreen() {
  * Calls — click-to-call and the call log
  * -------------------------------------------------------------------------- */
 
+/** `listCalls` takes a hard limit, not a cursor — see the disclosure note
+ *  this constant feeds below. */
+const CALL_LOG_LIMIT = 50;
+
+/** A client-side filter over the already-fetched page — `listCalls` has no
+ *  cursor to page further with, so this narrows what's on screen rather
+ *  than fetching more. */
+function visibleCalls(
+  calls: readonly CallRecord[] | undefined,
+  query: string,
+): readonly CallRecord[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return calls ?? [];
+  return (calls ?? []).filter((call) => String(call.counterparty).toLowerCase().includes(needle));
+}
+
 function CallsPanel() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -198,13 +215,15 @@ function CallsPanel() {
   });
   const calls = useQuery({
     queryKey: CALLS_QUERY_KEY,
-    queryFn: async () => wire(await apiClient.telephony.calls.list.query({ limit: 50 })),
+    queryFn: async () =>
+      wire(await apiClient.telephony.calls.list.query({ limit: CALL_LOG_LIMIT })),
   });
 
   const [to, setTo] = useState('');
   const [fromPhoneNumberId, setFromPhoneNumberId] = useState('');
   const [record, setRecord] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [callSearch, setCallSearch] = useState('');
 
   const owned = numbers.data ?? [];
   const activeNumber =
@@ -320,7 +339,17 @@ function CallsPanel() {
             Calls you place appear here with their status, duration, and any recording.
           </Text>
         )}
-        {calls.data?.map((call) => (
+        {(calls.data?.length ?? 0) > 8 && (
+          <TextInput
+            style={styles.searchInput}
+            value={callSearch}
+            onChangeText={setCallSearch}
+            placeholder="Search by number…"
+            placeholderTextColor={colors.inkFaint.hex}
+            autoCapitalize="none"
+          />
+        )}
+        {visibleCalls(calls.data, callSearch).map((call) => (
           <CallRow
             key={call.callId}
             call={call}
@@ -330,6 +359,13 @@ function CallsPanel() {
             }}
           />
         ))}
+        {/* `listCalls` (`apps/api/src/telephony/call.service.ts`) takes a hard
+            `limit`, never a cursor — there is no "load more" to offer, so the
+            honest fix is telling the person their log stops here rather than
+            letting a full page read as "that's everything". */}
+        {calls.data?.length === CALL_LOG_LIMIT && (
+          <Text style={styles.emptyHint}>Showing your most recent {CALL_LOG_LIMIT} calls.</Text>
+        )}
       </Section>
     </ScrollView>
   );
@@ -740,14 +776,33 @@ function NumbersPanel() {
  * Messages — SMS threads
  * -------------------------------------------------------------------------- */
 
+/** `listThreads` (the route behind `messages.threads`) takes a hard limit,
+ *  not a cursor — see the disclosure note this constant feeds below. */
+const MESSAGE_THREADS_LIMIT = 50;
+
+/** The same client-side-filter-over-the-fetched-page shape as `visibleCalls`
+ *  above — `messages.threads` has no cursor to page further with either. */
+function visibleThreads(
+  threads: readonly MessageThread[] | undefined,
+  query: string,
+): readonly MessageThread[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return threads ?? [];
+  return (threads ?? []).filter((thread) =>
+    String(thread.counterparty).toLowerCase().includes(needle),
+  );
+}
+
 function MessagesPanel() {
   const queryClient = useQueryClient();
   const [threadId, setThreadId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [threadSearch, setThreadSearch] = useState('');
   const threads = useQuery({
     queryKey: MESSAGE_THREADS_QUERY_KEY,
-    queryFn: async () => wire(await apiClient.telephony.messages.threads.query({ limit: 50 })),
+    queryFn: async () =>
+      wire(await apiClient.telephony.messages.threads.query({ limit: MESSAGE_THREADS_LIMIT })),
   });
 
   const doRefresh = async () => {
@@ -816,7 +871,17 @@ function MessagesPanel() {
       {threads.data?.length === 0 && (
         <Text style={styles.emptyHint}>Inbound texts to your numbers land here.</Text>
       )}
-      {threads.data?.map((thread) => (
+      {(threads.data?.length ?? 0) > 8 && (
+        <TextInput
+          style={styles.searchInput}
+          value={threadSearch}
+          onChangeText={setThreadSearch}
+          placeholder="Search by number…"
+          placeholderTextColor={colors.inkFaint.hex}
+          autoCapitalize="none"
+        />
+      )}
+      {visibleThreads(threads.data, threadSearch).map((thread) => (
         <Pressable
           key={thread.threadId}
           style={styles.threadRow}
@@ -841,6 +906,11 @@ function MessagesPanel() {
           )}
         </Pressable>
       ))}
+      {threads.data?.length === MESSAGE_THREADS_LIMIT && (
+        <Text style={styles.emptyHint}>
+          Showing your most recent {MESSAGE_THREADS_LIMIT} threads.
+        </Text>
+      )}
     </ScrollView>
   );
 }
@@ -979,7 +1049,8 @@ function ThreadView({
   });
   const threads = useQuery({
     queryKey: MESSAGE_THREADS_QUERY_KEY,
-    queryFn: async () => wire(await apiClient.telephony.messages.threads.query({ limit: 50 })),
+    queryFn: async () =>
+      wire(await apiClient.telephony.messages.threads.query({ limit: MESSAGE_THREADS_LIMIT })),
   });
   const messages = useQuery({
     queryKey: threadMessagesQueryKey(threadId),
@@ -1463,6 +1534,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    marginBottom: 8,
   },
   messageInput: {
     borderWidth: 1,

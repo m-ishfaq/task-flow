@@ -467,6 +467,14 @@ function PersonLine({
   );
 }
 
+/** Above this many members, a search box earns its place — the same
+ *  threshold `org-settings.tsx`'s own roster search uses, and the same
+ *  Design Bible §20 worked example ("128 members scroll past forever")
+ *  this channel's own roster had never gotten the fix for. Below it, a
+ *  search box is one more control to read for a list a thumb already
+ *  scrolls past in a beat. */
+const ROSTER_SEARCH_THRESHOLD = 8;
+
 function MemberRoster({
   memberIds,
   viewerId,
@@ -482,13 +490,32 @@ function MemberRoster({
   readonly pending: boolean;
   readonly onRemove: (userId: string) => void;
 }) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const visible =
+    needle === ''
+      ? memberIds
+      : memberIds.filter((userId) => personOf(userId).label.toLowerCase().includes(needle));
+
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>Members · {memberIds.length}</Text>
+      {memberIds.length > ROSTER_SEARCH_THRESHOLD && (
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search members…"
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.formInput}
+          autoCapitalize="none"
+        />
+      )}
       {memberIds.length === 0 ? (
         <Text style={styles.sectionEmpty}>This channel has no members.</Text>
+      ) : visible.length === 0 ? (
+        <Text style={styles.sectionEmpty}>No match.</Text>
       ) : (
-        memberIds.map((userId) => {
+        visible.map((userId) => {
           const isViewer = userId === viewerId;
           return (
             <View key={userId} style={styles.rosterRow}>

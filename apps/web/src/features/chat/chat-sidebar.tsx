@@ -18,6 +18,8 @@ import {
 } from '../../components/primitives.js';
 import { UNKNOWN_PERSON_LABEL, useMembers, type Person } from '../org/use-members.js';
 import {
+  PINNED_LIST_LIMIT,
+  SAVED_LIST_LIMIT,
   allPinsQuery,
   channelsQuery,
   createChannel,
@@ -344,6 +346,15 @@ function PinnedMessagesButton({
   const toast = useToast();
   const pins = useQuery({ ...allPinsQuery(orgId), enabled: orgId !== '' });
   const list = pins.data ?? [];
+  const [search, setSearch] = useState('');
+  const needle = search.trim().toLowerCase();
+  const visibleList = list.filter((row) => {
+    if (needle === '') return true;
+    return (
+      (row.channelName?.toLowerCase().includes(needle) ?? false) ||
+      (row.excerpt?.toLowerCase().includes(needle) ?? false)
+    );
+  });
 
   const unpin = useMutation({
     mutationFn: (input: { channelId: ChannelId; messageId: MessageId }) => unpinMessage(input),
@@ -383,6 +394,12 @@ function PinnedMessagesButton({
           <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
         </header>
 
+        {list.length > 15 && (
+          <div className="border-b border-line px-3 py-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search pins…" />
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           {list.length === 0 ? (
             <div className="p-3">
@@ -391,9 +408,11 @@ function PinnedMessagesButton({
                 description="Pin a message to find it here later."
               />
             </div>
+          ) : visibleList.length === 0 ? (
+            <p className="p-3 text-sm text-ink-faint">No pins match your search.</p>
           ) : (
             <ul>
-              {list.map((row) => (
+              {visibleList.map((row) => (
                 <PinnedMessageSidebarRow
                   key={row.messageId}
                   row={row}
@@ -410,6 +429,13 @@ function PinnedMessagesButton({
                 />
               ))}
             </ul>
+          )}
+          {/* `listAllPinned` takes a hard limit, never a cursor — see
+              `PINNED_LIST_LIMIT`'s own comment in `pin.service.ts`. */}
+          {list.length === PINNED_LIST_LIMIT && (
+            <p className="p-2 text-center text-[11px] text-ink-faint">
+              Showing your {PINNED_LIST_LIMIT} most recently pinned messages.
+            </p>
           )}
         </div>
       </PopoverContent>
@@ -478,6 +504,15 @@ function SavedMessagesButton({
   const toast = useToast();
   const saved = useQuery({ ...savedQuery(orgId), enabled: orgId !== '' });
   const list = saved.data ?? [];
+  const [search, setSearch] = useState('');
+  const needle = search.trim().toLowerCase();
+  const visibleList = list.filter((row) => {
+    if (needle === '') return true;
+    return (
+      (row.channelName?.toLowerCase().includes(needle) ?? false) ||
+      (row.excerpt?.toLowerCase().includes(needle) ?? false)
+    );
+  });
 
   const unsave = useMutation({
     mutationFn: (messageId: MessageId) => unsaveMessage(messageId),
@@ -516,6 +551,12 @@ function SavedMessagesButton({
           <h2 className="text-sm font-medium text-ink">Saved messages</h2>
         </header>
 
+        {list.length > 15 && (
+          <div className="border-b border-line px-3 py-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search saved…" />
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           {list.length === 0 ? (
             <div className="p-3">
@@ -524,9 +565,11 @@ function SavedMessagesButton({
                 description="Save a message from its menu to find it here later."
               />
             </div>
+          ) : visibleList.length === 0 ? (
+            <p className="p-3 text-sm text-ink-faint">No saved messages match your search.</p>
           ) : (
             <ul>
-              {list.map((row) => (
+              {visibleList.map((row) => (
                 <SavedMessageRow
                   key={row.messageId}
                   row={row}
@@ -540,6 +583,13 @@ function SavedMessagesButton({
                 />
               ))}
             </ul>
+          )}
+          {/* `listSaved` takes a hard limit, never a cursor — see
+              `SAVED_LIST_LIMIT`'s own comment in `saved.service.ts`. */}
+          {list.length === SAVED_LIST_LIMIT && (
+            <p className="p-2 text-center text-[11px] text-ink-faint">
+              Showing your {SAVED_LIST_LIMIT} most recently saved messages.
+            </p>
           )}
         </div>
       </PopoverContent>
