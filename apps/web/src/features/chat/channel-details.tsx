@@ -66,15 +66,22 @@ import {
 export function ChannelDetailsPanel({
   orgId,
   channelId,
+  presence,
   onClose,
 }: {
   readonly orgId: string;
   readonly channelId: ChannelId;
+  /** `useChannelRoom`'s own live roster of who is currently looking at
+      THIS channel — see `IdentityHeader`/`MemberRoster`'s own comments on
+      why "online in this room" is the one presence question this panel
+      can honestly answer at all. */
+  readonly presence: readonly string[];
   readonly onClose: () => void;
 }) {
   const channel = useQuery(channelQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
   const { personOf } = useMembers();
+  const onlineUserIds = new Set(presence);
   const toast = useToast();
   const queryClient = useQueryClient();
 
@@ -152,6 +159,7 @@ export function ChannelDetailsPanel({
             data={data}
             viewerId={viewerId}
             personOf={personOf}
+            onlineUserIds={onlineUserIds}
             onEdit={() => {
               setEditingSettings(true);
             }}
@@ -167,6 +175,7 @@ export function ChannelDetailsPanel({
               memberIds={data.memberIds}
               viewerId={viewerId}
               personOf={personOf}
+              onlineUserIds={onlineUserIds}
               /* A DM's roster is informational: the service refuses both add
                  and remove on one, so a control here could only ever produce
                  an error. */
@@ -234,19 +243,39 @@ export function ChannelDetailsPanel({
  * The name is user-supplied text and is rendered as text. React escapes it, as
  * it does every string here — there is no `dangerouslySetInnerHTML` anywhere in
  * this codebase (CLAUDE.md rule 4), and a name is not the reason to add one.
+ *
+ * ## `online`
+ *
+ * A real signal, not a guess — it comes straight from `useChannelRoom`'s own
+ * realtime presence roster (`channel-panel.tsx`'s `presence`), the same data
+ * this panel's own header comment used to say belonged here without anything
+ * ever actually wiring it through. It answers "is this person looking at THIS
+ * channel right now", not "is this person online anywhere in the org" — the
+ * broader question `chat-sidebar.tsx`'s own `DirectMessageRow` comment already
+ * explains this app has no org-wide broadcast to answer yet.
  */
 function PersonLine({
   person,
   suffix,
   avatarSize = 'xs',
+  online = false,
 }: {
   readonly person: Person;
   readonly suffix?: string | null;
   readonly avatarSize?: 'xs' | 'sm';
+  readonly online?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <Avatar userId={person.userId} label={person.label} size={avatarSize} />
+      <span className="relative inline-flex shrink-0">
+        <Avatar userId={person.userId} label={person.label} size={avatarSize} />
+        {online && (
+          <span
+            aria-hidden="true"
+            className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-success ring-2 ring-surface-raised"
+          />
+        )}
+      </span>
       <div className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate text-sm text-ink">
           {person.label}
@@ -307,12 +336,14 @@ function IdentityHeader({
   data,
   viewerId,
   personOf,
+  onlineUserIds,
   onEdit,
 }: {
   readonly orgId: string;
   readonly data: ChannelDetail;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => Person;
+  readonly onlineUserIds: ReadonlySet<string>;
   readonly onEdit: () => void;
 }) {
   if (data.type === 'dm') {
@@ -325,7 +356,15 @@ function IdentityHeader({
 
     return (
       <div className="flex flex-col items-center gap-1 border-b border-line px-4 pt-5 pb-5 text-center">
-        <Avatar userId={person.userId} label={person.label} size="lg" />
+        <span className="relative inline-flex">
+          <Avatar userId={person.userId} label={person.label} size="lg" />
+          {onlineUserIds.has(only) && (
+            <span
+              aria-hidden="true"
+              className="absolute right-0.5 bottom-0.5 size-3 rounded-full bg-success ring-2 ring-surface-raised"
+            />
+          )}
+        </span>
         <p className="mt-2 text-base font-semibold text-ink">{person.label}</p>
         {person.named && person.email !== null && (
           <p className="text-xs text-ink-faint">{person.email}</p>
@@ -413,12 +452,14 @@ function MemberRoster({
   memberIds,
   viewerId,
   personOf,
+  onlineUserIds,
   removable,
   onRemove,
 }: {
   readonly memberIds: readonly string[];
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => Person;
+  readonly onlineUserIds: ReadonlySet<string>;
   readonly removable: boolean;
   readonly onRemove: (userId: UserId) => void;
 }) {
@@ -433,10 +474,19 @@ function MemberRoster({
         person.label.toLowerCase().includes(needle) ||
         (person.email?.toLowerCase().includes(needle) ?? false),
     );
+  /* Counted against the full roster, not the filtered `rows` — searching
+     for one name should not make the header's own "N online" figure look
+     like it just changed to match whatever is on screen. */
+  const onlineCount = memberIds.filter((userId) => onlineUserIds.has(userId)).length;
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold text-ink-muted">Members · {memberIds.length}</h3>
+      <h3 className="text-xs font-semibold text-ink-muted">
+        Members · {memberIds.length}
+        {onlineCount > 0 && (
+          <span className="font-normal text-success"> · {onlineCount} online</span>
+        )}
+      </h3>
 
       {memberIds.length > MEMBER_SEARCH_THRESHOLD && (
         <SearchInput value={query} onChange={setQuery} placeholder="Search members" />
@@ -455,7 +505,12 @@ function MemberRoster({
                 key={userId}
                 className="group flex items-center gap-2 rounded-md px-1 py-1 transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
               >
-                <PersonLine person={person} suffix={isViewer ? ' (you)' : null} avatarSize="sm" />
+                <PersonLine
+                  person={person}
+                  suffix={isViewer ? ' (you)' : null}
+                  avatarSize="sm"
+                  online={onlineUserIds.has(userId)}
+                />
                 {removable && (
                   /* One route, two labels. `removeMember` is the same call
                      either way — the service decides that leaving needs only

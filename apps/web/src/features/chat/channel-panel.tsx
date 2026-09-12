@@ -120,12 +120,13 @@ export function ChannelPanel({
   readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
-  /* `useChannelRoom` still runs — its broadcast invalidation is what makes
-     live messages appear — but presence is deliberately not rendered in the
-     header anymore: the member/presence readout moved out of the header to
-     keep it about the conversation, and the details panel is where who's
-     here belongs. */
-  useChannelRoom(orgId, channelId);
+  /* `presence` (who's currently in this room) is deliberately not rendered
+     in the header — the member/presence readout moved out of it to keep
+     the header about the conversation, and `ChannelDetailsPanel` below is
+     where who's here belongs, now genuinely: it was computed and simply
+     discarded here for a while, a wiring gap this comment used to describe
+     as already fixed. */
+  const { presence } = useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
@@ -943,6 +944,7 @@ export function ChannelPanel({
         <ChannelDetailsPanel
           orgId={orgId}
           channelId={channelId}
+          presence={presence}
           onClose={() => {
             setDetailsOpen(false);
           }}
