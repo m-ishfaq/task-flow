@@ -39,84 +39,44 @@ import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
  */
 
 /**
- * Stat card shown in the summary overview at the top of the page.
- * An icon, a label, and a value — the same metric-widget shape every
- * SaaS admin console uses for at-a-glance numbers.
+ * The icon-square-plus-inline-subtitle header every content block opens
+ * with — "Users · global directory, suspend, security signals", "Plans ·
+ * catalog, limits, entitlements", "AI models · provider catalog, per-org
+ * override, cross-org spend", "Operator audit · global, hash-chained".
  *
- * `accent` reads danger-toned, not the ordinary brand accent — this
- * component is used ONLY inside the platform-operator console (confirmed:
- * the same-named `StatCard`s in analytics' volume-panel.tsx/cycle-time-
- * panel.tsx are unrelated, locally-defined components), where the Design
- * Bible's own §18 treats every warm-colored control as part of the same
- * "you are in a cross-tenant tool" safety signal the page's banner and
- * active-tab styling now carry. A highlighted stat here (e.g. "Suspended
- * orgs") should read as a warning, never as an ordinary brand highlight.
- */
-export function StatCard({
-  icon: Icon,
-  label,
-  value,
-  accent = false,
-}: {
-  readonly icon: React.ComponentType<LucideProps>;
-  readonly label: string;
-  readonly value: string | number;
-  readonly accent?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3',
-        accent ? 'border-danger/30 bg-danger/5' : 'border-line bg-surface-raised',
-      )}
-    >
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg',
-          accent ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
-        )}
-      >
-        <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
-        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The icon-square-plus-inline-subtitle header every content block in the
- * Design Bible's §18 mockup opens with — "Users · global directory, suspend,
- * security signals", "Plans · catalog, limits, entitlements", "AI models ·
- * provider catalog, per-org override, cross-org spend", "Operator audit ·
- * global, hash-chained — reads logged too". Every tab file before this
- * either had no header at all inside its own content (the tab strip's own
- * label was the only thing naming it) or a bare `<p>` of prose with no
- * visual anchor, which is a real part of why this console read as "cheap
- * for a SaaS company" next to a mockup where every block opens the same way.
- *
- * The icon square is danger-toned, unconditionally, never per-tab — the
- * same "every warm-colored control is part of the one cross-tenant safety
- * signal" reasoning `platform-admin-page.tsx`'s own banner and active-tab
- * styling already state; a rotating rainbow of per-tab icon colors here
- * would compete with that signal rather than reinforce it.
+ * `tone` defaults to `'neutral'` — a plain, muted icon square matching the
+ * console's own surface ramp, not the danger-red every content block used
+ * unconditionally before the operator-console redesign. That earlier
+ * choice painted "Users" and "Plans" — ordinary catalogs, nothing anyone is
+ * one click from breaking — in the identical alarm color as a real
+ * destructive confirmation, which is a large part of why the console read
+ * as generic rather than considered: an alarm color used everywhere reads
+ * as decoration, not a warning. Reserve `tone="danger"` for a block whose
+ * OWN content is the risk (there is currently no such case — every real
+ * destructive action already gets its own `ModalIconHeader` at the point of
+ * confirmation, which is where an alarm color earns its keep).
  */
 export function SectionHeader({
   icon: Icon,
   title,
   subtitle,
+  tone = 'neutral',
   className,
 }: {
   readonly icon: React.ComponentType<LucideProps>;
   readonly title: string;
   readonly subtitle: string;
+  readonly tone?: 'neutral' | 'danger';
   readonly className?: string;
 }) {
   return (
     <div className={cn('mb-3 flex items-center gap-2.5', className)}>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-danger/10 text-danger">
+      <span
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded-md',
+          tone === 'danger' ? 'bg-danger/10 text-danger' : 'bg-surface-hover text-ink-muted',
+        )}
+      >
         <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
       </span>
       <h3 className="min-w-0 truncate text-sm font-semibold text-ink">

@@ -115,6 +115,25 @@ export function Shell() {
    */
   const isPlatformAdmin = pathname.startsWith('/platform-admin');
 
+  /**
+   * The one hook this console's own distinct "operator" palette rides on
+   * (`styles.css`'s `body.platform-admin-active` block) — a class on
+   * `document.body` rather than a wrapper `<div>` inside
+   * `platform-admin-page.tsx`, because every dialog in that console
+   * (`ModalRoot`) portals directly to `document.body`, a SIBLING of this
+   * app's own React root. A class scoped to a div somewhere inside `Outlet`
+   * would never reach a portaled dialog; `body` is the one ancestor a
+   * portaled node and this page's own content both actually share. Toggled
+   * from the same `isPlatformAdmin` check the frame above already branches
+   * on, so the two can never disagree about which state the app is in.
+   */
+  useEffect(() => {
+    document.body.classList.toggle('platform-admin-active', isPlatformAdmin);
+    return () => {
+      document.body.classList.remove('platform-admin-active');
+    };
+  }, [isPlatformAdmin]);
+
   /* Neither state has a project tree to show — pre-org because there is
      nothing to show one FOR, Platform Admin because it spans every org and
      showing any one of them would misstate that. Both get the same minimal

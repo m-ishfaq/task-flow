@@ -306,6 +306,63 @@
 }
 
 /**
+ * Platform admin: a genuinely distinct "operator console" palette, not a
+ * second brand.
+ *
+ * Reported directly: the console "looks like it is part of the same client
+ * side... not up to the mark for the SaaS product we are building." True,
+ * and by construction — `platform-admin-page.tsx` and its ten tab files are
+ * built entirely from this app's own shared primitives and semantic
+ * `bg-surface`/`text-ink`/`border-line` utilities, so they inherited the
+ * product's own palette wholesale. The fix redeclares those SAME named
+ * custom properties (surface, ink, line — never accent/danger/warning/
+ * success) under one scope, so every existing component in the console
+ * re-themes for free with no className edit in any of those ten files.
+ *
+ * Every step is darker and the hue moves off the product's own blue-violet
+ * family (262 for surfaces, 285 for accent) to a near-neutral graphite
+ * (250, at a fraction of the chroma) — cold and desaturated rather than
+ * "the same theme, dimmed," which is what a plain brightness cut would have
+ * read as. `--color-accent` and `--color-danger`/`--color-warning`/
+ * `--color-success` are DELIBERATELY left untouched, for a reason that is
+ * itself part of the fix: `Button`'s primary variant hardcodes an oklch
+ * box-shadow matching this app's own accent hue directly (not a `var()`),
+ * so retuning accent here would put that glow visibly out of sync with the
+ * fill it sits under — a second, smaller "looks assembled, not designed"
+ * tell trading for the first one. The console reads as distinct through its
+ * COLDER, DARKER surfaces and its own sidebar-driven layout, not through a
+ * second brand hue, and its buttons/links/focus rings still look like this
+ * app's, because they still are.
+ *
+ * Scoped to `body.platform-admin-active`, a class `Shell` toggles from the
+ * SAME `isPlatformAdmin` check that already switches it to the sidebar-less
+ * `TopBar` frame — not a wrapper `<div>` class in `platform-admin-page.tsx`
+ * itself. Every dialog in this console (`ModalRoot`, from `@taskflow/ui`)
+ * renders through a Radix `Dialog.Portal`, which appends directly to
+ * `document.body` — a SIBLING of the app's own React root, not a descendant
+ * of any wrapper div this page could render. A class scoped to a div two
+ * layers up the component tree would never reach a portaled dialog at all,
+ * and every confirm/detail dialog in the console would keep the ordinary
+ * product's palette while the page behind it did not. Custom properties
+ * inherit through the DOM, not the React tree, and a portaled dialog IS a
+ * direct child of `body` — so scoping to `body` itself is the one selector
+ * that reaches both.
+ */
+body.platform-admin-active {
+  --color-surface: oklch(8% 0.004 250);
+  --color-surface-raised: oklch(12% 0.005 250);
+  --color-surface-sunken: oklch(5% 0.003 250);
+  --color-surface-hover: oklch(16% 0.006 250);
+
+  --color-ink: oklch(92% 0.002 250);
+  --color-ink-muted: oklch(62% 0.005 250);
+  --color-ink-faint: oklch(47% 0.005 250);
+
+  --color-line: oklch(21% 0.004 250);
+  --color-line-strong: oklch(29% 0.005 250);
+}
+
+/**
  * Geist Sans/Mono (SIL OFL 1.1 — `public/fonts/OFL.txt`), self-hosted rather
  * than pulled from a font CDN: a third-party font request is both a
  * dependency this app does not otherwise have on an external origin and,

@@ -10,18 +10,20 @@ import {
   Megaphone,
   Palette,
   Shield,
+  TerminalSquare,
   Users,
   Zap,
+  type LucideProps,
 } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Button, PageContainer, PageHeader } from '../../components/primitives.js';
+import { Button } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
-import { StatCard, downloadCsv, money } from './shared.js';
+import { downloadCsv, money } from './shared.js';
 import { BroadcastTab } from './broadcast-tab.js';
 import { OrgsTab } from './orgs-tab.js';
 import { UsersTab } from './users-tab.js';
@@ -63,28 +65,66 @@ import { AiTab } from './ai-tab.js';
  *
  * ## Layout of this feature
  *
- * This file is the page shell only (state, summary stats, the tab switcher).
- * Each tab, its dialogs, and the primitives/formatters they share were split
- * out of what used to be one ~4,900-line file (mechanical extraction, no
- * behavior changes): `shared.tsx` for cross-tab primitives and the two
- * dialogs opened from more than one tab, and one file per tab otherwise.
+ * This file is the page shell only (state, summary metrics, the section
+ * nav). Each section, its dialogs, and the primitives/formatters they share
+ * were split out of what used to be one ~4,900-line file (mechanical
+ * extraction, no behavior changes): `shared.tsx` for cross-section
+ * primitives and the two dialogs opened from more than one section, and one
+ * file per section otherwise.
+ *
+ * ## A genuinely distinct console, not the product with a tab strip
+ *
+ * Reported directly: this page "looks like it is part of the same client
+ * side... not up to the mark for the SaaS product we are building." It was,
+ * by construction — a `PageContainer`/`PageHeader` shell and a horizontal
+ * tab strip identical in shape to every board and settings page, painted
+ * red on the active tab as the one signal this was a different surface.
+ * Two changes answer it: a persistent left sidebar in place of that tab
+ * strip (structurally unmistakable from an ordinary content page at a
+ * glance, and the standard shape for an operator/admin console generally),
+ * and `body.platform-admin-active` (`styles.css`, toggled by `Shell`) —
+ * a colder, darker, near-neutral palette scoped under that class so this
+ * page's own surfaces read as a distinct console rather than the product's
+ * own theme reused. The "every action is logged" notice, previously a big
+ * banner at the top of scrolling content (which scrolls out of view on any
+ * section taller than one screen — a strange place for something meant to
+ * be impossible to forget), now lives in the sidebar's own footer, which
+ * never scrolls away as long as this page is open.
  */
+const NAV_ITEMS = [
+  ['orgs', 'Organizations', Building2],
+  ['users', 'Users', Users],
+  ['plans', 'Plans', LayoutGrid],
+  ['billing', 'Billing', CreditCard],
+  ['ai', 'AI Models', Bot],
+  ['flags', 'Feature flags', Flag],
+  ['branding', 'Branding', Palette],
+  ['broadcast', 'Broadcast', Megaphone],
+  ['audit', 'Operator audit', Shield],
+  ['operations', 'Operations', Zap],
+] as const satisfies readonly (readonly [
+  PlatformAdminTab,
+  string,
+  React.ComponentType<LucideProps>,
+])[];
+
+type PlatformAdminTab =
+  | 'orgs'
+  | 'users'
+  | 'plans'
+  | 'billing'
+  | 'ai'
+  | 'flags'
+  | 'branding'
+  | 'broadcast'
+  | 'audit'
+  | 'operations';
+
 export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
-  const [tab, setTab] = useState<
-    | 'orgs'
-    | 'users'
-    | 'plans'
-    | 'billing'
-    | 'ai'
-    | 'flags'
-    | 'branding'
-    | 'broadcast'
-    | 'audit'
-    | 'operations'
-  >('orgs');
+  const [tab, setTab] = useState<PlatformAdminTab>('orgs');
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
      same login the mutation dialog runs; invalidating every `['platform']` key
@@ -132,287 +172,283 @@ export function PlatformAdminPage() {
     (users.data?.users.length ?? 0) > 0 ||
     (billing.data?.orgs.length ?? 0) > 0;
 
-  return (
-    <PageContainer maxWidth="2xl" className="flex flex-col gap-6">
-      <PageHeader
-        title="Platform administration"
-        description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
-        actions={
-          hasExportData ? (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                const date = new Date().toISOString().slice(0, 10);
-                const orgRows = orgs.data?.orgs;
-                const userRows = users.data?.users;
-                const billingRows = billing.data?.orgs;
+  const exportButton = (
+    <Button
+      variant="secondary"
+      onClick={() => {
+        const date = new Date().toISOString().slice(0, 10);
+        const orgRows = orgs.data?.orgs;
+        const userRows = users.data?.users;
+        const billingRows = billing.data?.orgs;
 
-                if (orgRows !== undefined && orgRows.length > 0) {
-                  downloadCsv(`orgs-export-${date}.csv`, [
-                    [
-                      'Organization',
-                      'Slug',
-                      'Owner name',
-                      'Owner email',
-                      'Plan',
-                      'Billing status',
-                      'Trial ends',
-                      'Grace ends',
-                      'Renews',
-                      'Last invoice status',
-                      'Last invoice amount',
-                      'Last invoice date',
-                      'Status',
-                      'Members',
-                      'Created',
-                    ],
-                    ...orgRows.map((org) => [
-                      org.name,
-                      org.slug,
-                      org.ownerName ?? '',
-                      org.ownerEmail ?? '',
-                      org.planId ?? '',
-                      org.billingStatus,
-                      org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
-                      org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
-                      org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
-                      org.lastInvoice?.status ?? '',
-                      org.lastInvoice !== null
-                        ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
-                        : '',
-                      org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
-                      org.status,
-                      String(org.memberCount),
-                      formatDate(org.createdAt),
-                    ]),
-                  ]);
-                }
-
-                if (userRows !== undefined && userRows.length > 0) {
-                  downloadCsv(`users-export-${date}.csv`, [
-                    ['User id', 'Name', 'Email', 'Email verified', 'Organizations', 'Created'],
-                    ...userRows.map((user) => [
-                      user.userId,
-                      user.name ?? '',
-                      user.email,
-                      user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
-                      String(user.orgCount),
-                      formatDate(user.createdAt),
-                    ]),
-                  ]);
-                }
-
-                if (billingRows !== undefined && billingRows.length > 0) {
-                  downloadCsv(`billing-export-${date}.csv`, [
-                    [
-                      'Organization',
-                      'Slug',
-                      'Billing status',
-                      'Plan',
-                      'Plan name',
-                      'Current price',
-                      'Interval',
-                      'Renews',
-                      'Last invoice status',
-                      'Last invoice amount',
-                      'Last invoice date',
-                      'Trial ends',
-                      'Grace ends',
-                      'Pending plan',
-                      'Stripe customer',
-                    ],
-                    ...billingRows.map((org) => [
-                      org.name,
-                      org.slug,
-                      org.billingStatus,
-                      org.planId ?? '',
-                      org.planName ?? '',
-                      org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
-                      org.currentPriceInterval ?? '',
-                      org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
-                      org.lastInvoice?.status ?? '',
-                      org.lastInvoice !== null
-                        ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
-                        : '',
-                      org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
-                      org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
-                      org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
-                      org.pendingPlanId ?? '',
-                      org.stripeCustomerId ?? '',
-                    ]),
-                  ]);
-                }
-              }}
-            >
-              Export all CSVs
-            </Button>
-          ) : undefined
+        if (orgRows !== undefined && orgRows.length > 0) {
+          downloadCsv(`orgs-export-${date}.csv`, [
+            [
+              'Organization',
+              'Slug',
+              'Owner name',
+              'Owner email',
+              'Plan',
+              'Billing status',
+              'Trial ends',
+              'Grace ends',
+              'Renews',
+              'Last invoice status',
+              'Last invoice amount',
+              'Last invoice date',
+              'Status',
+              'Members',
+              'Created',
+            ],
+            ...orgRows.map((org) => [
+              org.name,
+              org.slug,
+              org.ownerName ?? '',
+              org.ownerEmail ?? '',
+              org.planId ?? '',
+              org.billingStatus,
+              org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+              org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+              org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+              org.lastInvoice?.status ?? '',
+              org.lastInvoice !== null
+                ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                : '',
+              org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+              org.status,
+              String(org.memberCount),
+              formatDate(org.createdAt),
+            ]),
+          ]);
         }
-      />
 
-      {/* Design Bible §18's own thesis, stated directly: "the danger-toned
-          band and left border make it impossible to forget you're in a
-          cross-tenant tool where one click changes another company's
-          access... a safety signal, not decoration." Nothing about the
-          access model changes here — `platformRoute` already gates every
-          query and mutation behind this page, step-up included, reads
-          included (this file's own header comment) — this is the one
-          thing that was missing: a permanently visible reminder that this
-          console is not an ordinary org-scoped page, for the entire time
-          someone is looking at it, not just on the one confirm dialog a
-          destructive action already shows. */}
-      <div className="flex items-center gap-3 rounded-xl border-l-4 border-danger bg-danger/10 px-4 py-2.5">
-        <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-danger" strokeWidth={2} />
-        <p className="flex-1 text-[13px] text-ink">
-          Operator mode — you&apos;re acting across{' '}
-          <span className="font-semibold">all organizations</span> as{' '}
-          <span className="font-mono text-ink-muted">taskflow_platform_admin</span>.
-        </p>
-        <span className="shrink-0 rounded-full bg-danger/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-danger uppercase">
-          Every action is logged
-        </span>
+        if (userRows !== undefined && userRows.length > 0) {
+          downloadCsv(`users-export-${date}.csv`, [
+            ['User id', 'Name', 'Email', 'Email verified', 'Organizations', 'Created'],
+            ...userRows.map((user) => [
+              user.userId,
+              user.name ?? '',
+              user.email,
+              user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
+              String(user.orgCount),
+              formatDate(user.createdAt),
+            ]),
+          ]);
+        }
+
+        if (billingRows !== undefined && billingRows.length > 0) {
+          downloadCsv(`billing-export-${date}.csv`, [
+            [
+              'Organization',
+              'Slug',
+              'Billing status',
+              'Plan',
+              'Plan name',
+              'Current price',
+              'Interval',
+              'Renews',
+              'Last invoice status',
+              'Last invoice amount',
+              'Last invoice date',
+              'Trial ends',
+              'Grace ends',
+              'Pending plan',
+              'Stripe customer',
+            ],
+            ...billingRows.map((org) => [
+              org.name,
+              org.slug,
+              org.billingStatus,
+              org.planId ?? '',
+              org.planName ?? '',
+              org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
+              org.currentPriceInterval ?? '',
+              org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+              org.lastInvoice?.status ?? '',
+              org.lastInvoice !== null
+                ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                : '',
+              org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+              org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+              org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+              org.pendingPlanId ?? '',
+              org.stripeCustomerId ?? '',
+            ]),
+          ]);
+        }
+      }}
+    >
+      Export all CSVs
+    </Button>
+  );
+
+  return (
+    <div className="flex h-full overflow-hidden text-ink">
+      {/* The sidebar, replacing the horizontal tab strip — see this file's
+          own header comment for why a structural change, not just a color
+          swap, is what actually answers "looks like the same client". */}
+      <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-sunken">
+        <div className="flex items-center gap-2.5 border-b border-line px-4 py-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-ink-muted">
+            <TerminalSquare aria-hidden="true" className="size-4.5" strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-semibold text-ink">Operator console</p>
+            <p className="truncate font-mono text-[10px] text-ink-faint">taskflow_platform_admin</p>
+          </div>
+        </div>
+
+        <nav aria-label="Platform administration sections" className="flex-1 space-y-0.5 p-2">
+          {NAV_ITEMS.map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              aria-current={tab === value ? 'page' : undefined}
+              onClick={() => {
+                setTab(value);
+              }}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors duration-150',
+                tab === value
+                  ? 'bg-accent/10 text-accent'
+                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* The one persistent safety notice — in the sidebar footer rather
+            than a banner atop scrolling content, so it stays on screen for
+            as long as this console is open, not just until someone scrolls
+            past it. Nothing about the access model changes here —
+            `platformRoute` already gates every query and mutation behind
+            this page, step-up included, reads included (this file's own
+            top header comment) — this is only where the reminder lives. */}
+        <div className="border-t border-line p-3">
+          <div className="flex items-start gap-2 rounded-lg border-l-2 border-danger bg-danger/10 px-2.5 py-2">
+            <AlertTriangle
+              aria-hidden="true"
+              className="mt-0.5 size-3.5 shrink-0 text-danger"
+              strokeWidth={2}
+            />
+            <p className="text-[11px] leading-snug text-ink-muted">
+              Acting across <span className="font-medium text-ink">all organizations</span>. Every
+              action is logged.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-6xl space-y-5 px-6 py-6">
+          <header className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold tracking-tight text-ink">
+                Platform administration
+              </h1>
+              <p className="mt-0.5 text-[13px] text-ink-muted">
+                Every organization, user, and release flag — nothing on this page is scoped to one
+                tenant.
+              </p>
+            </div>
+            {hasExportData && exportButton}
+          </header>
+
+          {/* Metrics strip — a dense, bordered row rather than six separate
+              rounded cards: a status bar an operator scans, not a product
+              dashboard's own hero widgets. */}
+          <div className="flex flex-wrap divide-x divide-line rounded-lg border border-line bg-surface-raised">
+            <ConsoleMetric label="Orgs" value={totalOrgs} />
+            <ConsoleMetric label="Active" value={activeOrgs} />
+            <ConsoleMetric label="Users" value={totalUsers} />
+            <ConsoleMetric label="Members" value={totalMembers} />
+            <ConsoleMetric label="MRR" value={`$${String(mrr / 100)}`} />
+            <ConsoleMetric label="Trials" value={trials} />
+          </div>
+
+          {tab === 'orgs' && (
+            <OrgsTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'users' && (
+            <UsersTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'plans' && (
+            <PlansTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'billing' && (
+            <BillingTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'ai' && (
+            <AiTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'flags' && (
+            <FlagsTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'branding' && (
+            <BrandingTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'broadcast' && (
+            <BroadcastTab
+              guard={guard}
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'audit' && (
+            <AuditTab
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+          {tab === 'operations' && (
+            <OperationsTab
+              onStepUp={() => {
+                setGateOpen(true);
+              }}
+            />
+          )}
+        </div>
       </div>
-
-      {/* Summary stat cards — the at-a-glance dashboard every admin console leads with. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard icon={Building2} label="Orgs" value={totalOrgs} accent={tab === 'orgs'} />
-        <StatCard icon={Users} label="Users" value={totalUsers} accent={tab === 'users'} />
-        <StatCard icon={Building2} label="Active" value={activeOrgs} />
-        <StatCard icon={Users} label="Members" value={totalMembers} />
-        <StatCard
-          icon={CreditCard}
-          label="MRR"
-          value={`$${String(mrr / 100)}`}
-          accent={tab === 'billing'}
-        />
-        <StatCard icon={Zap} label="Trials" value={trials} />
-      </div>
-
-      {/* Tabs, not routes: the console is one surface with four views, and a
-          child route per tab would mount a fresh component tree on every
-          switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1 shadow-sm"
-      >
-        {(
-          [
-            ['orgs', 'Organizations', Building2],
-            ['users', 'Users', Users],
-            ['plans', 'Plans', LayoutGrid],
-            ['billing', 'Billing', CreditCard],
-            ['ai', 'AI Models', Bot],
-            ['flags', 'Feature flags', Flag],
-            ['branding', 'Branding', Palette],
-            ['broadcast', 'Broadcast', Megaphone],
-            ['audit', 'Operator audit', Shield],
-            ['operations', 'Operations', Zap],
-          ] as const
-        ).map(([value, label, Icon]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
-              /* Danger-toned, not the generic accent every other tab bar in
-                 this app uses — the same "safety signal, not decoration"
-                 reasoning the banner above states, carried through to the
-                 one control a person touches on every single tab switch. */
-              tab === value
-                ? 'bg-danger/10 text-danger shadow-sm ring-1 ring-danger/20'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'orgs' && (
-        <OrgsTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'users' && (
-        <UsersTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'plans' && (
-        <PlansTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'billing' && (
-        <BillingTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'ai' && (
-        <AiTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'flags' && (
-        <FlagsTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'branding' && (
-        <BrandingTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'broadcast' && (
-        <BroadcastTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'audit' && (
-        <AuditTab
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'operations' && (
-        <OperationsTab
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
 
       {/* The mutation dialog (useStepUp) and the query gate dialog. Only one is
           ever open — the other renders nothing when closed. */}
@@ -426,6 +462,28 @@ export function PlatformAdminPage() {
           onConfirmed={onProof}
         />
       )}
-    </PageContainer>
+    </div>
+  );
+}
+
+/**
+ * One metric in the summary strip — a label and a monospaced, tabular
+ * number, no icon square or card chrome. `platform-admin-page.tsx`'s own
+ * header explains why this replaced six individual `StatCard`s: a status
+ * bar an operator scans at a glance, not the product's own dashboard-widget
+ * language reused for a different surface.
+ */
+function ConsoleMetric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string | number;
+}) {
+  return (
+    <div className="min-w-[6.5rem] flex-1 px-4 py-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+      <p className="truncate font-mono text-base font-semibold tabular-nums text-ink">{value}</p>
+    </div>
   );
 }
