@@ -21,6 +21,7 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Person } from '../../../src/lib/use-members.js';
+import { Avatar } from '../../../src/lib/avatar.js';
 import { TelephonyCallButton } from '../../../src/lib/telephony-call-button.js';
 import { directoryMemberQueryKey } from '../../../src/lib/people.js';
 import {
@@ -455,12 +456,9 @@ function PersonLine({
   readonly person: Person;
   readonly suffix?: string | undefined;
 }) {
-  const initial = person.label.slice(0, 1).toUpperCase();
   return (
     <View style={styles.personLine}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initial}</Text>
-      </View>
+      <Avatar seed={person.userId} label={person.label} size={36} />
       <Text style={styles.personLabel} numberOfLines={1}>
         {person.label}
         {suffix !== undefined && <Text style={styles.personSuffix}>{suffix}</Text>}
@@ -1221,21 +1219,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
     minWidth: 0,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent.hex + '18',
-    borderWidth: 1,
-    borderColor: colors.accent.hex + '30',
-  },
-  avatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.accent.hex,
   },
   personLabel: {
     fontSize: 14,

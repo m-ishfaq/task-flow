@@ -16,7 +16,7 @@ import {
   SearchInput,
   Skeleton,
 } from '../../components/primitives.js';
-import { useMembers, type Person } from '../org/use-members.js';
+import { UNKNOWN_PERSON_LABEL, useMembers, type Person } from '../org/use-members.js';
 import {
   allPinsQuery,
   channelsQuery,
@@ -778,7 +778,7 @@ function NewDirectMessagePopover({
                     }}
                     className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
                   >
-                    <span className="truncate">{member?.email ?? userId}</span>
+                    <span className="truncate">{member?.email ?? UNKNOWN_PERSON_LABEL}</span>
                     <span aria-hidden="true">×</span>
                   </button>
                 </li>

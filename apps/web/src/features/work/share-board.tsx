@@ -24,6 +24,7 @@ import { Button, Empty } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery } from '../org/api.js';
+import { UNKNOWN_PERSON_LABEL } from '../org/use-members.js';
 
 /**
  * Sharing a board with a person or a team — relationship tuples (§8.2).
@@ -125,7 +126,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
   });
 
   const emailOf = (userId: string) =>
-    members.data?.find((member) => member.userId === userId)?.email ?? userId;
+    members.data?.find((member) => member.userId === userId)?.email ?? UNKNOWN_PERSON_LABEL;
 
   return (
     <div className="mt-4 space-y-4">

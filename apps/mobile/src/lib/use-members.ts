@@ -15,11 +15,22 @@ import type { MobileTRPCClient } from './trpc-client.js';
  *
  * `people` comes from `tenancy.members.list` (`member:read`), the same
  * org-wide roster web's picker/mention/DM-naming surfaces all read from.
- * `personOf` falls back to the raw id when the roster has nothing for that
- * id — a caller without `member:read`, or someone who has since left the
- * org — deliberately: hiding the author would silently misreport a message
- * as having no one behind it.
+ *
+ * `personOf` used to fall back to the RAW id when the roster had nothing
+ * for that id — a caller without `member:read`, or someone who has since
+ * left the org — on the reasoning that hiding the author would silently
+ * misreport a message as having no one behind it. That reasoning still
+ * holds (never hide it outright), but the raw fallback was itself wrong:
+ * found from a real device screenshot showing a bare uuid as a message
+ * sender's name AND as a channel roster row, in both cases with an avatar
+ * initial of "0" (the first character of the id) — an internal database
+ * id is not information a person reading a message should ever see, no
+ * matter how rare the case that produces it. `UNKNOWN_PERSON_LABEL` is the
+ * fix: still shows SOMETHING (never a blank "nobody sent this"), never the
+ * id itself.
  */
+
+export const UNKNOWN_PERSON_LABEL = 'Unknown member';
 
 export type Member = Wire<
   Awaited<ReturnType<MobileTRPCClient['tenancy']['members']['list']['query']>>
@@ -27,7 +38,8 @@ export type Member = Wire<
 
 export interface Person {
   readonly userId: string;
-  /** The display name when there is one, the email otherwise — never a raw uuid unless both are unknown. */
+  /** The display name when there is one, the email otherwise, and
+      `UNKNOWN_PERSON_LABEL` when neither is known — never a raw uuid. */
   readonly label: string;
   readonly named: boolean;
 }
@@ -60,7 +72,7 @@ export function useMembers(): MemberLookup {
     const name = member?.displayName ?? null;
     return {
       userId,
-      label: name ?? member?.email ?? userId,
+      label: name ?? member?.email ?? UNKNOWN_PERSON_LABEL,
       named: name !== null,
     };
   }

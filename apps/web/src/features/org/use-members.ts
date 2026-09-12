@@ -18,15 +18,20 @@ import { membersQuery, type Member } from './api.js';
  * derived per render from the cached array, which costs nothing at org size and
  * cannot go stale independently.
  *
- * ## Why a missing id resolves to the id
+ * ## Why a missing id resolves to a placeholder, never the id
  *
  * `member:read` is a permission, and a role that lacks it gets an empty list
  * rather than an error. An assignee who has since left the org also resolves to
- * nothing. Neither is exceptional, so both fall back to the raw id — an avatar
- * with two hex characters in it is worse than useless, but it is not a crash,
- * and the alternative (hiding the assignee) would silently misreport a card as
- * unassigned.
+ * nothing. Neither is exceptional, so both fall back to `UNKNOWN_PERSON_LABEL`
+ * rather than hiding the assignee (which would silently misreport a card as
+ * unassigned). This used to fall back to the raw uuid itself — "an avatar
+ * with two hex characters in it is worse than useless, but it is not a
+ * crash" — which was the wrong trade: a person reading a message or a
+ * roster should never see an internal database id, however rare the case
+ * that produces one. Still shows something, just never the id.
  */
+
+export const UNKNOWN_PERSON_LABEL = 'Unknown member';
 
 export interface Person {
   readonly userId: string;
@@ -71,11 +76,11 @@ export function useMembers(): MemberLookup {
 
     return {
       userId,
-      /* Falls all the way back to the raw id when the member is unknown — a
-         person who left the org, or a caller without `member:read`. Ugly, and
-         deliberately so: hiding them would silently misreport a message as
-         having no author. */
-      label: name ?? member?.email ?? userId,
+      /* Falls back to a friendly placeholder, never the raw id, when the
+         member is unknown — a person who left the org, or a caller without
+         `member:read`. Still shows something rather than hiding them (which
+         would silently misreport a message as having no author). */
+      label: name ?? member?.email ?? UNKNOWN_PERSON_LABEL,
       email: member?.email ?? null,
       named: name !== null,
     };

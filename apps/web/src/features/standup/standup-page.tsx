@@ -25,6 +25,7 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
+import { UNKNOWN_PERSON_LABEL } from '../org/use-members.js';
 import { projectsQuery } from '../work/api.js';
 import type { Priority } from '../work/api.js';
 import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
@@ -326,9 +327,9 @@ function MemberRow({
         ) : (
           <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />
         )}
-        <Avatar userId={member.userId} label={member.name ?? member.userId} size="sm" />
+        <Avatar userId={member.userId} label={member.name ?? UNKNOWN_PERSON_LABEL} size="sm" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-          {member.name ?? 'Unknown'}
+          {member.name ?? UNKNOWN_PERSON_LABEL}
         </span>
 
         <span className="flex shrink-0 items-center gap-3 text-xs">

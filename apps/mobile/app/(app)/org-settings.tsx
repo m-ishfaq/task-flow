@@ -961,7 +961,7 @@ function TeamCard({
           <Text style={styles.teamCardName} numberOfLines={1}>
             {team.name}
           </Text>
-          <Text style={styles.teamCardMeta}>
+          <Text style={styles.teamCardMeta} numberOfLines={1}>
             {team.members.length === 0
               ? 'No members'
               : `${String(team.members.length)} ${team.members.length === 1 ? 'member' : 'members'}`}
@@ -1153,6 +1153,14 @@ const styles = StyleSheet.create({
   },
   teamCardInfo: {
     flex: 1,
+    /* Without this, Yoga (RN's flexbox engine) refuses to shrink this
+       column below the team NAME's own unwrapped width — found from a
+       real report: a longer team name, squeezed between the avatar stack
+       (whose width grows with member count) and the fixed "+ Add" button,
+       got cut off mid-character instead of a clean single-line ellipsis.
+       `numberOfLines={1}` on the Text below only truncates once the
+       CONTAINER is actually allowed to be narrower than the content. */
+    minWidth: 0,
     gap: 2,
   },
   teamCardName: {
@@ -1196,6 +1204,7 @@ const styles = StyleSheet.create({
   },
   teamMemberEmail: {
     flex: 1,
+    minWidth: 0,
     fontSize: 13,
     color: colors.ink.hex,
   },
