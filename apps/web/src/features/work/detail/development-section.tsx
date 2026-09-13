@@ -113,7 +113,7 @@ export function DevelopmentSection({
     <Section title="Development">
       <div className="space-y-5">
         {showConnectHint && (
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             Connect a GitHub repository (Settings → Automation) to link pull requests or create
             branches.
           </p>
@@ -156,7 +156,7 @@ interface RepoPickerProps {
     caller already knows which repo to use and never renders this. */
 function RepoPicker({ repos, value, onChange }: RepoPickerProps) {
   return (
-    <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+    <label className="flex items-center gap-1.5 text-xs text-ink-faint">
       Repository
       <select
         aria-label="Repository"
@@ -291,7 +291,7 @@ function PullRequestSubsection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={unlink.isPending}
                   onClick={() => {
                     unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber });
@@ -308,7 +308,7 @@ function PullRequestSubsection({
 
       {!canEdit ? null : reposLoaded && repos.length === 0 ? (
         suppressConnectHint ? null : (
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             Connect a GitHub repository (Settings → Automation) to link pull requests.
           </p>
         )
@@ -464,7 +464,7 @@ function BranchSubsection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={unlink.isPending}
                   onClick={() => {
                     unlink.mutate({
@@ -484,7 +484,7 @@ function BranchSubsection({
 
       {!canCreate ? null : reposLoaded && repos.length === 0 ? (
         suppressConnectHint ? null : (
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             Connect a GitHub repository (Settings → Automation) to create branches.
           </p>
         )
@@ -514,7 +514,7 @@ function BranchSubsection({
             className="h-7 font-mono text-xs"
           />
           {preview !== null && (
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               Will be created as <span className="font-mono text-ink-muted">{preview}</span>
             </p>
           )}
@@ -564,7 +564,7 @@ function CopyCheckoutButton({ branchName }: { readonly branchName: string }) {
       size="sm"
       variant="ghost"
       title={command}
-      className="h-6 shrink-0 px-1.5 text-[11px]"
+      className="h-6 shrink-0 px-1.5 text-xs"
       onClick={() => {
         void navigator.clipboard.writeText(command).then(() => {
           setCopied(true);

@@ -189,9 +189,9 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
                 <span className="truncate text-xs text-ink-muted">{member.jobTitle}</span>
               )}
               {member.department !== null && (
-                <span className="truncate text-[11px] text-ink-faint">{member.department}</span>
+                <span className="truncate text-xs text-ink-faint">{member.department}</span>
               )}
-              <Badge className="mt-1 text-[11px]">{member.role}</Badge>
+              <Badge className="mt-1 text-xs">{member.role}</Badge>
               <OooStatus member={member} />
             </Link>
           </li>

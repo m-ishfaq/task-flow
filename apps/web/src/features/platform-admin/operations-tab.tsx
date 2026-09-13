@@ -105,19 +105,19 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/60">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       When
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Kind
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Outcome
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Target
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Detail
                     </th>
                   </tr>
@@ -139,10 +139,10 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       <td className="px-3 py-2.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-xs text-ink-muted overflow-x-auto">
                         {event.target ?? '—'}
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-xs text-ink-muted overflow-x-auto">
                         {event.detail === null || event.detail === undefined
                           ? '—'
                           : JSON.stringify(event.detail)}

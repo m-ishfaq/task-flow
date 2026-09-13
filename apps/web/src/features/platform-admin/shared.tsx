@@ -415,7 +415,7 @@ export function DetailRow({
   return (
     <>
       <dt className="text-ink-faint">{label}</dt>
-      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[11px]')}>{value}</dd>
+      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-xs')}>{value}</dd>
     </>
   );
 }
@@ -655,7 +655,7 @@ export function OrgDetailDialog({
                       Operator override — outranks the plan
                     </h3>
                     <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
-                    <p className="mt-0.5 text-[11px] text-ink-faint">
+                    <p className="mt-0.5 text-xs text-ink-faint">
                       set {formatDate(data.override.setAt)}
                       {data.override.expiresAt === null
                         ? ' · no expiry'
@@ -699,7 +699,7 @@ export function OrgDetailDialog({
                     <EntitlementMark enabled={feature.enabled} />
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
-                      <span className="block text-[11px] text-ink-faint">
+                      <span className="block text-xs text-ink-faint">
                         {featureDescription(feature.flagName) ?? feature.description}
                       </span>
                     </span>
@@ -729,12 +729,12 @@ export function OrgDetailDialog({
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
-                        <span className="ml-1 text-[11px] text-ink-faint">{member.email}</span>
+                        <span className="ml-1 text-xs text-ink-faint">{member.email}</span>
                       )}
                     </span>
                     <Badge>{member.role}</Badge>
                     {member.status !== 'active' && (
-                      <span className="text-[11px] text-ink-faint">{member.status}</span>
+                      <span className="text-xs text-ink-faint">{member.status}</span>
                     )}
                   </li>
                 ))}
@@ -790,7 +790,7 @@ export function OrgDetailDialog({
                     No operator has acted on this organization.
                   </p>
                 ) : (
-                  <ul className="flex flex-col gap-0.5 text-[11px] text-ink-muted">
+                  <ul className="flex flex-col gap-0.5 text-xs text-ink-muted">
                     {history.data.map((entry, index) => (
                       <li key={`${entry.action}-${String(index)}`}>
                         {formatDateTime(entry.at)} · {entry.action} · {entry.by}
@@ -929,7 +929,7 @@ export function OrgOverrideDialog({
               <li key={feature.flagName} className="flex items-center gap-2 px-3 py-2">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-ink">{featureLabel(feature.flagName)}</span>
-                  <span className="block text-[11px] text-ink-faint">
+                  <span className="block text-xs text-ink-faint">
                     {featureDescription(feature.flagName) ?? feature.description}
                   </span>
                 </span>
@@ -959,7 +959,7 @@ export function OrgOverrideDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Recorded in the operator audit chain. Required, even to clear an override.
             </p>
           </Field>
@@ -973,7 +973,7 @@ export function OrgOverrideDialog({
                 setExpiresAt(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Optional. A temporary grant that outlives its reason is worse than no grant at all —
               leave empty only for something meant to stay indefinitely.
             </p>

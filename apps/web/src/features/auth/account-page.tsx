@@ -501,7 +501,7 @@ function SessionsSection() {
                   {session.label ?? 'Unknown device'}
                   {session.isCurrent && <Badge>This device</Badge>}
                 </p>
-                <p className="truncate text-[11px] text-ink-muted">
+                <p className="truncate text-xs text-ink-muted">
                   {session.ip ?? 'No IP recorded'} · signed in {formatDate(session.authenticatedAt)}{' '}
                   · last seen {formatDate(session.lastSeenAt)}
                   {session.flagged && (
@@ -645,7 +645,7 @@ function OrganizationsSection() {
           {orgs.data.map((org) => (
             <li key={org.orgId} className="flex items-center justify-between px-3 py-2 text-sm">
               <span className="text-ink">{org.name}</span>
-              <span className="text-[11px] text-ink-faint">{org.role}</span>
+              <span className="text-xs text-ink-faint">{org.role}</span>
             </li>
           ))}
         </ul>

@@ -293,7 +293,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                   person their log stops here rather than letting a full page
                   read as "that's everything". */}
               {calls.data?.length === CALL_LOG_LIMIT && (
-                <p className="px-2 py-2 text-center text-[11px] text-ink-faint">
+                <p className="px-2 py-2 text-center text-xs text-ink-faint">
                   Showing your most recent {CALL_LOG_LIMIT} calls.
                 </p>
               )}
@@ -480,16 +480,16 @@ function CallListRow({
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
           {missed ? (
-            <span className="text-[11px] font-medium text-danger">
+            <span className="text-xs font-medium text-danger">
               {STATUS_LABELS[call.status] ?? 'Missed'}
             </span>
           ) : live ? (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
+            <span className="flex items-center gap-1 text-xs font-medium text-accent">
               <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-accent" />
               {STATUS_LABELS[call.status] ?? 'Live'}
             </span>
           ) : call.durationSeconds !== null ? (
-            <span className="text-[11px] text-ink-muted">
+            <span className="text-xs text-ink-muted">
               {formatCallDuration(call.durationSeconds)}
             </span>
           ) : null}
@@ -831,7 +831,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
   if (recordings.isPending) return <SkeletonRows rows={1} />;
   if (recordings.isError) return <ErrorText error={recordings.error} />;
   if (recordings.data.length === 0) {
-    return <p className="text-[11px] text-ink-faint">No recording stored yet.</p>;
+    return <p className="text-xs text-ink-faint">No recording stored yet.</p>;
   }
 
   return (
@@ -840,7 +840,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
         {recordings.data.map((recording) => (
           <li key={recording.recordingId} className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-ink-muted">
+              <span className="text-xs text-ink-muted">
                 {recording.status}
                 {recording.durationSeconds !== null &&
                   ` · ${formatCallDuration(recording.durationSeconds)}`}
@@ -849,7 +849,7 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(recording.recordingId);
@@ -899,7 +899,7 @@ function Transcript({
 
   return (
     <details className="rounded-md border border-line bg-surface-sunken px-2 py-1">
-      <summary className="cursor-pointer text-[11px] text-ink-muted">Transcript</summary>
+      <summary className="cursor-pointer text-xs text-ink-muted">Transcript</summary>
       <p className="mt-1 text-xs whitespace-pre-wrap text-ink-muted">{transcript.data.text}</p>
     </details>
   );

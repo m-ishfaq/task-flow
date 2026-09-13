@@ -529,7 +529,7 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
           ? 'size-5 text-[10px]'
           : size === 'lg'
             ? 'size-13 text-[17px]'
-            : 'size-6 text-[11px]',
+            : 'size-6 text-xs',
         className,
       )}
     >
@@ -572,7 +572,7 @@ export function AvatarStack({
           className={cn(
             'inline-flex shrink-0 items-center justify-center rounded-full',
             'bg-surface-hover text-ink-muted ring-1 ring-surface-raised',
-            size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
+            size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-xs',
           )}
         >
           +{hidden.length}
@@ -614,7 +614,7 @@ export function OrgBadge({
         backgroundImage: `linear-gradient(160deg, oklch(64% 0.13 ${String(hue)}), oklch(52% 0.13 ${String(hue)}))`,
       }}
       className={cn(
-        'inline-flex size-5.5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white',
+        'inline-flex size-5.5 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white',
         className,
       )}
     >

@@ -253,7 +253,7 @@ function SaveViewDialog({
           }}
         >
           <label className="block space-y-1">
-            <span className="text-[11px] text-ink-faint">Name</span>
+            <span className="text-xs text-ink-faint">Name</span>
             {/* No `autoFocus`: it is a lint error here for a11y reasons, and
                   Radix already moves focus into the dialog on open — which
                   announces the dialog first rather than dropping a screen

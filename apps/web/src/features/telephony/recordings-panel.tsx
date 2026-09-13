@@ -198,12 +198,12 @@ function RecordingRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-ink">{String(recording.counterparty)}</span>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-xs text-ink-muted">
             {recording.direction === 'inbound' ? 'Inbound' : 'Outbound'}
           </span>
           <StatusPill status={recording.status} />
         </div>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-faint">
+        <div className="mt-1 flex items-center gap-2 text-xs text-ink-faint">
           <span>{formatRelative(recording.createdAt)}</span>
           {recording.durationSeconds !== null && (
             <span>· {formatCallDuration(recording.durationSeconds)}</span>

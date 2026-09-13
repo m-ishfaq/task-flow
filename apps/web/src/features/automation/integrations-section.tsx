@@ -186,7 +186,7 @@ function ProviderRow({
               </span>
             )}
           </p>
-          <p className="truncate text-[11px] text-ink-faint">
+          <p className="truncate text-xs text-ink-faint">
             {live.length === 0
               ? 'Not connected'
               : provider === 'github'
@@ -199,7 +199,7 @@ function ProviderRow({
           {canConnectMore && (
             <Button
               size="sm"
-              className="h-6 px-1.5 text-[11px]"
+              className="h-6 px-1.5 text-xs"
               disabled={begin.isPending}
               onClick={() => {
                 begin.mutate();
@@ -244,7 +244,7 @@ function ProviderRow({
                     </span>
                   )}
                 </p>
-                <p className="truncate text-[11px] text-ink-faint">
+                <p className="truncate text-xs text-ink-faint">
                   {row.name !== row.providerScope && `${row.name} · `}
                   Connected {new Date(row.createdAt).toLocaleDateString()}
                 </p>
@@ -255,7 +255,7 @@ function ProviderRow({
                   label="Disconnect"
                   confirmLabel={`Disconnect ${row.providerScope}`}
                   disabled={disconnect.isPending}
-                  className="h-6 shrink-0 px-1.5 text-[11px]"
+                  className="h-6 shrink-0 px-1.5 text-xs"
                   onConfirm={() => {
                     lastDisconnected.current = row.integrationId;
                     disconnect.mutate(row.integrationId);
@@ -276,7 +276,7 @@ function ProviderRow({
       {webhookUrl !== null && (
         <div className="flex items-center gap-2 border-t border-line/50 px-3 py-1.5">
           <code
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-faint"
+            className="min-w-0 flex-1 truncate font-mono text-xs text-ink-faint"
             title={webhookUrlFor() ?? undefined}
           >
             {webhookUrlFor()}
@@ -288,7 +288,7 @@ function ProviderRow({
                 setCopying(true);
               });
             }}
-            className="shrink-0 text-[11px] text-ink-faint hover:text-ink"
+            className="shrink-0 text-xs text-ink-faint hover:text-ink"
           >
             {copying ? 'Copied' : 'Copy URL'}
           </button>

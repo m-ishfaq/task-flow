@@ -156,7 +156,7 @@ export function VersionHistoryPanel({
           identical "say where the list stops" disclosure the call log and
           SMS threads give theirs. */}
       {list.length === PAGE_VERSION_LIST_LIMIT && (
-        <p className="text-center text-[11px] text-ink-faint">
+        <p className="text-center text-xs text-ink-faint">
           Showing the most recent {PAGE_VERSION_LIST_LIMIT} versions.
         </p>
       )}

@@ -245,7 +245,7 @@ function IdEditor({
             toggle(ME);
           }}
           className={cn(
-            'rounded px-1.5 py-0.5 text-[11px]',
+            'rounded px-1.5 py-0.5 text-xs',
             selected.includes(ME)
               ? 'bg-accent text-accent-ink'
               : 'bg-surface-hover text-ink-muted hover:text-ink',
@@ -265,7 +265,7 @@ function IdEditor({
             toggle(option.id);
           }}
           className={cn(
-            'max-w-40 truncate rounded px-1.5 py-0.5 text-[11px]',
+            'max-w-40 truncate rounded px-1.5 py-0.5 text-xs',
             selected.includes(option.id)
               ? 'bg-accent text-accent-ink'
               : 'bg-surface-hover text-ink-muted hover:text-ink',

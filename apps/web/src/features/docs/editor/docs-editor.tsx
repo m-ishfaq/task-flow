@@ -396,7 +396,7 @@ function ConnectionPill({
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted"
+      className="inline-flex items-center gap-1.5 text-xs text-ink-muted"
       title={synced ? 'Connected and in sync' : 'Connection state'}
     >
       <span className={cn('size-1.5 rounded-full', dot)} aria-hidden="true" />

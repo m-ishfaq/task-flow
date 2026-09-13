@@ -457,7 +457,7 @@ function TitleAndDescription({
         >
           {update.isPending ? 'Saving…' : 'Save'}
         </Button>
-        {dirty && <span className="text-[11px] text-ink-faint">Unsaved changes</span>}
+        {dirty && <span className="text-xs text-ink-faint">Unsaved changes</span>}
       </div>
     </section>
   );

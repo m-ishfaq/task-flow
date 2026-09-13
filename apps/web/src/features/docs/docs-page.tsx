@@ -202,7 +202,7 @@ function SpaceTreePanel({
             labels already use — the Design Bible's own tree header reads as
             a wiki title, not a plain sub-heading. */}
         {spacesOpen && (
-          <h2 className="truncate px-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+          <h2 className="truncate px-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
             Spaces
           </h2>
         )}
@@ -288,7 +288,7 @@ function SpaceTreePanel({
               onClick={() => {
                 setShowArchived((value) => !value);
               }}
-              className="mt-2 block px-1 text-[11px] text-ink-faint underline hover:text-ink-muted"
+              className="mt-2 block px-1 text-xs text-ink-faint underline hover:text-ink-muted"
             >
               {showArchived ? 'Hide archived spaces' : `Show archived (${String(archived.length)})`}
             </button>
@@ -483,7 +483,7 @@ function SpaceNode({
           ) : pages.isError ? (
             <ErrorView error={pages.error} title="Could not load pages" />
           ) : live.length === 0 && !addingRootPage ? (
-            <p className="py-1 text-[11px] text-ink-faint">No pages</p>
+            <p className="py-1 text-xs text-ink-faint">No pages</p>
           ) : (
             <ul>
               {(byParent.get(null) ?? []).map((page) => (

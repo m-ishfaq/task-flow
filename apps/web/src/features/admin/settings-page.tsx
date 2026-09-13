@@ -931,7 +931,7 @@ function RoleReferenceTable() {
       <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full text-left text-[13px]">
           <thead>
-            <tr className="border-b border-line bg-surface-sunken/60 text-[11px] font-medium tracking-wide text-ink-faint uppercase">
+            <tr className="border-b border-line bg-surface-sunken/60 text-xs font-medium tracking-wide text-ink-faint uppercase">
               <th className="px-3 py-2">Capability</th>
               {ROLES.map((role) => (
                 <th key={role} className="px-3 py-2 text-center capitalize">
@@ -954,7 +954,7 @@ function RoleReferenceTable() {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-ink-faint">
+      <p className="mt-2 text-xs text-ink-faint">
         A Guest&apos;s per-project access — invited to read, comment on, or edit one project&apos;s
         own boards and cards — is a separate mechanism, granted from that project&apos;s own Share
         panel rather than here.
@@ -1803,9 +1803,9 @@ function MemberRow({
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-sm text-ink">
           {member.email}
-          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
+          {isSelf && <span className="text-xs text-ink-faint">(you)</span>}
         </p>
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
           joined {formatDate(member.joinedAt)}
         </p>
@@ -2044,7 +2044,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
     <li className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
-        <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
+        <span className="font-mono text-xs text-ink-faint">{team.slug}</span>
         <Badge className="ml-auto">
           {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
         </Badge>
@@ -2056,7 +2056,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
       {canManage && (
         <div className="mt-2.5">
           {candidates.length === 0 ? (
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               {orgMembers.length === 0
                 ? 'No org members to add.'
                 : 'Everyone in the organization is on this team.'}
@@ -2099,7 +2099,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                           onRemove(member.userId as UserId);
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                        className="rounded-full px-1.5 text-xs font-medium text-danger hover:underline"
                       >
                         Remove
                       </button>
@@ -2108,7 +2108,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                         onClick={() => {
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                        className="rounded-full px-1 text-xs text-ink-muted hover:underline"
                       >
                         Cancel
                       </button>

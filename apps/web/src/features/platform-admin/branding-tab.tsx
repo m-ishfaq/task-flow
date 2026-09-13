@@ -288,7 +288,7 @@ export function BrandingTab({
                     onClick={() => {
                       setPreviewPalette(null);
                     }}
-                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent/80"
+                    className="text-xs text-accent underline underline-offset-2 hover:text-accent/80"
                   >
                     Reset to {data.paletteId}
                   </button>
@@ -391,7 +391,7 @@ function BrandingAssetUpload({
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{label}</p>
-        <p className="text-[11px] text-ink-faint">{description}</p>
+        <p className="text-xs text-ink-faint">{description}</p>
         {error !== null && (
           <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />
         )}
@@ -441,7 +441,7 @@ function BrandingPreview({
 
   return (
     <div className="rounded-xl border border-line bg-surface-sunken/40 p-4">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">
         Live preview
       </p>
 
@@ -487,7 +487,7 @@ function BrandingPreview({
             ) : (
               <TaskFlowLogo size={16} className="shrink-0 text-accent" />
             )}
-            <span className="truncate text-[11px] font-semibold text-ink">
+            <span className="truncate text-xs font-semibold text-ink">
               {productName || 'TaskFlow'}
             </span>
           </div>
@@ -514,7 +514,7 @@ function BrandingPreview({
         <div className="min-w-0 flex-1 space-y-2.5">
           {/* Mini header */}
           <div className="flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2">
-            <span className="text-[11px] font-semibold text-ink">Projects</span>
+            <span className="text-xs font-semibold text-ink">Projects</span>
             <span
               className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white"
               style={{ backgroundColor: colors.base }}

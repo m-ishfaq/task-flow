@@ -101,7 +101,7 @@ export function MessageGroupView({
             utterance rather than N separately-labelled ones. */}
         <span className="flex items-baseline gap-1.5 px-0.5">
           <span className="text-[13px] font-semibold text-ink">{authorLabel ?? 'Unknown'}</span>
-          <span className="text-[11px] text-ink-faint">{formatTime(first.createdAt)}</span>
+          <span className="text-xs text-ink-faint">{formatTime(first.createdAt)}</span>
         </span>
 
         {group.messages.map((message) => (
@@ -279,13 +279,13 @@ function MessageRow({
           )}
         >
           <EmojiPickerButton onPick={onToggleReaction} />
-          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onOpenThread}>
+          <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onOpenThread}>
             Reply
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onTogglePin(pinned);
             }}
@@ -295,7 +295,7 @@ function MessageRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onToggleSave(isSaved);
             }}
@@ -305,12 +305,7 @@ function MessageRow({
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-5 px-1 text-[11px]"
-              onClick={onStartEdit}
-            >
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onStartEdit}>
               Edit
             </Button>
           )}
@@ -378,7 +373,7 @@ function DeleteMenu({
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           Delete
         </Button>
       </PopoverTrigger>
@@ -499,7 +494,7 @@ export function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string)
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           React
         </Button>
       </PopoverTrigger>

@@ -270,7 +270,7 @@ export function PermissionDebugPage() {
                   <div className="min-w-0 pb-3">
                     <p className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-sm text-ink">{step.rule}</span>
-                      <span className="text-[11px] text-ink-faint">
+                      <span className="text-xs text-ink-faint">
                         {LAYER_NAMES[step.layer] ?? `Layer ${String(step.layer)}`}
                       </span>
                       <span
@@ -305,7 +305,7 @@ export function PermissionDebugPage() {
                 server. Rendered as text in a <pre>, never as markup — there is
                 no HTML anywhere in this app, and `dangerouslySetInnerHTML` is a
                 lint error workspace-wide. */}
-            <pre className="overflow-x-auto border-t border-line/50 bg-surface-sunken p-3 font-mono text-[11px] text-ink-muted">
+            <pre className="overflow-x-auto border-t border-line/50 bg-surface-sunken p-3 font-mono text-xs text-ink-muted">
               {explanation.data.formatted}
             </pre>
           </details>

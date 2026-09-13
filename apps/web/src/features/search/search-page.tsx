@@ -274,7 +274,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               }}
               aria-pressed={facet === entry.id}
               className={cn(
-                'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
+                'rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-[var(--motion-fast)]',
                 facet === entry.id
                   ? 'border-accent bg-accent text-white'
                   : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
@@ -359,7 +359,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                     <div className="flex min-w-0 items-center gap-2 md:flex-1">
                       <span
                         className={cn(
-                          'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                          'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tracking-wide uppercase',
                           TYPE_BADGE[hit.type].className,
                         )}
                       >
@@ -376,7 +376,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                           Archived
                         </span>
                       )}
-                      <span className="ml-auto shrink-0 text-[11px] text-ink-faint md:ml-0">
+                      <span className="ml-auto shrink-0 text-xs text-ink-faint md:ml-0">
                         {formatRelative(hit.updatedAt)}
                       </span>
                     </div>
@@ -395,7 +395,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 cap (`SEARCH_LIMIT`, §2.7). Only worth naming when the
                 result set genuinely landed AT that cap, which is the one
                 case where there might be more than what's on screen. */}
-            <li className="pt-1 text-center text-[11px] text-ink-faint">
+            <li className="pt-1 text-center text-xs text-ink-faint">
               {results.data.length === SEARCH_LIMIT
                 ? `Showing the first ${String(SEARCH_LIMIT)} results — narrow your query to see more.`
                 : `${String(results.data.length)} ${results.data.length === 1 ? 'result' : 'results'}`}

@@ -99,9 +99,7 @@ export function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-          Channels
-        </h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Channels</h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
@@ -129,7 +127,7 @@ export function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Direct messages
         </h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
@@ -433,7 +431,7 @@ function PinnedMessagesButton({
           {/* `listAllPinned` takes a hard limit, never a cursor — see
               `PINNED_LIST_LIMIT`'s own comment in `pin.service.ts`. */}
           {list.length === PINNED_LIST_LIMIT && (
-            <p className="p-2 text-center text-[11px] text-ink-faint">
+            <p className="p-2 text-center text-xs text-ink-faint">
               Showing your {PINNED_LIST_LIMIT} most recently pinned messages.
             </p>
           )}
@@ -464,7 +462,7 @@ function PinnedMessageSidebarRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Pinned {new Date(row.pinnedAt).toLocaleString()}
         </span>
       </button>
@@ -472,7 +470,7 @@ function PinnedMessageSidebarRow({
         type="button"
         disabled={pending}
         onClick={onUnpin}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unpin
       </button>
@@ -587,7 +585,7 @@ function SavedMessagesButton({
           {/* `listSaved` takes a hard limit, never a cursor — see
               `SAVED_LIST_LIMIT`'s own comment in `saved.service.ts`. */}
           {list.length === SAVED_LIST_LIMIT && (
-            <p className="p-2 text-center text-[11px] text-ink-faint">
+            <p className="p-2 text-center text-xs text-ink-faint">
               Showing your {SAVED_LIST_LIMIT} most recently saved messages.
             </p>
           )}
@@ -618,7 +616,7 @@ function SavedMessageRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Saved {new Date(row.savedAt).toLocaleString()}
         </span>
       </button>
@@ -626,7 +624,7 @@ function SavedMessageRow({
         type="button"
         disabled={pending}
         onClick={onUnsave}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unsave
       </button>
@@ -826,7 +824,7 @@ function NewDirectMessagePopover({
                     onClick={() => {
                       toggle(userId);
                     }}
-                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent hover:bg-accent/20"
                   >
                     <span className="truncate">{member?.email ?? UNKNOWN_PERSON_LABEL}</span>
                     <span aria-hidden="true">×</span>

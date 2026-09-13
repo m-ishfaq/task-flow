@@ -373,7 +373,7 @@ function TopBar({ isPlatformAdmin }: { readonly isPlatformAdmin: boolean }) {
            cold palette in styles.css) already makes "you are somewhere
            different" unmistakable; a second alarm-red badge here on top of
            that was reported as reading as a warning rather than a place. */
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-hover px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-hover px-2.5 py-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
           <ShieldCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
           Platform admin
         </span>
@@ -784,7 +784,7 @@ function OrgSwitcher() {
               <OrgBadge orgId={org.orgId} name={org.name} />
               <span className="truncate">{org.name}</span>
             </span>
-            <span className="shrink-0 text-[11px] text-ink-faint">{org.role}</span>
+            <span className="shrink-0 text-xs text-ink-faint">{org.role}</span>
           </DropdownMenuItem>
         ))}
 

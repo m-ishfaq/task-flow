@@ -179,7 +179,7 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                   identical "no load-more to offer, so say where the list
                   stops" disclosure `calls-panel.tsx` gives its own log. */}
               {threads.data?.length === MESSAGE_THREADS_LIMIT && (
-                <p className="px-2 py-2 text-center text-[11px] text-ink-faint">
+                <p className="px-2 py-2 text-center text-xs text-ink-faint">
                   Showing your most recent {MESSAGE_THREADS_LIMIT} threads.
                 </p>
               )}
@@ -284,7 +284,7 @@ function ComposeView({
         <button
           type="button"
           onClick={onCancel}
-          className="ml-auto text-[11px] text-ink-muted hover:text-ink"
+          className="ml-auto text-xs text-ink-muted hover:text-ink"
         >
           Cancel
         </button>
@@ -351,7 +351,7 @@ function ComposeView({
             {send.isPending ? 'Sending…' : 'Send'}
           </Button>
           {activeNumber === '' && (
-            <span className="text-[11px] text-warning">Buy a number before sending.</span>
+            <span className="text-xs text-warning">Buy a number before sending.</span>
           )}
         </div>
 

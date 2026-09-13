@@ -114,8 +114,8 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                  and what a rule's refusal cites cannot drift. */
               <div className="mt-3 border-t border-line/60 pt-2.5">
                 <div className="flex items-baseline gap-2">
-                  <p className="text-[11px] font-medium text-ink-muted">Automation allowance</p>
-                  <p className="text-[11px] text-ink-faint">
+                  <p className="text-xs font-medium text-ink-muted">Automation allowance</p>
+                  <p className="text-xs text-ink-faint">
                     {formatCents(automationSpentCents)} of {formatCents(automationCapCents)} · rules
                     only, in addition to the org cap
                   </p>

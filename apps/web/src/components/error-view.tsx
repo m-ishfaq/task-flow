@@ -69,7 +69,7 @@ export function ErrorView({ error, className, title, onRetry }: ErrorViewProps) 
       )}
 
       {api !== null && (
-        <p className="mt-1 font-mono text-[11px] text-ink-faint">Reference {api.error.requestId}</p>
+        <p className="mt-1 font-mono text-xs text-ink-faint">Reference {api.error.requestId}</p>
       )}
     </div>
   );

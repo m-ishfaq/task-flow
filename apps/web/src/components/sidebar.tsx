@@ -497,7 +497,7 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide uppercase',
                 'transition-colors duration-[var(--motion-fast)]',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
@@ -681,7 +681,7 @@ function ActiveSprintLine({
     <Link
       to="/projects/$projectId/sprints"
       params={{ projectId }}
-      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
       activeProps={{ className: 'text-accent' }}
       title={`${sprint.name} — ends ${sprint.endsOn}`}
     >
@@ -755,7 +755,7 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
         >
           <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
           {isFirst ? 'Add the first board' : 'Board'}
@@ -789,7 +789,7 @@ function AddBoard({
               setAdding(false);
             }
           }}
-          className="h-6 w-full text-[11px]"
+          className="h-6 w-full text-xs"
         />
         {create.isError && (
           <p role="alert" className="px-1 py-0.5 text-[10px] text-danger">
@@ -886,7 +886,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
         <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>

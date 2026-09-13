@@ -256,7 +256,7 @@ export function BroadcastTab({
                       <span className="min-w-0 truncate text-ink">
                         {candidate.name} <span className="text-ink-faint">({candidate.slug})</span>
                       </span>
-                      <span className="shrink-0 text-[11px] text-ink-faint">
+                      <span className="shrink-0 text-xs text-ink-faint">
                         {candidate.memberCount} members
                       </span>
                     </button>

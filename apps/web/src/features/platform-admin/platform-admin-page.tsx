@@ -364,7 +364,7 @@ export function PlatformAdminPage() {
               block above it, not a second, separate notice. */}
           <div className="flex items-center gap-2 border-b border-line px-4 py-2">
             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-danger" />
-            <p className="min-w-0 flex-1 text-[11px] leading-snug text-ink-faint">
+            <p className="min-w-0 flex-1 text-xs leading-snug text-ink-faint">
               Acting across <span className="text-ink-muted">all organizations</span> — every action
               is logged
             </p>
@@ -433,7 +433,7 @@ export function PlatformAdminPage() {
                 the collapse toggle. */}
             <div className="flex items-center gap-2 border-t border-line/70 px-3 py-1.5">
               <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-danger" />
-              <p className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+              <p className="min-w-0 flex-1 truncate text-xs text-ink-faint">
                 Acting across <span className="text-ink-muted">all organizations</span> — every
                 action is logged
               </p>

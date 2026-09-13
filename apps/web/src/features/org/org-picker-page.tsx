@@ -161,7 +161,7 @@ export function OrgPickerPage() {
               >
                 Platform console
               </span>
-              <span className="block text-[11px] text-ink-faint">
+              <span className="block text-xs text-ink-faint">
                 Operator tools — organizations, users, plans and the operator audit log.
               </span>
             </span>
@@ -194,7 +194,7 @@ export function OrgPickerPage() {
                       <span className="block truncate text-sm font-medium text-ink">
                         {org.name}
                       </span>
-                      <span className="block truncate font-mono text-[11px] text-ink-faint">
+                      <span className="block truncate font-mono text-xs text-ink-faint">
                         {org.slug}
                       </span>
                     </span>
@@ -231,7 +231,7 @@ export function OrgPickerPage() {
                     <span className="block truncate text-sm font-medium text-ink-muted">
                       {org.name}
                     </span>
-                    <span className="block truncate text-[11px] text-ink-faint">
+                    <span className="block truncate text-xs text-ink-faint">
                       {org.orgStatus !== 'active'
                         ? 'This organization has been suspended'
                         : 'Your membership is suspended'}

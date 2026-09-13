@@ -335,7 +335,7 @@ function PlanCard({
           {plan.isDefault && <Badge>default</Badge>}
           {!plan.isActive && <Badge>retired</Badge>}
         </p>
-        <p className="font-mono text-[11px] text-ink-faint">{plan.id}</p>
+        <p className="font-mono text-xs text-ink-faint">{plan.id}</p>
       </div>
 
       <p className="text-lg font-semibold tracking-tight text-ink">
@@ -363,11 +363,9 @@ function PlanCard({
         </div>
       </dl>
 
-      {plan.description !== null && (
-        <p className="text-[11px] text-ink-muted">{plan.description}</p>
-      )}
+      {plan.description !== null && <p className="text-xs text-ink-muted">{plan.description}</p>}
 
-      <p className="text-[11px] text-ink-faint">
+      <p className="text-xs text-ink-faint">
         {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'}
         {plan.features.length > 0 && ` · ${plan.features.join(', ')}`}
       </p>
@@ -377,7 +375,7 @@ function PlanCard({
           evidence the object is still there, or that it belongs to the
           Stripe account this deployment currently points at. Only looking
           settles that, so the card makes looking one click. */}
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs text-ink-faint">
         {plan.stripeProductId === null ? (
           <span>not yet at the processor — created on first price</span>
         ) : (
@@ -495,7 +493,7 @@ function RetirePlanDialog({
                 {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on
                 this plan
               </p>
-              <p className="mt-0.5 text-[11px] text-ink-muted">
+              <p className="mt-0.5 text-xs text-ink-muted">
                 They will continue to have access to all features until their plan is manually
                 changed or they cancel.
               </p>
@@ -654,7 +652,7 @@ function EditLimitsDialog({
           onChange(event.target.value);
         }}
       />
-      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
+      <p className="mt-0.5 text-xs text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
     </Field>
   );
 
@@ -908,7 +906,7 @@ function EditFeaturesDialog({
                     >
                       <span className="block text-sm text-ink">
                         {featureLabel(flag.flagName)}
-                        <span className="ml-1.5 font-mono text-[11px] text-ink-faint">
+                        <span className="ml-1.5 font-mono text-xs text-ink-faint">
                           {flag.flagName}
                         </span>
                       </span>

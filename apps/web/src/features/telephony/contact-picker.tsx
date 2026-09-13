@@ -202,7 +202,7 @@ export function ContactPicker({
       </div>
 
       {matched !== undefined && (
-        <p className="flex items-center gap-1 text-[11px] text-ink-muted">
+        <p className="flex items-center gap-1 text-xs text-ink-muted">
           <Avatar userId={matched.userId} label={matched.label} size="xs" />
           <span className="truncate">{matched.label}</span>
         </p>

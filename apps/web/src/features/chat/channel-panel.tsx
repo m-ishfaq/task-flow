@@ -759,7 +759,7 @@ export function ChannelPanel({
                 const dayDivider = showDayDivider && (
                   <div className="flex items-center gap-2" role="separator">
                     <span className="h-px flex-1 bg-line/60" />
-                    <span className="text-[11px] font-medium text-ink-faint">
+                    <span className="text-xs font-medium text-ink-faint">
                       {formatDayLabel(item.at)}
                     </span>
                     <span className="h-px flex-1 bg-line/60" />
@@ -792,7 +792,7 @@ export function ChannelPanel({
                       ) && (
                         <div className="flex items-center gap-2" role="separator">
                           <span className="h-px flex-1 bg-danger/40" />
-                          <span className="text-[11px] font-medium text-danger">New messages</span>
+                          <span className="text-xs font-medium text-danger">New messages</span>
                           <span className="h-px flex-1 bg-danger/40" />
                         </div>
                       )}

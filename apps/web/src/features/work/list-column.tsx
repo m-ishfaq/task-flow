@@ -73,7 +73,7 @@ export function ListColumn({
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'rounded-full px-2 py-0.5 text-xs font-medium',
             overLimit ? 'bg-warning/15 text-warning' : 'bg-surface-hover/80 text-ink-faint',
           )}
           title={

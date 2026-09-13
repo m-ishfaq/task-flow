@@ -355,7 +355,7 @@ function StatusFooter() {
   const refreshedAt = status.data.rollupLastRefreshedAt;
 
   return (
-    <p className="flex items-center justify-center gap-1.5 px-1 py-1 text-center text-[11px] text-ink-faint">
+    <p className="flex items-center justify-center gap-1.5 px-1 py-1 text-center text-xs text-ink-faint">
       <RefreshCw aria-hidden="true" className="size-3" strokeWidth={2} />
       {refreshedAt === null
         ? 'Rollups have not run for this organization yet.'

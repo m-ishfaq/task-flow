@@ -103,7 +103,7 @@ export function PublishPanel({
 
       {publishedAt !== null ? (
         <div className="space-y-1.5">
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             Published {formatRelative(publishedAt)} — anyone with the link can view it.
           </p>
           <div className="flex gap-1.5">

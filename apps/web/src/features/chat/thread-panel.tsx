@@ -94,7 +94,7 @@ export function ThreadPanel({
       <div className="flex flex-col gap-0.5">
         <span className="flex items-baseline gap-1.5 px-0.5">
           <span className="text-[13px] font-semibold text-ink">{label}</span>
-          <span className="text-[11px] text-ink-faint">{formatTime(message.createdAt)}</span>
+          <span className="text-xs text-ink-faint">{formatTime(message.createdAt)}</span>
         </span>
         <div className="text-sm text-ink">
           <RichTextView value={message.body} bare />

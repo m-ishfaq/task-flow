@@ -258,7 +258,7 @@ export function IntegrationsCallbackPage() {
           webhook config. Recovered-after-refresh renders without the secret
           and says so. */}
       {recovered ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-ink">
+        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-ink">
           This page was refreshed, so the verification secret is gone. It was shown once at connect
           time; reconnect to mint a new one.
         </div>

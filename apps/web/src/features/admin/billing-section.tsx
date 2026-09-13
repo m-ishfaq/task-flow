@@ -295,7 +295,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 what it says — naming the owner turns a dead end into a next
                 step. */}
             {data.billingContact !== null && (
-              <p className="mt-2 text-[11px] text-ink-faint">
+              <p className="mt-2 text-xs text-ink-faint">
                 Billing is managed by{' '}
                 <strong className="text-ink-muted">
                   {data.billingContact.name ?? data.billingContact.email}
@@ -318,7 +318,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                           tells a customer nothing about what they are paying
                           for. */}
                       {featureDescription(feature.flagName) !== null && (
-                        <span className="block text-[11px] text-ink-muted">
+                        <span className="block text-xs text-ink-muted">
                           {featureDescription(feature.flagName)}
                         </span>
                       )}
@@ -455,12 +455,10 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                             only question anyone opens a plan picker with. */}
                         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                           {plan.features.length === 0 ? (
-                            <li className="text-[11px] text-ink-faint">
-                              Core work management only
-                            </li>
+                            <li className="text-xs text-ink-faint">Core work management only</li>
                           ) : (
                             plan.features.map((feature) => (
-                              <li key={feature} className="text-[11px] text-ink-muted">
+                              <li key={feature} className="text-xs text-ink-muted">
                                 ✓ {featureLabel(feature)}
                               </li>
                             ))

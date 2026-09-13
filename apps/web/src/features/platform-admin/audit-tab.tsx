@@ -76,22 +76,22 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/60">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Seq
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       When
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Action
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Target
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Operator
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                       Chain
                     </th>
                   </tr>
@@ -109,7 +109,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       <td className="px-3 py-2.5">
                         <ActionBadge action={entry.action} />
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-xs text-ink-muted overflow-x-auto">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
                       <td className="px-3 py-2.5 text-ink-muted">
@@ -124,7 +124,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                             it (the trigger's own `prev_hash`/`hash`
                             columns), not a control. */}
                         <span
-                          className="inline-flex items-center gap-1 font-mono text-[11px] text-ink-faint"
+                          className="inline-flex items-center gap-1 font-mono text-xs text-ink-faint"
                           title={entry.hash}
                         >
                           <Link2 aria-hidden="true" className="size-3" strokeWidth={2} />

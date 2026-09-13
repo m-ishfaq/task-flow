@@ -240,7 +240,7 @@ function TokenCreateForm({
             </p>
           ) : (
             <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2">
-              <label className="flex cursor-pointer items-center gap-2 px-1 text-[11px] font-medium text-ink">
+              <label className="flex cursor-pointer items-center gap-2 px-1 text-xs font-medium text-ink">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -253,7 +253,7 @@ function TokenCreateForm({
               </label>
               {groups.map(([resource, scopes]) => (
                 <div key={resource}>
-                  <p className="px-1 text-[11px] font-semibold text-ink-muted">{resource}</p>
+                  <p className="px-1 text-xs font-semibold text-ink-muted">{resource}</p>
                   <ul className="space-y-0.5">
                     {scopes.map((scope) => (
                       <li key={scope}>
@@ -270,7 +270,7 @@ function TokenCreateForm({
                               developer surface, and the string is the exact
                               value the server validates — a human label
                               would be a second vocabulary to drift. */}
-                          <code className="font-mono text-[11px]">{scope}</code>
+                          <code className="font-mono text-xs">{scope}</code>
                         </label>
                       </li>
                     ))}
@@ -279,7 +279,7 @@ function TokenCreateForm({
               ))}
             </div>
           )}
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             A token can only do what its scopes allow, and only while you hold those permissions
             yourself — the server re-checks against your live role on every request.
           </p>
@@ -302,7 +302,7 @@ function TokenCreateForm({
           <option value={365}>1 year</option>
           <option value={0}>No expiry</option>
         </select>
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {expiresInDays === 0
             ? 'This token never expires — revoke it by hand when it is no longer needed.'
             : 'After this, the token stops authenticating. You can always revoke it sooner.'}
@@ -387,24 +387,22 @@ function TokenRow({
           </p>
           {/* The prefix is all the list ever sees of the credential — the
               full token is shown once at mint, and the hash is never exposed. */}
-          <p className="truncate font-mono text-[11px] text-ink-faint">
-            tf_pat_{token.tokenPrefix}
-          </p>
+          <p className="truncate font-mono text-xs text-ink-faint">tf_pat_{token.tokenPrefix}</p>
         </div>
 
         <p
-          className="hidden max-w-52 truncate font-mono text-[11px] text-ink-muted sm:block"
+          className="hidden max-w-52 truncate font-mono text-xs text-ink-muted sm:block"
           title={token.scopes.join(', ')}
         >
           {token.scopes.join(', ')}
         </p>
 
-        <p className="shrink-0 text-[11px] text-ink-faint">
+        <p className="shrink-0 text-xs text-ink-faint">
           {token.lastUsedAt === null ? 'never used' : `used ${formatRelative(token.lastUsedAt)}`}
         </p>
 
         {token.expiresAt !== null && !revoked && (
-          <p className={cn('shrink-0 text-[11px]', expired ? 'text-danger' : 'text-ink-faint')}>
+          <p className={cn('shrink-0 text-xs', expired ? 'text-danger' : 'text-ink-faint')}>
             {expired
               ? `expired ${formatRelative(token.expiresAt)}`
               : `expires ${formatRelative(token.expiresAt)}`}
@@ -420,7 +418,7 @@ function TokenRow({
               label="Revoke"
               confirmLabel="Revoke token"
               disabled={revoke.isPending}
-              className="h-6 px-1.5 text-[11px]"
+              className="h-6 px-1.5 text-xs"
               onConfirm={() => {
                 revoke.mutate();
               }}

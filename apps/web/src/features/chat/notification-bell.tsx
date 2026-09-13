@@ -267,7 +267,7 @@ function NotificationRow({
         </span>
 
         {actorLabel !== null && (
-          <span className="truncate text-[11px] text-ink-faint">{actorLabel}</span>
+          <span className="truncate text-xs text-ink-faint">{actorLabel}</span>
         )}
 
         {notification.excerpt !== null && (

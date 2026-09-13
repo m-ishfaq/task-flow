@@ -123,7 +123,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                 <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                   {number.isoCountry}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
                   bought {formatDate(number.purchasedAt)}
                 </span>
                 {capabilities?.releaseNumbers === true && (
@@ -202,11 +202,11 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                           className="group flex items-center gap-3 rounded-md border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
                         >
                           <span className="font-mono text-xs text-ink">{phoneNumber}</span>
-                          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                          <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
                             {[available.locality, available.region].filter(Boolean).join(', ') ||
                               available.isoCountry}
                           </span>
-                          <span className="text-[11px] text-ink-muted">
+                          <span className="text-xs text-ink-muted">
                             ${(available.monthlyCostCents / 100).toFixed(2)}/mo
                           </span>
                           <Button

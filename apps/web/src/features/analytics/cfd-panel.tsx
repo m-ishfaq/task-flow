@@ -242,7 +242,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
 
         {hovered !== undefined && (
           <div
-            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-lg border border-line bg-surface-raised px-2.5 py-1.5 text-[11px] shadow-lg"
+            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-lg border border-line bg-surface-raised px-2.5 py-1.5 text-xs shadow-lg"
             style={{ left: `${String(hoverLeftPercent)}%` }}
           >
             <p className="mb-1 font-medium text-ink">{hovered.point.date}</p>

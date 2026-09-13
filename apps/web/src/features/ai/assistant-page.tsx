@@ -649,7 +649,7 @@ function CapabilitiesPanel({
         >
           {CAPABILITIES.map((group) => (
             <div key={group.heading} className="space-y-1.5">
-              <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-ink-faint">
                 <span className="opacity-70">{group.icon}</span>
                 {group.heading}
               </p>
@@ -666,7 +666,7 @@ function CapabilitiesPanel({
       {/* A literal " · " between entries, not CSS gap alone — the identical
           collapse-on-copy bug `tool-results.tsx`'s own header now documents
           for a `Badge` row applies just as much to plain adjacent `<span>`s. */}
-      <p className="border-t border-line/50 pt-3 text-[11px] text-ink-faint/90">
+      <p className="border-t border-line/50 pt-3 text-xs text-ink-faint/90">
         <span className="font-medium text-ink-faint">Point at things: </span>
         {REFERENCE_HINTS.map((hint, index) => (
           <span key={hint.label}>
@@ -882,7 +882,7 @@ function PendingActions({
               {!decided.has(call.id) && Object.keys(call.input).length > 0 && (
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                   {Object.entries(call.input).map(([key, value]) => (
-                    <span key={key} className="text-[11px] text-ink-faint">
+                    <span key={key} className="text-xs text-ink-faint">
                       {key}: <span className="text-ink-muted">{formatCallValue(value)}</span>
                     </span>
                   ))}
