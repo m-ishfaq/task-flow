@@ -257,6 +257,24 @@
     0 0 0 1px var(--color-accent),
     0 0 12px color-mix(in oklab, var(--color-accent) 25%, transparent);
 
+  /* The identical recipe as `--shadow-glow-accent` above, against
+   * `--color-danger` instead — added for the Voice & Messaging module's
+   * spend gauge (`spend-panel.tsx`, warm-dark rebuild §5), whose fill bar
+   * glows once spend is at or over its cap. A plain Tailwind arbitrary
+   * value (`shadow-[0_0_10px_color-mix(...)]`) was tried first and
+   * rejected: this codebase has no other example of `color-mix()` nested
+   * inside a Tailwind arbitrary bracket, and this sandbox has no way to
+   * render the generated CSS to confirm the nested parens parse the way
+   * intended — a named token, exercised through the exact same
+   * `shadow-<name>` utility mechanism `shadow-glow-accent` already proves
+   * works, carries none of that risk. `danger` needs no branding
+   * awareness of its own (unlike accent, it is never overridden per org),
+   * so a literal color-mix target is correct here, not a workaround.
+   */
+  --shadow-glow-danger:
+    0 0 0 1px var(--color-danger),
+    0 0 10px color-mix(in oklab, var(--color-danger) 30%, transparent);
+
   /* Column-specific elevation for better depth hierarchy */
   --shadow-column: 0 1px 3px oklch(0% 0 0 / 8%), 0 1px 2px oklch(0% 0 0 / 6%);
 
