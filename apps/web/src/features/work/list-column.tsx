@@ -15,6 +15,7 @@ import { searchResultsQuery } from '../search/api.js';
 import { patchLists, type ListSummary } from './api.js';
 import { CardQuickView } from './card-quick-view.js';
 import { buildDuplicateQuery, DUPLICATE_MATCH_LIMIT } from './duplicate-detect.js';
+import { flowTintGradient } from './flow-tint.js';
 
 /**
  * One column of the board.
@@ -27,6 +28,10 @@ import { buildDuplicateQuery, DUPLICATE_MATCH_LIMIT } from './duplicate-detect.j
  * The WIP limit is displayed and never enforced. §10.1: blocking someone from
  * recording work that is already in progress makes people stop using the board,
  * not stop the work. The count going red is the whole intervention.
+ *
+ * The section's own `backgroundImage` below is `flowTintGradient`
+ * (`flow-tint.ts` — see that file's own header for the full reasoning): a
+ * per-column warm wash keyed to rank-order position, not name.
  */
 
 export interface ListColumnProps {
@@ -68,6 +73,7 @@ export function ListColumn({
         'column-container flex max-h-full w-72 shrink-0 flex-col',
         isOver && 'ring-2 ring-accent/50 border-accent/30',
       )}
+      style={{ backgroundImage: flowTintGradient(list, siblings) }}
     >
       <header className="column-header justify-between">
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>

@@ -789,7 +789,13 @@
     border-radius: 0;
   }
 
-  /* Column container — subtle background tint */
+  /* Column container — subtle background tint.
+     Duplicated in `list-column.tsx`'s own `flowTintGradient` (warm-dark
+     rebuild §5), which layers a per-column accent wash IN FRONT of this
+     exact recipe via an inline `background-image` — an inline style always
+     wins over this class for that property, so it has to repaint this
+     layer itself rather than reference it. Editing the gradient below
+     needs the identical edit there. */
   .column-container {
     background: linear-gradient(
       180deg,
