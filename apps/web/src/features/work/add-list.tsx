@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import type { BoardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { Button, Input } from '../../components/primitives.js';
+import { Button, Empty, Input } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 
 /**
@@ -151,25 +151,27 @@ export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
 
   return (
     <div className="flex h-full items-start p-3">
-      <div className="flex w-full max-w-md flex-col gap-3 rounded border border-dashed border-line p-6">
-        <div>
-          <p className="text-sm font-medium text-ink">This board has no lists yet</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {canManage
+      <div className="w-full max-w-md">
+        <Empty
+          title="This board has no lists yet"
+          description={
+            canManage
               ? 'Lists are the columns cards move between. Start with the usual three, or name your own.'
-              : 'Lists are the columns cards move between. An admin or owner needs to set them up.'}
-          </p>
-        </div>
-
-        {canManage && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" size="sm" disabled={busy} onClick={scaffold}>
-              {busy ? 'Creating…' : 'Add Todo, Doing, Done'}
-            </Button>
-            <AddListColumn orgId={orgId} boardId={boardId} canManage={canManage} />
-          </div>
-        )}
-
+              : 'Lists are the columns cards move between. An admin or owner needs to set them up.'
+          }
+          {...(canManage
+            ? {
+                action: (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button variant="primary" size="sm" disabled={busy} onClick={scaffold}>
+                      {busy ? 'Creating…' : 'Add Todo, Doing, Done'}
+                    </Button>
+                    <AddListColumn orgId={orgId} boardId={boardId} canManage={canManage} />
+                  </div>
+                ),
+              }
+            : {})}
+        />
         {create.isError && <ErrorText error={create.error} />}
       </div>
     </div>

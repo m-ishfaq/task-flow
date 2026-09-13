@@ -6,7 +6,7 @@ import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { cn } from '../../lib/cn.js';
-import { Button, Field, Input, Spinner } from '../../components/primitives.js';
+import { Button, Empty, Field, Input, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { membersQuery } from '../org/api.js';
 
@@ -176,13 +176,10 @@ export function PermissionDebugPage() {
       </form>
 
       {submitted === null && (
-        <div className="rounded-xl border border-dashed border-line/50 px-3 py-6 text-center">
-          <p className="text-sm text-ink-muted">Pick a member and a permission, then Explain.</p>
-          <p className="mt-1 text-xs text-ink-faint">
-            Every layer the engine consulted is listed in order, including the ones that did not
-            decide anything.
-          </p>
-        </div>
+        <Empty
+          title="Pick a member and a permission, then Explain"
+          description="Every layer the engine consulted is listed in order, including the ones that did not decide anything."
+        />
       )}
 
       {explanation.isFetching && <Spinner />}
