@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle, StatusPill } from '@taskflow/ui';
+import {
+  DropdownMenuItem,
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+  StatusPill,
+} from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { Building2, Search, ShieldAlert } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
@@ -337,18 +344,19 @@ export function OrgsTab({
                       )}
                       {org.status === 'suspended' && (
                         <RowActionsMenu>
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger/10"
+                          <DropdownMenuItem
+                            tone="danger"
                             disabled={remove.isPending}
-                            onClick={() => {
+                            onSelect={() => {
                               setConfirmSlug('');
                               setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
                             }}
                           >
-                            <ShieldAlert className="size-3" strokeWidth={2.5} />
-                            Delete org
-                          </button>
+                            <span className="flex items-center gap-2">
+                              <ShieldAlert className="size-3" strokeWidth={2.5} />
+                              Delete org
+                            </span>
+                          </DropdownMenuItem>
                         </RowActionsMenu>
                       )}
                     </div>

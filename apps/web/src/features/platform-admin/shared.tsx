@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import {
+  DropdownMenuContent,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+} from '@taskflow/ui';
 import { MoreHorizontal, Search, ShieldAlert, type LucideProps } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
@@ -170,42 +178,35 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
  * Dropdown menu for destructive row actions (Delete). Keeps them visually
  * separated from safe actions (Plan, Suspend/Reactivate) so an operator
  * does not misclick a destructive action.
+ *
+ * Was a fully hand-rolled `useState` + `fixed inset-0` click-catcher —
+ * functional, but with none of Radix's real menu behavior (arrow-key
+ * navigation between items, focus returning to the trigger on close, a
+ * click on the catcher div rather than a proper outside-click/Escape
+ * handler on the popup itself). Found during the warm-dark rebuild's own
+ * component-consolidation pass (`ai/design-rebuild-warm-dark.md` §3) as
+ * exactly the kind of thing `@taskflow/ui`'s `DropdownMenu` already exists
+ * for — this console just never reached for it. Kept as its own named
+ * wrapper (rather than inlining `DropdownMenuRoot`/`Trigger`/`Content` at
+ * the one call site) so the "More actions" trigger button's own icon and
+ * sizing stay defined once.
  */
 export function RowActionsMenu({ children }: { readonly children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-label="More actions"
-        onClick={() => {
-          setOpen(!open);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
-        }}
-        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
-      >
-        <MoreHorizontal className="size-3.5" strokeWidth={2} />
-      </button>
-      {open && (
-        <>
-          <div
-            role="presentation"
-            className="fixed inset-0 z-20"
-            onClick={() => {
-              setOpen(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setOpen(false);
-            }}
-          />
-          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-xl border border-line bg-surface-raised p-1 shadow-lg">
-            {children}
-          </div>
-        </>
-      )}
-    </div>
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="More actions"
+          className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
+        >
+          <MoreHorizontal className="size-3.5" strokeWidth={2} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[140px]">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }
 
