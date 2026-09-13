@@ -148,7 +148,11 @@ function ChartCard({
   readonly people: readonly { userId: string; displayName: string | null; email: string }[];
 }) {
   return (
-    <div className="rounded-lg border border-line p-4">
+    // `rounded-card` + `bg-surface-raised` + `border-line/50` — matching
+    // `people-page.tsx`'s own directory card treatment for the identical
+    // "info card" role, which this file's own version had drifted from
+    // (a flat `rounded-lg border-line` with no raised background at all).
+    <div className="rounded-card border border-line/50 bg-surface-raised p-4">
       <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
       {people.length === 0 ? (
         <p className="mt-2 text-sm text-ink-faint">{empty}</p>
