@@ -109,6 +109,56 @@ export function Button({
   );
 }
 
+export type IconButtonSize = 'sm' | 'md';
+
+/**
+ * A plain, borderless icon-only button — the shell's own hamburger and
+ * keyboard-shortcuts triggers, and chat's header icons, had each written
+ * the identical `flex size-8 shrink-0 items-center justify-center
+ * rounded-lg ...` class string by hand, one of them missing the
+ * `--motion-fast` duration token the others had (silently falling back to
+ * Tailwind's own default duration instead of this app's own motion
+ * rhythm) — the same drift `Button` itself exists to prevent for a
+ * text-or-icon-plus-text control. `Button`'s own sizes carry horizontal
+ * padding built for that combination and are the wrong shape for an
+ * icon-only square, which is why this is a second, small primitive rather
+ * than a third `ButtonSize`.
+ *
+ * Deliberately NOT for every icon-shaped button in the app — a bordered
+ * "more actions" trigger (`platform-admin/shared.tsx`'s `RowActionsMenu`)
+ * is a different, secondary-button-like treatment, not a copy of this
+ * exact plain-ghost shape, and forcing it into this one would change how
+ * it looks, not just where its class string lives.
+ */
+export function IconButton({
+  size = 'md',
+  active = false,
+  className,
+  type,
+  ...props
+}: ComponentPropsWithoutRef<'button'> & {
+  readonly size?: IconButtonSize;
+  /** The toggled/open state of whatever this button shows or hides — the
+      same accent-tinted look `NavLink`-style active links already use,
+      rather than the plain hover treatment. */
+  readonly active?: boolean;
+}) {
+  return (
+    <button
+      type={type ?? 'button'}
+      className={cn(
+        'press flex shrink-0 items-center justify-center rounded-lg transition-colors duration-(--motion-fast)',
+        size === 'sm' ? 'size-7' : 'size-8',
+        active
+          ? 'bg-accent/10 text-accent'
+          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 /**
  * A segmented control — one of a small, fixed set of mutually exclusive
  * choices, rendered as a pill-shaped button group. The Design Bible's

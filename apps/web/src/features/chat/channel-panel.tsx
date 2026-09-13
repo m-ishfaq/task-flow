@@ -4,9 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Hash, Lock, Search, Users } from 'lucide-react';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
-import { AvatarStack, Button, Empty, Skeleton } from '../../components/primitives.js';
+import { AvatarStack, Button, Empty, IconButton, Skeleton } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { CallButton } from '../rtc/call-button.js';
 import { callHistoryQuery, type CallHistoryEntry } from '../rtc/api.js';
@@ -696,16 +695,14 @@ export function ChannelPanel({
               plain client-side substring filter over whatever happens to be
               loaded (not a real search) or duplicate backend work out of
               scope for a header icon. */}
-          <button
-            type="button"
+          <IconButton
             onClick={() => {
               void navigate({ to: '/search', search: { q: 'type = message' } });
             }}
             aria-label="Search messages"
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
           >
             <Search aria-hidden="true" className="size-4" strokeWidth={2.25} />
-          </button>
+          </IconButton>
           {/* In-app voice (Phase 13). Public channels cannot start a call in
               Wave 1 — the ring list comes from the channel's member tuples and
               a public channel has none, so the control is not offered rather
@@ -718,21 +715,15 @@ export function ChannelPanel({
               roster COUNT now has its own place next to the name above; this
               button still opens the full panel (members, media, retention),
               which a number or an avatar stack alone cannot replace. */}
-          <button
-            type="button"
+          <IconButton
             onClick={() => {
               setDetailsOpen((open) => !open);
             }}
             aria-label="Channel details"
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
-              detailsOpen
-                ? 'bg-accent/10 text-accent'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
+            active={detailsOpen}
           >
             <Users aria-hidden="true" className="size-4" strokeWidth={2.25} />
-          </button>
+          </IconButton>
         </header>
 
         {/* `px-3 sm:px-4`, matched by the header, the typing line and the

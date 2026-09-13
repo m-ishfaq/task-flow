@@ -36,7 +36,7 @@ import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { SUITE_STYLES, suiteForPath, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button, OrgBadge } from './primitives.js';
+import { Avatar, Button, IconButton, OrgBadge } from './primitives.js';
 import { BrandMark } from './brand-mark.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
@@ -464,14 +464,13 @@ function Header() {
           `Header` only ever renders inside the ordinary org frame now (the
           pre-org and Platform Admin states use `TopBar` instead), so the
           drawer this opens always exists. */}
-      <button
-        type="button"
+      <IconButton
         onClick={toggleMobileNav}
         aria-label="Open navigation"
-        className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
+        className="-ml-1 md:hidden"
       >
         <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
-      </button>
+      </IconButton>
 
       <Breadcrumbs />
 
@@ -505,17 +504,15 @@ function Header() {
         {/* The only visible route to the shortcuts overlay — everything else
             about it is keyboard-only, and a feature reachable by one key
             nobody was told about is not discoverable. */}
-        <button
-          type="button"
+        <IconButton
           onClick={() => {
             setShortcutsOpen(true);
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
-        </button>
+        </IconButton>
 
         <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-line/60" />
 
