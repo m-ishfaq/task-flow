@@ -421,6 +421,75 @@ export function DetailRow({
 }
 
 /**
+ * The pill an entity-directory table row uses for its own status column —
+ * a dot plus a label, rounded-full, bordered and tinted by tone. Four
+ * near-identical copies of this exact shape had been written independently
+ * (`orgs-tab.tsx`'s `StatusBadge`, `users-tab.tsx`'s `UserStatusBadge`,
+ * `billing-tab.tsx`'s `BillingStatusBadge`, `operations-tab.tsx`'s
+ * `OutcomeBadge`), each with its own copy of the same four Tailwind classes
+ * and, worse, disagreeing with each other about the ICON: a success state
+ * always got a plain dot, but a danger state sometimes got a `ShieldAlert`
+ * glyph (orgs' suspended, billing's past_due, operations' failure) and
+ * sometimes nothing at all (users' suspended) — an inconsistency with no
+ * reason behind it beyond four people writing the same thing four times.
+ *
+ * Converges on the Design Bible's own `.status-pill` mockup: always a dot,
+ * never an alert icon inside the pill itself — the tone and the dot's own
+ * color already carry the severity, and a `ShieldAlert` glyph crammed into
+ * an already-small pill only some of the time was decoration, not signal.
+ * Each call site keeps its own small mapping from its own status
+ * vocabulary (an org's `status`, a user's `status`, `billingStatus`, a run's
+ * `outcome` — four different small enums, not one to unify) to a tone and a
+ * label; only the pill's own rendering is shared.
+ *
+ * A THIRD, unrelated way of coloring status text already existed alongside
+ * these four (`InlineStatus`, immediately below) — deliberately left as its
+ * own thing rather than folded in here: it colors a bare status STRING
+ * inline inside a definition list, with no border, no fill, no dot, because
+ * a detail panel's `dl` is not a directory table's own column and does not
+ * want a table row's own visual weight repeated at every field.
+ */
+export type PillTone = 'success' | 'danger' | 'neutral';
+
+const PILL_TONE_CLASSES: Readonly<Record<PillTone, string>> = {
+  success: 'border-success/30 bg-success/10 text-success',
+  danger: 'border-danger/30 bg-danger/10 text-danger',
+  neutral: 'border-line bg-surface-sunken text-ink-faint',
+};
+
+const PILL_DOT_CLASSES: Readonly<Record<PillTone, string>> = {
+  success: 'bg-success',
+  danger: 'bg-danger',
+  neutral: 'bg-ink-faint',
+};
+
+export function StatusPill({
+  tone,
+  label,
+  className,
+}: {
+  readonly tone: PillTone;
+  readonly label: string;
+  readonly className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium',
+        PILL_TONE_CLASSES[tone],
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn('size-1.5 shrink-0 rounded-full', PILL_DOT_CLASSES[tone])}
+      />
+      {label}
+    </span>
+  );
+}
+
+/**
  * A status STRING, colored by what it means rather than rendered as plain
  * text — `active`/`current` reads success, `suspended`/`past_due`/`canceled`
  * reads danger, `trialing`/anything else reads warning-ish neutral. Not a

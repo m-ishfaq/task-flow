@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, ShieldAlert, Zap } from 'lucide-react';
+import { Search, Zap } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
 import { SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { Pagination, StepUpGate, TabBar, TableSearch } from './shared.js';
+import { Pagination, StatusPill, StepUpGate, TabBar, TableSearch } from './shared.js';
 
 /* -------------------------------------------------------------------------- *
  * Operations dashboard — "did a system action succeed or fail" (mail
@@ -185,17 +185,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
 function OutcomeBadge({ outcome }: { readonly outcome: string }) {
   if (outcome === 'success') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-        <span className="size-1.5 rounded-full bg-success" />
-        success
-      </span>
-    );
+    return <StatusPill tone="success" label="success" />;
   }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-      <ShieldAlert className="size-3" strokeWidth={2.5} />
-      failure
-    </span>
-  );
+  return <StatusPill tone="danger" label="failure" />;
 }

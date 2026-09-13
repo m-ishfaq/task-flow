@@ -24,6 +24,7 @@ import {
   OrgDetailDialog,
   Pagination,
   RowActionsMenu,
+  StatusPill,
   StepUpGate,
   TableSearch,
   downloadCsv,
@@ -521,26 +522,12 @@ export function OrgsTab({
 /** The one column in the org directory that has meaning beyond itself. */
 function StatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
-    return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        <ShieldAlert className="size-3" strokeWidth={2.5} />
-        suspended
-      </span>
-    );
+    return <StatusPill tone="danger" label="suspended" className="min-w-[88px]" />;
   }
   if (status === 'deleted') {
-    return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
-        deleted
-      </span>
-    );
+    return <StatusPill tone="neutral" label="deleted" className="min-w-[88px]" />;
   }
-  return (
-    <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-      <span className="size-1.5 rounded-full bg-success" />
-      active
-    </span>
-  );
+  return <StatusPill tone="success" label="active" className="min-w-[88px]" />;
 }
 
 /**

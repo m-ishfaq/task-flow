@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
-import { CreditCard, Search, ShieldAlert } from 'lucide-react';
+import { CreditCard, Search } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -12,6 +12,7 @@ import { ErrorView } from '../../components/error-view.js';
 import {
   OrgDetailDialog,
   Pagination,
+  StatusPill,
   StepUpGate,
   TableSearch,
   downloadCsv,
@@ -524,31 +525,13 @@ export function BillingTab({
 
 function BillingStatusBadge({ billingStatus }: { readonly billingStatus: string }) {
   if (billingStatus === 'active') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-        <span className="size-1.5 rounded-full bg-success" />
-        active
-      </span>
-    );
+    return <StatusPill tone="success" label="active" />;
   }
   if (billingStatus === 'trialing') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
-        trial
-      </span>
-    );
+    return <StatusPill tone="neutral" label="trial" />;
   }
   if (billingStatus === 'past_due') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        <ShieldAlert className="size-3" strokeWidth={2.5} />
-        past due
-      </span>
-    );
+    return <StatusPill tone="danger" label="past due" />;
   }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-      canceled
-    </span>
-  );
+  return <StatusPill tone="danger" label="canceled" />;
 }

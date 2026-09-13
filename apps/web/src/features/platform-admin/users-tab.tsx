@@ -21,6 +21,7 @@ import {
   ModalIconHeader,
   Pagination,
   SectionHeader,
+  StatusPill,
   StepUpGate,
   TableSearch,
   downloadCsv,
@@ -385,20 +386,11 @@ function UserDetailDialog({
   );
 }
 
-/** Mirrors `orgs-tab.tsx`'s own `StatusBadge` exactly — the same two states,
-    the same shape, for the same column position in a directory table. */
+/** Same shape as `orgs-tab.tsx`'s own `StatusBadge` — both are `StatusPill`
+    now, sharing the same rendering; only the vocabulary differs. */
 function UserStatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
-    return (
-      <span className="inline-flex min-w-[80px] items-center justify-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        suspended
-      </span>
-    );
+    return <StatusPill tone="danger" label="suspended" className="min-w-[80px]" />;
   }
-  return (
-    <span className="inline-flex min-w-[80px] items-center justify-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-      <span className="size-1.5 rounded-full bg-success" />
-      active
-    </span>
-  );
+  return <StatusPill tone="success" label="active" className="min-w-[80px]" />;
 }
