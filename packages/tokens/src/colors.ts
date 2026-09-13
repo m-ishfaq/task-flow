@@ -44,22 +44,33 @@ export interface ColorToken {
  * files yet (`expo-font` asset loading has not been wired). Both are real
  * Wave 2 work, not values this module can honestly claim to share today.
  */
+/**
+ * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.7): every value below
+ * mirrors `styles.css`'s own warm-dark update (§2.1-§2.3) — hue 262 -> 55 for
+ * the neutral family, 285 -> 88 for accent (at a higher lightness, 55% ->
+ * 72%, which is why `accentInk` flips from light to dark), `priorityMedium`
+ * following accent's hue. Every `hex` here was re-derived through the exact
+ * `@csstools/color-helpers` pipeline `colors.test.ts` already trusts (this
+ * file's own header explains why that matters) — never hand-converted —
+ * and the contrast numbers quoted in `styles.css`'s own updated comments
+ * apply identically here, since these are the same oklch triples.
+ */
 export const colors = {
-  surface: { oklch: { l: 16, c: 0.015, h: 262 }, hex: '#0a0d14' },
-  surfaceRaised: { oklch: { l: 20, c: 0.018, h: 262 }, hex: '#12161e' },
-  surfaceSunken: { oklch: { l: 12, c: 0.013, h: 262 }, hex: '#04060a' },
-  surfaceHover: { oklch: { l: 23, c: 0.018, h: 262 }, hex: '#181d26' },
+  surface: { oklch: { l: 16, c: 0.014, h: 55 }, hex: '#120c08' },
+  surfaceRaised: { oklch: { l: 20, c: 0.017, h: 55 }, hex: '#1c140f' },
+  surfaceSunken: { oklch: { l: 12, c: 0.012, h: 55 }, hex: '#090503' },
+  surfaceHover: { oklch: { l: 23, c: 0.017, h: 55 }, hex: '#231b15' },
 
-  ink: { oklch: { l: 93, c: 0.008, h: 262 }, hex: '#e5e8ed' },
-  inkMuted: { oklch: { l: 66, c: 0.015, h: 262 }, hex: '#8d929c' },
-  inkFaint: { oklch: { l: 56, c: 0.014, h: 262 }, hex: '#70757d' },
+  ink: { oklch: { l: 93, c: 0.01, h: 55 }, hex: '#ede6e2' },
+  inkMuted: { oklch: { l: 66, c: 0.016, h: 55 }, hex: '#9a9089' },
+  inkFaint: { oklch: { l: 56, c: 0.015, h: 55 }, hex: '#7c726c' },
 
-  line: { oklch: { l: 28, c: 0.012, h: 262 }, hex: '#26292f' },
-  lineStrong: { oklch: { l: 35, c: 0.014, h: 262 }, hex: '#373b42' },
+  line: { oklch: { l: 28, c: 0.013, h: 55 }, hex: '#2e2723' },
+  lineStrong: { oklch: { l: 35, c: 0.015, h: 55 }, hex: '#413933' },
 
-  accent: { oklch: { l: 55, c: 0.17, h: 285 }, hex: '#6b5dcf' },
-  accentInk: { oklch: { l: 98, c: 0.01, h: 285 }, hex: '#f7f8ff' },
-  accentHover: { oklch: { l: 50, c: 0.17, h: 285 }, hex: '#5d4dbe' },
+  accent: { oklch: { l: 72, c: 0.14, h: 88 }, hex: '#c99e1e' },
+  accentInk: { oklch: { l: 16, c: 0.02, h: 88 }, hex: '#110d04' },
+  accentHover: { oklch: { l: 66, c: 0.14, h: 88 }, hex: '#b68c00' },
 
   danger: { oklch: { l: 55, c: 0.19, h: 22 }, hex: '#c92e3b' },
   dangerInk: { oklch: { l: 98, c: 0.01, h: 22 }, hex: '#fff6f5' },
@@ -67,7 +78,7 @@ export const colors = {
   success: { oklch: { l: 70, c: 0.15, h: 155 }, hex: '#3bb974' },
 
   priorityUrgent: { oklch: { l: 60, c: 0.19, h: 22 }, hex: '#da4149' },
-  priorityMedium: { oklch: { l: 60, c: 0.17, h: 285 }, hex: '#796ce0' },
+  priorityMedium: { oklch: { l: 60, c: 0.16, h: 88 }, hex: '#a87700' },
 
   /**
    * `styles.css`'s own token also carries `/ 60%` alpha, dropped here: a
@@ -78,7 +89,7 @@ export const colors = {
    * style property alongside this hex, the same way `styles.css`'s alpha is
    * a separate channel from its L/C/H.
    */
-  overlay: { oklch: { l: 15, c: 0.02, h: 265 }, hex: '#070b14' },
+  overlay: { oklch: { l: 15, c: 0.02, h: 55 }, hex: '#120904' },
 } as const satisfies Record<string, ColorToken>;
 
 export type ColorName = keyof typeof colors;

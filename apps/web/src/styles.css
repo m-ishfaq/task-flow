@@ -134,17 +134,24 @@
      contrast REQUIREMENT of the lighter gold, not a matching aesthetic
      choice. `--color-accent-hover` follows the existing "darker on press"
      direction, scaled to the new base (72% -> 66%, the same proportional step
-     the old 55% -> 50% used). Verified against §2.4's checklist: accent-ink
-     on accent clears 7.77:1 (needs 4.5:1 text), accent-ink on accent-hover
-     clears 6.21:1, and accent against all four surfaces clears 6.78:1-8.14:1
-     (needs 3:1 non-text) — all with real margin. `branding-palettes.ts`'s
-     ENTIRE palette set (not just `default`) must stay in sync with this hue
-     AND this lightness/chroma pair — see that file's own header for why all
-     six org-selectable accents share one L/C, and for its own equivalent
-     verification against the six hues that pair now needs to clear. */
+     the old 55% -> 50% used) — SAME chroma as `--color-accent`, deliberately:
+     the original violet trio kept chroma fixed at 0.17 across both states and
+     only moved lightness, and a first draft of this rebuild broke that by
+     bumping hover's chroma to 0.15 for no real reason — caught by
+     `packages/tokens/src/palettes.test.ts`'s own "matches colors.ts exactly"
+     assertion refusing to agree with a hover hex that quietly drifted one
+     shade off from `branding-palettes.ts`'s shared-chroma pair. Verified
+     against §2.4's checklist: accent-ink on accent clears 7.77:1 (needs
+     4.5:1 text), accent-ink on accent-hover clears 6.21:1, and accent
+     against all four surfaces clears 6.78:1-8.14:1 (needs 3:1 non-text) —
+     all with real margin. `branding-palettes.ts`'s ENTIRE palette set (not
+     just `default`) must stay in sync with this hue AND this lightness/
+     chroma pair — see that file's own header for why all six org-selectable
+     accents share one L/C, and for its own equivalent verification against
+     the six hues that pair now needs to clear. */
   --color-accent: oklch(72% 0.14 88);
   --color-accent-ink: oklch(16% 0.02 88);
-  --color-accent-hover: oklch(66% 0.15 88);
+  --color-accent-hover: oklch(66% 0.14 88);
 
   /* 62% -> 55%: white text on the danger fill measured 3.76:1, below AA.
      55% clears it at 5.04:1. Same audit as --color-accent above. */
