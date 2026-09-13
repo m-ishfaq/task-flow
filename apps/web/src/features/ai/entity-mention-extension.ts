@@ -124,7 +124,7 @@ export function createEntityMentionExtension(config: {
         mergeAttributes(
           {
             'data-entity-mention': config.type,
-            class: 'rounded bg-accent/15 px-0.5 text-accent',
+            class: 'rounded-md bg-accent/15 px-0.5 text-accent',
           },
           HTMLAttributes,
         ),
@@ -233,7 +233,7 @@ function createSuggestionRenderer(
       button.type = 'button';
       button.textContent = item.label;
       button.className = cn(
-        'block w-full truncate rounded px-1.5 py-1 text-left text-xs',
+        'block w-full truncate rounded-md px-1.5 py-1 text-left text-xs',
         index === selected
           ? 'bg-accent text-accent-ink'
           : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -258,7 +258,7 @@ function createSuggestionRenderer(
       pick = props.command;
 
       root = document.createElement('div');
-      root.className = 'w-56 rounded border border-line bg-surface-raised p-1 shadow-xl';
+      root.className = 'w-56 rounded-card border border-line bg-surface-raised p-1 shadow-xl';
       list = document.createElement('ul');
       list.className = 'max-h-48 space-y-0.5 overflow-y-auto';
       root.appendChild(list);

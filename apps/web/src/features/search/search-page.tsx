@@ -16,11 +16,12 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Search } from 'lucide-react';
-import { Button, Empty, PageHeader, Skeleton } from '../../components/primitives.js';
+import { AlertCircle, Search, SearchX } from 'lucide-react';
+import { Button, Empty, PageContainer, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
-import { savedSearchesQuery, searchResultsQuery } from './api.js';
+import { useMembers, type Person } from '../org/use-members.js';
+import { SEARCH_LIMIT, savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
 
 /**
@@ -81,9 +82,30 @@ const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }
   transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
 };
 
+/**
+ * The row's title text for a hit with no `title` of its own — every comment,
+ * message and transcript, none of which HAS one (`SearchHit.title` is
+ * genuinely `null` for these three types, not merely unloaded). This used to
+ * fall back to the hit's own raw `entityId` (`"Comment · 01a0780b-b6d4-…"`),
+ * a uuid with no meaning to anyone reading the results list — the type badge
+ * already says "Comment"; the id told a person nothing they could act on and
+ * nothing they were ever meant to see, unlike a card's own `WEB-142`
+ * reference, which IS meant to be read and typed. `personOf`'s own resolved
+ * name (the same lookup every avatar in this app already uses) is real
+ * information instead: who wrote it, matching what the snippet below already
+ * shows the CONTENT of.
+ */
+function titleFor(hit: SearchHit, personOf: (userId: string) => Person): string {
+  if (hit.title !== null) return hit.title;
+  if (hit.authorId !== null)
+    return `${TYPE_BADGE[hit.type].label} from ${personOf(hit.authorId).label}`;
+  return TYPE_BADGE[hit.type].label;
+}
+
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
   const orgId = useSession((state) => state.orgId) ?? '';
   const navigate = useNavigate();
+  const { personOf } = useMembers();
 
   /* Seeded ONCE from the URL so a shared `?q=` link opens with its query
      typed in. The URL is written back on debounce with `replace`, so it stays
@@ -200,7 +222,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
+    <PageContainer maxWidth="2xl" className="flex h-full flex-col gap-5 overflow-y-auto">
       <PageHeader
         title="Search"
         description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
@@ -252,7 +274,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               }}
               aria-pressed={facet === entry.id}
               className={cn(
-                'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
+                'rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-[var(--motion-fast)]',
                 facet === entry.id
                   ? 'border-accent bg-accent text-white'
                   : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
@@ -283,6 +305,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
           />
         ) : errors.length > 0 ? (
           <Empty
+            icon={<AlertCircle aria-hidden="true" className="size-5" strokeWidth={1.75} />}
             title="Fix the query to search"
             description="The underlined tokens above need attention."
           />
@@ -295,7 +318,11 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         ) : results.isError ? (
           <ErrorView error={results.error} title="Could not search" />
         ) : results.data.length === 0 ? (
-          <Empty title="No results" description={`Nothing matched “${effectiveQuery.trim()}”.`} />
+          <Empty
+            icon={<SearchX aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+            title="No results"
+            description={`Nothing matched “${effectiveQuery.trim()}”.`}
+          />
         ) : (
           <ul className="space-y-1.5" role="listbox" aria-label="Search results">
             {results.data.map((hit, index) => (
@@ -317,26 +344,42 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                       : 'border-line/50 bg-surface-raised hover:border-line-strong hover:bg-surface-hover',
                   )}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
-                        TYPE_BADGE[hit.type].className,
-                      )}
-                    >
-                      {TYPE_BADGE[hit.type].label}
-                    </span>
-                    {hit.archived && (
-                      <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-faint">
-                        Archived
+                  {/* Two lines below `md:` — the badge+title pair on one row,
+                      the archived flag and relative time on a second. On one
+                      unwrapped row, the title's own `flex-1 truncate` span has
+                      no real minimum width, so it simply gave up its space
+                      rather than wrap to a second line the moment the type
+                      badge, an "Archived" badge and the timestamp all sat
+                      next to it — cutting a long title down to a handful of
+                      characters on a narrow screen (the same shape this
+                      codebase already fixed once for My Tasks' own card
+                      rows). `md:flex-row` collapses both lines back into the
+                      single row this row has always had at desktop width. */}
+                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                    <div className="flex min-w-0 items-center gap-2 md:flex-1">
+                      <span
+                        className={cn(
+                          'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tracking-wide uppercase',
+                          TYPE_BADGE[hit.type].className,
+                        )}
+                      >
+                        {TYPE_BADGE[hit.type].label}
                       </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                      {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">
-                      {formatRelative(hit.updatedAt)}
-                    </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                        {titleFor(hit, personOf)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {hit.archived && (
+                        <span className="shrink-0 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-ink-faint">
+                          Archived
+                        </span>
+                      )}
+                      <span className="ml-auto shrink-0 text-xs text-ink-faint md:ml-0">
+                        {formatRelative(hit.updatedAt)}
+                      </span>
+                    </div>
                   </div>
                   {hit.snippet !== null && (
                     <p className="line-clamp-2 text-xs text-ink-muted">
@@ -346,13 +389,21 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 </button>
               </li>
             ))}
-            <li className="pt-1 text-center text-[11px] text-ink-faint">
-              {results.data.length} of at most {results.data.length} results
+            {/* `results.data.length} of at most {results.data.length}` used to
+                repeat the same number twice — a tautology true for every
+                result count, never actually disclosing the server's real
+                cap (`SEARCH_LIMIT`, §2.7). Only worth naming when the
+                result set genuinely landed AT that cap, which is the one
+                case where there might be more than what's on screen. */}
+            <li className="pt-1 text-center text-xs text-ink-faint">
+              {results.data.length === SEARCH_LIMIT
+                ? `Showing the first ${String(SEARCH_LIMIT)} results — narrow your query to see more.`
+                : `${String(results.data.length)} ${results.data.length === 1 ? 'result' : 'results'}`}
             </li>
           </ul>
         )}
       </main>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -493,7 +544,7 @@ function SavedSearches({
             maxLength={60}
             aria-label="Name for this saved search"
             placeholder="Name it"
-            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
+            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
           {canShare && (
             <label className="flex items-center gap-1.5 text-xs text-ink-muted">

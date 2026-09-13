@@ -5,10 +5,10 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, SkeletonRows } from '../../components/primitives.js';
+import { Button, Empty, SearchInput, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
-import { formatRelative } from '../../lib/format.js';
+import { formatCallDuration, formatRelative } from '../../lib/format.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 import { orgRecordingsPage, type OrgRecording } from './api.js';
 
@@ -55,17 +55,12 @@ function StatusPill({ status }: { readonly status: string }) {
   );
 }
 
-function durationLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
-}
-
 export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
   const toast = useToast();
   const { guard, dialog } = useStepUp();
   const queryClient = useQueryClient();
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
+  const [search, setSearch] = useState('');
 
   const recordings = useInfiniteQuery({
     queryKey: keys.orgRecordings(orgId),
@@ -101,6 +96,15 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
   }
 
   const rows = recordings.data.pages.flatMap((page) => page.recordings);
+  const needle = search.trim().toLowerCase();
+  const visibleRows =
+    needle === ''
+      ? rows
+      : rows.filter(
+          (recording) =>
+            String(recording.counterparty).toLowerCase().includes(needle) ||
+            (STATUS_LABELS[recording.status] ?? recording.status).toLowerCase().includes(needle),
+        );
 
   return (
     <div className="flex flex-col gap-3">
@@ -110,21 +114,37 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
           description="Recorded calls will appear here once stored."
         />
       ) : (
-        <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
-          {rows.map((recording) => (
-            <RecordingRow
-              key={recording.recordingId}
-              recording={recording}
-              downloading={download.isPending}
-              onDownload={() => {
-                download.mutate(recording.recordingId);
-              }}
-              onOpenCard={(cardId) => {
-                setOpenCardId(cardId);
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          {/* Filters what's already loaded, across every page fetched so
+              far — the same "load more, then narrow" shape a cursor list
+              needs, since there is no server-side search on this route to
+              hand a search term to instead. */}
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Filter by number or status…"
+            className="max-w-sm"
+          />
+          {visibleRows.length === 0 ? (
+            <p className="px-1 text-sm text-ink-faint">No recordings match your search.</p>
+          ) : (
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+              {visibleRows.map((recording) => (
+                <RecordingRow
+                  key={recording.recordingId}
+                  recording={recording}
+                  downloading={download.isPending}
+                  onDownload={() => {
+                    download.mutate(recording.recordingId);
+                  }}
+                  onOpenCard={(cardId) => {
+                    setOpenCardId(cardId);
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {download.isError && <ErrorText error={download.error} />}
@@ -178,15 +198,15 @@ function RecordingRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-ink">{String(recording.counterparty)}</span>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-xs text-ink-muted">
             {recording.direction === 'inbound' ? 'Inbound' : 'Outbound'}
           </span>
           <StatusPill status={recording.status} />
         </div>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-faint">
+        <div className="mt-1 flex items-center gap-2 text-xs text-ink-faint">
           <span>{formatRelative(recording.createdAt)}</span>
           {recording.durationSeconds !== null && (
-            <span>· {durationLabel(recording.durationSeconds)}</span>
+            <span>· {formatCallDuration(recording.durationSeconds)}</span>
           )}
           {recording.attachedCardIds.length > 0 && (
             <button

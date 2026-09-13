@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Circle, Mic, MicOff, Phone, PhoneOff, Square } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
 import { onCallEnded, onIncomingCall } from '../../lib/socket.js';
 import { cn } from '../../lib/cn.js';
-import { formatCallDuration } from '../../lib/format.js';
-import { Button } from '../../components/primitives.js';
+import { formatCallClock, formatCallDuration } from '../../lib/format.js';
+import { Avatar, AvatarStack, Button } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { callPrefsQuery, incomingCallsQuery, invalidateCalls, recordingQuery } from './api.js';
 import { startRingback, startRingtone, type Ringing } from './ringtone.js';
@@ -259,7 +260,6 @@ function IncomingCallBanner() {
   if (call === undefined) return null;
 
   const caller = personOf(call.initiatedBy);
-  const initials = caller.label.slice(0, 2).toUpperCase();
 
   return (
     <div
@@ -275,8 +275,12 @@ function IncomingCallBanner() {
       </div>
 
       <div className="flex items-center gap-3 p-4">
-        <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-ink">
-          {initials}
+        {/* The real `Avatar` (a hashed-hue gradient disc), not a hand-rolled
+            flat-accent circle — the same identity mark every other person in
+            this app renders as, so a caller reads as a specific colleague at
+            a glance rather than a generic "someone is calling" icon. */}
+        <span className="relative shrink-0">
+          <Avatar userId={call.initiatedBy} label={caller.label} size="lg" />
           <span className="absolute inset-0 animate-ping rounded-full border-2 border-accent opacity-60" />
         </span>
 
@@ -294,13 +298,14 @@ function IncomingCallBanner() {
         <Button
           size="sm"
           variant="primary"
-          className="flex-1"
+          className="flex-1 gap-1.5 bg-success! hover:opacity-90"
           disabled={answer.isPending}
           onClick={() => {
             answer.mutate();
           }}
         >
-          {answer.isPending ? 'Answering…' : '📞 Pick up'}
+          <Phone aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+          {answer.isPending ? 'Answering…' : 'Pick up'}
         </Button>
         <Button
           size="sm"
@@ -459,9 +464,19 @@ function ActiveCallBar() {
 
   const others = peers.map((peer) => personOf(peer.userId).label);
   const recordingState = recording.data?.state ?? 'none';
+  const isLive = !(status === 'connecting' || waitingForFirstAnswer || abandoned);
+  const firstPeer = peers[0];
+  const statusLine =
+    status === 'connecting'
+      ? 'Connecting…'
+      : waitingForFirstAnswer
+        ? 'Ringing…'
+        : abandoned
+          ? 'Everyone else has left'
+          : `Connected · ${formatCallClock(durationSeconds)}`;
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-surface shadow-2xl">
+    <div className="fixed bottom-4 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-line bg-surface shadow-2xl">
       {recordingState === 'pending' && (
         <RecordingConsentBar
           sessionId={sessionId}
@@ -474,26 +489,47 @@ function ActiveCallBar() {
       )}
 
       <div className="flex items-center gap-3 px-4 py-3">
-        <span
-          className={cn(
-            'flex h-2.5 w-2.5 shrink-0 rounded-full',
-            status === 'connecting' || waitingForFirstAnswer || abandoned
-              ? 'animate-pulse bg-warning'
-              : 'bg-success',
+        {/* A real identity mark, not a bare colored dot — a single peer's
+            own `Avatar`, an `AvatarStack` for a group call, or (before
+            anyone has actually joined this tab's call — waiting for the
+            first answer, or still setting up locally) a neutral phone-icon
+            placeholder, since there is no peer identity to show yet at
+            that point. The dot this replaces used to carry the whole
+            live/connecting distinction on its own; that now lives in the
+            status LINE below ("Ringing…" vs "Connected · 4:12") instead of
+            a color a person has to learn to read. */}
+        <span className="shrink-0">
+          {peers.length === 0 ? (
+            <span
+              className={cn(
+                'flex size-6 items-center justify-center rounded-full',
+                isLive ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning',
+              )}
+            >
+              <Phone aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+            </span>
+          ) : peers.length === 1 && firstPeer !== undefined ? (
+            <Avatar userId={firstPeer.userId} label={personOf(firstPeer.userId).label} size="sm" />
+          ) : (
+            <AvatarStack
+              people={peers.map((peer) => ({
+                userId: peer.userId,
+                label: personOf(peer.userId).label,
+              }))}
+              max={3}
+            />
           )}
-          aria-hidden="true"
-        />
+        </span>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-ink">
-            {status === 'connecting'
-              ? 'Connecting…'
-              : waitingForFirstAnswer
-                ? 'Ringing…'
-                : abandoned
-                  ? 'Everyone else has left'
-                  : `${others.join(', ')} · ${formatCallDuration(durationSeconds)}`}
-          </p>
+          {others.length > 0 ? (
+            <>
+              <p className="truncate text-sm font-medium text-ink">{others.join(', ')}</p>
+              <p className="truncate text-xs text-ink-faint">{statusLine}</p>
+            </>
+          ) : (
+            <p className="truncate text-sm text-ink">{statusLine}</p>
+          )}
           {recordingState === 'active' && (
             /* Every participant sees this, not only the person capturing. A
                recording indicator visible to one side is not a consent
@@ -505,6 +541,17 @@ function ActiveCallBar() {
           )}
         </div>
 
+        {/* Three round icon buttons, the same shape the mockup's own
+            in-call widget uses — a real `Mic`/`MicOff` glyph swap instead
+            of the 🔇/🎙 emoji this used to be, and Hang Up moved from a
+            rectangular red text button into the identical round shape as
+            Mute and Record so the row reads as one control CLUSTER rather
+            than two icons plus a full-width button. Deliberately not a
+            fourth "keypad" button the mockup's own 3-icon example shows in
+            its place — this app has no DTMF/keypad concept for an in-app
+            voice call to offer (that only exists on the separate PSTN call
+            surface, `features/telephony/call-button.tsx`), and a button
+            with no real action behind it is worse than one fewer button. */}
         <div className="flex shrink-0 items-center gap-1.5">
           <IconButton
             label={muted ? 'Unmute' : 'Mute'}
@@ -513,7 +560,11 @@ function ActiveCallBar() {
               setMuted(!muted);
             }}
           >
-            {muted ? '🔇' : '🎙'}
+            {muted ? (
+              <MicOff aria-hidden="true" className="size-4" strokeWidth={2.25} />
+            ) : (
+              <Mic aria-hidden="true" className="size-4" strokeWidth={2.25} />
+            )}
           </IconButton>
 
           <RecordButton
@@ -532,16 +583,15 @@ function ActiveCallBar() {
             connected={!waitingForFirstAnswer}
           />
 
-          <Button
-            size="sm"
-            variant="primary"
-            className="bg-danger! text-white!"
+          <IconButton
+            label="Hang up"
+            tone="danger"
             onClick={() => {
               void hangUp().then(() => invalidateCalls(queryClient, orgId, channelId ?? undefined));
             }}
           >
-            Hang up
-          </Button>
+            <PhoneOff aria-hidden="true" className="size-4" strokeWidth={2.25} />
+          </IconButton>
         </div>
       </div>
 
@@ -564,13 +614,18 @@ function ActiveCallBar() {
 function IconButton({
   label,
   active,
+  tone = 'neutral',
   onClick,
   children,
 }: {
   readonly label: string;
   readonly active?: boolean;
+  /** `danger` is Hang Up specifically — a solid red circle, matching the
+      mockup's own hang-up button, distinct from Mute/Record's neutral
+      styling regardless of their own `active` state. */
+  readonly tone?: 'neutral' | 'danger';
   readonly onClick: () => void;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
 }) {
   return (
     <button
@@ -579,10 +634,12 @@ function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-full text-sm',
-        active === true
-          ? 'bg-accent text-accent-ink'
-          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+        'flex size-9 items-center justify-center rounded-full transition-colors duration-[var(--motion-fast)]',
+        tone === 'danger'
+          ? 'bg-danger text-white hover:opacity-90'
+          : active === true
+            ? 'bg-accent text-accent-ink'
+            : 'bg-surface-hover text-ink-muted hover:bg-surface-sunken hover:text-ink',
       )}
     >
       {children}
@@ -672,7 +729,7 @@ function RecordButton({
           stop.mutate();
         }}
       >
-        ⏹
+        <Square aria-hidden="true" className="size-3.5" fill="currentColor" strokeWidth={0} />
       </IconButton>
     );
   }
@@ -688,7 +745,12 @@ function RecordButton({
         request.mutate();
       }}
     >
-      ⏺
+      <Circle
+        aria-hidden="true"
+        className="size-3.5 text-danger"
+        fill="currentColor"
+        strokeWidth={0}
+      />
     </IconButton>
   );
 }
@@ -755,12 +817,17 @@ function RecordingConsentBar({
 
   return (
     <div className="flex items-center gap-3 rounded-t-xl border-b border-line bg-warning/10 px-4 py-2.5">
-      <span aria-hidden="true">⏺</span>
+      <Circle
+        aria-hidden="true"
+        className="size-3 shrink-0 text-danger"
+        fill="currentColor"
+        strokeWidth={0}
+      />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-ink">
           {myTurn ? 'Record this call?' : 'Waiting for everyone to agree'}
         </p>
-        <p className="truncate text-[11px] text-ink-faint">
+        <p className="truncate text-xs text-ink-faint">
           {consented.length} agreed
           {awaiting.length > 0 &&
             ` · waiting for ${awaiting.map((id) => personOf(id).label).join(', ')}`}

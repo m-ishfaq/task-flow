@@ -4,7 +4,12 @@ import { volumeQuery } from './api.js';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.6 — Volume: messages, calls, and in-app calls per day. */
+/**
+ * §3.6 — Volume: messages, calls, and in-app calls per day.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Volume tab is gone.
+ */
 export function VolumePanel() {
   const [days] = useState(30);
   const { start, end } = useMemo(() => {
@@ -36,8 +41,6 @@ export function VolumePanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Volume</h2>
-
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Messages" value={String(totalMessages)} />
         <StatCard label="PSTN Calls" value={String(totalCalls)} />
@@ -49,7 +52,7 @@ export function VolumePanel() {
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-line/50 text-left text-ink/50">
+            <tr className="border-b border-line/50 text-left text-ink-faint">
               <th className="pb-1 font-medium">Date</th>
               <th className="pb-1 font-medium">Messages</th>
               <th className="pb-1 font-medium">Calls</th>
@@ -62,7 +65,7 @@ export function VolumePanel() {
               .slice(-14)
               .map((p) => (
                 <tr key={p.date} className="border-b border-line/30">
-                  <td className="py-1 text-ink/60">{p.date}</td>
+                  <td className="py-1 text-ink-muted">{p.date}</td>
                   <td className="py-1">{p.messages}</td>
                   <td className="py-1">{p.calls}</td>
                   <td className="py-1">{p.inAppCalls}</td>
@@ -78,7 +81,7 @@ export function VolumePanel() {
 function StatCard({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-lg border border-line/50 p-3">
-      <div className="text-xs text-ink/50">{label}</div>
+      <div className="text-xs text-ink-faint">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
     </div>
   );

@@ -253,7 +253,7 @@ export function NotificationPreferencesSection() {
                     </span>
                   </label>
                   {channel.disabledReason !== undefined && (
-                    <p className="max-w-44 pl-6 text-[11px] leading-tight text-ink-faint">
+                    <p className="max-w-44 pl-6 text-xs leading-tight text-ink-faint">
                       {channel.disabledReason}
                     </p>
                   )}

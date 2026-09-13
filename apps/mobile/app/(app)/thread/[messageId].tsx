@@ -203,7 +203,7 @@ function ThreadMessageRow({
 
   return (
     <View style={[styles.row, isRoot && styles.rootRow]}>
-      <Avatar label={authorLabel} />
+      <Avatar label={authorLabel} seed={message.authorId ?? undefined} />
       <View style={styles.rowBody}>
         <View style={styles.rowHeader}>
           <Text style={styles.rowAuthor}>{isOwn ? 'You' : authorLabel}</Text>

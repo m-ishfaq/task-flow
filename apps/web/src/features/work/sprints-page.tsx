@@ -3,7 +3,13 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { Button, Empty, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  Empty,
+  PageContainer,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { boardsQuery, projectsQuery, sprintsQuery } from './api.js';
 import { SprintsManagerDialog } from './sprints.js';
@@ -39,42 +45,45 @@ export function SprintsPage() {
      would be a second navigation decision on a screen whose job is the list. */
   const board = (boards.data ?? []).find((entry) => entry.archivedAt === null);
 
-  if (sprints.isError) return <ErrorText error={sprints.error} />;
+  if (sprints.isError)
+    return (
+      <PageContainer maxWidth="xl">
+        <ErrorText error={sprints.error} />
+      </PageContainer>
+    );
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-ink">Sprints</h1>
-          <p className="mt-0.5 truncate text-xs text-ink-faint">
-            {project?.name ?? 'This project'} — planning units. Completing one keeps its done cards
-            and returns the rest to the backlog.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Link
-            to="/projects/$projectId"
-            params={{ projectId }}
-            className="text-xs text-accent underline"
-          >
-            Project settings
-          </Link>
-          {/* The manager is the SAME dialog the board's picker opens — one
-              implementation of create/start/complete/cancel, reached from two
-              places. It needs a board because completing a sprint invalidates
-              that board's card caches, so it is offered only once one exists. */}
-          {board !== undefined && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setManaging(true);
-              }}
+    <PageContainer maxWidth="xl">
+      <PageHeader
+        title="Sprints"
+        description={`${project?.name ?? 'This project'} — planning units. Completing one keeps its done cards and returns the rest to the backlog.`}
+        actions={
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId }}
+              className="text-xs text-accent underline"
             >
-              Manage
-            </Button>
-          )}
-        </div>
-      </div>
+              Project settings
+            </Link>
+            {/* The manager is the SAME dialog the board's picker opens — one
+                implementation of create/start/complete/cancel, reached from
+                two places. It needs a board because completing a sprint
+                invalidates that board's card caches, so it is offered only
+                once one exists. */}
+            {board !== undefined && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setManaging(true);
+                }}
+              >
+                Manage
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {managing && board !== undefined && (
         <SprintsManagerDialog
@@ -99,18 +108,18 @@ export function SprintsPage() {
           <ul className="space-y-1.5">
             {sprints.data.map((sprint) => {
               const row = (
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors hover:border-accent">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors duration-(--motion-fast) hover:border-accent">
                   <div className="min-w-0 flex-1 basis-48">
                     <p className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>
                       <StatusChip status={sprint.status} />
                     </p>
-                    <p className="truncate text-[11px] text-ink-faint">
+                    <p className="truncate text-xs text-ink-faint">
                       {sprint.startsOn} → {sprint.endsOn}
                       {sprint.goal !== null && sprint.goal !== '' && ` · ${sprint.goal}`}
                     </p>
                   </div>
-                  <span className="shrink-0 text-[11px] text-ink-faint">
+                  <span className="shrink-0 text-xs text-ink-faint">
                     {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                 </div>
@@ -146,7 +155,7 @@ export function SprintsPage() {
           choosing WHICH sprint to plan is the list's job, and splitting them
           would mean navigating away from the thing you just decided on. */}
       <SprintPlanning orgId={orgId} projectId={projectId} />
-    </div>
+    </PageContainer>
   );
 }
 

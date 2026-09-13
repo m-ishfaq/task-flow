@@ -1,14 +1,33 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { MoreHorizontal, Search, ShieldAlert, type LucideProps } from 'lucide-react';
+import {
+  CreditCard,
+  History,
+  MoreHorizontal,
+  Receipt,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Users as UsersIcon,
+  type LucideProps,
+} from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { parseInstant, wire } from '@taskflow/client';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Badge, Button, Field, Input, SkeletonRows, Spinner } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Field,
+  Input,
+  OrgBadge,
+  SkeletonRows,
+  Spinner,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
 
@@ -20,40 +39,94 @@ import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
  */
 
 /**
- * Stat card shown in the summary overview at the top of the page.
- * An icon, a label, and a value — the same metric-widget shape every
- * SaaS admin console uses for at-a-glance numbers.
+ * The icon-square-plus-inline-subtitle header every content block opens
+ * with — "Users · global directory, suspend, security signals", "Plans ·
+ * catalog, limits, entitlements", "AI models · provider catalog, per-org
+ * override, cross-org spend", "Operator audit · global, hash-chained".
+ *
+ * `tone` defaults to `'neutral'` — a plain, muted icon square matching the
+ * console's own surface ramp, not the danger-red every content block used
+ * unconditionally before the operator-console redesign. That earlier
+ * choice painted "Users" and "Plans" — ordinary catalogs, nothing anyone is
+ * one click from breaking — in the identical alarm color as a real
+ * destructive confirmation, which is a large part of why the console read
+ * as generic rather than considered: an alarm color used everywhere reads
+ * as decoration, not a warning. Reserve `tone="danger"` for a block whose
+ * OWN content is the risk (there is currently no such case — every real
+ * destructive action already gets its own `ModalIconHeader` at the point of
+ * confirmation, which is where an alarm color earns its keep).
  */
-export function StatCard({
+export function SectionHeader({
   icon: Icon,
-  label,
-  value,
-  accent = false,
+  title,
+  subtitle,
+  tone = 'neutral',
+  className,
 }: {
   readonly icon: React.ComponentType<LucideProps>;
-  readonly label: string;
-  readonly value: string | number;
-  readonly accent?: boolean;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly tone?: 'neutral' | 'danger';
+  readonly className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3',
-        accent ? 'border-accent/30 bg-accent/5' : 'border-line bg-surface-raised',
-      )}
-    >
+    <div className={cn('mb-3 flex items-center gap-2.5', className)}>
       <span
         className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg',
-          accent ? 'bg-accent/15 text-accent' : 'bg-surface-hover text-ink-muted',
+          'flex size-7 shrink-0 items-center justify-center rounded-md',
+          tone === 'danger' ? 'bg-danger/10 text-danger' : 'bg-surface-hover text-ink-muted',
         )}
       >
-        <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
+        <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
       </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
-        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
-      </div>
+      <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+        {title}
+        <span className="font-normal text-ink-faint"> · {subtitle}</span>
+      </h3>
+    </div>
+  );
+}
+
+/**
+ * A modal's own icon-square-plus-title row — `RetirePlanDialog` built this
+ * inline first (a danger-toned `ShieldAlert` square beside its title); this
+ * is that same shape, generalized so every OTHER dialog in this console
+ * stops looking like a plain form pasted into a box and reads as part of
+ * the same "warm-toned, icon-anchored" system the tabs already carry.
+ *
+ * `tone` defaults to danger — the same "every distinctive control in this
+ * console is part of the one cross-tenant safety signal" reasoning
+ * `SectionHeader`'s own header states — but a plain informational dialog
+ * (viewing detail, not taking an action) may pass `accent` instead, so a
+ * read-only drill-down does not visually shout the way a destructive
+ * confirmation should.
+ */
+export function ModalIconHeader({
+  icon: Icon,
+  tone = 'danger',
+  identity,
+  children,
+}: {
+  readonly icon: React.ComponentType<LucideProps>;
+  readonly tone?: 'danger' | 'accent';
+  /** An org/user badge shown in place of the icon, when the dialog is ABOUT
+      one specific identity rather than an action — see `OrgDetailDialog`. */
+  readonly identity?: React.ReactNode;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex items-start gap-3">
+      {identity ?? (
+        <span
+          className={cn(
+            'flex size-10 shrink-0 items-center justify-center rounded-lg',
+            tone === 'danger' ? 'bg-danger/15 text-danger' : 'bg-accent/15 text-accent',
+          )}
+        >
+          <Icon aria-hidden="true" className="size-5" strokeWidth={2} />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -156,7 +229,7 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
         <div
           className={cn(
-            'h-full rounded-full transition-all',
+            'h-full rounded-full transition-all duration-(--motion-fast)',
             pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-accent',
           )}
           style={{ width: `${String(pct)}%` }}
@@ -184,7 +257,7 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false);
         }}
-        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
+        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors duration-(--motion-fast) hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
       >
         <MoreHorizontal className="size-3.5" strokeWidth={2} />
       </button>
@@ -200,7 +273,7 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
               if (e.key === 'Escape') setOpen(false);
             }}
           />
-          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-xl border border-line bg-surface-raised p-1 shadow-lg">
+          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-card border border-line bg-surface-raised p-1 shadow-lg">
             {children}
           </div>
         </>
@@ -342,8 +415,112 @@ export function DetailRow({
   return (
     <>
       <dt className="text-ink-faint">{label}</dt>
-      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[11px]')}>{value}</dd>
+      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-xs')}>{value}</dd>
     </>
+  );
+}
+
+/**
+ * The pill an entity-directory table row uses for its own status column —
+ * a dot plus a label, rounded-full, bordered and tinted by tone. Four
+ * near-identical copies of this exact shape had been written independently
+ * (`orgs-tab.tsx`'s `StatusBadge`, `users-tab.tsx`'s `UserStatusBadge`,
+ * `billing-tab.tsx`'s `BillingStatusBadge`, `operations-tab.tsx`'s
+ * `OutcomeBadge`), each with its own copy of the same four Tailwind classes
+ * and, worse, disagreeing with each other about the ICON: a success state
+ * always got a plain dot, but a danger state sometimes got a `ShieldAlert`
+ * glyph (orgs' suspended, billing's past_due, operations' failure) and
+ * sometimes nothing at all (users' suspended) — an inconsistency with no
+ * reason behind it beyond four people writing the same thing four times.
+ *
+ * Converges on the Design Bible's own `.status-pill` mockup: always a dot,
+ * never an alert icon inside the pill itself — the tone and the dot's own
+ * color already carry the severity, and a `ShieldAlert` glyph crammed into
+ * an already-small pill only some of the time was decoration, not signal.
+ * Each call site keeps its own small mapping from its own status
+ * vocabulary (an org's `status`, a user's `status`, `billingStatus`, a run's
+ * `outcome` — four different small enums, not one to unify) to a tone and a
+ * label; only the pill's own rendering is shared.
+ *
+ * A THIRD, unrelated way of coloring status text already existed alongside
+ * these four (`InlineStatus`, immediately below) — deliberately left as its
+ * own thing rather than folded in here: it colors a bare status STRING
+ * inline inside a definition list, with no border, no fill, no dot, because
+ * a detail panel's `dl` is not a directory table's own column and does not
+ * want a table row's own visual weight repeated at every field.
+ */
+export type PillTone = 'success' | 'danger' | 'neutral';
+
+const PILL_TONE_CLASSES: Readonly<Record<PillTone, string>> = {
+  success: 'border-success/30 bg-success/10 text-success',
+  danger: 'border-danger/30 bg-danger/10 text-danger',
+  neutral: 'border-line bg-surface-sunken text-ink-faint',
+};
+
+const PILL_DOT_CLASSES: Readonly<Record<PillTone, string>> = {
+  success: 'bg-success',
+  danger: 'bg-danger',
+  neutral: 'bg-ink-faint',
+};
+
+export function StatusPill({
+  tone,
+  label,
+  className,
+}: {
+  readonly tone: PillTone;
+  readonly label: string;
+  readonly className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium',
+        PILL_TONE_CLASSES[tone],
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn('size-1.5 shrink-0 rounded-full', PILL_DOT_CLASSES[tone])}
+      />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * A status STRING, colored by what it means rather than rendered as plain
+ * text — `active`/`current` reads success, `suspended`/`past_due`/`canceled`
+ * reads danger, `trialing`/anything else reads warning-ish neutral. Not a
+ * closed enum: `billingStatus` and the org's own `status` are two different
+ * small vocabularies, and this is deliberately loose pattern-matching over
+ * both rather than two separate hardcoded maps that would each need
+ * updating the day either vocabulary grows.
+ */
+function InlineStatus({ value }: { readonly value: string }) {
+  const tone = /^(active|current)$/.test(value)
+    ? 'text-success'
+    : /^(suspended|past_due|canceled|deleted)$/.test(value)
+      ? 'text-danger'
+      : 'text-warning';
+  return <span className={cn('font-medium', tone)}>{value}</span>;
+}
+
+/** A feature's enabled/disabled state as a small filled circle rather than a
+    bare `✓`/`✗` glyph — the same "icon, not a character" language every
+    other identity mark in this console now uses. */
+function EntitlementMark({ enabled }: { readonly enabled: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+        enabled ? 'bg-success/15 text-success' : 'bg-surface-hover text-ink-faint',
+      )}
+    >
+      {enabled ? '✓' : '–'}
+    </span>
   );
 }
 
@@ -382,13 +559,31 @@ export function OrgDetailDialog({
 
   const data = detail.data;
 
+  const enabledCount = data?.features.filter((feature) => feature.enabled).length ?? 0;
+
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-5">
-        <ModalTitle>{data?.name ?? 'Organization'}</ModalTitle>
-        <ModalDescription>
-          {data === undefined ? 'Loading…' : `${data.slug} · created ${formatDate(data.createdAt)}`}
-        </ModalDescription>
+        <ModalIconHeader
+          icon={CreditCard}
+          tone="accent"
+          identity={
+            data !== undefined && (
+              <OrgBadge
+                orgId={data.orgId}
+                name={data.name}
+                className="size-10 rounded-xl text-sm"
+              />
+            )
+          }
+        >
+          <ModalTitle>{data?.name ?? 'Organization'}</ModalTitle>
+          <ModalDescription>
+            {data === undefined
+              ? 'Loading…'
+              : `${data.slug} · created ${formatDate(data.createdAt)}`}
+          </ModalDescription>
+        </ModalIconHeader>
 
         {detail.isPending && <SkeletonRows rows={6} className="mt-4 *:h-10" />}
         {detail.isError && (
@@ -396,13 +591,27 @@ export function OrgDetailDialog({
         )}
 
         {data !== undefined && (
-          <div className="mt-4 flex flex-col gap-5">
+          <div className="flex flex-col gap-5">
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Billing</h3>
+              <SectionHeader
+                icon={CreditCard}
+                title="Billing"
+                subtitle="plan, status, spend against cap"
+              />
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <DetailRow label="Plan" value={data.planName ?? data.planId ?? 'none'} />
-                <DetailRow label="Billing status" value={data.billingStatus} />
-                <DetailRow label="Operator status" value={data.status} />
+                <div className="contents">
+                  <dt className="text-ink-faint">Billing status</dt>
+                  <dd>
+                    <InlineStatus value={data.billingStatus} />
+                  </dd>
+                </div>
+                <div className="contents">
+                  <dt className="text-ink-faint">Operator status</dt>
+                  <dd>
+                    <InlineStatus value={data.status} />
+                  </dd>
+                </div>
                 <DetailRow
                   label="Trial ends"
                   value={data.trialEndsAt === null ? '—' : formatDate(data.trialEndsAt)}
@@ -436,27 +645,39 @@ export function OrgDetailDialog({
             </section>
 
             {data.override !== null && (
-              <section className="rounded-lg border border-warning/40 bg-warning/5 p-2">
-                <h3 className="mb-1 text-[13px] font-semibold text-ink">
-                  Operator override — outranks the plan
-                </h3>
-                <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
-                <p className="mt-0.5 text-[11px] text-ink-faint">
-                  set {formatDate(data.override.setAt)}
-                  {data.override.expiresAt === null
-                    ? ' · no expiry'
-                    : ` · expires ${formatDate(data.override.expiresAt)}`}
-                  {data.override.featuresAdd.length > 0 &&
-                    ` · adds ${data.override.featuresAdd.join(', ')}`}
-                  {data.override.featuresRemove.length > 0 &&
-                    ` · removes ${data.override.featuresRemove.join(', ')}`}
-                </p>
+              <section className="rounded-xl border border-warning/40 bg-warning/5 p-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning">
+                    <ShieldAlert aria-hidden="true" className="size-3.5" strokeWidth={2} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[13px] font-semibold text-ink">
+                      Operator override — outranks the plan
+                    </h3>
+                    <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
+                    <p className="mt-0.5 text-xs text-ink-faint">
+                      set {formatDate(data.override.setAt)}
+                      {data.override.expiresAt === null
+                        ? ' · no expiry'
+                        : ` · expires ${formatDate(data.override.expiresAt)}`}
+                      {data.override.featuresAdd.length > 0 &&
+                        ` · adds ${data.override.featuresAdd.join(', ')}`}
+                      {data.override.featuresRemove.length > 0 &&
+                        ` · removes ${data.override.featuresRemove.join(', ')}`}
+                    </p>
+                  </div>
+                </div>
               </section>
             )}
 
             <section>
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[13px] font-semibold text-ink">Entitlements</h3>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionHeader
+                  icon={ShieldCheck}
+                  title="Entitlements"
+                  subtitle={`${String(enabledCount)} of ${String(data.features.length)} enabled`}
+                  className="mb-0"
+                />
                 {guard !== undefined && (
                   <Button
                     size="sm"
@@ -473,46 +694,47 @@ export function OrgDetailDialog({
                 {data.features.map((feature) => (
                   <li
                     key={feature.flagName}
-                    className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                   >
-                    <span className={feature.enabled ? 'text-success' : 'text-ink-faint'}>
-                      {feature.enabled ? '✓' : '✗'}
-                    </span>
+                    <EntitlementMark enabled={feature.enabled} />
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
-                      <span className="block text-[11px] text-ink-faint">
+                      <span className="block text-xs text-ink-faint">
                         {featureDescription(feature.flagName) ?? feature.description}
                       </span>
                     </span>
                     {/* WHERE the answer came from — see this component's own
                         header on why an override is only tolerable with it. */}
-                    <span className="shrink-0 text-[11px] text-ink-faint">
-                      {feature.source === 'default' ? 'registry default' : `from ${feature.source}`}
-                    </span>
+                    <Badge>
+                      {feature.source === 'default' ? 'from plan' : `from ${feature.source}`}
+                    </Badge>
                   </li>
                 ))}
               </ul>
             </section>
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">
-                Members ({data.memberCount} active of {data.members.length})
-              </h3>
+              <SectionHeader
+                icon={UsersIcon}
+                title="Members"
+                subtitle={`${String(data.memberCount)} active of ${String(data.members.length)}`}
+              />
               <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                 {data.members.map((member) => (
                   <li
                     key={member.userId}
-                    className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                   >
+                    <Avatar userId={member.userId} label={member.name ?? member.email} />
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
-                        <span className="ml-1 text-[11px] text-ink-faint">{member.email}</span>
+                        <span className="ml-1 text-xs text-ink-faint">{member.email}</span>
                       )}
                     </span>
                     <Badge>{member.role}</Badge>
                     {member.status !== 'active' && (
-                      <span className="text-[11px] text-ink-faint">{member.status}</span>
+                      <span className="text-xs text-ink-faint">{member.status}</span>
                     )}
                   </li>
                 ))}
@@ -523,13 +745,12 @@ export function OrgDetailDialog({
                 panel on every trialing org is noise about a normal state. */}
             {data.invoices.length > 0 && (
               <section>
-                {' '}
-                <h3 className="mb-2 text-[13px] font-semibold text-ink">Invoices</h3>
+                <SectionHeader icon={Receipt} title="Invoices" subtitle="from the processor" />
                 <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                   {data.invoices.map((invoice) => (
                     <li
                       key={invoice.providerInvoiceId}
-                      className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                      className="flex items-center gap-2 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                     >
                       <span className="w-20 shrink-0 text-ink-muted">
                         {formatDate(invoice.issuedAt)}
@@ -561,15 +782,15 @@ export function OrgDetailDialog({
             )}
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Operator history</h3>
-              {history.isPending && <SkeletonRows rows={3} className="mt-1 *:h-6" />}
+              <SectionHeader icon={History} title="Operator history" subtitle="most recent 15" />
+              {history.isPending && <SkeletonRows rows={3} className="*:h-6" />}
               {history.data !== undefined &&
                 (history.data.length === 0 ? (
-                  <p className="mt-1 text-xs text-ink-faint">
+                  <p className="text-xs text-ink-faint">
                     No operator has acted on this organization.
                   </p>
                 ) : (
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-ink-muted">
+                  <ul className="flex flex-col gap-0.5 text-xs text-ink-muted">
                     {history.data.map((entry, index) => (
                       <li key={`${entry.action}-${String(index)}`}>
                         {formatDateTime(entry.at)} · {entry.action} · {entry.by}
@@ -694,19 +915,21 @@ export function OrgOverrideDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>{org.name} — entitlement override</ModalTitle>
-        <ModalDescription>
-          Outranks the plan — this org, and only this org. Leave every flag on{' '}
-          <strong>Inherit</strong> and save to remove an existing override.
-        </ModalDescription>
+        <ModalIconHeader icon={ShieldAlert} tone="danger">
+          <ModalTitle>{org.name} — entitlement override</ModalTitle>
+          <ModalDescription>
+            Outranks the plan — this org, and only this org. Leave every flag on{' '}
+            <strong>Inherit</strong> and save to remove an existing override.
+          </ModalDescription>
+        </ModalIconHeader>
 
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
             {features.map((feature) => (
               <li key={feature.flagName} className="flex items-center gap-2 px-3 py-2">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-ink">{featureLabel(feature.flagName)}</span>
-                  <span className="block text-[11px] text-ink-faint">
+                  <span className="block text-xs text-ink-faint">
                     {featureDescription(feature.flagName) ?? feature.description}
                   </span>
                 </span>
@@ -717,7 +940,7 @@ export function OrgOverrideDialog({
                     const value = event.target.value as OverrideChoice;
                     setChoices((prev) => ({ ...prev, [feature.flagName]: value }));
                   }}
-                  className="h-8 shrink-0 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+                  className="h-8 shrink-0 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
                 >
                   <option value="inherit">Inherit</option>
                   <option value="add">Force on</option>
@@ -736,7 +959,7 @@ export function OrgOverrideDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Recorded in the operator audit chain. Required, even to clear an override.
             </p>
           </Field>
@@ -750,7 +973,7 @@ export function OrgOverrideDialog({
                 setExpiresAt(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Optional. A temporary grant that outlives its reason is worse than no grant at all —
               leave empty only for something meant to stay indefinitely.
             </p>

@@ -219,23 +219,23 @@ function Panel({
     <div className="rounded-lg border border-line/50">
       <div className="border-b border-line px-3 py-2">
         <p className="truncate text-xs font-medium text-ink">{title}</p>
-        <p className="text-[11px] text-ink-faint">{subtitle}</p>
+        <p className="text-xs text-ink-faint">{subtitle}</p>
       </div>
 
       {cards.length === 0 ? (
-        <p className="px-3 py-4 text-center text-[11px] text-ink-faint">{empty}</p>
+        <p className="px-3 py-4 text-center text-xs text-ink-faint">{empty}</p>
       ) : (
         <ul className="max-h-96 divide-y divide-line/40 overflow-y-auto">
           {cards.map((card) => (
             <li key={card.cardId} className="flex items-center gap-2 px-3 py-1.5">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs text-ink">{card.title}</p>
-                <p className="truncate text-[11px] text-ink-faint">{card.reference}</p>
+                <p className="truncate text-xs text-ink-faint">{card.reference}</p>
               </div>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 shrink-0 px-1.5 text-[11px]"
+                className="h-6 shrink-0 px-1.5 text-xs"
                 disabled={move.isPending}
                 onClick={() => {
                   move.mutate(card.cardId);

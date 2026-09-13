@@ -1,80 +1,42 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { BarChart3 } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
-import { VelocityPanel } from './velocity-panel.js';
-import { BurndownPanel } from './burndown-panel.js';
-import { CfdPanel } from './cfd-panel.js';
-import { CycleTimePanel } from './cycle-time-panel.js';
-import { WorkloadPanel } from './workload-panel.js';
-import { VolumePanel } from './volume-panel.js';
-import { StatusPanel } from './status-panel.js';
+import { PageHeader } from '../../components/primitives.js';
+import { OverviewPanel } from './overview-panel.js';
 
 /**
- * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
+ * Analytics: one consolidated dashboard (Phase 11, ai/phase-11-analytics.md
+ * §3, §5; Design Bible §10).
  *
- * Six fixed dashboards over the transitions projection, plus a status
- * panel showing rollup freshness. Admin-and-Owner only — the server
- * enforces this via `analytics:read`; the UI shows the page to everyone
- * and lets the server refuse, per §8.2.
+ * REDESIGNED — this page used to be seven per-metric tabs (Velocity,
+ * Burndown, Flow, Cycle Time, Workload, Volume, Status) plus a separate
+ * "Overview" summary tab in front of them. Reported back directly against
+ * a screenshot: the bible shows every metric on ONE screen, not a tab
+ * strip, and that Overview tab was itself still fragmenting the other six
+ * away from it. There is no tab strip here anymore — `OverviewPanel` is the
+ * entire page, and every one of the seven dashboards is a section on it.
+ * See `overview-panel.tsx`'s own header for the full account of what moved
+ * where and why.
  *
- * Tab-based navigation (same pattern as telephony-page.tsx): a search
- * param rather than nested routes, so the open tab is shareable and
- * back-button-correct.
+ * Admin-and-Owner only — the server enforces this via `analytics:read`;
+ * this page renders for everyone the route lets through and lets the
+ * server refuse per §8.2 (`CapabilityGate`/`FeatureGate` wrap the route
+ * itself in `router.tsx`, before this component ever mounts).
  */
-
-const TABS = [
-  { id: 'velocity', label: 'Velocity' },
-  { id: 'burndown', label: 'Burndown' },
-  { id: 'cfd', label: 'Flow' },
-  { id: 'cycle-time', label: 'Cycle Time' },
-  { id: 'workload', label: 'Workload' },
-  { id: 'volume', label: 'Volume' },
-  { id: 'status', label: 'Status' },
-] as const;
-
-type TabId = (typeof TABS)[number]['id'];
-
 export function AnalyticsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
-  const navigate = useNavigate();
-  const tab = useSearch({ from: '/analytics', select: (value) => value.tab }) ?? 'velocity';
-
-  const selectTab = (next: TabId) => {
-    void navigate({ to: '/analytics', search: { tab: next } });
-  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line/50 px-4 pt-4 pb-2">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Analytics</h1>
-        <div className="mt-2 flex gap-1 overflow-x-auto" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => {
-                selectTab(t.id);
-              }}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-accent/10 text-accent'
-                  : 'text-ink/60 hover:bg-surface-hover hover:text-ink'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <PageHeader
+          title="Analytics"
+          description="Velocity, burndown, flow, workload, and activity — every metric on one screen."
+          icon={<BarChart3 aria-hidden="true" className="size-4" strokeWidth={2.25} />}
+        />
       </header>
 
       <div className="flex-1 overflow-auto p-4">
-        {tab === 'velocity' && <VelocityPanel />}
-        {tab === 'burndown' && <BurndownPanel orgId={orgId} />}
-        {tab === 'cfd' && <CfdPanel orgId={orgId} />}
-        {tab === 'cycle-time' && <CycleTimePanel />}
-        {tab === 'workload' && <WorkloadPanel />}
-        {tab === 'volume' && <VolumePanel />}
-        {tab === 'status' && <StatusPanel />}
+        <OverviewPanel orgId={orgId} />
       </div>
     </div>
   );

@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { GRANTABLE_PERMISSIONS } from '@taskflow/policy';
@@ -22,6 +21,10 @@ import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { useStepUp } from '../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { ScreenHeader } from '../../src/lib/screen-header.js';
+import { ErrorView } from '../../src/lib/error-view.js';
+import { SkeletonList } from '../../src/lib/skeleton.js';
+import { Avatar } from '../../src/lib/avatar.js';
 import {
   MEMBERS_QUERY_KEY,
   MEMBER_GRANTS_QUERY_KEY,
@@ -55,9 +58,12 @@ import {
  * a step-up prompt is retried from the start in full, and every pair before
  * the failure point silently no-ops on the retry.
  *
- * The list below stays a flat list of grants, not a member × permission
- * matrix — see `PermissionsSection`'s own doc comment on web for why that
- * shape does not scale as the catalog grows. Revoking is one row at a time;
+ * The list below is grouped one CARD per person, each grant a chip with its
+ * own revoke × — Design Bible §15's own "PERMISSIONS — WHAT WAS WRONG"
+ * finding, fixed as it names: "each (person × permission) was its own row —
+ * Rosa Pereira appeared 4 times for 4 grants, four identical name/role
+ * rows. Grouped to one card per person... the exact fix web already
+ * shipped, now matched on mobile." Revoking is still one grant at a time;
  * unlike granting, there was no reported need yet for a bulk-revoke sheet.
  */
 export default function PermissionsScreen(): React.JSX.Element | null {
@@ -164,34 +170,36 @@ function PermissionsScreenContent() {
   const submitCount = pickedUserIds.size * pickedPermissions.size;
   const permissions = [...GRANTABLE_PERMISSIONS];
 
+  // Design Bible §15: one card per person, not one row per grant.
+  const grantsByUser = new Map<string, MemberGrant[]>();
+  for (const entry of grants.data ?? []) {
+    const existing = grantsByUser.get(entry.userId);
+    if (existing) existing.push(entry);
+    else grantsByUser.set(entry.userId, [entry]);
+  }
+
   return (
     <View style={[styles.container, { paddingTop }]}>
+      <ScreenHeader
+        title="Individual permissions"
+        subtitle="On top of a member's role, one specific ability can be given to (or taken from) one person."
+      />
+      {/* `+ Add` moved below the header, its own row — the same fix
+          `org-settings.tsx` applies for "Billing"/"Transfer ownership":
+          `ScreenHeader` has no trailing-action slot, so nothing here can
+          collide with `top-bar.tsx`'s persistent icon cluster again. */}
       <Pressable
-        style={styles.backButton}
+        style={styles.addButton}
         onPress={() => {
-          router.back();
+          setAddOpen(true);
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Text style={styles.addButtonText}>+ Add</Text>
       </Pressable>
-      <View style={styles.titleRow}>
-        <Text style={styles.title}>Individual permissions</Text>
-        <Pressable
-          style={styles.addButton}
-          onPress={() => {
-            setAddOpen(true);
-          }}
-        >
-          <Text style={styles.addButtonText}>+ Add</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.subtitle}>
-        On top of a member&apos;s role, one specific ability can be given to (or taken from) one
-        person.
-      </Text>
 
-      {(members.isPending || grants.isPending) && (
-        <ActivityIndicator style={styles.loading} color={colors.accent.hex} />
+      {(members.isPending || grants.isPending) && <SkeletonList count={3} />}
+      {grants.isError && (
+        <ErrorView message={apiErrorOf(grants.error)?.error.message ?? "Couldn't load grants."} />
       )}
 
       {grants.isSuccess && grants.data.length === 0 && (
@@ -199,32 +207,40 @@ function PermissionsScreenContent() {
       )}
 
       <ScrollView contentContainerStyle={styles.list}>
-        {(grants.data ?? []).map((entry: MemberGrant) => {
-          const member = memberById.get(entry.userId);
+        {[...grantsByUser.entries()].map(([userId, entries]) => {
+          const member = memberById.get(userId);
+          const label = member ? labelOf(member) : userId;
           return (
-            <View key={`${entry.userId}:${entry.permission}`} style={styles.row}>
-              <View style={styles.rowText}>
-                <Text style={styles.rowName} numberOfLines={1}>
-                  {member ? labelOf(member) : entry.userId}
-                </Text>
-                <Text style={styles.rowMeta} numberOfLines={1}>
-                  {member?.role ?? 'former member'}
-                </Text>
+            <View key={userId} style={styles.personCard}>
+              <View style={styles.personCardHeader}>
+                <Avatar label={label} size={32} seed={userId} />
+                <View style={styles.personCardHeaderText}>
+                  <Text style={styles.rowName} numberOfLines={1}>
+                    {label}
+                  </Text>
+                  <Text style={styles.rowMeta} numberOfLines={1}>
+                    {member?.role ?? 'former member'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.permissionBadge}>
-                <Text style={styles.permissionBadgeText} numberOfLines={1}>
-                  {entry.permission}
-                </Text>
+              <View style={styles.chipsRow}>
+                {entries.map((entry) => (
+                  <View key={entry.permission} style={styles.permissionChip}>
+                    <Text style={styles.permissionChipText} numberOfLines={1}>
+                      {entry.permission}
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      disabled={revoke.isPending}
+                      onPress={() => {
+                        runRevoke({ userId: entry.userId, permission: entry.permission });
+                      }}
+                    >
+                      <Text style={styles.permissionChipRemove}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
               </View>
-              <Pressable
-                style={styles.revokeButton}
-                disabled={revoke.isPending}
-                onPress={() => {
-                  runRevoke({ userId: entry.userId, permission: entry.permission });
-                }}
-              >
-                <Text style={styles.revokeButtonText}>Revoke</Text>
-              </Pressable>
             </View>
           );
         })}
@@ -372,32 +388,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
     paddingHorizontal: 24,
   },
-  backButton: {
+  addButton: {
     alignSelf: 'flex-start',
     marginBottom: 8,
-  },
-  backButtonText: {
-    color: colors.accent.hex,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.ink.hex,
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 13,
-    color: colors.inkMuted.hex,
-  },
-  addButton: {
     backgroundColor: colors.accent.hex,
     borderRadius: radiusCard,
     paddingHorizontal: 12,
@@ -408,30 +401,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  loading: {
-    marginTop: 20,
-  },
   emptyHint: {
     marginTop: 16,
     fontSize: 13,
     color: colors.inkFaint.hex,
   },
   list: {
-    paddingTop: 12,
+    paddingTop: 4,
     paddingBottom: 40,
-    gap: 8,
+    gap: 10,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  personCard: {
+    gap: 10,
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 12,
   },
-  rowText: {
+  personCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  personCardHeaderText: {
     flex: 1,
     minWidth: 0,
   },
@@ -445,28 +437,29 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
     marginTop: 1,
   },
-  permissionBadge: {
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  permissionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: colors.surfaceSunken.hex,
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    maxWidth: 130,
+    paddingVertical: 4,
+    maxWidth: 200,
   },
-  permissionBadgeText: {
+  permissionChipText: {
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     color: colors.ink.hex,
   },
-  revokeButton: {
-    borderWidth: 1,
-    borderColor: colors.danger.hex + '80',
-    borderRadius: radiusCard,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  revokeButtonText: {
+  permissionChipRemove: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.danger.hex,
   },
   avoider: {

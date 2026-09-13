@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronLeft,
   CircleDot,
@@ -121,10 +122,35 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
 }
 
 /** Every renderer below shares this shell — the same bordered-list style
-    `standup-page.tsx`'s buckets and this file's own `EntityList` use. */
-function ResultPanel({ children }: { readonly children: ReactNode }) {
+    `standup-page.tsx`'s buckets and this file's own `EntityList` use.
+    `header` is the Design Bible §12's own "✓ my_cards · 2 results" line —
+    optional, and left to each renderer to opt into, rather than forced on
+    every call site: a one-row `CardActionResult` confirming a single write
+    has nothing a tool-name-plus-count header would add over its own
+    "Assigned WEB-142 · Open card" text, which already names the action.
+
+    `rounded-xl` and a real `border-line` (not the fainter `/60`), plus a
+    `shadow-xs`, rather than the small, flat `rounded-lg` box this used to
+    be — the mockup's own result card reads as a genuine card sitting on
+    the transcript, the same visual weight `home-page.tsx`'s own list rows
+    and `card-detail-panel.tsx`'s sections already carry, not a dense debug
+    readout. `bg-surface` (not `-raised`, which the message list's own
+    background already is) is what keeps the card visible AS a card against
+    that backdrop rather than blending into it. */
+function ResultPanel({
+  header,
+  children,
+}: {
+  readonly header?: ReactNode;
+  readonly children: ReactNode;
+}) {
   return (
-    <div className="space-y-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-xs">
+    <div className="space-y-1.5 rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px] shadow-xs">
+      {header !== undefined && (
+        <div className="flex items-center gap-1.5 border-b border-line/60 pb-2 text-[12px] font-medium text-ink-muted">
+          {header}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -151,8 +177,8 @@ const DEAD_GITHUB_TOKEN_MARKER = 'the connector token is invalid or was revoked'
 function ErrorNote({ message }: { readonly message: string }) {
   const isDeadGithubToken = message.includes(DEAD_GITHUB_TOKEN_MARKER);
   return (
-    <div className="flex items-start gap-1.5 rounded-lg border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-xs text-danger">
-      <XCircle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+    <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2.5 text-[13px] text-danger">
+      <XCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
       <span className="flex-1">
         {message}
         {isDeadGithubToken && (
@@ -173,7 +199,7 @@ function ErrorNote({ message }: { readonly message: string }) {
 }
 
 function EntityList({ children }: { readonly children: ReactNode }) {
-  return <ul className="space-y-1">{children}</ul>;
+  return <ul className="space-y-0.5">{children}</ul>;
 }
 
 function EntityRow({
@@ -193,7 +219,7 @@ function EntityRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-ink">{primary}</span>
         {secondary !== undefined && (
-          <span className="block truncate text-[11px] text-ink-faint">{secondary}</span>
+          <span className="block truncate text-[12px] text-ink-faint">{secondary}</span>
         )}
       </span>
     </>
@@ -202,12 +228,12 @@ function EntityRow({
   return (
     <li>
       {onClick === undefined ? (
-        <div className="flex items-center gap-2 rounded-md px-1.5 py-1">{content}</div>
+        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">{content}</div>
       ) : (
         <button
           type="button"
           onClick={onClick}
-          className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-hover"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
         >
           {content}
         </button>
@@ -241,7 +267,7 @@ function CardActionResult({
       >
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span>{verb}</span>
-        <span className="ml-auto shrink-0 text-[11px] text-accent underline">Open card</span>
+        <span className="ml-auto shrink-0 text-xs text-accent underline">Open card</span>
       </button>
       {note}
     </ResultPanel>
@@ -343,7 +369,17 @@ function renderMyCards(result: ToolResultMessage, ctx: ToolResultRenderContext):
   if (parsed.length === 0) return <ResultPanel>{result.content}</ResultPanel>;
 
   return (
-    <ResultPanel>
+    <ResultPanel
+      header={
+        <>
+          <Check aria-hidden="true" className="size-3 shrink-0 text-success" />
+          <span className="font-mono text-ink-faint">my_cards</span>
+          <span>
+            · {parsed.length} {parsed.length === 1 ? 'result' : 'results'}
+          </span>
+        </>
+      }
+    >
       <EntityList>
         {parsed.map((card) => {
           const priority = isPriority(card.priority) ? card.priority : null;
@@ -354,31 +390,43 @@ function renderMyCards(result: ToolResultMessage, ctx: ToolResultRenderContext):
                 onClick={() => {
                   ctx.onOpenCard(card.cardId as CardId);
                 }}
-                className="flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-surface-hover"
+                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
               >
-                {priority !== null && (
-                  <span
-                    aria-hidden="true"
-                    title={PRIORITY_LABEL[priority]}
-                    className={cn(
-                      'mt-1 size-2 shrink-0 rounded-full ring-1 ring-ink/10',
-                      PRIORITY_SWATCH[priority],
-                    )}
-                  />
-                )}
-                <span className="shrink-0 font-mono text-[10px] text-ink-faint">
+                {/* A reference PILL, matching how a card reference already
+                    reads everywhere else in this app (`list-view.tsx`'s own
+                    row, `table-view.tsx`'s Ref column) — a bare mono string
+                    with no background read as debug output, not a card id
+                    someone recognizes. */}
+                <span className="mt-0.5 shrink-0 rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-xs font-medium text-ink-faint">
                   {card.reference}
                 </span>
                 <span className="min-w-0 flex-1 break-words text-ink">{card.title}</span>
                 {card.dueDate !== null && (
                   <span
                     className={cn(
-                      'shrink-0 text-[10px] whitespace-nowrap',
+                      'mt-0.5 shrink-0 text-xs whitespace-nowrap',
                       isPastDue(card.dueDate) ? 'text-danger' : 'text-ink-faint',
                     )}
                   >
                     {formatDate(card.dueDate)}
                   </span>
+                )}
+                {/* A trailing colored bar rather than a leading dot — the
+                    Design Bible's own `my_cards` row (§12) marks priority at
+                    the row's TRAILING edge, the same "priority as an edge
+                    bar" language `card-tile.tsx`'s own board card already
+                    uses (there, the full tile's left edge; here, one row's
+                    right edge — a scaled-down version of the identical
+                    idea, not a different one). */}
+                {priority !== null && (
+                  <span
+                    aria-hidden="true"
+                    title={PRIORITY_LABEL[priority]}
+                    className={cn(
+                      'mt-0.5 h-4 w-[3px] shrink-0 rounded-full',
+                      PRIORITY_SWATCH[priority],
+                    )}
+                  />
                 )}
               </button>
             </li>
@@ -477,7 +525,7 @@ function renderListBoards(result: ToolResultMessage): ReactNode | null {
               // naturally as one compact line, so the fix here is a real
               // separator character in the text itself rather than
               // switching to a vertical list the way labels did.
-              <p className="mt-1 truncate pl-5 text-[11px] text-ink-faint">
+              <p className="mt-1 truncate pl-5 text-xs text-ink-faint">
                 {board.lists.map((list) => list.name).join(' · ')}
               </p>
             )}
@@ -560,7 +608,7 @@ function renderListMembers(result: ToolResultMessage): ReactNode | null {
             >
               <Avatar userId={member.userId} label={member.name} size="xs" />
               <span className="min-w-0 flex-1 truncate text-ink">{member.name}</span>
-              <span className="shrink-0 truncate text-[11px] text-ink-faint">{member.email}</span>
+              <span className="shrink-0 truncate text-xs text-ink-faint">{member.email}</span>
             </Link>
           </li>
         ))}
@@ -606,7 +654,7 @@ function renderListSprints(result: ToolResultMessage, call: ToolCallWire): React
         <Link
           to="/projects/$projectId/sprints"
           params={{ projectId: projectId as ProjectId }}
-          className="block pt-1 text-[11px] text-accent underline"
+          className="block pt-1 text-xs text-accent underline"
         >
           View sprints
         </Link>
@@ -761,7 +809,7 @@ function renderCardCreate(
         warningList.length > 0 ? (
           <div className="mt-1 space-y-0.5 border-t border-line/40 pt-1">
             {warningList.map((warning) => (
-              <p key={warning} className="flex items-start gap-1 text-[11px] text-warning">
+              <p key={warning} className="flex items-start gap-1 text-xs text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
                 {warning}
               </p>
@@ -816,7 +864,7 @@ function renderSprintCreate(result: ToolResultMessage, call: ToolCallWire): Reac
           <Link
             to="/projects/$projectId/sprints"
             params={{ projectId: projectId as ProjectId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             View
           </Link>
@@ -853,7 +901,7 @@ function renderSprintAddCards(result: ToolResultMessage): ReactNode | null {
       {failedEntries.length > 0 && (
         <div className="mt-1 space-y-0.5 border-t border-line/40 pt-1">
           {failedEntries.map((entry) => (
-            <p key={entry.cardId} className="flex items-start gap-1 text-[11px] text-danger">
+            <p key={entry.cardId} className="flex items-start gap-1 text-xs text-danger">
               <XCircle aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
               {entry.reason}
             </p>
@@ -887,7 +935,7 @@ function renderChatPostMessage(result: ToolResultMessage): ReactNode | null {
           <Link
             to="/chat"
             search={{ channel: channelId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             View
           </Link>
@@ -916,7 +964,7 @@ function renderDocsCreatePage(result: ToolResultMessage, call: ToolCallWire): Re
           <Link
             to="/docs"
             search={{ space: spaceId, page: pageId }}
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             Open
           </Link>
@@ -1035,7 +1083,7 @@ function InlineFileDiff({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
+        className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
       >
         <ChevronLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
         All files
@@ -1075,7 +1123,7 @@ function PrFileRow({
   const content = (
     <>
       <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-xs">{file.path}</span>
       <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-faint">
         {file.status}
       </span>
@@ -1139,7 +1187,7 @@ function GetPrDiffResult({
         <div className="mb-1 flex justify-end">
           <button
             type="button"
-            className="text-[11px] text-accent underline"
+            className="text-xs text-accent underline"
             onClick={() => {
               setBrowseFiles((current) => !current);
               setSelectedPath(null);
@@ -1165,7 +1213,7 @@ function GetPrDiffResult({
         ) : files.isError ? (
           <ErrorNote message="Could not load the file list." />
         ) : files.data.length === 0 ? (
-          <p className="text-[11px] text-ink-faint">This pull request changes no files.</p>
+          <p className="text-xs text-ink-faint">This pull request changes no files.</p>
         ) : (
           <ul className="space-y-1">
             {files.data.map((file) => (
@@ -1183,7 +1231,7 @@ function GetPrDiffResult({
         <>
           <DiffView diff={diff} truncated={truncated} />
           {truncated && repoScope !== null && (
-            <p className="mt-1 text-[11px] text-ink-faint">
+            <p className="mt-1 text-xs text-ink-faint">
               This diff was too large to show in full.{' '}
               <button
                 type="button"
@@ -1372,14 +1420,14 @@ function renderGetPrFileContent(result: ToolResultMessage): ReactNode | null {
       <div className="overflow-hidden rounded-md border border-line/60">
         <div className="flex items-center gap-2 border-b border-line/60 bg-surface-sunken/60 px-2 py-1">
           <FileText aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">{path}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{path}</span>
           {truncated && (
             <span className="shrink-0 text-[10px] uppercase tracking-wide text-warning">
               Truncated
             </span>
           )}
         </div>
-        <pre className="max-h-80 overflow-auto whitespace-pre px-2 py-1.5 font-mono text-[11px] leading-relaxed text-ink">
+        <pre className="max-h-80 overflow-auto whitespace-pre px-2 py-1.5 font-mono text-xs leading-relaxed text-ink">
           {content}
         </pre>
       </div>
@@ -1501,7 +1549,7 @@ function prWriteRenderer(verb: string) {
               href={`https://github.com/${providerScope}/pull/${String(prNumber)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto shrink-0 text-[11px] text-accent underline"
+              className="ml-auto shrink-0 text-xs text-accent underline"
             >
               Open
             </a>
@@ -1541,14 +1589,14 @@ function renderPrCommentOnFile(result: ToolResultMessage, call: ToolCallWire): R
       <div className="flex items-center gap-1.5 text-ink">
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span className="min-w-0 flex-1 truncate">
-          Commented on <span className="font-mono text-[11px]">{path}</span> in PR #{prNumber}
+          Commented on <span className="font-mono text-xs">{path}</span> in PR #{prNumber}
         </span>
         {providerScope !== null && (
           <a
             href={`https://github.com/${providerScope}/pull/${String(prNumber)}/files`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto shrink-0 text-[11px] text-accent underline"
+            className="ml-auto shrink-0 text-xs text-accent underline"
           >
             Open
           </a>
@@ -1642,13 +1690,13 @@ function renderCreateBranchFromCard(result: ToolResultMessage): ReactNode | null
         <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span>
           {alreadyExisted ? 'Branch already existed: ' : 'Created branch '}
-          <span className="font-mono text-[11px]">{branchName}</span>
+          <span className="font-mono text-xs">{branchName}</span>
         </span>
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto shrink-0 text-[11px] text-accent underline"
+          className="ml-auto shrink-0 text-xs text-accent underline"
         >
           Open
         </a>

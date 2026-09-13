@@ -2,11 +2,17 @@ import { useEffect, useRef, type ComponentType } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeft,
   ChevronDown,
+  ChevronRight,
+  FileText,
   Keyboard,
+  MessageSquare,
   Menu,
+  Phone,
   ShieldCheck,
   SlidersHorizontal,
+  Users,
   type LucideProps,
 } from 'lucide-react';
 import {
@@ -28,8 +34,10 @@ import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
+import { SUITE_STYLES, suiteForPath, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button } from './primitives.js';
+import { Avatar, Button, IconButton, OrgBadge } from './primitives.js';
+import { BrandMark } from './brand-mark.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
@@ -89,9 +97,50 @@ export function Shell() {
     status !== 'authenticated';
 
   /* The org picker is authenticated but pre-org, so the tree has nothing to
-     show and every query behind it would answer NOT_A_MEMBER. It keeps the
-     footer — that is where the switcher lives — and drops the tree. */
+     show and every query behind it would answer NOT_A_MEMBER. */
   const hasOrg = orgId !== null;
+
+  /**
+   * Platform Admin is "the ONE place in the app that is relative to no
+   * organization" (`platform-admin-page.tsx`'s own header) — reachable from
+   * inside an ordinary org session, so `hasOrg` alone does not distinguish
+   * it. Rendering it inside the ordinary org frame regardless of `hasOrg`
+   * used to leave either a stale org's own project tree sitting next to a
+   * console whose entire point is "no organization is selected here", or —
+   * for an operator with zero org memberships — a tall, empty sidebar
+   * column with nothing but the switcher parked at its bottom. Both read as
+   * "this is broken", not "this is a deliberately different console", which
+   * is the real complaint: reported directly as looking like part of the
+   * same product rather than a distinct operator surface.
+   */
+  const isPlatformAdmin = pathname.startsWith('/platform-admin');
+
+  /**
+   * The one hook this console's own distinct "operator" palette rides on
+   * (`styles.css`'s `body.platform-admin-active` block) — a class on
+   * `document.body` rather than a wrapper `<div>` inside
+   * `platform-admin-page.tsx`, because every dialog in that console
+   * (`ModalRoot`) portals directly to `document.body`, a SIBLING of this
+   * app's own React root. A class scoped to a div somewhere inside `Outlet`
+   * would never reach a portaled dialog; `body` is the one ancestor a
+   * portaled node and this page's own content both actually share. Toggled
+   * from the same `isPlatformAdmin` check the frame above already branches
+   * on, so the two can never disagree about which state the app is in.
+   */
+  useEffect(() => {
+    document.body.classList.toggle('platform-admin-active', isPlatformAdmin);
+    return () => {
+      document.body.classList.remove('platform-admin-active');
+    };
+  }, [isPlatformAdmin]);
+
+  /* Neither state has a project tree to show — pre-org because there is
+     nothing to show one FOR, Platform Admin because it spans every org and
+     showing any one of them would misstate that. Both get the same minimal
+     top bar (`TopBar`) instead of the ordinary sidebar+header frame, so
+     "nothing to show" never renders as an empty column that looks like a
+     rendering bug. */
+  const topBarOnly = !hasOrg || isPlatformAdmin;
 
   /* Closes the mobile drawer on every navigation, not on each Link's own
      click handler. Threading `onClick={closeMobileNav}` through every link in
@@ -172,41 +221,43 @@ export function Shell() {
     );
   }
 
+  if (topBarOnly) {
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <TopBar isPlatformAdmin={isPlatformAdmin} />
+        <main className="relative min-h-0 flex-1 overflow-auto bg-surface">
+          <Outlet />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={cn(
-        /* `h-dvh`, not `h-full`. `h-full` is `height: 100%`, which only
-           resolves if EVERY ancestor has a definite height — html, body and
-           #root each carry `h-full` for exactly that reason, and the chain
-           holds today. It is still the wrong tool for the outermost frame:
-           the whole layout below depends on this element having a real
-           height, and a percentage makes that a property of four elements in
-           two files rather than of this one.
+      /* `h-dvh`, not `h-full`. `h-full` is `height: 100%`, which only
+         resolves if EVERY ancestor has a definite height — html, body and
+         #root each carry `h-full` for exactly that reason, and the chain
+         holds today. It is still the wrong tool for the outermost frame:
+         the whole layout below depends on this element having a real
+         height, and a percentage makes that a property of four elements in
+         two files rather than of this one.
 
-           When the chain breaks, nothing errors. Every height falls back to
-           `auto`, so the sidebar collapses to the height of its own tree and
-           `main` grows past the viewport — which means a page that manages
-           its own scrolling (`h-full` root, `flex-1 overflow-y-auto` body)
-           has its inner region grow instead of scroll, and its `shrink-0`
-           header scrolls away with the rest. A sticky header sliding off the
-           top is the visible symptom of a height that was never definite.
+         When the chain breaks, nothing errors. Every height falls back to
+         `auto`, so the sidebar collapses to the height of its own tree and
+         `main` grows past the viewport — which means a page that manages
+         its own scrolling (`h-full` root, `flex-1 overflow-y-auto` body)
+         has its inner region grow instead of scroll, and its `shrink-0`
+         header scrolls away with the rest. A sticky header sliding off the
+         top is the visible symptom of a height that was never definite.
 
-           `dvh` is viewport-relative, so it resolves unconditionally. */
-        'flex h-dvh overflow-hidden',
-        /* The pre-org state has no drawer, so its switcher is an ordinary flex
-           child with a fixed width — which below `md` left the org picker about
-           180px to render "Choose an organization" in, header and all. Stacking
-           is the fix rather than a narrower column: at this width there is no
-           room for two, and the switcher is the one thing on this screen that
-           is not the choice being made. */
-        !hasOrg && 'flex-col md:flex-row',
-      )}
+         `dvh` is viewport-relative, so it resolves unconditionally. */
+      className="flex h-dvh overflow-hidden"
     >
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
           drawer closes it — the same "tap away to dismiss" a Radix Popover
           gives for free, restated by hand because this isn't a Radix
           component, it's the app's own persistent chrome. */}
-      {hasOrg && mobileNavOpen && (
+      {mobileNavOpen && (
         <div
           aria-hidden="true"
           onClick={closeMobileNav}
@@ -232,7 +283,7 @@ export function Shell() {
            kill the slide transition outright. Never inert at `md`+, where
            the drawer classes below don't apply and the sidebar is always the
            ordinary, always-interactive one Phase 3.5 built. */
-        inert={hasOrg && !isDesktop && !mobileNavOpen}
+        inert={!isDesktop && !mobileNavOpen}
         className={cn(
           'flex flex-col',
           /* Below `md`: an off-canvas drawer, fixed to the viewport and
@@ -240,44 +291,38 @@ export function Shell() {
              an ordinary flex child with no fixed positioning at all — the
              desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
              handles is untouched by anything here. */
-          hasOrg &&
-            cn(
-              'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
-              mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
-            ),
-          /* Stacked (pre-org, below `md`) it belongs UNDER the choice, not
-             above it: source order puts it first because at `md`+ it is the
-             left column, and `order-last` restores the reading order the
-             layout implies without moving it in the DOM. */
-          !hasOrg && 'order-last md:order-0',
+          'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        {hasOrg && <Sidebar />}
-        <SidebarFooter standalone={!hasOrg} />
+        <Sidebar />
+        <SidebarFooter />
       </div>
 
       {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
           just the sidebar it visually sits near. */}
-      {hasOrg && <CommandPalette />}
+      <CommandPalette />
 
       {/* In-app voice (Phase 13). Mounted in the FRAME, not on the chat page:
           a ringing call has to be answerable from wherever someone happens to
           be, and a call in progress has to survive navigating away from the
           conversation it started in. A microphone that stops when a route
           unmounts is not a phone. */}
-      {hasOrg && <CallSurface />}
+      <CallSurface />
 
       {/* The §6 new-org Docs bootstrap offer (ai/phase-15-ai-copilot-and-
           permissions.md §6). Mounted in the frame rather than on `/projects`
           specifically: the component's own effect is a no-op unless THIS
           tab just created the current org, so it costs nothing to keep
-          mounted everywhere `hasOrg` is true, and it means the offer still
-          appears even if `choose()` ever routes somewhere other than
-          `/projects` after creation. */}
-      {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
+          mounted everywhere this branch renders, and it means the offer
+          still appears even if `choose()` ever routes somewhere other than
+          `/projects` after creation. `orgId` is non-null here — this branch
+          only ever renders when `topBarOnly` (which subsumes `!hasOrg`) is
+          false. */}
+      <NewOrgSetupDialog orgId={orgId} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header showMenuButton={hasOrg} />
+        <Header />
         {/* `relative` establishes a containing block, and it is load-bearing.
             An `position: absolute` descendant with no positioned ancestor
             resolves against the INITIAL containing block instead — which means
@@ -299,28 +344,81 @@ export function Shell() {
 }
 
 /**
- * Identity, pinned to the bottom of the frame.
- *
- * Split from `Sidebar` rather than nested in it because it must survive the one
- * state the tree cannot render — no org selected — which is exactly the state in
- * which someone needs the switcher most. That is the same dead end CLAUDE.md
- * records: an empty org list used to hide the switcher entirely, leaving sign-out
- * as the only way out.
+ * The minimal frame for the two states with no project tree to show —
+ * pre-org (nothing exists yet for one to name) and Platform Admin (the
+ * console spans every org, so showing any one tree would misstate that).
+ * A slim top bar rather than an empty sidebar column: the old layout kept
+ * reserving a full-height left column for `SidebarFooter` alone, which put
+ * two small controls at the very bottom of an otherwise blank strip — the
+ * exact shape of "the sidebar failed to render", not a deliberately
+ * different console. See `Shell`'s own `topBarOnly` comment for why these
+ * two states share this one treatment.
  */
-function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
+function TopBar({ isPlatformAdmin }: { readonly isPlatformAdmin: boolean }) {
+  const navigate = useNavigate();
+
   return (
-    <div
-      className={cn(
-        'mt-auto flex shrink-0 items-center gap-1 border-t border-line bg-surface-raised p-2',
-        /* With no tree above it there is nothing to inherit a width from, and a
-           switcher sized to the word "Select organization" is not a layout. The
-           fixed width is `md`+ ONLY: below that the pre-org shell stacks, and a
-           240px column there consumed more than half a phone's width, leaving
-           the org picker to wrap "Choose an organization" over three lines and
-           truncating the header to "Orga…" and "Settir". */
-        standalone ? 'w-full border-r-0 md:w-60 md:border-r' : 'border-r',
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4 shadow-xs">
+      <Link
+        to={isPlatformAdmin ? '/platform-admin' : '/orgs'}
+        aria-label="Home"
+        className="shrink-0"
+      >
+        <BrandMark size={26} className="text-accent" />
+      </Link>
+
+      {isPlatformAdmin ? (
+        /* Neutral, not danger-toned — this console's own distinct identity
+           (`platform-admin-page.tsx`'s sidebar, `body.platform-admin-active`'s
+           cold palette in styles.css) already makes "you are somewhere
+           different" unmistakable; a second alarm-red badge here on top of
+           that was reported as reading as a warning rather than a place. */
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-hover px-2.5 py-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          <ShieldCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Platform admin
+        </span>
+      ) : (
+        <div className="min-w-0 max-w-64 flex-1">
+          <OrgSwitcher />
+        </div>
       )}
-    >
+
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {/* The one way back once "no organization is selected here" is no
+            longer true — every other route this bar covers (pre-org) has
+            nowhere to go back TO yet, which is exactly why it has no
+            equivalent button. */}
+        {isPlatformAdmin && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void navigate({ to: '/projects' });
+            }}
+          >
+            <ArrowLeft aria-hidden="true" className="size-3.5" strokeWidth={2} />
+            Back to app
+          </Button>
+        )}
+        <AccountMenu />
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Identity, pinned to the bottom of the sidebar.
+ *
+ * Split from `Sidebar` rather than nested in it so the two can be told apart
+ * as separate concerns (the tree vs. who's looking at it and as whom) — the
+ * one state the tree itself cannot render (no org selected) no longer
+ * reaches this component at all: `Shell`'s own `topBarOnly` branch renders
+ * `TopBar` instead, which is where `OrgSwitcher` and `AccountMenu` live for
+ * that case now.
+ */
+function SidebarFooter() {
+  return (
+    <div className="mt-auto flex shrink-0 items-center gap-1 border-t border-r border-line bg-surface-raised p-2">
       <OrgSwitcher />
       <AccountMenu />
     </div>
@@ -335,7 +433,7 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
  * page-specific controls becomes a second navigation bar that is wrong on every
  * page but one.
  */
-function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
+function Header() {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
   const orgId = useSession((state) => state.orgId);
@@ -350,21 +448,29 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   }).data?.capabilities.viewAuditLog;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
+    /* `shadow-xs`, on top of the border this header always had — a single
+       1px hairline reads as a boundary on paper but is nearly invisible
+       against a large flat surface color scheme like this one; the shell's
+       own sidebar and card surfaces all lean on a border ALONE only where
+       they sit directly against the page background, never where they are
+       the one fixed element every scrollable region passes underneath. A
+       barely-there shadow is what actually separates "the frame" from "the
+       content currently scrolled up under it" without adding any real
+       visual weight — the same reasoning a sticky table header gets a
+       shadow the rows beneath it don't. */
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4 shadow-xs">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
           permanent trigger of its own — this is the only way to open it.
-          `showMenuButton` is false in the org-picker's pre-org state, where
-          Shell renders no drawer at all for this to open. */}
-      {showMenuButton && (
-        <button
-          type="button"
-          onClick={toggleMobileNav}
-          aria-label="Open navigation"
-          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
-        >
-          <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
-        </button>
-      )}
+          `Header` only ever renders inside the ordinary org frame now (the
+          pre-org and Platform Admin states use `TopBar` instead), so the
+          drawer this opens always exists. */}
+      <IconButton
+        onClick={toggleMobileNav}
+        aria-label="Open navigation"
+        className="-ml-1 md:hidden"
+      >
+        <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
+      </IconButton>
 
       <Breadcrumbs />
 
@@ -376,9 +482,18 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           the smallest phone this has been checked against is a 320px-wide
           viewport, where these four items plus the hamburger button and a
           short breadcrumb still fit without scrolling; scrolling is the
-          fallback for narrower or zoomed cases, not the primary path. */}
+          fallback for narrower or zoomed cases, not the primary path.
+
+          Split into two groups with a hairline divider between them —
+          previously one undifferentiated row of four icons with no visual
+          logic to their order. The first group is things that change
+          without you asking (a new mention, a reply); the second is places
+          you go on purpose (Settings, the permission debugger). Grouping by
+          what they're FOR, not just spacing them evenly, is what turns "four
+          icons in a row" into something a person can scan rather than read
+          one at a time. */}
       <nav
-        className="ml-auto flex flex-nowrap items-center gap-1.5 overflow-x-auto"
+        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
         aria-label="Settings"
       >
         {/* Mentions and direct messages. In the shell rather than on the chat
@@ -389,17 +504,18 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
         {/* The only visible route to the shortcuts overlay — everything else
             about it is keyboard-only, and a feature reachable by one key
             nobody was told about is not discoverable. */}
-        <button
-          type="button"
+        <IconButton
           onClick={() => {
             setShortcutsOpen(true);
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
-        </button>
+        </IconButton>
+
+        <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-line/60" />
+
         <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
         {canDebugPermissions === true && (
           <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
@@ -418,51 +534,156 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
  *
  * Names are not resolved here. A breadcrumb that waits on `projects.list` to say
  * anything at all is a header that is blank on every cold load, and the sidebar
- * already highlights the active node with its real name.
+ * already highlights the active node with its real name. So a resource-scoped
+ * route (a project, a person) gets a generic segment ("Project", "Profile")
+ * rather than the real name — a real, known limitation, not an oversight.
+ *
+ * ## Why this used to be one `<h1>`, and why that was a real bug
+ *
+ * The whole "trail" used to collapse to a single current-page label, rendered
+ * as its own `<h1>` — which meant every page with its own `PageHeader` (also
+ * an `<h1>`, `primitives.tsx`) carried TWO level-one headings with often the
+ * IDENTICAL text ("My tasks" in the top bar, "My tasks" again as the page's
+ * own heading a few dozen pixels below it) — a real accessibility defect (two
+ * `<h1>`s is invalid document structure) and the literal thing a person
+ * reported seeing: the same name twice. `breadcrumbsFor` now returns a real,
+ * possibly multi-segment TRAIL (`Settings › Audit log`, `Projects › Sprints`),
+ * rendered as `<nav><ol>` — never an `<h1>` — at a visibly smaller, muted
+ * scale than any page's own heading, so even a single-segment trail whose
+ * text happens to match the page title (most pages — there is nothing to
+ * nest under "Chat" or "Search") reads as wayfinding chrome, not a second
+ * title competing with the real one.
  */
+/**
+ * The Design Bible's `.pf-bar .ttl .g` pattern — a module's icon takes its
+ * own suite hue while the TITLE TEXT beside it stays neutral `--ink` (the
+ * bible's own mockups never color the text itself, only the glyph in front
+ * of it). Only the four modules with their own suite hue get one; Work,
+ * Settings and every other destination stay text-only, exactly as before.
+ */
+const SUITE_ICON: Readonly<Partial<Record<Suite, NavIcon>>> = {
+  chat: MessageSquare,
+  docs: FileText,
+  calls: Phone,
+  people: Users,
+};
+
+/** A route this trail can link an ANCESTOR segment back to — real navigation, not decoration. */
+export type CrumbTarget = '/projects' | '/settings' | '/people';
+
+export interface Crumb {
+  readonly label: string;
+  /** Present on every segment except the current page, which never links to itself. */
+  readonly to?: CrumbTarget;
+}
+
+/**
+ * Every route in `router.tsx` gets an entry here — the previous version's
+ * fallback to `productName` for anything unmatched silently swallowed six
+ * real routes (`/people`, `/assistant`, `/analytics`, `/automations`,
+ * `/calls`, `/account`), each showing the org/product name instead of where
+ * the person actually was. A route added to `router.tsx` without a matching
+ * case here still falls through to `productName` rather than throwing — a
+ * wrong-but-harmless label beats a crashed header — but every KNOWN route as
+ * of this pass has a real entry, checked directly against the route list
+ * rather than assumed.
+ */
+export function breadcrumbsFor(pathname: string, productName: string): readonly Crumb[] {
+  if (pathname.startsWith('/boards/')) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Board' }];
+  }
+  if (pathname.startsWith('/home')) return [{ label: 'My tasks' }];
+  if (pathname.startsWith('/search')) return [{ label: 'Search' }];
+  if (pathname.startsWith('/chat')) return [{ label: 'Chat' }];
+  if (pathname.startsWith('/docs')) return [{ label: 'Docs' }];
+  if (pathname.startsWith('/calls')) return [{ label: 'Calls' }];
+  if (pathname.startsWith('/analytics')) return [{ label: 'Analytics' }];
+  if (pathname.startsWith('/automations')) return [{ label: 'Automations' }];
+  if (pathname.startsWith('/assistant')) return [{ label: 'Assistant' }];
+  if (pathname.startsWith('/account')) return [{ label: 'Account' }];
+  if (pathname.startsWith('/people/')) {
+    return [{ label: 'People', to: '/people' }, { label: 'Profile' }];
+  }
+  if (pathname.startsWith('/people')) return [{ label: 'People' }];
+  if (/^\/projects\/[^/]+\/sprints/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project' }, { label: 'Sprints' }];
+  }
+  if (/^\/projects\/[^/]+\/standup/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project' }, { label: 'Standup' }];
+  }
+  if (/^\/projects\/[^/]+/.test(pathname)) {
+    return [{ label: 'Projects', to: '/projects' }, { label: 'Project settings' }];
+  }
+  if (pathname.startsWith('/projects')) return [{ label: 'Projects' }];
+  if (pathname.startsWith('/settings/audit')) {
+    return [{ label: 'Settings', to: '/settings' }, { label: 'Audit log' }];
+  }
+  if (pathname.startsWith('/settings')) return [{ label: 'Settings' }];
+  if (pathname.startsWith('/admin/permissions')) return [{ label: 'Permissions' }];
+  if (pathname.startsWith('/platform-admin')) return [{ label: 'Platform admin' }];
+  if (pathname.startsWith('/orgs')) return [{ label: 'Organizations' }];
+  return [{ label: productName }];
+}
+
 function Breadcrumbs() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { productName } = useBranding();
+  const suite = suiteForPath(pathname);
+  const Icon = suite === undefined ? undefined : SUITE_ICON[suite];
+  const iconColor = suite === undefined ? '' : SUITE_STYLES[suite].text;
+  const crumbs = breadcrumbsFor(pathname, productName);
 
-  const label = pathname.startsWith('/boards/')
-    ? 'Board'
-    : pathname.startsWith('/home')
-      ? 'My tasks'
-      : pathname.startsWith('/search')
-        ? 'Search'
-        : pathname.startsWith('/chat')
-          ? 'Chat'
-          : pathname.startsWith('/docs')
-            ? 'Docs'
-            : pathname.startsWith('/projects/')
-              ? 'Project'
-              : pathname.startsWith('/projects')
-                ? 'Projects'
-                : pathname.startsWith('/settings/audit')
-                  ? 'Audit log'
-                  : pathname.startsWith('/settings')
-                    ? 'Settings'
-                    : pathname.startsWith('/admin/permissions')
-                      ? 'Permissions'
-                      : pathname.startsWith('/platform-admin')
-                        ? 'Platform admin'
-                        : pathname.startsWith('/orgs')
-                          ? 'Organizations'
-                          : productName;
-
-  /* `min-w-0` is load-bearing, not decorative: a flex item's default
-     min-width is `auto`, which means it will NOT shrink below its own content
-     size no matter how little room its siblings (the menu button, the
-     notification bell, the nav links) leave it — so `truncate`'s
-     `overflow-hidden` + `text-overflow: ellipsis` never actually engages on a
-     narrow header, and the row overflows the viewport instead of eliding the
-     label. This is the one-line fix for a bug that only shows up once the
-     header actually gets tight, which the desktop-only build before this wave
-     never exercised. */
+  /* `min-w-0` on the `nav` is load-bearing, not decorative — see the
+     original note this replaced: a flex item's default min-width is `auto`,
+     so without it `truncate` never actually engages on a narrow header and
+     the row overflows the viewport instead of eliding a long segment. */
   return (
-    <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
-      {label}
-    </h1>
+    <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <ol className="flex min-w-0 items-center gap-1">
+        {crumbs.map((crumb, index) => {
+          /* The LAST segment is the current page — not merely "has no `to`",
+             which an unlinked MIDDLE segment (e.g. the generic "Project" in
+             `Projects › Project › Sprints`) also satisfies without being the
+             page someone is actually looking at. */
+          const isCurrent = index === crumbs.length - 1;
+          return (
+            <li key={`${String(index)}-${crumb.label}`} className="flex min-w-0 items-center gap-1">
+              {index > 0 && (
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3 shrink-0 text-ink-faint/50"
+                  strokeWidth={2}
+                />
+              )}
+              {crumb.to !== undefined ? (
+                <Link
+                  to={crumb.to}
+                  className="shrink-0 truncate text-[13px] text-ink-faint transition-colors duration-(--motion-fast) hover:text-ink"
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span
+                  className={cn(
+                    'flex min-w-0 items-center gap-1.5 truncate text-[13px]',
+                    isCurrent ? 'font-medium text-ink' : 'text-ink-faint',
+                  )}
+                >
+                  {isCurrent && Icon !== undefined && (
+                    <Icon
+                      aria-hidden="true"
+                      className={cn('size-3.5 shrink-0', iconColor)}
+                      strokeWidth={2.25}
+                    />
+                  )}
+                  {crumb.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -483,7 +704,13 @@ function NavLink({
       to={to}
       aria-label={label}
       title={label}
-      className="shrink-0 rounded-lg p-2 text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+      /* `flex size-8 items-center justify-center`, matching every other
+         icon button in this header (`NotificationBell`'s own trigger,
+         the shortcuts button below) — this one used to be `p-2` (a
+         36px footprint) next to siblings at `p-1.5` (32px) and a fixed
+         `h-8 w-8`, three slightly different sizes in one row that read
+         as uneven rather than as one deliberate set of controls. */
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
       activeProps={{ className: 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent' }}
     >
       <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -535,7 +762,8 @@ function OrgSwitcher() {
   return (
     <DropdownMenuRoot>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
+        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start gap-2">
+          {current !== undefined && <OrgBadge orgId={current.orgId} name={current.name} />}
           <span className="truncate">{current?.name ?? 'Select organization'}</span>
           <ChevronDown
             aria-hidden="true"
@@ -552,8 +780,11 @@ function OrgSwitcher() {
               switchTo(org.orgId as OrgId);
             }}
           >
-            <span>{org.name}</span>
-            <span className="text-[11px] text-ink-faint">{org.role}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <OrgBadge orgId={org.orgId} name={org.name} />
+              <span className="truncate">{org.name}</span>
+            </span>
+            <span className="shrink-0 text-xs text-ink-faint">{org.role}</span>
           </DropdownMenuItem>
         ))}
 
@@ -624,7 +855,7 @@ function AccountMenu() {
         <button
           type="button"
           aria-label="Account"
-          className="shrink-0 rounded p-0.5 hover:bg-surface-hover"
+          className="shrink-0 rounded p-0.5 transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
         >
           {/* `email` is in memory only and is null after a reload — see
               session.ts on why it is deliberately not persisted. The session id

@@ -78,9 +78,46 @@ export function DevelopmentSection({
   const repos = useQuery(githubReposQuery(orgId));
   const [selectedRepoScope, setSelectedRepoScope] = useState<string | null>(null);
 
+  /* Read here too, in ADDITION to the identical queries each subsection
+     already runs below — React Query dedupes by key, so this costs no extra
+     request, only lets the PARENT see the same answer in time to decide
+     whether the whole section is worth rendering at all.
+
+     Most cards, in most orgs, have never touched GitHub: no repo connected,
+     nothing linked. Rendering "Pull requests" and "Branches" as two bare
+     sub-headers with nothing under them — the shape every ordinary card used
+     to get — is dead chrome on the single most common card in the app. The
+     section now collapses entirely once every query has resolved and there
+     is neither content to show nor anything this viewer could do about it;
+     while anything is still loading it renders exactly as before, so a slow
+     network never flashes the section in and then out. */
+  const prLinked = useQuery(cardPullRequestsQuery(orgId, cardId));
+  const branchLinked = useQuery(cardBranchesQuery(orgId, cardId));
+
+  const resolved = repos.isSuccess && prLinked.isSuccess && branchLinked.isSuccess;
+  const hasRepo = (repos.data?.length ?? 0) > 0;
+  const hasAnyLink = (prLinked.data?.length ?? 0) > 0 || (branchLinked.data?.length ?? 0) > 0;
+  const canDoAnything = canEdit || canCreateBranches;
+
+  if (resolved && !hasAnyLink && !hasRepo && !canDoAnything) return null;
+
+  /* Both subsections independently offer to "connect a repo" the moment
+     their own form has no repo to submit against — right, but repeated
+     verbatim underneath each other when BOTH `canEdit` and
+     `canCreateBranches` are true, since both conditions trigger from the
+     same underlying fact. Shown once here instead; each subsection is told
+     to skip its own copy via `suppressConnectHint`. */
+  const showConnectHint = resolved && !hasRepo && canDoAnything;
+
   return (
     <Section title="Development">
       <div className="space-y-5">
+        {showConnectHint && (
+          <p className="text-xs text-ink-faint">
+            Connect a GitHub repository (Settings → Automation) to link pull requests or create
+            branches.
+          </p>
+        )}
         <PullRequestSubsection
           orgId={orgId}
           cardId={cardId}
@@ -89,6 +126,7 @@ export function DevelopmentSection({
           reposLoaded={repos.isSuccess}
           selectedRepoScope={selectedRepoScope}
           onSelectRepoScope={setSelectedRepoScope}
+          suppressConnectHint={showConnectHint}
         />
         <BranchSubsection
           orgId={orgId}
@@ -101,6 +139,7 @@ export function DevelopmentSection({
           reposLoaded={repos.isSuccess}
           selectedRepoScope={selectedRepoScope}
           onSelectRepoScope={setSelectedRepoScope}
+          suppressConnectHint={showConnectHint}
         />
       </div>
     </Section>
@@ -117,7 +156,7 @@ interface RepoPickerProps {
     caller already knows which repo to use and never renders this. */
 function RepoPicker({ repos, value, onChange }: RepoPickerProps) {
   return (
-    <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+    <label className="flex items-center gap-1.5 text-xs text-ink-faint">
       Repository
       <select
         aria-label="Repository"
@@ -165,6 +204,7 @@ function PullRequestSubsection({
   reposLoaded,
   selectedRepoScope,
   onSelectRepoScope,
+  suppressConnectHint,
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
@@ -173,6 +213,8 @@ function PullRequestSubsection({
   readonly reposLoaded: boolean;
   readonly selectedRepoScope: string | null;
   readonly onSelectRepoScope: (scope: string) => void;
+  /** The parent already showed one combined "connect a repo" line — see its own header. */
+  readonly suppressConnectHint: boolean;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -207,7 +249,12 @@ function PullRequestSubsection({
 
   return (
     <div className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+      {/* Matches the rest of the panel's small icon-header style
+          (checklist-section.tsx, attachment-section.tsx, …) rather than the
+          uppercase, letter-spaced treatment this section used to carry on
+          its own — the two read as different components on the same page
+          otherwise. */}
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <GitPullRequest aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Pull requests
       </h3>
@@ -216,7 +263,9 @@ function PullRequestSubsection({
         <SkeletonRows rows={1} />
       ) : linked.isError ? (
         <ErrorView error={linked.error} title="Could not load linked pull requests" />
-      ) : linked.data.length === 0 ? null : (
+      ) : linked.data.length === 0 ? (
+        !canEdit && <p className="text-xs text-ink-faint">No pull requests linked.</p>
+      ) : (
         <ul className="space-y-1">
           {linked.data.map((pr) => (
             <li
@@ -242,7 +291,7 @@ function PullRequestSubsection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={unlink.isPending}
                   onClick={() => {
                     unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber });
@@ -258,9 +307,11 @@ function PullRequestSubsection({
       {unlink.isError && <ErrorText error={unlink.error} />}
 
       {!canEdit ? null : reposLoaded && repos.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">
-          Connect a GitHub repository (Settings → Automation) to link pull requests.
-        </p>
+        suppressConnectHint ? null : (
+          <p className="text-xs text-ink-faint">
+            Connect a GitHub repository (Settings → Automation) to link pull requests.
+          </p>
+        )
       ) : (
         <form
           className="flex flex-wrap items-center gap-1.5"
@@ -315,6 +366,7 @@ function BranchSubsection({
   reposLoaded,
   selectedRepoScope,
   onSelectRepoScope,
+  suppressConnectHint,
 }: {
   readonly orgId: string;
   readonly cardId: CardId;
@@ -326,6 +378,8 @@ function BranchSubsection({
   readonly reposLoaded: boolean;
   readonly selectedRepoScope: string | null;
   readonly onSelectRepoScope: (scope: string) => void;
+  /** The parent already showed one combined "connect a repo" line — see its own header. */
+  readonly suppressConnectHint: boolean;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -378,7 +432,7 @@ function BranchSubsection({
 
   return (
     <div className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <GitBranch aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Branches
       </h3>
@@ -387,7 +441,9 @@ function BranchSubsection({
         <SkeletonRows rows={1} />
       ) : linked.isError ? (
         <ErrorView error={linked.error} title="Could not load linked branches" />
-      ) : linked.data.length === 0 ? null : (
+      ) : linked.data.length === 0 ? (
+        !canCreate && <p className="text-xs text-ink-faint">No branches linked.</p>
+      ) : (
         <ul className="space-y-1">
           {linked.data.map((branch) => (
             <li
@@ -408,7 +464,7 @@ function BranchSubsection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-6 px-1.5 text-xs"
                   disabled={unlink.isPending}
                   onClick={() => {
                     unlink.mutate({
@@ -427,9 +483,11 @@ function BranchSubsection({
       {unlink.isError && <ErrorText error={unlink.error} />}
 
       {!canCreate ? null : reposLoaded && repos.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">
-          Connect a GitHub repository (Settings → Automation) to create branches.
-        </p>
+        suppressConnectHint ? null : (
+          <p className="text-xs text-ink-faint">
+            Connect a GitHub repository (Settings → Automation) to create branches.
+          </p>
+        )
       ) : !formOpen ? (
         <Button size="sm" variant="ghost" onClick={openForm} disabled={!reposLoaded}>
           <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
@@ -456,7 +514,7 @@ function BranchSubsection({
             className="h-7 font-mono text-xs"
           />
           {preview !== null && (
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               Will be created as <span className="font-mono text-ink-muted">{preview}</span>
             </p>
           )}
@@ -506,7 +564,7 @@ function CopyCheckoutButton({ branchName }: { readonly branchName: string }) {
       size="sm"
       variant="ghost"
       title={command}
-      className="h-6 shrink-0 px-1.5 text-[11px]"
+      className="h-6 shrink-0 px-1.5 text-xs"
       onClick={() => {
         void navigator.clipboard.writeText(command).then(() => {
           setCopied(true);

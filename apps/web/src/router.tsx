@@ -441,11 +441,12 @@ const telephonyRoute = createRoute({
       .optional()
       .catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
-    /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
+    /* Which call in the log is selected — the master-detail split
+       `calls-panel.tsx` opens on the right. Added by Phase 8 Wave 3 so a
        TRANSCRIPT search hit has somewhere to land — a hit whose permalink
        cannot open the thing it found is a result that only proves the index
        works. `.catch(undefined)` per this file's convention: a malformed id in
-       a pasted link renders the log unexpanded, never an error page. */
+       a pasted link renders the log with nothing selected, never an error page. */
     call: z.string().uuid().optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/calls'),
@@ -658,10 +659,12 @@ const platformAdminRoute = createRoute({
 });
 
 /**
- * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
+ * Analytics dashboard (Phase 11, ai/phase-11-analytics.md §3, §5).
  *
- * `tab` is a search param — same pattern as telephony and automations — so
- * the open dashboard is shareable and back-button-correct.
+ * No search param anymore — `overview-panel.tsx`'s own header explains why:
+ * this used to be seven per-metric tabs plus a summary tab in front of
+ * them, each a `tab` search value; it is now one consolidated page with no
+ * tab strip, so there is nothing left for a search param to select.
  *
  * `analytics:read` is Admin-and-Owner-only by role, with no way for a Member
  * to earn it via plan upgrade (unlike telephony, which every Member holds by
@@ -676,12 +679,6 @@ const platformAdminRoute = createRoute({
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analytics',
-  validateSearch: z.object({
-    tab: z
-      .enum(['velocity', 'burndown', 'cfd', 'cycle-time', 'workload', 'volume', 'status'])
-      .optional()
-      .catch(undefined),
-  }),
   beforeLoad: () => requireOrg('/analytics'),
   component: () => (
     <CapabilityGate capability="viewAnalytics">

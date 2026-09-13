@@ -6,6 +6,19 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
+  ListTodo,
+  Quote,
+  Strikethrough,
+  Underline,
+} from 'lucide-react';
 import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
@@ -83,7 +96,7 @@ export function DocsEditor({
 
   if (provider === null) {
     return (
-      <div className="flex h-40 items-center justify-center rounded border border-dashed border-line/50">
+      <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-line/50">
         <p className="text-xs text-ink-faint">Connecting…</p>
       </div>
     );
@@ -193,12 +206,24 @@ function DocsEditorReady({
       }),
       CollaborationCaret.configure({
         provider,
-        user: { name: displayName, color },
+        /* `userId` rides alongside the `name`/`color` the caret itself
+           needs — `CollaborationCaretOptions.user` is a deliberately open
+           `Record<string, any>` ("feel free to add properties as needed"),
+           so this is the one place to publish it rather than a second
+           awareness field. `Presence` below reads it back to render real
+           `Avatar` discs instead of a bare count — the same identity key
+           `colorForUser` already falls back through (userId, then email,
+           then a fixed string) for a viewer with neither. */
+        user: { name: displayName, color, userId: userId ?? email ?? 'anonymous' },
       }),
     ],
     editorProps: {
       attributes: {
-        class: cn('rich-text focus:outline-none min-h-40 px-3 py-2'),
+        /* `rich-text-doc` alongside `rich-text` — a genuine document reading
+           (bigger type, more line-height and block spacing), not the compact
+           scale a chat bubble or card description needs. See that class's
+           own header in styles.css. */
+        class: cn('rich-text rich-text-doc min-h-[60vh] px-1 py-6 focus:outline-none sm:px-2'),
         'data-placeholder': 'Write something…',
       },
     },
@@ -224,13 +249,25 @@ function DocsEditorReady({
   }, [editor, provider, onReady]);
 
   return (
-    <div className="overflow-hidden rounded border border-line bg-surface-sunken">
-      <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-1.5 pr-2">
+    /* No outer box (no border, no `bg-surface-sunken`) — the Design Bible's
+       §08 mockup has the document flow directly on the page background, not
+       sit inside a bordered "editor" rectangle. The toolbar is the one thing
+       that still needs a visible edge to separate it from the prose below,
+       so it alone keeps a hairline `border-b`; `sticky` so it behaves like a
+       real document app's formatting bar while the page (not this component
+       — `docs-page.tsx`'s own `overflow-y-auto` pane) scrolls underneath it. */
+    <div>
+      {/* `shadow-xs` on top of the border — the same `shell.tsx` Header
+          treatment for the identical reason: a single hairline border reads
+          as a boundary on paper but is nearly invisible against a large
+          flat surface, and this is the one fixed element the page's own
+          content scrolls up underneath. */}
+      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-line bg-surface/95 px-1 py-1.5 shadow-xs backdrop-blur sm:-mx-2 sm:px-2">
         <Toolbar editor={editor} />
-        <div className="flex shrink-0 items-center gap-3">
-          <Presence provider={provider} />
-          <ConnectionPill status={status} synced={synced} />
-        </div>
+        {/* Presence moved to the page header (`docs-page.tsx`'s `PagePanel`,
+            via `useDocsPresence`) — see that hook's own comment for why it
+            no longer renders itself here. */}
+        <ConnectionPill status={status} synced={synced} />
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -238,79 +275,82 @@ function DocsEditorReady({
 }
 
 function Toolbar({ editor }: { readonly editor: Editor }) {
-  const item = (label: string, active: boolean, run: () => void, title: string) => (
+  const item = (Icon: typeof Bold, active: boolean, run: () => void, title: string) => (
     <Button
-      key={label}
+      key={title}
       size="sm"
       variant="ghost"
       title={title}
+      aria-label={title}
       aria-pressed={active}
-      className={cn('h-6 px-1.5', active && 'bg-surface-hover text-ink')}
+      className={cn('h-7 w-7 px-0', active && 'bg-surface-hover text-ink')}
       onClick={run}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
     </Button>
   );
 
   return (
     <div className="flex flex-wrap items-center gap-0.5">
-      {item('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
+      {item(Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
       {item(
-        'I',
+        Italic,
         editor.isActive('italic'),
         () => editor.chain().focus().toggleItalic().run(),
         'Italic',
       )}
       {item(
-        'U',
+        Underline,
         editor.isActive('underline'),
         () => editor.chain().focus().toggleUnderline().run(),
         'Underline',
       )}
       {item(
-        'S',
+        Strikethrough,
         editor.isActive('strike'),
         () => editor.chain().focus().toggleStrike().run(),
         'Strikethrough',
       )}
       {item(
-        '</>',
+        Code2,
         editor.isActive('code'),
         () => editor.chain().focus().toggleCode().run(),
         'Inline code',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        'H1',
+        Heading1,
         editor.isActive('heading', { level: 1 }),
         () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
         'Heading 1',
       )}
       {item(
-        'H2',
+        Heading2,
         editor.isActive('heading', { level: 2 }),
         () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         'Heading 2',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        '•',
+        List,
         editor.isActive('bulletList'),
         () => editor.chain().focus().toggleBulletList().run(),
         'Bullet list',
       )}
       {item(
-        '1.',
+        ListOrdered,
         editor.isActive('orderedList'),
         () => editor.chain().focus().toggleOrderedList().run(),
         'Numbered list',
       )}
       {item(
-        '☑',
+        ListTodo,
         editor.isActive('taskList'),
         () => editor.chain().focus().toggleTaskList().run(),
         'Task list',
       )}
       {item(
-        '❝',
+        Quote,
         editor.isActive('blockquote'),
         () => editor.chain().focus().toggleBlockquote().run(),
         'Quote',
@@ -356,7 +396,7 @@ function ConnectionPill({
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted"
+      className="inline-flex items-center gap-1.5 text-xs text-ink-muted"
       title={synced ? 'Connected and in sync' : 'Connection state'}
     >
       <span className={cn('size-1.5 rounded-full', dot)} aria-hidden="true" />
@@ -366,28 +406,64 @@ function ConnectionPill({
 }
 
 /**
- * "N others viewing" from the shared awareness map.
+ * Who else is here — Design Bible §08's own "2 people here now" treatment.
  *
- * CollaborationCaret publishes `{ name, color }` under each client's
- * awareness state, so everyone connected to the same page is visible here —
- * the same Yjs awareness channel the caret labels ride on. Cheap (an event
- * subscription, no polling), and it is the only presence surface this
- * feature needs for now; the avatars it could become are a styling change.
+ * CollaborationCaret publishes `{ name, color, userId }` under each client's
+ * awareness state (see the `user:` field above), so everyone connected to
+ * the same page is visible here — the same Yjs awareness channel the caret
+ * labels ride on. Cheap (an event subscription, no polling).
+ *
+ * Deduplicated by `userId`, not by connection: the same person open in two
+ * tabs is two awareness ENTRIES (one per Yjs client id) but one person, and
+ * showing them twice would misreport who is actually here. A viewer with no
+ * resolvable identity falls back to `client:<clientId>` (never colliding
+ * with a real userId), so a genuinely anonymous session still gets a
+ * distinct disc instead of silently merging with someone else's.
+ *
+ * A HOOK, not a component that renders itself — moved out of this file's
+ * own toolbar (where it used to live, next to the "Live" pill) so
+ * `docs-page.tsx`'s `PagePanel` can build BOTH the "N people here now" TEXT
+ * next to the page title and the avatar discs from the identical live data,
+ * rather than one component owning a rendering the mockup wants used twice
+ * for two different things. `provider` is nullable because `PagePanel` only
+ * has one once `DocsEditor`'s own `onReady` has fired.
  */
-function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
-  const [others, setOthers] = useState(0);
+export function useDocsPresence(
+  provider: HocuspocusProvider | null,
+): readonly { readonly userId: string; readonly label: string }[] {
+  const [others, setOthers] = useState<
+    readonly { readonly userId: string; readonly label: string }[]
+  >([]);
 
   useEffect(() => {
+    /* No unconditional `setOthers([])` here for a null provider — that would
+       be a synchronous `setState` with no external system behind it, which
+       `react-hooks/set-state-in-effect` correctly refuses (unlike the
+       `update()` call below, which IS syncing this hook's state with the
+       Yjs awareness channel, the rule's own stated exception). `PagePanel`
+       remounts this hook fresh per page (`key={search.page}`), so the
+       common case already starts at `[]`; the one exception — the SAME
+       `PagePanel` instance's `DocsEditor` remounting after a version
+       restore — briefly keeps the previous page's own presence until the
+       new provider's `update()` below overwrites it, a transient staleness
+       worth accepting over a lint-refused state reset with nothing to
+       subscribe to. */
+    if (provider === null) return;
     const awareness = provider.awareness;
     if (awareness === null) return;
 
     const update = () => {
       const local = awareness.clientID;
-      let count = 0;
-      for (const [clientId] of awareness.getStates()) {
-        if (clientId !== local) count += 1;
+      const byKey = new Map<string, string>();
+      for (const [clientId, state] of awareness.getStates()) {
+        if (clientId === local) continue;
+        const user = state['user'] as Record<string, unknown> | undefined;
+        const name = typeof user?.['name'] === 'string' ? user['name'] : 'Someone';
+        const key =
+          typeof user?.['userId'] === 'string' ? user['userId'] : `client:${String(clientId)}`;
+        byKey.set(key, name);
       }
-      setOthers(count);
+      setOthers([...byKey.entries()].map(([userId, label]) => ({ userId, label })));
     };
 
     awareness.on('change', update);
@@ -397,14 +473,5 @@ function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
     };
   }, [provider]);
 
-  if (others === 0) return null;
-
-  return (
-    <span
-      className="text-[11px] text-ink-faint"
-      title={`${String(others)} other viewer${others === 1 ? '' : 's'}`}
-    >
-      {others === 1 ? '1 other viewing' : `${String(others)} others viewing`}
-    </span>
-  );
+  return others;
 }

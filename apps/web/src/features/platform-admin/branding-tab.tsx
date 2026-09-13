@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lock } from 'lucide-react';
 import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
 import { TaskFlowLogo } from '../../components/taskflow-logo.js';
 import { api, errorCodeOf } from '../../lib/trpc.js';
@@ -287,7 +288,7 @@ export function BrandingTab({
                     onClick={() => {
                       setPreviewPalette(null);
                     }}
-                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent/80"
+                    className="text-xs text-accent underline underline-offset-2 hover:text-accent/80"
                   >
                     Reset to {data.paletteId}
                   </button>
@@ -307,7 +308,7 @@ export function BrandingTab({
                       setBranding.mutate({ paletteId });
                     }}
                     className={cn(
-                      'size-8 rounded-full border-2 transition-transform',
+                      'size-8 rounded-full border-2 transition-transform duration-(--motion-fast)',
                       (previewPalette ?? data.paletteId) === paletteId
                         ? 'scale-110 border-ink ring-2 ring-accent/30'
                         : 'border-transparent hover:scale-105',
@@ -377,7 +378,7 @@ function BrandingAssetUpload({
   readonly onSelect: (file: File) => void;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line p-4 transition-colors hover:bg-surface-hover/20">
+    <div className="flex items-center gap-4 rounded-xl border border-line p-4 transition-colors duration-(--motion-fast) hover:bg-surface-hover/20">
       <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-sunken">
         {currentUrl !== null ? (
           <img src={currentUrl} alt="" className="max-h-full max-w-full rounded object-contain" />
@@ -390,7 +391,7 @@ function BrandingAssetUpload({
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{label}</p>
-        <p className="text-[11px] text-ink-faint">{description}</p>
+        <p className="text-xs text-ink-faint">{description}</p>
         {error !== null && (
           <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />
         )}
@@ -440,7 +441,7 @@ function BrandingPreview({
 
   return (
     <div className="rounded-xl border border-line bg-surface-sunken/40 p-4">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">
         Live preview
       </p>
 
@@ -458,8 +459,15 @@ function BrandingPreview({
             </span>
             <span className="ml-0.5 text-ink-faint">×</span>
           </div>
-          <div className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5">
-            <span className="text-[9px] text-ink-faint">🔒</span>
+          <div className="flex items-center gap-1 rounded-md bg-surface-sunken px-2 py-0.5">
+            {/* A real glyph, not a 🔒 emoji — same reasoning as every other
+                emoji-as-icon fix in this pass: it renders at the OS's own
+                size/weight and never matches this app's icon language. */}
+            <Lock
+              aria-hidden="true"
+              className="size-2.5 shrink-0 text-ink-faint"
+              strokeWidth={2.5}
+            />
             <span className="max-w-25 truncate text-[9px] text-ink-muted">
               app.{(productName || 'taskflow').toLowerCase().replace(/\s+/g, '-')}.io/home
             </span>
@@ -479,7 +487,7 @@ function BrandingPreview({
             ) : (
               <TaskFlowLogo size={16} className="shrink-0 text-accent" />
             )}
-            <span className="truncate text-[11px] font-semibold text-ink">
+            <span className="truncate text-xs font-semibold text-ink">
               {productName || 'TaskFlow'}
             </span>
           </div>
@@ -488,7 +496,7 @@ function BrandingPreview({
               <span
                 key={item}
                 className={cn(
-                  'flex items-center gap-1.5 rounded px-2 py-1 text-[10px]',
+                  'flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px]',
                   index === 0 ? 'bg-accent/10 font-medium text-accent' : 'text-ink-muted',
                 )}
               >
@@ -506,7 +514,7 @@ function BrandingPreview({
         <div className="min-w-0 flex-1 space-y-2.5">
           {/* Mini header */}
           <div className="flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2">
-            <span className="text-[11px] font-semibold text-ink">Projects</span>
+            <span className="text-xs font-semibold text-ink">Projects</span>
             <span
               className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white"
               style={{ backgroundColor: colors.base }}
@@ -526,12 +534,12 @@ function BrandingPreview({
             </p>
             <div className="mt-1.5 flex gap-1">
               <span
-                className="rounded px-1 py-0.5 text-[9px] font-medium"
+                className="rounded-md px-1 py-0.5 text-[9px] font-medium"
                 style={{ backgroundColor: `${colors.base}20`, color: colors.base }}
               >
                 In progress
               </span>
-              <span className="rounded bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
+              <span className="rounded-md bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
                 Design
               </span>
             </div>

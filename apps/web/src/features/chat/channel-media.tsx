@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Phone, Video } from 'lucide-react';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { formatCallDuration, formatRelative } from '../../lib/format.js';
@@ -129,7 +130,12 @@ export function CallTimelineCard({
           missed ? 'bg-danger/10 text-danger' : 'bg-surface-sunken text-ink-muted',
         )}
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {/* A real glyph, not 🎥/📞 emoji — same reasoning as every other emoji-as-icon fix in this pass. */}
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <span>
           {byViewer ? 'You called' : `${initiator.label} called`} · {text}
         </span>
@@ -154,7 +160,7 @@ function CallRow({
   );
 
   return (
-    <li className="rounded border border-line px-2 py-1.5">
+    <li className="rounded-md border border-line px-2 py-1.5">
       <button
         type="button"
         onClick={() => {
@@ -162,14 +168,19 @@ function CallRow({
         }}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span aria-hidden="true">{entry.kind === 'video' ? '🎥' : '📞'}</span>
+        {/* A real glyph, not 🎥/📞 emoji — same reasoning as every other emoji-as-icon fix in this pass. */}
+        {entry.kind === 'video' ? (
+          <Video aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        ) : (
+          <Phone aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-ink">{initiator.label}</p>
-          <p className="text-[11px] text-ink-faint">
+          <p className="text-xs text-ink-faint">
             {formatRelative(entry.createdAt)} · {callStatusLabel(entry)}
           </p>
         </div>
-        <span className="shrink-0 text-[11px] text-ink-faint" aria-hidden="true">
+        <span className="shrink-0 text-xs text-ink-faint" aria-hidden="true">
           {expanded ? '▲' : '▼'}
         </span>
       </button>
@@ -180,7 +191,7 @@ function CallRow({
             {entry.participants.map((participant) => (
               <li
                 key={participant.userId}
-                className="flex items-center justify-between gap-2 text-[11px]"
+                className="flex items-center justify-between gap-2 text-xs"
               >
                 <span className="truncate text-ink-muted">
                   {personOf(participant.userId).label}
@@ -240,10 +251,10 @@ function RecordingRow({ recording }: { readonly recording: CallRecordingSummary 
   });
 
   return (
-    <div className="flex flex-col gap-1 rounded bg-surface-raised px-2 py-1.5">
+    <div className="flex flex-col gap-1 rounded-md bg-surface-raised px-2 py-1.5">
       <div className="flex items-center gap-2">
         <span aria-hidden="true">⏺</span>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-ink">
+        <span className="min-w-0 flex-1 truncate text-xs text-ink">
           Recording
           {recording.durationSeconds !== null &&
             ` · ${formatCallDuration(recording.durationSeconds)}`}
@@ -251,7 +262,7 @@ function RecordingRow({ recording }: { readonly recording: CallRecordingSummary 
         <Button
           size="sm"
           variant="ghost"
-          className="h-5 shrink-0 px-1 text-[11px]"
+          className="h-5 shrink-0 px-1 text-xs"
           disabled={play.isPending}
           onClick={() => {
             play.mutate();
@@ -262,7 +273,7 @@ function RecordingRow({ recording }: { readonly recording: CallRecordingSummary 
         <Button
           size="sm"
           variant="ghost"
-          className="h-5 shrink-0 px-1 text-[11px]"
+          className="h-5 shrink-0 px-1 text-xs"
           disabled={download.isPending}
           onClick={() => {
             download.mutate();
@@ -329,12 +340,12 @@ function ExcerptRow({
   readonly action: ReactNode;
 }) {
   return (
-    <li className="flex items-start gap-2 rounded border border-line px-2 py-1.5">
+    <li className="flex items-start gap-2 rounded-md border border-line px-2 py-1.5">
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 text-xs text-ink">
           {excerpt ?? <span className="italic text-ink-faint">Message deleted</span>}
         </p>
-        <p className="text-[11px] text-ink-faint">{meta}</p>
+        <p className="text-xs text-ink-faint">{meta}</p>
       </div>
       {action}
     </li>
@@ -384,7 +395,7 @@ export function PinnedSection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-5 shrink-0 px-1 text-[11px]"
+                  className="h-5 shrink-0 px-1 text-xs"
                   disabled={unpin.isPending}
                   onClick={() => {
                     unpin.mutate(row.messageId as MessageId);
@@ -455,7 +466,7 @@ export function SavedSection({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-5 shrink-0 px-1 text-[11px]"
+                  className="h-5 shrink-0 px-1 text-xs"
                   disabled={unsave.isPending}
                   onClick={() => {
                     unsave.mutate(row.messageId as MessageId);

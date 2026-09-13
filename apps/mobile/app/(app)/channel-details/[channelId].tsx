@@ -21,6 +21,7 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Person } from '../../../src/lib/use-members.js';
+import { Avatar } from '../../../src/lib/avatar.js';
 import { TelephonyCallButton } from '../../../src/lib/telephony-call-button.js';
 import { directoryMemberQueryKey } from '../../../src/lib/people.js';
 import {
@@ -455,12 +456,9 @@ function PersonLine({
   readonly person: Person;
   readonly suffix?: string | undefined;
 }) {
-  const initial = person.label.slice(0, 1).toUpperCase();
   return (
     <View style={styles.personLine}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initial}</Text>
-      </View>
+      <Avatar seed={person.userId} label={person.label} size={36} />
       <Text style={styles.personLabel} numberOfLines={1}>
         {person.label}
         {suffix !== undefined && <Text style={styles.personSuffix}>{suffix}</Text>}
@@ -468,6 +466,14 @@ function PersonLine({
     </View>
   );
 }
+
+/** Above this many members, a search box earns its place — the same
+ *  threshold `org-settings.tsx`'s own roster search uses, and the same
+ *  Design Bible §20 worked example ("128 members scroll past forever")
+ *  this channel's own roster had never gotten the fix for. Below it, a
+ *  search box is one more control to read for a list a thumb already
+ *  scrolls past in a beat. */
+const ROSTER_SEARCH_THRESHOLD = 8;
 
 function MemberRoster({
   memberIds,
@@ -484,13 +490,32 @@ function MemberRoster({
   readonly pending: boolean;
   readonly onRemove: (userId: string) => void;
 }) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const visible =
+    needle === ''
+      ? memberIds
+      : memberIds.filter((userId) => personOf(userId).label.toLowerCase().includes(needle));
+
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>Members · {memberIds.length}</Text>
+      {memberIds.length > ROSTER_SEARCH_THRESHOLD && (
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search members…"
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.formInput}
+          autoCapitalize="none"
+        />
+      )}
       {memberIds.length === 0 ? (
         <Text style={styles.sectionEmpty}>This channel has no members.</Text>
+      ) : visible.length === 0 ? (
+        <Text style={styles.sectionEmpty}>No match.</Text>
       ) : (
-        memberIds.map((userId) => {
+        visible.map((userId) => {
           const isViewer = userId === viewerId;
           return (
             <View key={userId} style={styles.rosterRow}>
@@ -1221,21 +1246,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
     minWidth: 0,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent.hex + '18',
-    borderWidth: 1,
-    borderColor: colors.accent.hex + '30',
-  },
-  avatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.accent.hex,
   },
   personLabel: {
     fontSize: 14,

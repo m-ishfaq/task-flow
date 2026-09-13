@@ -60,7 +60,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const automationOver = automationRatio > 1;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-[85%] space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">This organization's spend</h2>
@@ -100,7 +100,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
             >
               <div
                 className={cn(
-                  'h-full rounded-full transition-all',
+                  'h-full rounded-full transition-all duration-(--motion-fast)',
                   over ? 'bg-danger' : ratio > 0.8 ? 'bg-warning' : 'bg-accent',
                 )}
                 style={{ width: `${String(Math.min(ratio * 100, 100))}%` }}
@@ -114,8 +114,8 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                  and what a rule's refusal cites cannot drift. */
               <div className="mt-3 border-t border-line/60 pt-2.5">
                 <div className="flex items-baseline gap-2">
-                  <p className="text-[11px] font-medium text-ink-muted">Automation allowance</p>
-                  <p className="text-[11px] text-ink-faint">
+                  <p className="text-xs font-medium text-ink-muted">Automation allowance</p>
+                  <p className="text-xs text-ink-faint">
                     {formatCents(automationSpentCents)} of {formatCents(automationCapCents)} · rules
                     only, in addition to the org cap
                   </p>
@@ -144,7 +144,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                 >
                   <div
                     className={cn(
-                      'h-full rounded-full transition-all',
+                      'h-full rounded-full transition-all duration-(--motion-fast)',
                       automationOver
                         ? 'bg-danger'
                         : automationRatio > 0.8
@@ -192,7 +192,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                   {report.data.map((row) => (
                     <tr
                       key={row.kind}
-                      className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
+                      className="border-b border-line/60 text-ink transition-colors duration-(--motion-fast) last:border-b-0 hover:bg-surface-hover"
                     >
                       <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>

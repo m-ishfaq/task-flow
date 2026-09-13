@@ -224,6 +224,34 @@ export function formatTime(value: string): string {
 }
 
 /**
+ * The viewer's own local calendar day for a timestamp — used only to detect
+ * when the timeline CROSSES midnight, never rendered directly. Two instants
+ * a few minutes apart can still fall on different days for a viewer near
+ * midnight; `toDateString()` (day-of-week + month + day + year, no time)
+ * is exactly the "same day or not" question, with nothing more precise to
+ * get wrong.
+ */
+export function dayKeyOf(value: string): string {
+  return new Date(value).toDateString();
+}
+
+/**
+ * The day divider's own label — "Today" / "Yesterday" / a plain date,
+ * the same Today/Tomorrow convention `lib/format.ts`'s `formatDueDate`
+ * already uses for a card's due date, applied to the past instead of the
+ * future since a chat transcript only ever runs backward from now.
+ */
+export function formatDayLabel(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dayKeyOf(value) === dayKeyOf(today.toISOString())) return 'Today';
+  if (dayKeyOf(value) === dayKeyOf(yesterday.toISOString())) return 'Yesterday';
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
+/**
  * Groups rows that carry a `messageId` by that id.
  *
  * Shared by attachments and previews, which are the same shape of problem: a

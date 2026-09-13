@@ -74,6 +74,7 @@ export async function listPages(
         publishedAt: schema.pages.publishedAt,
         publishedVersionId: schema.pages.publishedVersionId,
         ancestorIds: schema.pages.ancestorIds,
+        updatedAt: schema.pages.updatedAt,
       })
       .from(schema.pages)
       .where(eq(schema.pages.spaceId, input.spaceId))
@@ -93,6 +94,7 @@ export async function listPages(
       rank: row.rank,
       archivedAt: row.archivedAt,
       publishedAt: row.publishedAt,
+      updatedAt: row.updatedAt,
       /**
        * Whether the caller may archive/restore THIS page. `page:delete` is
        * Admin-and-Owner by role but tuple-shareable per page (§3.1), so — like
@@ -133,6 +135,9 @@ interface PageSummary {
   readonly archivedAt: Date | null;
   /** Wave 4, §3.9 — non-null exactly when this page has a live public snapshot. */
   readonly publishedAt: Date | null;
+  /** Bumped on rename/move/archive-restore, never on a body edit — see the
+      router's own output-schema comment on why. */
+  readonly updatedAt: Date;
   readonly capabilities: { readonly archive: boolean };
 }
 

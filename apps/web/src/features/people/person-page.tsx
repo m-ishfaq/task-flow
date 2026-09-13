@@ -12,6 +12,7 @@ import {
   Button,
   Field,
   Input,
+  PageContainer,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -56,12 +57,18 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
   const detail = useQuery(directoryMemberQuery(orgId, userId));
 
-  if (detail.isPending) return <SkeletonRows rows={5} className="mx-auto max-w-5xl p-6" />;
+  if (detail.isPending) {
+    return (
+      <PageContainer maxWidth="xl">
+        <SkeletonRows rows={5} />
+      </PageContainer>
+    );
+  }
   if (detail.isError) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <PageContainer maxWidth="xl">
         <ErrorView error={detail.error} title="Could not load this person" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -69,7 +76,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
   const label = displayName({ name: member.displayName, email: member.email });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-8">
       <header className="flex items-center gap-4">
         <Avatar userId={member.userId} label={label} size="sm" className="size-12 text-lg" />
         <div className="min-w-0">
@@ -127,7 +134,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
         ) : (
           <PersonFactsSummary member={member} />
         ))}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -141,7 +148,11 @@ function ChartCard({
   readonly people: readonly { userId: string; displayName: string | null; email: string }[];
 }) {
   return (
-    <div className="rounded-lg border border-line p-4">
+    // `rounded-card` + `bg-surface-raised` + `border-line/50` — matching
+    // `people-page.tsx`'s own directory card treatment for the identical
+    // "info card" role, which this file's own version had drifted from
+    // (a flat `rounded-lg border-line` with no raised background at all).
+    <div className="rounded-card border border-line/50 bg-surface-raised p-4">
       <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
       {people.length === 0 ? (
         <p className="mt-2 text-sm text-ink-faint">{empty}</p>
@@ -358,7 +369,7 @@ function AdminSection({
       <Field label="Manager" htmlFor="person-manager">
         <select
           id="person-manager"
-          className="h-9 w-full rounded border border-line bg-surface-sunken px-2.5 text-sm text-ink focus:border-accent focus:outline-none"
+          className="h-9 w-full rounded-md border border-line bg-surface-sunken px-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
           value={managerId}
           onChange={(event) => {
             setManagerId(event.target.value);

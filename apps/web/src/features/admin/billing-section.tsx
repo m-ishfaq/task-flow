@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CreditCard } from 'lucide-react';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -157,7 +158,11 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
   const hasSubscription = data?.hasSubscription ?? false;
 
   return (
-    <Section title="Billing" description="What this organization pays, and how to change it.">
+    <Section
+      title="Billing"
+      icon={<CreditCard aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+      description="What this organization pays, and how to change it."
+    >
       {overview.isPending && <SkeletonRows rows={2} className="*:h-12" />}
       {overview.isError && <ErrorView error={overview.error} title="Could not load billing" />}
 
@@ -290,7 +295,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 what it says — naming the owner turns a dead end into a next
                 step. */}
             {data.billingContact !== null && (
-              <p className="mt-2 text-[11px] text-ink-faint">
+              <p className="mt-2 text-xs text-ink-faint">
                 Billing is managed by{' '}
                 <strong className="text-ink-muted">
                   {data.billingContact.name ?? data.billingContact.email}
@@ -313,7 +318,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                           tells a customer nothing about what they are paying
                           for. */}
                       {featureDescription(feature.flagName) !== null && (
-                        <span className="block text-[11px] text-ink-muted">
+                        <span className="block text-xs text-ink-muted">
                           {featureDescription(feature.flagName)}
                         </span>
                       )}
@@ -450,12 +455,10 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                             only question anyone opens a plan picker with. */}
                         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                           {plan.features.length === 0 ? (
-                            <li className="text-[11px] text-ink-faint">
-                              Core work management only
-                            </li>
+                            <li className="text-xs text-ink-faint">Core work management only</li>
                           ) : (
                             plan.features.map((feature) => (
-                              <li key={feature} className="text-[11px] text-ink-muted">
+                              <li key={feature} className="text-xs text-ink-muted">
                                 ✓ {featureLabel(feature)}
                               </li>
                             ))

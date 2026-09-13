@@ -94,14 +94,57 @@ export function CardTile({
         />
       )}
 
+      {/* Label swatches — a dash per label, color only, no text. The label
+          NAME is one popover away (the detail panel's own label section);
+          the board only has room to say "this card is tagged," not with
+          what. Absent entirely for an unlabeled card, matching the priority
+          edge's own "no color for none" rule above. */}
+      {card.labelColors.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-[5px]">
+          {/* Keyed by color+index rather than a label id the tile was never
+              given (the wire only carries colors, not label identity — see
+              `labelColorsByCard`) — the list never reorders within a
+              render, so this is stable in practice, not merely in theory. */}
+          {card.labelColors.map((color, index) => (
+            <span
+              key={`${color}-${String(index)}`}
+              className="h-[5px] w-[26px] rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Title — bold, clean, 14px for proper readability on a kanban board */}
       <span className="block text-[14px] font-medium leading-snug text-ink">{card.title}</span>
+
+      {/* The checklist progress meter — a shape a person reads at a glance,
+          next to the metadata row's own exact "7/9" fraction rather than in
+          place of it: the bar answers "how close," the pill answers "how
+          many." Absent for a card with no checklist at all — an empty bar
+          would read as 0% progress on a card that was never asked to have
+          any. */}
+      {card.checklistTotal > 0 && (
+        <div
+          className="mt-2 h-1 overflow-hidden rounded-sm bg-surface-sunken"
+          role="progressbar"
+          aria-label="Checklist progress"
+          aria-valuenow={card.checklistDone}
+          aria-valuemin={0}
+          aria-valuemax={card.checklistTotal}
+        >
+          <div
+            className="h-full rounded-sm bg-gradient-to-r from-success to-[oklch(74%_0.13_175)]"
+            style={{ width: `${String((card.checklistDone / card.checklistTotal) * 100)}%` }}
+          />
+        </div>
+      )}
 
       {/* Metadata row — reference, due, checklist, comments, and avatars.
           Generous spacing so the row doesn't feel cramped. */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {/* Reference code — styled as a subtle pill for quick scanning */}
-        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-xs font-medium text-ink-faint">
           {card.reference}
         </span>
 
@@ -109,7 +152,7 @@ export function CardTile({
         {due !== null && (
           <span
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
               due.overdue ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
             )}
           >
@@ -123,7 +166,7 @@ export function CardTile({
           <span
             title="Checklist progress"
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
               card.checklistDone === card.checklistTotal
                 ? 'bg-success/10 text-success'
                 : 'bg-surface-hover text-ink-muted',
@@ -138,7 +181,7 @@ export function CardTile({
         {card.commentCount > 0 && (
           <span
             title="Comments"
-            className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted"
+            className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted"
           >
             <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
             {card.commentCount}
@@ -159,7 +202,15 @@ export function CardTile({
        Border uses 60% opacity for a hairline effect that reads as a
        boundary without noise. */
     'card-tile w-full text-left',
-    dragging && 'ring-1 ring-accent/70',
+    /* The literal class name `dragging`, not a Tailwind ring utility —
+       `styles.css`'s `.card-tile.dragging` rule (the lift-3-weight shadow,
+       the accent outline, the slight rotate) was defined and never
+       actually reachable: this used to add `ring-1 ring-accent/70`
+       instead, a thinner, different-looking treatment that quietly
+       replaced it. The drag overlay (`board-view.tsx`'s `DragOverlay`) is
+       the one caller that ever passes `dragging`, so this is the only
+       place the rule can now fire from. */
+    dragging && 'dragging',
     selected === true && 'ring-1 ring-accent',
   );
 
@@ -199,7 +250,7 @@ export function CardTile({
       {onToggleSelect !== undefined && (
         <label
           className={cn(
-            'absolute top-1.5 left-1.5 transition-opacity',
+            'absolute top-1.5 left-1.5 transition-opacity duration-(--motion-fast)',
             selected === true
               ? 'opacity-100'
               : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
@@ -226,7 +277,7 @@ export function CardTile({
       {orgId !== undefined && (
         <div
           className={cn(
-            'absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 transition-opacity',
+            'absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-(--motion-fast)',
             'group-hover:opacity-100 group-focus-within:opacity-100',
           )}
         >
@@ -241,7 +292,8 @@ export function CardTile({
 
 const ICON_BUTTON =
   'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
-  'ring-1 ring-line hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
+  'ring-1 ring-line transition-colors duration-[var(--motion-fast)] ' +
+  'hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
 
 /**
  * Quick-assign, straight from the tile.
@@ -305,7 +357,7 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
                       toggle(member.userId);
                     }}
                     className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs transition-colors duration-[var(--motion-fast)]',
                       on
                         ? 'bg-accent text-accent-ink'
                         : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -367,7 +419,7 @@ function QuickDueDate({
             });
             setOpen(false);
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         />
       </PopoverContent>
     </PopoverRoot>

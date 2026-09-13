@@ -91,8 +91,8 @@ function VelocityChart({
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-3">
-        <h3 className="text-sm font-medium text-ink/80">Velocity</h3>
-        <span className="text-xs text-ink/50">
+        <h3 className="text-sm font-semibold text-ink">Velocity</h3>
+        <span className="text-xs text-ink-muted">
           {total} cards done in {days} days
         </span>
       </div>
@@ -104,15 +104,15 @@ function VelocityChart({
             className="group relative flex-1"
             style={{ height: `${String((p.count / maxCount) * 100)}%` }}
           >
-            <div className="h-full rounded-t bg-accent/60 transition-colors group-hover:bg-accent" />
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-ink/80 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="h-full rounded-t bg-accent/60 transition-colors duration-(--motion-fast) group-hover:bg-accent" />
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink/80 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-100">
               {p.date}: {p.count}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-[10px] text-ink-faint">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>
@@ -130,8 +130,8 @@ function BurndownChart({
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-3">
-        <h3 className="text-sm font-medium text-ink/80">Burndown</h3>
-        <span className="text-xs text-ink/50">
+        <h3 className="text-sm font-semibold text-ink">Burndown</h3>
+        <span className="text-xs text-ink-muted">
           {points[0]?.remaining} → {points[points.length - 1]?.remaining} remaining
         </span>
       </div>
@@ -155,7 +155,7 @@ function BurndownChart({
         />
       </svg>
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-[10px] text-ink-faint">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>

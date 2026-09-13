@@ -4,7 +4,7 @@ import { MessageSquare } from 'lucide-react';
 import type { BoardId, CardId } from '@taskflow/contracts';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Badge, FocusOnMountInput } from '../../components/primitives.js';
+import { Badge, Empty, FocusOnMountInput } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useUpdateCard } from './use-update-card.js';
 import { PRIORITY_LABEL, PRIORITY_SWATCH } from './priority-colors.js';
@@ -68,7 +68,7 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
       )}
 
       <div
-        className="grid shrink-0 items-center gap-2 border-b border-line/50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint"
+        className="grid shrink-0 items-center gap-2 border-b border-line/50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-faint"
         style={{ gridTemplateColumns: TEMPLATE }}
       >
         {/* No visible label — the column itself is a colored dot per row, and
@@ -83,115 +83,128 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
         <span>Progress</span>
       </div>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-        <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const card = cards[virtualRow.index];
-            if (card === undefined) return null;
+      {cards.length === 0 ? (
+        /* Table view had no empty state at all — zero cards left the header
+           row floating over a bare scroll area with nothing below it,
+           silence rather than even the plain text every other view's empty
+           case had. The same `Empty` box and wording `list-view.tsx`'s
+           default uses for the identical "this board, filtered to nothing"
+           case, so the four view tabs over one board agree on what an empty
+           result looks like regardless of which one is open. */
+        <div className="flex-1 p-6">
+          <Empty title="No cards" description="Nothing matches this board's filter yet." />
+        </div>
+      ) : (
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const card = cards[virtualRow.index];
+              if (card === undefined) return null;
 
-            const due = formatDueDate(card.dueDate);
-            const isEditing = editing === card.cardId;
+              const due = formatDueDate(card.dueDate);
+              const isEditing = editing === card.cardId;
 
-            return (
-              <div
-                key={card.cardId}
-                className="absolute top-0 left-0 grid w-full items-center gap-2 border-b border-line/30 px-4 text-sm transition-colors hover:bg-surface-hover/50"
-                style={{
-                  height: virtualRow.size,
-                  transform: `translateY(${String(virtualRow.start)}px)`,
-                  gridTemplateColumns: TEMPLATE,
-                }}
-              >
-                <span
-                  className="flex justify-center"
-                  title={card.priority === null ? undefined : PRIORITY_LABEL[card.priority]}
-                >
-                  {card.priority !== null && (
-                    <span
-                      aria-hidden="true"
-                      className={cn('size-1.5 rounded-full', PRIORITY_SWATCH[card.priority])}
-                    />
-                  )}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenCard(card.cardId);
+              return (
+                <div
+                  key={card.cardId}
+                  className="absolute top-0 left-0 grid w-full items-center gap-2 border-b border-line/30 px-4 text-sm transition-colors duration-(--motion-fast) hover:bg-surface-hover/50"
+                  style={{
+                    height: virtualRow.size,
+                    transform: `translateY(${String(virtualRow.start)}px)`,
+                    gridTemplateColumns: TEMPLATE,
                   }}
-                  className="text-left font-mono text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
                 >
-                  {card.reference}
-                </button>
+                  <span
+                    className="flex justify-center"
+                    title={card.priority === null ? undefined : PRIORITY_LABEL[card.priority]}
+                  >
+                    {card.priority !== null && (
+                      <span
+                        aria-hidden="true"
+                        className={cn('size-1.5 rounded-full', PRIORITY_SWATCH[card.priority])}
+                      />
+                    )}
+                  </span>
 
-                {isEditing ? (
-                  <FocusOnMountInput
-                    aria-label="Card title"
-                    defaultValue={card.title}
-                    className="h-7"
-                    onBlur={(event) => {
-                      commit(card.cardId, event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur();
-                      if (event.key === 'Escape') {
-                        /* Reset before blurring, so the blur handler sees the
-                           original value and treats the edit as a no-op.
-                           Otherwise Escape saves, which is the opposite of what
-                           every text field in every application does. */
-                        event.currentTarget.value = card.title;
-                        event.currentTarget.blur();
-                      }
-                    }}
-                  />
-                ) : (
                   <button
                     type="button"
-                    className="truncate text-left text-ink hover:text-accent"
-                    onDoubleClick={() => {
-                      setEditing(card.cardId);
-                    }}
                     onClick={() => {
                       onOpenCard(card.cardId);
                     }}
-                    title="Click to open, double-click to rename"
+                    className="text-left font-mono text-xs font-medium text-ink-faint transition-colors duration-(--motion-fast) hover:text-accent"
                   >
-                    {card.title}
+                    {card.reference}
                   </button>
-                )}
 
-                <span className="truncate text-xs text-ink-muted">
-                  {listNames.get(card.listId) ?? '—'}
-                </span>
-
-                <span className="text-xs">
-                  {due === null ? (
-                    <span className="text-ink-faint">—</span>
+                  {isEditing ? (
+                    <FocusOnMountInput
+                      aria-label="Card title"
+                      defaultValue={card.title}
+                      className="h-7"
+                      onBlur={(event) => {
+                        commit(card.cardId, event.target.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur();
+                        if (event.key === 'Escape') {
+                          /* Reset before blurring, so the blur handler sees the
+                           original value and treats the edit as a no-op.
+                           Otherwise Escape saves, which is the opposite of what
+                           every text field in every application does. */
+                          event.currentTarget.value = card.title;
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
                   ) : (
-                    <span className={cn(due.overdue ? 'text-danger' : 'text-ink-muted')}>
-                      {due.label}
-                    </span>
+                    <button
+                      type="button"
+                      className="truncate text-left text-ink hover:text-accent"
+                      onDoubleClick={() => {
+                        setEditing(card.cardId);
+                      }}
+                      onClick={() => {
+                        onOpenCard(card.cardId);
+                      }}
+                      title="Click to open, double-click to rename"
+                    >
+                      {card.title}
+                    </button>
                   )}
-                </span>
 
-                <span className="flex gap-1">
-                  {card.checklistTotal > 0 && (
-                    <Badge>
-                      {card.checklistDone}/{card.checklistTotal}
-                    </Badge>
-                  )}
-                  {card.commentCount > 0 && (
-                    <Badge>
-                      <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
-                      {card.commentCount}
-                    </Badge>
-                  )}
-                </span>
-              </div>
-            );
-          })}
+                  <span className="truncate text-xs text-ink-muted">
+                    {listNames.get(card.listId) ?? '—'}
+                  </span>
+
+                  <span className="text-xs">
+                    {due === null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <span className={cn(due.overdue ? 'text-danger' : 'text-ink-muted')}>
+                        {due.label}
+                      </span>
+                    )}
+                  </span>
+
+                  <span className="flex gap-1">
+                    {card.checklistTotal > 0 && (
+                      <Badge>
+                        {card.checklistDone}/{card.checklistTotal}
+                      </Badge>
+                    )}
+                    {card.commentCount > 0 && (
+                      <Badge>
+                        <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
+                        {card.commentCount}
+                      </Badge>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

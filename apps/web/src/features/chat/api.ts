@@ -139,6 +139,12 @@ export function pinsQuery(orgId: string, channelId: ChannelId) {
   });
 }
 
+/** `listAllPinned`'s own `PINNED_LIST_LIMIT` (`apps/api/src/chat/pin.service.ts`)
+ *  — restated here, the same trade this file's `notificationsQuery` header
+ *  already accepts for its own `PAGE_SIZE`, since a route's server-side
+ *  constant is not something the client imports across the API boundary. */
+export const PINNED_LIST_LIMIT = 200;
+
 /** Every pin the caller can see, across every channel — the sidebar panel. */
 export function allPinsQuery(orgId: string) {
   return queryOptions({
@@ -532,6 +538,11 @@ export type SavedMessage = Wire<Awaited<ReturnType<typeof api.chat.saved.list.qu
 export type ChatNotification = Wire<
   Awaited<ReturnType<typeof api.notifications.listMine.query>>
 >[number];
+
+/** The identical unbounded-otherwise gap `PINNED_LIST_LIMIT` closes for
+ *  pins, one table over — `listSaved`'s own `SAVED_LIST_LIMIT`
+ *  (`apps/api/src/chat/saved.service.ts`). */
+export const SAVED_LIST_LIMIT = 200;
 
 export function savedQuery(orgId: string) {
   return queryOptions({

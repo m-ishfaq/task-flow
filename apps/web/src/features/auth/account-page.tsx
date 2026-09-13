@@ -16,6 +16,8 @@ import {
   Empty,
   Field,
   Input,
+  PageContainer,
+  PageHeader,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -49,13 +51,11 @@ import { profileQuery, updateProfile } from '../people/api.js';
  */
 export function AccountPage() {
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Account</h1>
-        <p className="text-xs text-ink-muted">
-          Yours alone — not tied to any organization, and the same wherever you sign in.
-        </p>
-      </div>
+    <PageContainer maxWidth="xl" className="flex flex-col gap-10">
+      <PageHeader
+        title="Account"
+        description="Yours alone — not tied to any organization, and the same wherever you sign in."
+      />
 
       <AccountSection />
       <WorkingHoursSection />
@@ -71,7 +71,7 @@ export function AccountPage() {
       <SessionsSection />
       <ExportDataSection />
       <OrganizationsSection />
-    </div>
+    </PageContainer>
   );
 }
 
@@ -501,7 +501,7 @@ function SessionsSection() {
                   {session.label ?? 'Unknown device'}
                   {session.isCurrent && <Badge>This device</Badge>}
                 </p>
-                <p className="truncate text-[11px] text-ink-muted">
+                <p className="truncate text-xs text-ink-muted">
                   {session.ip ?? 'No IP recorded'} · signed in {formatDate(session.authenticatedAt)}{' '}
                   · last seen {formatDate(session.lastSeenAt)}
                   {session.flagged && (
@@ -645,7 +645,7 @@ function OrganizationsSection() {
           {orgs.data.map((org) => (
             <li key={org.orgId} className="flex items-center justify-between px-3 py-2 text-sm">
               <span className="text-ink">{org.name}</span>
-              <span className="text-[11px] text-ink-faint">{org.role}</span>
+              <span className="text-xs text-ink-faint">{org.role}</span>
             </li>
           ))}
         </ul>

@@ -2,6 +2,18 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+  Building2,
+  Check,
+  CreditCard,
+  ScrollText,
+  Settings2,
+  Shield,
+  SlidersHorizontal,
+  UserCog,
+  Users,
+  UsersRound,
+} from 'lucide-react';
+import {
   ModalContent,
   ModalDescription,
   ModalRoot,
@@ -11,7 +23,15 @@ import {
   PopoverTrigger,
 } from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
-import { DIRECTLY_ASSIGNABLE_ROLES, GRANTABLE_PERMISSIONS, type Role } from '@taskflow/policy';
+import {
+  DIRECTLY_ASSIGNABLE_ROLES,
+  GRANTABLE_PERMISSIONS,
+  ROLES,
+  isGrantable,
+  roleGrants,
+  type Permission,
+  type Role,
+} from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
@@ -26,7 +46,10 @@ import {
   Empty,
   Field,
   Input,
+  OrgBadge,
+  PageContainer,
   PageHeader,
+  SearchInput,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -68,44 +91,141 @@ import { BillingSection } from './billing-section.js';
  * grows, the control moves further away, and the page gets worse the more it is
  * used. A fixed position at the top does not.
  */
+type SettingsTab = 'general' | 'members' | 'permissions' | 'billing' | 'teams';
+
+interface SettingsRailItem {
+  readonly id: SettingsTab;
+  readonly label: string;
+  readonly icon: typeof Building2;
+}
+
+/**
+ * The left-rail navigation — Design Bible §13's own thesis, named directly
+ * in its subtitle: "a left-rail instead of one long scroll, one section at
+ * a time." Every section below (`OrgSection`, `MemberSection`, ...) is
+ * unchanged internally; this only changes which ONE of them is mounted at
+ * a time, replacing the page's old single-column stack of every section
+ * rendered at once.
+ *
+ * Gated the identical way the old stacked layout already was — a rail item
+ * for a section the caller cannot reach (`viewDirectory`/`manageMembers`/
+ * `viewBilling`/`viewTeams`, all already-computed server capabilities, per
+ * §8.2) simply is not in the list, the same "hide, don't disable" rule
+ * Phase 15 §1's own sweep already applies everywhere else in this app —
+ * never a rail item that opens onto a raw FORBIDDEN.
+ *
+ * Local `useState`, not a URL search param — the same choice
+ * `platform-admin-page.tsx`'s own tab switcher already made for the
+ * closest precedent to this exact shape (a settings-style console with
+ * several gated tabs), and nothing today deep-links into one specific
+ * settings section (checked: no `/settings#members`-style link anywhere
+ * in this app), so there is no bookmarkable state this pass would break
+ * by not wiring one up.
+ */
 export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
-  // For the Audit log link and for deciding which SECTIONS below even
-  // render (Billing, Individual permissions) — every section that renders
-  // fetches this same cached query itself for its own inner capabilities,
-  // so this costs no extra request.
+  // Every section that renders fetches this same cached query itself for
+  // its own inner capabilities, so reading it again here for the rail
+  // costs no extra request.
   const org = useQuery(orgDetailQuery(orgId));
+  const capabilities = org.data?.capabilities;
+
+  const items: readonly SettingsRailItem[] = [
+    { id: 'general', label: 'General', icon: Building2 },
+    ...(capabilities?.viewDirectory === true
+      ? [{ id: 'members' as const, label: 'Members', icon: Users }]
+      : []),
+    ...(capabilities?.manageMembers === true
+      ? [{ id: 'permissions' as const, label: 'Permissions', icon: Shield }]
+      : []),
+    ...(capabilities?.viewBilling === true
+      ? [{ id: 'billing' as const, label: 'Billing', icon: CreditCard }]
+      : []),
+    ...(capabilities?.viewTeams === true
+      ? [{ id: 'teams' as const, label: 'Teams', icon: UsersRound }]
+      : []),
+  ];
+
+  const [tab, setTab] = useState<SettingsTab>('general');
+  // Falls back to the first still-available item rather than rendering
+  // nothing — the same shape guards `platform-admin-page.tsx`'s own tab
+  // state against a tab that WAS reachable when clicked and no longer is.
+  const activeTab = items.some((item) => item.id === tab) ? tab : (items[0]?.id ?? 'general');
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
+    <PageContainer maxWidth="xl">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
-        actions={
-          org.data?.capabilities.viewAuditLog === true ? (
-            <Link
-              to="/settings/audit"
-              className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            >
-              Audit log
-            </Link>
-          ) : undefined
-        }
+        icon={<SlidersHorizontal aria-hidden="true" className="size-4" strokeWidth={2.25} />}
       />
 
-      <OrgSection orgId={orgId} />
-      {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
-      {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
-          role except Guest. Before these fields existed, both sections
-          rendered unconditionally and fired their own roster queries
-          regardless of who was looking, so a Guest reaching `/settings` (the
-          top-bar "Settings" link has no gate of its own — every role can open
-          this page) hit a raw FORBIDDEN `ErrorView` for each. */}
-      {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
-      {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
-    </div>
+      <div className="mt-7 flex gap-6">
+        <nav
+          aria-label="Settings sections"
+          className="w-52 shrink-0 space-y-0.5 self-start rounded-xl border border-line bg-surface-raised p-2"
+        >
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={activeTab === item.id ? 'page' : undefined}
+              onClick={() => {
+                setTab(item.id);
+              }}
+              className={cn(
+                'relative flex w-full items-center gap-2.5 rounded-lg py-2 pr-2.5 pl-3 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+                activeTab === item.id
+                  ? 'bg-accent/10 font-medium text-accent'
+                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              {activeTab === item.id && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"
+                />
+              )}
+              <item.icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+              {item.label}
+            </button>
+          ))}
+
+          {capabilities?.viewAuditLog === true && (
+            <>
+              <div aria-hidden="true" className="my-2 border-t border-line/60" />
+              <Link
+                to="/settings/audit"
+                className="flex w-full items-center gap-2.5 rounded-lg py-2 pr-2.5 pl-3 text-[13px] text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+              >
+                <ScrollText aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+                Audit log
+              </Link>
+            </>
+          )}
+        </nav>
+
+        <div className="min-w-0 flex-1 space-y-9">
+          {activeTab === 'general' && <OrgSection orgId={orgId} />}
+          {activeTab === 'members' && capabilities?.viewDirectory === true && (
+            <MemberSection orgId={orgId} />
+          )}
+          {activeTab === 'permissions' && capabilities?.manageMembers === true && (
+            <>
+              <RoleReferenceTable />
+              <PermissionsSection orgId={orgId} />
+              <RoleDefaultGrantsSection orgId={orgId} />
+            </>
+          )}
+          {activeTab === 'billing' && capabilities?.viewBilling === true && (
+            <BillingSection orgId={orgId} />
+          )}
+          {activeTab === 'teams' && capabilities?.viewTeams === true && (
+            <TeamSection orgId={orgId} />
+          )}
+        </div>
+      </div>
+    </PageContainer>
   );
 }
 
@@ -137,42 +257,61 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
   const canRename = org.data.capabilities.updateOrg;
 
   return (
-    <Section title="Organization">
-      <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
-          }}
-        >
-          <div className="flex-1">
-            <Field label="Name" htmlFor="org-name">
-              <Input
-                id="org-name"
-                value={current}
-                disabled={!canRename}
-                title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-              />
-            </Field>
+    <Section
+      title="Organization"
+      icon={<Building2 aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+    >
+      <div className="overflow-hidden rounded-xl border border-line bg-surface-raised">
+        {/* An identity row — the same "avatar/name/facts" shape the org
+            switcher already gives every org, made big here instead of the
+            switcher's own compact list row. A settings page that only ever
+            showed a bare text input had no visual sense that this screen is
+            ABOUT a specific organization at all. */}
+        <div className="flex items-center gap-3 border-b border-line/60 bg-surface-sunken/40 px-4 py-4">
+          <OrgBadge orgId={orgId} name={org.data.name} className="size-12 rounded-xl text-lg" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{org.data.name}</p>
+            <p className="text-xs text-ink-faint">
+              <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
+              {formatDate(org.data.createdAt)}
+            </p>
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!canRename || rename.isPending || current === org.data.name}
-          >
-            Save
-          </Button>
-        </form>
+        </div>
 
-        <p className="mt-2 text-xs text-ink-faint">
-          Slug <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
-          {formatDate(org.data.createdAt)}. The slug is fixed — it appears in links that already
-          exist.
-        </p>
+        <div className="p-4">
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
+            }}
+          >
+            <div className="flex-1">
+              <Field label="Organization name" htmlFor="org-name">
+                <Input
+                  id="org-name"
+                  value={current}
+                  disabled={!canRename}
+                  title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                />
+              </Field>
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!canRename || rename.isPending || current === org.data.name}
+            >
+              Save
+            </Button>
+          </form>
+
+          <p className="mt-2 text-xs text-ink-faint">
+            The slug is fixed — it appears in links that already exist.
+          </p>
+        </div>
       </div>
 
       {rename.isError && <ErrorText error={rename.error} />}
@@ -368,6 +507,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Members"
+      icon={<Users aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={members.data?.length}
       description="Everyone with access to this organization. A role decides what they can do across it; a team grant can narrow or widen that on one resource."
     >
@@ -523,14 +663,12 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       {members.data !== undefined && (
         <>
           {members.data.length > 8 && (
-            <Input
+            <SearchInput
               aria-label="Search members"
               placeholder="Search by name or email…"
               value={memberSearch}
-              onChange={(event) => {
-                setMemberSearch(event.target.value);
-              }}
-              className="mb-2 h-9 max-w-xs text-sm"
+              onChange={setMemberSearch}
+              className="mb-2 max-w-xs"
             />
           )}
 
@@ -733,6 +871,123 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * (`packages/policy/src/roles.ts`), so in practice this section is Owner-only
  * end to end, matching who can act on it anyway.
  */
+
+/**
+ * A static reference of what each role holds, at a glance — Design Bible
+ * §19's own thesis: "it's three real tools now: a role reference, individual
+ * grants, and a decision explainer." This is the first of the three, sitting
+ * above the individual-grants list (`PermissionsSection`, below) rather than
+ * replacing it: most "can this person do X" questions have an obvious answer
+ * once the shape of the four roles is visible on one screen, and the
+ * decision explainer (`/settings` → the permission debugger) stays for the
+ * ones that genuinely need a specific person and a specific resource traced
+ * through `can()`.
+ *
+ * Computed entirely from `packages/policy`'s own exported role/permission
+ * data (`roleGrants`, `isGrantable`) — never a second, hand-maintained
+ * copy of what `can()` actually decides. `ROLE_REFERENCE` below is the one
+ * hand-curated part: WHICH permissions to show, the same "written for a
+ * person, not a developer reference" trade `assistant-page.tsx`'s own
+ * `CAPABILITIES` constant already makes — eleven representative capabilities
+ * rather than every one of `PERMISSIONS`' ~60 entries.
+ *
+ * The Guest column is deliberately narrower than a full account of what a
+ * Guest can reach: it reflects only the ORG-LEVEL individual grant
+ * (`memberGrants.grant`, the exact mechanism the list below uses, and
+ * genuinely role-agnostic — nothing in that route restricts the recipient's
+ * role, confirmed against `member-grant.service.ts` and this page's own
+ * member-picker, which filters by nothing but a name/email search). A
+ * Guest's RESOURCE-scoped access — read, comment, or edit on one project via
+ * a relationship tuple — is a real, separate, already-shipped mechanism
+ * ("Guest access into Work", reached from that project's own Share panel),
+ * deliberately NOT modeled here: correctly reproducing which permissions a
+ * viewer/commenter/editor tuple can satisfy for an arbitrary resource type
+ * needs walking the exact ancestor-resolution `enforceOn` does, and
+ * asserting that without verifying it against the real engine risks this
+ * table showing something `can()` itself would refuse — a materially worse
+ * failure, on a human-review-flagged surface, than an incomplete legend.
+ */
+const ROLE_REFERENCE: readonly { readonly label: string; readonly permission: Permission }[] = [
+  { label: 'View projects & boards', permission: 'project:read' },
+  { label: 'Create & edit cards', permission: 'card:update' },
+  { label: 'Comment', permission: 'comment:create' },
+  { label: 'Manage boards & sprints', permission: 'board:update' },
+  { label: 'Manage members', permission: 'member:manage' },
+  { label: 'View analytics', permission: 'analytics:read' },
+  { label: 'Place calls · send SMS', permission: 'call:place' },
+  { label: 'Manage automations', permission: 'automation:manage' },
+  { label: 'Review pull requests', permission: 'pr:review' },
+  { label: 'Manage billing', permission: 'org:billing' },
+  { label: 'Delete organization', permission: 'org:delete' },
+];
+
+function RoleReferenceTable() {
+  return (
+    <Section
+      title="Role reference"
+      icon={<Shield aria-hidden="true" className="size-3.5" strokeWidth={2} />}
+      description="What each role holds, at a glance."
+    >
+      <div className="overflow-x-auto rounded-xl border border-line">
+        <table className="w-full text-left text-[13px]">
+          <thead>
+            <tr className="border-b border-line bg-surface-sunken/60 text-xs font-medium tracking-wide text-ink-faint uppercase">
+              <th className="px-3 py-2">Capability</th>
+              {ROLES.map((role) => (
+                <th key={role} className="px-3 py-2 text-center capitalize">
+                  {role}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROLE_REFERENCE.map((row) => (
+              <tr key={row.permission} className="border-b border-line/60 last:border-b-0">
+                <td className="px-3 py-2 text-ink">{row.label}</td>
+                {ROLES.map((role) => (
+                  <td key={role} className="px-3 py-2 text-center">
+                    <RoleReferenceCell role={role} permission={row.permission} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-ink-faint">
+        A Guest&apos;s per-project access — invited to read, comment on, or edit one project&apos;s
+        own boards and cards — is a separate mechanism, granted from that project&apos;s own Share
+        panel rather than here.
+      </p>
+    </Section>
+  );
+}
+
+function RoleReferenceCell({
+  role,
+  permission,
+}: {
+  readonly role: Role;
+  readonly permission: Permission;
+}) {
+  if (roleGrants(role, permission)) {
+    return (
+      <span className="inline-flex items-center justify-center">
+        <Check aria-hidden="true" className="size-4 text-success" strokeWidth={2.5} />
+        <span className="sr-only">Included</span>
+      </span>
+    );
+  }
+  if (isGrantable(permission)) {
+    return <Badge tone="accent">Grant</Badge>;
+  }
+  return (
+    <span aria-hidden="true" className="text-ink-faint/40">
+      —
+    </span>
+  );
+}
+
 function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const members = useQuery(membersQuery(orgId));
@@ -952,6 +1207,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Individual permissions"
+      icon={<UserCog aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={grants.data.length}
       description="On top of a member's role, one specific ability can be given to (or taken from) one person — e.g. letting one guest place calls without promoting them to Member."
     >
@@ -996,14 +1252,12 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
-                    <Input
+                    <SearchInput
                       aria-label="Search members"
                       placeholder="Search by name or email…"
                       value={memberQuery}
-                      onChange={(event) => {
-                        setMemberQuery(event.target.value);
-                      }}
-                      className="h-8 text-xs"
+                      onChange={setMemberQuery}
+                      className="h-8"
                     />
                     {matches.length === 0 ? (
                       <p className="p-1 text-xs text-ink-faint">No matches.</p>
@@ -1016,7 +1270,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                               onClick={() => {
                                 toggleUser(member.userId);
                               }}
-                              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                             >
                               <input
                                 type="checkbox"
@@ -1088,7 +1342,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                             onClick={() => {
                               togglePermission(entry);
                             }}
-                            className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                           >
                             <input
                               type="checkbox"
@@ -1315,7 +1569,7 @@ function PermissionGrantChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-2 pr-1.5 text-xs transition-colors',
+        'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-2 pr-1.5 text-xs transition-colors duration-(--motion-fast)',
         selected ? 'border-accent/50 bg-accent/10' : 'border-line/50 bg-surface-sunken',
       )}
     >
@@ -1363,7 +1617,7 @@ function PermissionGrantChip({
             onClick={() => {
               setConfirming(true);
             }}
-            className="ml-0.5 rounded text-ink-faint hover:text-danger disabled:opacity-50"
+            className="ml-0.5 rounded-md text-ink-faint hover:text-danger disabled:opacity-50"
           >
             ×
           </button>
@@ -1460,6 +1714,7 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Role defaults"
+      icon={<Settings2 aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={roleGrants.data.length}
       description="What a new Member or Guest gets automatically, if an automation rule on 'Someone joins the organization' uses it — this list configures the bundle, it does not grant anything by itself."
     >
@@ -1542,15 +1797,15 @@ function MemberRow({
   onStartOffboarding,
 }: MemberRowProps) {
   return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
+    <li className="group flex items-center gap-3 px-3 py-2 transition-colors duration-(--motion-fast) hover:bg-surface-hover">
       <Avatar userId={member.userId} label={member.email} />
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-sm text-ink">
           {member.email}
-          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
+          {isSelf && <span className="text-xs text-ink-faint">(you)</span>}
         </p>
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
           joined {formatDate(member.joinedAt)}
         </p>
@@ -1661,6 +1916,7 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
   return (
     <Section
       title="Teams"
+      icon={<UsersRound aria-hidden="true" className="size-3.5" strokeWidth={2} />}
       count={teams.data?.length}
       description="A team is a subject a grant can name. Adding someone to a team gives them everything that team has been granted, immediately — which is why it is an authorization change and is audited as one."
     >
@@ -1788,7 +2044,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
     <li className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
-        <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
+        <span className="font-mono text-xs text-ink-faint">{team.slug}</span>
         <Badge className="ml-auto">
           {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
         </Badge>
@@ -1800,30 +2056,13 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
       {canManage && (
         <div className="mt-2.5">
           {candidates.length === 0 ? (
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               {orgMembers.length === 0
                 ? 'No org members to add.'
                 : 'Everyone in the organization is on this team.'}
             </p>
           ) : (
-            <select
-              aria-label={`Add someone to ${team.name}`}
-              value=""
-              disabled={busy}
-              onChange={(event) => {
-                const userId = event.target.value;
-                if (userId === '') return;
-                onAdd(userId as UserId);
-              }}
-              className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-xs text-ink"
-            >
-              <option value="">Add member…</option>
-              {candidates.map((member) => (
-                <option key={member.userId} value={member.userId}>
-                  {member.email}
-                </option>
-              ))}
-            </select>
+            <TeamAddPicker teamName={team.name} candidates={candidates} busy={busy} onAdd={onAdd} />
           )}
         </div>
       )}
@@ -1860,7 +2099,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                           onRemove(member.userId as UserId);
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                        className="rounded-full px-1.5 text-xs font-medium text-danger hover:underline"
                       >
                         Remove
                       </button>
@@ -1869,7 +2108,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                         onClick={() => {
                           setConfirming(null);
                         }}
-                        className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                        className="rounded-full px-1 text-xs text-ink-muted hover:underline"
                       >
                         Cancel
                       </button>
@@ -1901,6 +2140,83 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
         </ul>
       )}
     </li>
+  );
+}
+
+/**
+ * The "Add member" control for one team card, as a searchable popover rather
+ * than a native `<select>` — the same shape `PermissionsSection`'s own member
+ * picker already uses a few hundred lines up in this file, applied here for
+ * the identical reason: a plain `<select>` scales to a scrollable native
+ * dropdown with no way to type past the first few candidates, where a real
+ * org can hold far more members than a picker like this should ask someone
+ * to scroll through by eye.
+ */
+function TeamAddPicker({
+  teamName,
+  candidates,
+  busy,
+  onAdd,
+}: {
+  readonly teamName: string;
+  readonly candidates: readonly { readonly userId: string; readonly email: string }[];
+  readonly busy: boolean;
+  readonly onAdd: (userId: UserId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const matches = candidates.filter((member) => member.email.toLowerCase().includes(needle));
+
+  return (
+    <PopoverRoot
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery('');
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Add someone to ${teamName}`}
+          className="flex h-8 w-full items-center rounded-lg border border-line/50 bg-surface-sunken px-2 text-left text-xs text-ink-muted transition-colors duration-(--motion-fast) hover:border-line hover:text-ink"
+        >
+          Add member…
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search by email…"
+          className="h-8"
+        />
+        {matches.length === 0 ? (
+          <p className="p-1 text-xs text-ink-faint">No matches.</p>
+        ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+            {matches.map((member) => (
+              <li key={member.userId}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    onAdd(member.userId as UserId);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-ink transition-colors duration-(--motion-fast) hover:bg-surface-hover disabled:opacity-50"
+                >
+                  <Avatar userId={member.userId} label={member.email} size="xs" />
+                  <span className="truncate">{member.email}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PageId } from '@taskflow/contracts';
 import { useToast } from '../../lib/toast-context.js';
@@ -8,6 +9,7 @@ import {
   Button,
   ConfirmButton,
   Empty,
+  SearchInput,
   Skeleton,
 } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
@@ -42,6 +44,13 @@ import {
  * `Badge` is the only place the distinction shows.
  */
 
+/** `listPageVersions`'s own `PAGE_VERSION_LIST_LIMIT`
+ *  (`apps/api/src/docs/page-version.service.ts`) — restated here because a
+ *  route's server-side constant is not something the client imports across
+ *  the API boundary, the same trade `notifications.ts`'s own `PAGE_SIZE`
+ *  already accepts for its bell. */
+const PAGE_VERSION_LIST_LIMIT = 200;
+
 export function VersionHistoryPanel({
   orgId,
   pageId,
@@ -56,6 +65,7 @@ export function VersionHistoryPanel({
   const queryClient = useQueryClient();
   const toast = useToast();
   const { personOf } = useMembers();
+  const [search, setSearch] = useState('');
 
   const save = useMutation({
     mutationFn: () => saveVersion({ pageId }),
@@ -81,11 +91,20 @@ export function VersionHistoryPanel({
   });
 
   const list = versions.data ?? [];
+  const needle = search.trim().toLowerCase();
+  const visibleList = list.filter((version) => {
+    if (needle === '') return true;
+    const authorLabel = version.createdBy === null ? '' : personOf(version.createdBy).label;
+    return (
+      version.kind.toLowerCase().includes(needle) || authorLabel.toLowerCase().includes(needle)
+    );
+  });
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-ink">Version history</h3>
+      {/* No own heading — the tab strip above already labels this "Version
+          history"; see `docs-page.tsx`'s `DOC_TOOLS`. */}
+      <div className="flex justify-end">
         <Button
           size="sm"
           variant="ghost"
@@ -98,6 +117,13 @@ export function VersionHistoryPanel({
         </Button>
       </div>
 
+      {/* Design Bible §20 — a page saved-and-autosaved for months can
+          genuinely accumulate enough versions to need this; below that,
+          one more control is clutter for a list a glance already covers. */}
+      {list.length > 15 && (
+        <SearchInput value={search} onChange={setSearch} placeholder="Filter by kind or author…" />
+      )}
+
       {versions.isPending ? (
         <div aria-busy="true" className="space-y-1.5">
           <Skeleton className="h-6 w-full" />
@@ -108,9 +134,11 @@ export function VersionHistoryPanel({
           title="No saved versions yet"
           description="Save one, or wait for the next autosave."
         />
+      ) : visibleList.length === 0 ? (
+        <p className="text-sm text-ink-faint">No versions match your search.</p>
       ) : (
         <ul className="space-y-1">
-          {list.map((version) => (
+          {visibleList.map((version) => (
             <VersionRow
               key={version.versionId}
               version={version}
@@ -122,6 +150,15 @@ export function VersionHistoryPanel({
             />
           ))}
         </ul>
+      )}
+
+      {/* `listPageVersions` takes a hard limit, never a cursor — the
+          identical "say where the list stops" disclosure the call log and
+          SMS threads give theirs. */}
+      {list.length === PAGE_VERSION_LIST_LIMIT && (
+        <p className="text-center text-xs text-ink-faint">
+          Showing the most recent {PAGE_VERSION_LIST_LIMIT} versions.
+        </p>
       )}
     </div>
   );
@@ -139,7 +176,7 @@ function VersionRow({
   readonly restorePending: boolean;
 }) {
   return (
-    <li className="flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-surface-hover">
+    <li className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 hover:bg-surface-hover">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <Badge className={version.kind === 'publish' ? 'text-success' : ''}>{version.kind}</Badge>
         {/* Same fix as `comments-suggestions.tsx` — a version's author was

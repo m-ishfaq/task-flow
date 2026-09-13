@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,7 @@ import { MEMBERS_QUERY_KEY } from './org-settings.js';
 import { CHANNELS_QUERY_KEY } from './chat.js';
 import { PHONE_NUMBERS_QUERY_KEY } from './telephony.js';
 import { TelephonyContactPicker } from './telephony-contact-picker.js';
+import { SearchablePickerModal } from './searchable-picker-modal.js';
 import {
   PROJECTS_QUERY_KEY,
   boardsQueryKey,
@@ -171,7 +171,7 @@ export function RuleEditor({
       >
         <Text style={styles.pickerFieldValue}>{triggerLabel(triggerEvent)}</Text>
       </Pressable>
-      <SelectModal
+      <SearchablePickerModal
         open={triggerPickerOpen}
         title="When"
         pending={false}
@@ -316,7 +316,7 @@ function ActionRow({
         />
       ))}
 
-      <SelectModal
+      <SearchablePickerModal
         open={typeOpen}
         title="Action type"
         pending={false}
@@ -686,7 +686,7 @@ function SelectField({
           {pending ? 'Loading…' : (selected?.name ?? `Choose ${label.toLowerCase()}…`)}
         </Text>
       </Pressable>
-      <SelectModal
+      <SearchablePickerModal
         open={open}
         title={label}
         pending={pending}
@@ -701,58 +701,6 @@ function SelectField({
         }}
       />
     </View>
-  );
-}
-
-function SelectModal({
-  open,
-  title,
-  pending,
-  options,
-  emptyText,
-  onSelect,
-  onClose,
-}: {
-  readonly open: boolean;
-  readonly title: string;
-  readonly pending: boolean;
-  readonly options: readonly { readonly id: string; readonly name: string }[];
-  readonly emptyText: string;
-  readonly onSelect: (id: string) => void;
-  readonly onClose: () => void;
-}) {
-  return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          {pending ? (
-            <ActivityIndicator color={colors.accent.hex} style={styles.modalLoading} />
-          ) : options.length === 0 ? (
-            <Text style={styles.modalEmpty}>{emptyText}</Text>
-          ) : (
-            <ScrollView style={styles.modalList} nestedScrollEnabled>
-              {options.map((option) => (
-                <Pressable
-                  key={option.id}
-                  style={styles.modalRow}
-                  onPress={() => {
-                    onSelect(option.id);
-                  }}
-                >
-                  <Text style={styles.modalRowText} numberOfLines={1}>
-                    {option.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-          <Pressable style={styles.modalCancel} onPress={onClose}>
-            <Text style={styles.modalCancelText}>Cancel</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -927,51 +875,5 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     fontSize: 14,
     fontWeight: '600',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: '#00000099',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard + 6,
-    borderTopRightRadius: radiusCard + 6,
-    padding: 20,
-    gap: 8,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.ink.hex,
-  },
-  modalLoading: {
-    marginVertical: 12,
-  },
-  modalEmpty: {
-    fontSize: 13,
-    color: colors.inkFaint.hex,
-    paddingVertical: 8,
-  },
-  modalList: {
-    maxHeight: 360,
-  },
-  modalRow: {
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line.hex,
-  },
-  modalRowText: {
-    fontSize: 14,
-    color: colors.ink.hex,
-  },
-  modalCancel: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.danger.hex,
   },
 });

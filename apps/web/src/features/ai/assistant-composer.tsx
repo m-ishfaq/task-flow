@@ -221,7 +221,7 @@ export const AssistantComposer = forwardRef<AssistantComposerHandle, AssistantCo
         attributes: {
           class: cn(
             'min-h-[2.5rem] max-h-40 overflow-y-auto rounded-lg border border-line/50 bg-surface-sunken',
-            'px-3 py-2 text-sm text-ink transition-all',
+            'px-3 py-2 text-sm text-ink transition-all duration-(--motion-fast)',
             'focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
           ),
         },

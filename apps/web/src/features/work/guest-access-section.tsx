@@ -94,7 +94,7 @@ export function GuestAccessSection({
             <li key={row.tupleId} className="flex items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-ink">{row.displayName ?? row.email}</p>
-                <p className="text-[11px] text-ink-faint">
+                <p className="text-xs text-ink-faint">
                   {row.relation}
                   {row.expiresAt !== null && ` · expires ${formatDate(row.expiresAt)}`}
                 </p>
@@ -141,7 +141,7 @@ export function GuestAccessSection({
           onChange={(event) => {
             setRelation(event.target.value as GuestRelation);
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           {GUEST_RELATIONS.map((entry) => (
             <option key={entry} value={entry}>

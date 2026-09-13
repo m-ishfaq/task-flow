@@ -1,14 +1,24 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { ChevronLeft } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, Empty, Field, Input, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  Empty,
+  Field,
+  Input,
+  SearchInput,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { CallButton } from './call-button.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import {
+  MESSAGE_THREADS_LIMIT,
   invalidateAfterMessage,
   messageThreadsQuery,
   phoneNumbersQuery,
@@ -28,8 +38,28 @@ import {
  * rather than silently sending from the wrong one.
  */
 
+/**
+ * A raw E.164 string, punctuated the way a real phone shows it —
+ * "(415) 555-0142" rather than "+14155550142" — the identical formatter
+ * `calls-panel.tsx` uses for its own call log, duplicated rather than
+ * shared since it is a small, self-contained function (the same "one-line
+ * pure function, not worth a cross-file export for" precedent `digitsOf`
+ * already sets in that file).
+ */
+function formatPhoneDisplay(e164: string): string {
+  const digits = e164.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('44')) {
+    return `+44 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8, 12)}`;
+  }
+  return e164;
+}
+
 export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   const navigate = useNavigate();
+  const isDesktop = useIsDesktop();
   const threadId = useSearch({ from: '/calls', select: (value) => value.thread });
   const threads = useQuery(messageThreadsQuery(orgId));
 
@@ -43,88 +73,150 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
     void navigate({ to: '/calls', search: { tab: 'messages', thread: id } });
   };
 
+  const [threadSearch, setThreadSearch] = useState('');
+  const threadNeedle = threadSearch.trim().toLowerCase();
+  const visibleThreads = (threads.data ?? []).filter(
+    (thread) =>
+      threadNeedle === '' || String(thread.counterparty).toLowerCase().includes(threadNeedle),
+  );
+
+  /* Below `md`, the thread list and an open thread can't share a phone-width
+     screen — the identical split `chat-page.tsx` already uses for channels,
+     driven by whether anything is open rather than a second "which pane"
+     flag. At `md` and above both panes are always visible side by side,
+     unchanged from before this fix. */
+  const opened = composing || threadId !== undefined;
+  const showList = isDesktop || !opened;
+  const showDetail = isDesktop || opened;
+
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
-      <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
-        {/* Until this existed there was NO way to start an SMS from the UI —
-            the composer lived only inside an already-open thread, and threads
-            are created by inbound messages. So the first outbound message to
-            anyone required calling the API by hand. */}
-        <Button
-          variant="primary"
-          size="sm"
-          className="mb-2 w-full"
-          onClick={() => {
-            setComposing(true);
-          }}
-        >
-          New message
-        </Button>
+    <div className="mx-auto flex h-full min-h-0 max-w-[85%] flex-col p-4">
+      {/* One bordered card holding both panes — the same unified shape
+          `calls-panel.tsx` uses, replacing two independently floating
+          columns (one boxed, one not) that used to sit directly in the
+          page's own padding. */}
+      <div className="flex min-h-0 flex-1 divide-line overflow-hidden rounded-xl border border-line bg-surface-raised md:divide-x">
+        {showList && (
+          <div className="flex min-h-0 w-full flex-col md:w-64 md:shrink-0">
+            <div className="border-b border-line p-2">
+              {/* Until this existed there was NO way to start an SMS from the
+                  UI — the composer lived only inside an already-open thread,
+                  and threads are created by inbound messages. So the first
+                  outbound message to anyone required calling the API by hand. */}
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setComposing(true);
+                }}
+              >
+                New message
+              </Button>
+            </div>
 
-        {threads.isPending ? (
-          <SkeletonRows rows={4} />
-        ) : threads.isError ? (
-          <ErrorView error={threads.error} title="Could not load threads" />
-        ) : threads.data.length === 0 ? (
-          <Empty
-            title="No SMS conversations yet"
-            description="Inbound texts to your numbers land here."
-          />
-        ) : (
-          threads.data.map((thread) => (
-            <button
-              key={thread.threadId}
-              type="button"
-              onClick={() => {
-                selectThread(thread.threadId);
-              }}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                thread.threadId === threadId
-                  ? 'border-accent/40 bg-accent/10'
-                  : 'border-transparent hover:bg-surface-hover',
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-xs text-ink">
-                    {String(thread.counterparty)}
-                  </span>
-                  {thread.unreadCount > 0 && (
-                    <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
-                      {thread.unreadCount}
-                    </span>
-                  )}
-                </div>
-                {thread.lastMessageAt !== null && (
-                  <p className="mt-0.5 text-[10px] text-ink-faint">
-                    {formatRelative(thread.lastMessageAt)}
-                  </p>
-                )}
+            {threads.data !== undefined && threads.data.length > 8 && (
+              <div className="border-b border-line p-2">
+                <SearchInput
+                  value={threadSearch}
+                  onChange={setThreadSearch}
+                  placeholder="Search by number…"
+                />
               </div>
-            </button>
-          ))
-        )}
-      </div>
+            )}
 
-      <div className="min-w-0 flex-1">
-        {composing ? (
-          <ComposeView
-            orgId={orgId}
-            onSent={(newThreadId) => {
-              selectThread(newThreadId);
-            }}
-            onCancel={() => {
-              setComposing(false);
-            }}
-          />
-        ) : threadId === undefined ? (
-          <Empty
-            title="No conversation open"
-            description="Pick a thread on the left, or start a new message."
-          />
-        ) : (
-          <ThreadView key={threadId} orgId={orgId} threadId={threadId} />
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+              {threads.isPending ? (
+                <SkeletonRows rows={4} />
+              ) : threads.isError ? (
+                <ErrorView error={threads.error} title="Could not load threads" />
+              ) : threads.data.length === 0 ? (
+                <Empty
+                  title="No SMS conversations yet"
+                  description="Inbound texts to your numbers land here."
+                />
+              ) : visibleThreads.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-ink-faint">No threads match your search.</p>
+              ) : (
+                visibleThreads.map((thread) => (
+                  <button
+                    key={thread.threadId}
+                    type="button"
+                    onClick={() => {
+                      selectThread(thread.threadId);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors duration-(--motion-fast)',
+                      /* Calls' own suite hue for "this is the open thread" —
+                         the same module-identity fix already applied to
+                         Chat's active channel row and Docs' active page. */
+                      thread.threadId === threadId
+                        ? 'border-suite-calls/40 bg-suite-calls/10'
+                        : 'border-transparent hover:bg-surface-hover',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-xs text-ink">
+                          {formatPhoneDisplay(String(thread.counterparty))}
+                        </span>
+                        {thread.unreadCount > 0 && (
+                          <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
+                            {thread.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      {thread.lastMessageAt !== null && (
+                        <p className="mt-0.5 text-[10px] text-ink-faint">
+                          {formatRelative(thread.lastMessageAt)}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+              {/* `listThreads` takes a hard limit, never a cursor — the
+                  identical "no load-more to offer, so say where the list
+                  stops" disclosure `calls-panel.tsx` gives its own log. */}
+              {threads.data?.length === MESSAGE_THREADS_LIMIT && (
+                <p className="px-2 py-2 text-center text-xs text-ink-faint">
+                  Showing your most recent {MESSAGE_THREADS_LIMIT} threads.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showDetail && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {composing ? (
+              <ComposeView
+                orgId={orgId}
+                onSent={(newThreadId) => {
+                  selectThread(newThreadId);
+                }}
+                onCancel={() => {
+                  setComposing(false);
+                }}
+              />
+            ) : threadId === undefined ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <p className="text-sm font-medium text-ink">No conversation open</p>
+                <p className="max-w-xs text-xs text-ink-muted">
+                  Pick a thread on the left, or start a new message.
+                </p>
+              </div>
+            ) : (
+              <ThreadView
+                key={threadId}
+                orgId={orgId}
+                threadId={threadId}
+                onBack={() => {
+                  selectThread(undefined);
+                }}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -181,7 +273,7 @@ function ComposeView({
 
   return (
     <form
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised"
+      className="flex min-h-0 flex-1 flex-col"
       onSubmit={(event) => {
         event.preventDefault();
         if (to.trim() !== '' && body.trim() !== '') send.mutate();
@@ -192,7 +284,7 @@ function ComposeView({
         <button
           type="button"
           onClick={onCancel}
-          className="ml-auto text-[11px] text-ink-muted hover:text-ink"
+          className="ml-auto text-xs text-ink-muted hover:text-ink"
         >
           Cancel
         </button>
@@ -222,7 +314,7 @@ function ComposeView({
                 onChange={(event) => {
                   setFromPhoneNumberId(event.target.value);
                 }}
-                className="h-9 min-w-36 rounded border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none"
+                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
               >
                 {(numbers.data ?? []).map((number) => (
                   <option key={number.phoneNumberId} value={number.phoneNumberId}>
@@ -244,7 +336,7 @@ function ComposeView({
             onChange={(event) => {
               setBody(event.target.value);
             }}
-            className="w-full rounded border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+            className="w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
           />
         </Field>
 
@@ -259,7 +351,7 @@ function ComposeView({
             {send.isPending ? 'Sending…' : 'Send'}
           </Button>
           {activeNumber === '' && (
-            <span className="text-[11px] text-warning">Buy a number before sending.</span>
+            <span className="text-xs text-warning">Buy a number before sending.</span>
           )}
         </div>
 
@@ -269,7 +361,16 @@ function ComposeView({
   );
 }
 
-function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly threadId: string }) {
+function ThreadView({
+  orgId,
+  threadId,
+  onBack,
+}: {
+  readonly orgId: string;
+  readonly threadId: string;
+  /** Below `md`, returns to the thread list — see `MessagesPanel`'s own comment. */
+  readonly onBack: () => void;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const numbers = useQuery(phoneNumbersQuery(orgId));
@@ -301,10 +402,20 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to conversations"
+          className="shrink-0 md:hidden"
+        >
+          <ChevronLeft aria-hidden="true" className="size-4 text-ink-faint" />
+        </button>
+        <span className="font-mono text-xs font-medium text-ink">
+          {counterparty === undefined ? '…' : formatPhoneDisplay(counterparty)}
+        </span>
+        <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
           SMS
         </span>
         {/* The counterparty's number is already resolved here — this is the
@@ -365,7 +476,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
             onChange={(event) => {
               setFromPhoneNumberId(event.target.value);
             }}
-            className="h-9 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+            className="h-9 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
           >
             {(numbers.data ?? []).map((number) => (
               <option key={number.phoneNumberId} value={number.phoneNumberId}>

@@ -13,15 +13,18 @@ import {
   ConfirmButton,
   Field,
   Input,
+  OrgBadge,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import {
   MemberBar,
+  ModalIconHeader,
   OrgDetailDialog,
   Pagination,
   RowActionsMenu,
+  StatusPill,
   StepUpGate,
   TableSearch,
   downloadCsv,
@@ -193,28 +196,28 @@ export function OrgsTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Organization
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Owner
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Plan
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Renews
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Last invoice
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Status
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Members
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Created
                 </th>
                 <th className="px-3 py-2.5" />
@@ -224,16 +227,21 @@ export function OrgsTab({
               {(filteredOrgs ?? []).map((org) => (
                 <tr
                   key={org.orgId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                   onClick={() => {
                     setDetailOrgId(org.orgId);
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
-                      {org.name}
-                    </p>
-                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                    <div className="flex items-center gap-2">
+                      <OrgBadge orgId={org.orgId} name={org.name} />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink transition-colors duration-(--motion-fast) group-hover:text-accent">
+                          {org.name}
+                        </p>
+                        <p className="truncate font-mono text-xs text-ink-faint">{org.slug}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     {org.ownerEmail === null ? (
@@ -241,7 +249,7 @@ export function OrgsTab({
                     ) : (
                       <>
                         {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
-                        <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
+                        <p className="text-xs text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
                   </td>
@@ -249,7 +257,7 @@ export function OrgsTab({
                     <p className="text-ink">
                       {org.planId ?? <span className="text-ink-faint">no plan</span>}
                     </p>
-                    <p className="text-[11px] text-ink-faint">
+                    <p className="text-xs text-ink-faint">
                       {org.billingStatus}
                       {org.billingStatus === 'trialing' &&
                         org.trialEndsAt !== null &&
@@ -284,7 +292,7 @@ export function OrgsTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[11px] text-ink-faint">
+                        <p className="text-xs text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
@@ -339,7 +347,7 @@ export function OrgsTab({
                         <RowActionsMenu>
                           <button
                             type="button"
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger/10"
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors duration-(--motion-fast) hover:bg-danger/10"
                             disabled={remove.isPending}
                             onClick={() => {
                               setConfirmSlug('');
@@ -429,15 +437,17 @@ export function OrgsTab({
           }}
         >
           <ModalContent size="sm" className="p-4">
-            <ModalTitle>Delete {deleteTarget.name}?</ModalTitle>
-            <ModalDescription>
-              This permanently deletes the organization and everything it owns — projects, channels,
-              documents, memberships, and its audit history. There is no undo. Type{' '}
-              <code className="rounded bg-surface-sunken px-1 font-mono text-[11px]">
-                {deleteTarget.slug}
-              </code>{' '}
-              to confirm.
-            </ModalDescription>
+            <ModalIconHeader icon={ShieldAlert} tone="danger">
+              <ModalTitle>Delete {deleteTarget.name}?</ModalTitle>
+              <ModalDescription>
+                This permanently deletes the organization and everything it owns — projects,
+                channels, documents, memberships, and its audit history. There is no undo. Type{' '}
+                <code className="rounded bg-surface-sunken px-1 font-mono text-xs">
+                  {deleteTarget.slug}
+                </code>{' '}
+                to confirm.
+              </ModalDescription>
+            </ModalIconHeader>
 
             <form
               className="mt-4 space-y-3"
@@ -465,14 +475,7 @@ export function OrgsTab({
 
               {remove.isError && <ErrorView error={remove.error} />}
 
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  variant="danger"
-                  disabled={remove.isPending || confirmSlug !== deleteTarget.slug}
-                >
-                  {remove.isPending ? 'Deleting…' : 'Delete forever'}
-                </Button>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -480,6 +483,13 @@ export function OrgsTab({
                   }}
                 >
                   Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  disabled={remove.isPending || confirmSlug !== deleteTarget.slug}
+                >
+                  {remove.isPending ? 'Deleting…' : 'Delete forever'}
                 </Button>
               </div>
             </form>
@@ -512,26 +522,12 @@ export function OrgsTab({
 /** The one column in the org directory that has meaning beyond itself. */
 function StatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
-    return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        <ShieldAlert className="size-3" strokeWidth={2.5} />
-        suspended
-      </span>
-    );
+    return <StatusPill tone="danger" label="suspended" className="min-w-[88px]" />;
   }
   if (status === 'deleted') {
-    return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
-        deleted
-      </span>
-    );
+    return <StatusPill tone="neutral" label="deleted" className="min-w-[88px]" />;
   }
-  return (
-    <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-      <span className="size-1.5 rounded-full bg-success" />
-      active
-    </span>
-  );
+  return <StatusPill tone="success" label="active" className="min-w-[88px]" />;
 }
 
 /**
@@ -590,12 +586,14 @@ function ChangeOrgPlanDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent size="sm" className="p-4">
-        <ModalTitle>{org.name} plan</ModalTitle>
-        <ModalDescription>
-          Currently <strong>{org.planId ?? 'no plan'}</strong>. This changes what the org is
-          entitled to — it does <strong>not</strong> change their subscription or what they are
-          charged.
-        </ModalDescription>
+        <ModalIconHeader icon={Building2} tone="accent">
+          <ModalTitle>{org.name} plan</ModalTitle>
+          <ModalDescription>
+            Currently <strong>{org.planId ?? 'no plan'}</strong>. This changes what the org is
+            entitled to — it does <strong>not</strong> change their subscription or what they are
+            charged.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {plans.isPending && <SkeletonRows rows={3} className="*:h-8" />}
@@ -643,7 +641,7 @@ function ChangeOrgPlanDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[11px] text-ink-faint">
+            <p className="mt-0.5 text-xs text-ink-faint">
               Recorded in the operator audit chain. Required.
             </p>
           </Field>

@@ -307,7 +307,7 @@ export function AssigneeSelector({
               toggle(person.userId);
             }}
           >
-            <Avatar label={person.label} size={20} />
+            <Avatar label={person.label} size={20} seed={person.userId} />
             <Text style={styles.assigneeChipText} numberOfLines={1}>
               {person.label}
             </Text>
@@ -368,7 +368,11 @@ export function AssigneeSelector({
                         toggle(member.userId);
                       }}
                     >
-                      <Avatar label={member.displayName ?? member.email} size={24} />
+                      <Avatar
+                        label={member.displayName ?? member.email}
+                        size={24}
+                        seed={member.userId}
+                      />
                       <Text style={styles.pickerRowText} numberOfLines={1}>
                         {member.displayName ?? member.email}
                       </Text>

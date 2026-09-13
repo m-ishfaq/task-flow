@@ -76,8 +76,8 @@ export function TemplatesPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-[13px] font-semibold text-ink">Templates</h3>
-
+      {/* No own heading — the tab strip above already labels this
+          "Templates"; see `docs-page.tsx`'s `DOC_TOOLS`. */}
       {saving ? (
         <form
           onSubmit={(event) => {
@@ -136,7 +136,7 @@ export function TemplatesPanel({
           {list.map((template) => (
             <li
               key={template.templateId}
-              className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-surface-hover"
+              className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-surface-hover"
             >
               <span className="truncate text-ink-muted">{template.name}</span>
               {canManage && (

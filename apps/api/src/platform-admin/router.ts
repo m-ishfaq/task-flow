@@ -1328,6 +1328,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
                       action: z.string(),
                       target: z.unknown(),
                       occurredAt: z.date(),
+                      hash: z.string(),
                     })
                     .strict(),
                 )

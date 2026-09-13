@@ -19,6 +19,7 @@ import {
   useOAuthProviders,
   type OAuthProvider,
 } from './oauth.js';
+import { OAUTH_PROVIDER_ICON } from './oauth-marks.js';
 
 const ALL_PROVIDERS = ['google', 'github'] as const;
 
@@ -97,48 +98,59 @@ export function ConnectedAccountsSection() {
 
       {connected.data !== undefined && connected.data.length > 0 && (
         <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
-          {connected.data.map((account) => (
-            <li
-              key={account.provider}
-              className="flex items-center justify-between px-3 py-2 text-sm"
-            >
-              <div className="min-w-0">
-                <p className="text-ink">{OAUTH_PROVIDER_LABEL[account.provider]}</p>
-                <p className="truncate text-[11px] text-ink-faint">
-                  {account.email} · linked {formatDate(account.linkedAt)}
-                </p>
-              </div>
-              <ConfirmButton
-                label="Unlink"
-                confirmLabel={`Unlink ${OAUTH_PROVIDER_LABEL[account.provider]}`}
-                disabled={unlink.isPending}
-                onConfirm={() => {
-                  unlink.mutate(account.provider);
-                }}
-              />
-            </li>
-          ))}
+          {connected.data.map((account) => {
+            const ProviderMark = OAUTH_PROVIDER_ICON[account.provider];
+            return (
+              <li
+                key={account.provider}
+                className="flex items-center justify-between px-3 py-2 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <ProviderMark className="size-4 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-ink">{OAUTH_PROVIDER_LABEL[account.provider]}</p>
+                    <p className="truncate text-xs text-ink-faint">
+                      {account.email} · linked {formatDate(account.linkedAt)}
+                    </p>
+                  </div>
+                </div>
+                <ConfirmButton
+                  label="Unlink"
+                  confirmLabel={`Unlink ${OAUTH_PROVIDER_LABEL[account.provider]}`}
+                  disabled={unlink.isPending}
+                  onConfirm={() => {
+                    unlink.mutate(account.provider);
+                  }}
+                />
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {availableToLink.length > 0 && (
         <AddPanel>
           <div className="flex flex-wrap gap-2">
-            {availableToLink.map((provider) => (
-              <Button
-                key={provider}
-                variant="secondary"
-                size="sm"
-                disabled={startLink.isPending}
-                onClick={() => {
-                  startLink.mutate(provider);
-                }}
-              >
-                {startLink.isPending && startLink.variables === provider
-                  ? 'Redirecting…'
-                  : `Connect ${OAUTH_PROVIDER_LABEL[provider]}`}
-              </Button>
-            ))}
+            {availableToLink.map((provider) => {
+              const ProviderMark = OAUTH_PROVIDER_ICON[provider];
+              return (
+                <Button
+                  key={provider}
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={startLink.isPending}
+                  onClick={() => {
+                    startLink.mutate(provider);
+                  }}
+                >
+                  <ProviderMark className="size-3.5 shrink-0" />
+                  {startLink.isPending && startLink.variables === provider
+                    ? 'Redirecting…'
+                    : `Connect ${OAUTH_PROVIDER_LABEL[provider]}`}
+                </Button>
+              );
+            })}
           </div>
         </AddPanel>
       )}

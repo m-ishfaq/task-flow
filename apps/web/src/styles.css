@@ -158,6 +158,53 @@
   --color-priority-urgent: oklch(60% 0.19 22);
   --color-priority-medium: oklch(60% 0.17 285);
 
+  /**
+   * Suite spectrum — Design Bible §01: one hue per product module, so the
+   * sidebar, a module's own icon, and its "you are here" indicator agree on
+   * what color that module is everywhere it appears, rather than every
+   * surface reaching for the same generic accent regardless of which product
+   * it belongs to. Chosen to sit far enough apart on the wheel to stay
+   * distinguishable at a glance (285/220/158/66/350) while every one of them
+   * still clears the 3:1 non-text bar against all four surface tones — these
+   * are icon/indicator swatches, the same non-text-only rule the priority
+   * tokens above document, never rendered as body text on a bare surface.
+   * `--color-accent` and `--color-suite-work` are deliberately the same hue:
+   * Work is the product's home base, not a module competing with the others,
+   * so it borrows the brand hue instead of claiming a new one — literally,
+   * via `color-mix()` against `--color-accent` rather than its own literal
+   * hue, so a branded deployment's Work icon/nav-tint/thread actually track
+   * whatever palette that org picked instead of staying indigo (the same
+   * "half-applied palette" defect `--color-accent-strong`'s own comment
+   * documents finding and fixing). `--color-suite-chat`/`-docs`/`-calls`/
+   * `-people` keep their own literal, independent hues below — those four are
+   * meant to stay fixed regardless of branding, only Work is meant to move
+   * with the brand.
+   */
+  --color-suite-work: color-mix(in oklab, var(--color-accent) 78%, white);
+  --color-suite-chat: oklch(66% 0.12 220);
+  --color-suite-docs: oklch(66% 0.13 158);
+  --color-suite-calls: oklch(74% 0.13 66);
+  --color-suite-people: oklch(66% 0.14 350);
+
+  /* A punchier accent step for thin decorative strokes and icon glyphs — the
+     wordmark, illustration lines — where the audited `--color-accent` (tuned
+     for a solid fill with text on top of it) reads slightly flat. Never used
+     for text or a filled control; those keep `--color-accent`'s own audited
+     value untouched.
+     `color-mix()` against `--color-accent` rather than a second literal hue:
+     `BrandingProvider` (apps/web/src/features/branding/branding-provider.tsx)
+     overrides only `--color-accent`/`-hover`/`-ink` on an org's chosen
+     palette — a literal `oklch(.. 285)` here would stay indigo regardless of
+     what an org actually picked, which is exactly the "palette only half
+     applies" defect found in a real audit (Button's own glow, the empty-state
+     glow, and the velocity chart's line/dot all had the identical literal-hue
+     bug, fixed alongside this token). Mixing toward white rather than
+     rotating L/C independently is a deliberate approximation, not a
+     re-derivation of the WCAG math per palette — this token is non-text
+     (strokes/glyphs) by its own header above, so it does not need the same
+     audited precision `--color-accent`'s text-bearing fill does. */
+  --color-accent-strong: color-mix(in oklab, var(--color-accent) 88%, white);
+
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
@@ -187,24 +234,66 @@
   --shadow-lg: 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
   --shadow-xl: 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
 
-  /* Subtle inner glow for focused/active elements */
-  --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
+  /* Subtle inner glow for focused/active elements. The glow half is
+     `color-mix()` against `--color-accent`, not a literal `oklch(.. 285)` —
+     see `--color-accent-strong`'s own comment for why a literal hue here
+     would silently ignore a branded deployment's chosen palette. */
+  --shadow-glow-accent:
+    0 0 0 1px var(--color-accent),
+    0 0 12px color-mix(in oklab, var(--color-accent) 25%, transparent);
+
+  /**
+   * Design Bible §03's depth ladder, as Tailwind v4 `--shadow-*` overrides
+   * rather than a parallel `--lift-*` custom-property set: this project
+   * already has one depth scale (`--shadow-sm/md/lg/xl` above), and a second,
+   * differently-named one with close-but-not-identical values would leave two
+   * answers to "how raised is this" with no way to tell which a given
+   * component means. `shadow-lift-1/2/3` extend the existing `shadow-*`
+   * family instead — `lift-1` slots below `sm` (a resting card tile, one step
+   * above flat), `lift-2` between `sm` and `md` (hover), `lift-3` above `xl`
+   * (a floated detail panel or dragged card).
+   */
+  --shadow-lift-1: 0 1px 2px oklch(0% 0 0 / 30%);
+  --shadow-lift-2: 0 4px 14px oklch(0% 0 0 / 34%), 0 1px 3px oklch(0% 0 0 / 24%);
+  --shadow-lift-3: 0 18px 44px oklch(0% 0 0 / 46%), 0 6px 14px oklch(0% 0 0 / 30%);
+
+  /* The machined top-edge highlight every raised panel/card/button gets in
+     the Design Bible — a 1px inset line at 5% white, reading as the edge
+     catching ambient light rather than a flat color block. Composed onto a
+     component's own shadow with a comma (`shadow-[var(--shadow-lift-1),var(--shadow-top-light)]`),
+     never a replacement for it. */
+  --shadow-top-light: inset 0 1px 0 oklch(100% 0 0 / 5%);
 
   /* Column-specific elevation for better depth hierarchy */
   --shadow-column: 0 1px 3px oklch(0% 0 0 / 8%), 0 1px 2px oklch(0% 0 0 / 6%);
 
   /*
-   * Status column tints — ultra-subtle background tints per status column,
-   * inspired by Linear/NovaBoard's colored column backgrounds but adapted
-   * for dark theme. These are at ~3-5% opacity so they read as a whisper
-   * of color, not a painted surface. Applied via inline style or a utility
-   * class on the column wrapper.
+   * Column tints — ultra-subtle background washes for board columns,
+   * inspired by Linear/NovaBoard's colored column backgrounds. Declared
+   * for a redesign pass and left dead until now: the doc comment on this
+   * block used to say "per status column," which assumes a list maps onto
+   * a fixed backlog/todo/progress/review/done vocabulary. It does not —
+   * `work.lists.name` is a free-text column name a person types, with no
+   * status/category field at all (that concept exists one level down, on
+   * `work.statuses`, for a card's own status inside a project). Guessing a
+   * tint from a list's NAME (does it contain "done"?) would be exactly the
+   * kind of non-deterministic classification CLAUDE.md's own conventions
+   * warn against — a column named "Blocked" or "Shipped" would get no tint,
+   * or the wrong one, while a differently-worded but equivalent column did.
+   *
+   * `list-column.tsx` instead cycles these five by column POSITION, not by
+   * name — ambient variety across a board's columns, the same "a whisper of
+   * color, not a painted surface" restraint the original ~3-5%-opacity
+   * intent already states, with no claim that column 3 IS "in progress."
+   * Left in this left-to-right order because most boards already put
+   * earlier-stage work on the left, so the cycle usually lands close to the
+   * old semantic intent without asserting it.
    */
-  --column-tint-backlog: oklch(22% 0.01 262);
-  --column-tint-todo: oklch(22% 0.012 262);
-  --column-tint-progress: oklch(22% 0.02 200);
-  --column-tint-review: oklch(22% 0.015 285);
-  --column-tint-done: oklch(22% 0.015 155);
+  --column-tint-1: oklch(22% 0.01 262);
+  --column-tint-2: oklch(22% 0.012 262);
+  --column-tint-3: oklch(22% 0.02 200);
+  --column-tint-4: oklch(22% 0.015 285);
+  --column-tint-5: oklch(22% 0.015 155);
 
   /**
    * The type system, added for the UI/UX redesign pass.
@@ -253,6 +342,63 @@
     --motion-fast: 0.01ms;
     --motion-base: 0.01ms;
   }
+}
+
+/**
+ * Platform admin: a genuinely distinct "operator console" palette, not a
+ * second brand.
+ *
+ * Reported directly: the console "looks like it is part of the same client
+ * side... not up to the mark for the SaaS product we are building." True,
+ * and by construction — `platform-admin-page.tsx` and its ten tab files are
+ * built entirely from this app's own shared primitives and semantic
+ * `bg-surface`/`text-ink`/`border-line` utilities, so they inherited the
+ * product's own palette wholesale. The fix redeclares those SAME named
+ * custom properties (surface, ink, line — never accent/danger/warning/
+ * success) under one scope, so every existing component in the console
+ * re-themes for free with no className edit in any of those ten files.
+ *
+ * Every step is darker and the hue moves off the product's own blue-violet
+ * family (262 for surfaces, 285 for accent) to a near-neutral graphite
+ * (250, at a fraction of the chroma) — cold and desaturated rather than
+ * "the same theme, dimmed," which is what a plain brightness cut would have
+ * read as. `--color-accent` and `--color-danger`/`--color-warning`/
+ * `--color-success` are DELIBERATELY left untouched, for a reason that is
+ * itself part of the fix: `Button`'s primary variant hardcodes an oklch
+ * box-shadow matching this app's own accent hue directly (not a `var()`),
+ * so retuning accent here would put that glow visibly out of sync with the
+ * fill it sits under — a second, smaller "looks assembled, not designed"
+ * tell trading for the first one. The console reads as distinct through its
+ * COLDER, DARKER surfaces and its own sidebar-driven layout, not through a
+ * second brand hue, and its buttons/links/focus rings still look like this
+ * app's, because they still are.
+ *
+ * Scoped to `body.platform-admin-active`, a class `Shell` toggles from the
+ * SAME `isPlatformAdmin` check that already switches it to the sidebar-less
+ * `TopBar` frame — not a wrapper `<div>` class in `platform-admin-page.tsx`
+ * itself. Every dialog in this console (`ModalRoot`, from `@taskflow/ui`)
+ * renders through a Radix `Dialog.Portal`, which appends directly to
+ * `document.body` — a SIBLING of the app's own React root, not a descendant
+ * of any wrapper div this page could render. A class scoped to a div two
+ * layers up the component tree would never reach a portaled dialog at all,
+ * and every confirm/detail dialog in the console would keep the ordinary
+ * product's palette while the page behind it did not. Custom properties
+ * inherit through the DOM, not the React tree, and a portaled dialog IS a
+ * direct child of `body` — so scoping to `body` itself is the one selector
+ * that reaches both.
+ */
+body.platform-admin-active {
+  --color-surface: oklch(8% 0.004 250);
+  --color-surface-raised: oklch(12% 0.005 250);
+  --color-surface-sunken: oklch(5% 0.003 250);
+  --color-surface-hover: oklch(16% 0.006 250);
+
+  --color-ink: oklch(92% 0.002 250);
+  --color-ink-muted: oklch(62% 0.005 250);
+  --color-ink-faint: oklch(47% 0.005 250);
+
+  --color-line: oklch(21% 0.004 250);
+  --color-line-strong: oklch(29% 0.005 250);
 }
 
 /**
@@ -461,6 +607,49 @@
   }
 
   /**
+   * Toast enter/exit motion (`toast.tsx`) — a slide-plus-fade in the same
+   * direction the toast's own `swipeDirection="right"` dismisses in, so
+   * arriving and leaving read as the same axis of motion rather than two
+   * unrelated effects.
+   *
+   * Entrance reuses `.ui-fade`'s own mechanism, `@starting-style`, for the
+   * identical reason: a toast mounts fresh into the DOM exactly like a
+   * Modal/Popover/DropdownMenu does, so "the frame before this element's
+   * real styles apply" is exactly the entrance frame here too.
+   *
+   * Exit keys off Radix's own `data-state="closed"` — safe to rely on here,
+   * unlike a naive reading of Modal/Popover's own `.ui-fade` might suggest,
+   * because `toast.tsx` passes `Toast.Root` its `forceMount` prop. Without
+   * it, Radix's internal `Presence` wrapper unmounts a toast's children the
+   * instant its own `open` state goes false — checking for a REAL, running
+   * CSS `animation` first and skipping straight to removal when it finds
+   * none, which is exactly what happens here (this rule is a `transition`,
+   * which `Presence`'s detection does not recognize at all, and which
+   * plain has no stylesheet loaded to evaluate in this app's own jsdom test
+   * environment regardless). `forceMount` removes Radix from that decision
+   * entirely: `toast.tsx`'s own `exitTimers`-driven delay is what actually
+   * keeps a closed toast mounted for one `--motion-base` before dropping it
+   * from state, and this rule only has to describe what it should look
+   * like while that's happening.
+   */
+  .toast-motion {
+    transition:
+      opacity var(--motion-base) var(--motion-ease),
+      transform var(--motion-base) var(--motion-ease);
+  }
+  @starting-style {
+    .toast-motion {
+      opacity: 0;
+      transform: translateX(0.75rem);
+    }
+  }
+  .toast-motion[data-state='closed'] {
+    opacity: 0;
+    transform: translateX(0.75rem);
+    pointer-events: none;
+  }
+
+  /**
    * TipTap's rendered output.
    *
    * Scoped to `.rich-text` and written as plain CSS because the editor produces
@@ -547,21 +736,6 @@
     text-decoration: underline;
   }
 
-  /* Links INSIDE a message bubble on the accent fill (the sender's own
-     bubbles, `bg-accent`). The rule above colors every link the accent hue
-     itself — which is invisible on an accent background: a URL pasted into
-     chat rendered accent-on-accent, reading as an empty bubble while the
-     white text around it showed fine. The link keeps its affordance via the
-     underline (drawn at partial opacity so it reads as a link, not a rule)
-     and the text goes to the same near-white the bubble already uses, with
-     the 0.7 tint applied to the underline only — full-ink text, 55%-ink
-     underline, which is how WhatsApp's own light links on green bubbles
-     work. `chat-page.tsx` hangs this class on the bubble when it is the
-     viewer's own (`isOwn`). */
-  .rich-text-on-accent .rich-text a {
-    color: var(--color-accent-ink);
-    text-decoration-color: color-mix(in oklch, var(--color-accent-ink) 55%, transparent);
-  }
   .rich-text hr {
     border-color: var(--color-line);
     margin-block: 1rem;
@@ -575,6 +749,53 @@
     float: left;
     height: 0;
     pointer-events: none;
+  }
+
+  /**
+   * A DOCUMENT reading of `.rich-text`, not a second stylesheet — Docs'
+   * own page body (`docs-editor.tsx`) applies this alongside `.rich-text`,
+   * never instead of it, so every node-type rule above still applies; only
+   * the type scale and spacing widen. Chat messages, card descriptions and
+   * comments stay on the compact `.rich-text` alone — a chat bubble reading
+   * at document type scale would be absurd, and this file's own base rules
+   * are tuned for exactly that compact context. Docs' own complaint was the
+   * opposite: a page of prose at bubble/comment scale reads as a form field,
+   * not a document, which is the literal "simple editor box" gap the
+   * Design Bible's §08 mockup calls out — Google Docs-style body copy is
+   * bigger and more spaced out than a comment ever needs to be.
+   */
+  .rich-text-doc {
+    font-size: 1.0625rem;
+    line-height: 1.75;
+  }
+  .rich-text-doc h1,
+  .rich-text-doc h2,
+  .rich-text-doc h3 {
+    margin-block: 1.75rem 0.75rem;
+  }
+  .rich-text-doc h1 {
+    font-size: 1.875rem;
+  }
+  .rich-text-doc h2 {
+    font-size: 1.375rem;
+  }
+  .rich-text-doc h3 {
+    font-size: 1.1875rem;
+  }
+  .rich-text-doc p {
+    margin-block: 0.75rem;
+  }
+  .rich-text-doc ul,
+  .rich-text-doc ol {
+    margin-block: 0.75rem;
+  }
+  .rich-text-doc pre {
+    /* A code block is the one node type that still needs its own visible
+       edge once the page around it loses its outer box (`docs-editor.tsx`'s
+       header) — otherwise it reads as a plain grey paragraph, not a block
+       of code. */
+    border: 1px solid var(--color-line);
+    padding: 1rem;
   }
 
   /**
@@ -632,52 +853,47 @@
    * generous padding, and refined hover states. No gradients — the
    * modern look comes from clean surfaces, proper spacing, and subtle
    * elevation changes on interaction.
+   *
+   * Design Bible §07's own `.card` agrees: a flat `var(--raised)` fill, never
+   * a gradient — the diagonal accent-tinted gradient this rule used to paint
+   * (`135deg, raised, raised+8% accent`) directly contradicted the comment
+   * immediately above it, which has said "No gradients" since this block was
+   * first written. Flattened to match both. The machined `--shadow-top-light`
+   * edge (added to `@theme` for exactly this) now rides alongside the
+   * existing drop shadow at both rest and hover, the same composition every
+   * other raised control in the app picked up in the primitives pass.
    * ------------------------------------------------------------------------ */
+  /* Resting, hover and dragged all converge onto `--shadow-lift-1/2/3`
+     (declared above, and — until now — never actually referenced anywhere:
+     each of these three states had its own hand-rolled shadow that
+     approximated, but did not match, the purpose-built token for exactly
+     this state. `--shadow-lift-1/2/3`'s own doc comment already names all
+     three cases by name ("a resting card tile," "hover," "a dragged card")
+     — this is that intent, finally wired to the one component it was
+     written for. */
   .card-tile {
     position: relative;
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-raised) 0%,
-      color-mix(in oklab, var(--color-surface-raised) 92%, var(--color-accent) 8%) 100%
-    );
+    background: var(--color-surface-raised);
     border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
     border-radius: calc(var(--radius-card) + 0.25rem);
     padding: 0.75rem 0.875rem;
     transition: all var(--motion-base) var(--motion-ease);
-    box-shadow:
-      0 1px 3px oklch(0% 0 0 / 12%),
-      0 1px 2px oklch(0% 0 0 / 8%);
+    box-shadow: var(--shadow-lift-1), var(--shadow-top-light);
   }
 
   .card-tile:hover {
     border-color: var(--color-line-strong);
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-hover) 0%,
-      color-mix(in oklab, var(--color-surface-hover) 90%, var(--color-accent) 10%) 100%
-    );
-    box-shadow: var(--shadow-md);
+    background: var(--color-surface-hover);
+    box-shadow: var(--shadow-lift-2), var(--shadow-top-light);
     transform: translateY(-1px);
   }
 
   .card-tile.dragging {
-    box-shadow:
-      0 12px 32px oklch(0% 0 0 / 30%),
-      0 6px 12px oklch(0% 0 0 / 18%);
+    box-shadow: var(--shadow-lift-3), var(--shadow-top-light);
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-color: var(--color-accent);
     transform: translateY(-2px);
-  }
-
-  /* Priority indicator — clean left edge, slightly wider for visibility */
-  .priority-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    border-radius: calc(var(--radius-card) + 0.125rem) 0 0 calc(var(--radius-card) + 0.125rem);
   }
 
   /* Column header — clean, minimal, with status dot */
@@ -691,18 +907,32 @@
     border-radius: 0;
   }
 
-  /* Column container — subtle background tint */
+  /* Column container — subtle background tint.
+     `--column-tint` is unset by default (falls back to `transparent`, a
+     no-op) — `list-column.tsx` is the one caller that sets it, per column,
+     from the cycled `--column-tint-1..5` above; `board-view.tsx`'s
+     `DroppableColumn` (grouped by anything other than list — assignee,
+     priority, sprint) shares this class but never sets the variable, so it
+     renders exactly as it did before this tint existed. */
   .column-container {
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--color-surface-sunken) 60%, transparent) 0%,
-      var(--color-surface-sunken) 100%
-    );
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--column-tint, transparent) 5%, transparent) 0%,
+        transparent 100%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--color-surface-sunken) 60%, transparent) 0%,
+        var(--color-surface-sunken) 100%
+      );
     border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.375rem);
-    box-shadow:
-      0 1px 4px oklch(0% 0 0 / 8%),
-      inset 0 1px 0 oklch(100% 0 0 / 3%);
+    /* `--shadow-column` (declared above, "for better depth hierarchy") was
+       declared and never used — this rule had its own hand-rolled
+       near-duplicate instead. Converged onto the real token, same as
+       `.card-tile`'s three states above. */
+    box-shadow: var(--shadow-column), var(--shadow-top-light);
   }
 
   /* Status dot indicator in column header */
@@ -711,30 +941,6 @@
     height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
-  }
-
-  /* Sidebar enhanced hover effect */
-  .sidebar-item {
-    position: relative;
-    transition: all var(--motion-base) var(--motion-ease);
-  }
-
-  .sidebar-item::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 2px;
-    height: 0;
-    background: var(--color-accent);
-    border-radius: 1px;
-    transition: height var(--motion-base) var(--motion-ease);
-  }
-
-  .sidebar-item:hover::before,
-  .sidebar-item.active::before {
-    height: 60%;
   }
 }
 
@@ -782,6 +988,13 @@
  * form itself sits on the same `--color-surface` every other surface uses,
  * so contrast is unchanged from before this existed.
  * -------------------------------------------------------------------------- */
+/**
+ * The second glow is `--color-suite-chat`, not a second dose of accent — the
+ * Design Bible's own login backdrop (`.login`) is two-tone (an accent glow
+ * top-centre, a cooler cyan one bottom-right), the same two-hue signature its
+ * masthead radial gradients use. A single-hue backdrop reads flatter and
+ * more generic than a page meant to be the first thing anyone sees.
+ */
 .auth-backdrop {
   position: relative;
   background-image:
@@ -792,7 +1005,7 @@
     ),
     radial-gradient(
       ellipse 45% 35% at 88% 108%,
-      color-mix(in oklab, var(--color-accent) 7%, transparent),
+      color-mix(in oklab, var(--color-suite-chat) 8%, transparent),
       transparent 70%
     );
 }

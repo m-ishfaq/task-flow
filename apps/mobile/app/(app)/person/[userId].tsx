@@ -129,7 +129,7 @@ function PersonContent({ userId }: { readonly userId: string }) {
       <BackButton />
 
       <View style={styles.header}>
-        <Avatar label={label} size={56} />
+        <Avatar label={label} size={56} seed={member.userId} />
         <View style={styles.headerText}>
           <Text style={styles.headerName} numberOfLines={1}>
             {label}
@@ -209,7 +209,7 @@ function ChartCard({
               router.push(`/person/${person.userId}`);
             }}
           >
-            <Avatar label={directoryLabel(person)} size={20} />
+            <Avatar label={directoryLabel(person)} size={20} seed={person.userId} />
             <Text style={styles.chartCardRowText} numberOfLines={1}>
               {directoryLabel(person)}
             </Text>

@@ -469,7 +469,7 @@ function CommentRow({
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentMeta}>
-        <Avatar label={author} size={20} />
+        <Avatar label={author} size={20} seed={comment.authorId ?? undefined} />
         <Text style={styles.commentAuthor}>{author}</Text>
         <Text style={styles.commentTime}>
           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}

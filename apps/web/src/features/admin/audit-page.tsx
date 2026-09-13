@@ -7,7 +7,15 @@ import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Avatar, Button, Empty, PageHeader, Spinner } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  Empty,
+  PageContainer,
+  PageHeader,
+  SearchInput,
+  Spinner,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /**
@@ -34,6 +42,7 @@ import { ErrorView } from '../../components/error-view.js';
 export function AuditPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const [before, setBefore] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const entries = useQuery({
     queryKey: [...keys.org(orgId), 'audit', before ?? 'latest'],
@@ -44,8 +53,19 @@ export function AuditPage() {
     mutationFn: () => api.tenancy.audit.verify.query(undefined),
   });
 
+  const needle = search.trim().toLowerCase();
+  const visibleEntries = (entries.data ?? []).filter((entry) => {
+    if (needle === '') return true;
+    return (
+      entry.action.toLowerCase().includes(needle) ||
+      (entry.actorEmail?.toLowerCase().includes(needle) ?? false) ||
+      (entry.resourceType?.toLowerCase().includes(needle) ?? false) ||
+      (entry.resourceId?.toLowerCase().includes(needle) ?? false)
+    );
+  });
+
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+    <PageContainer maxWidth="2xl" className="flex flex-col gap-7">
       <PageHeader
         title="Audit log"
         description="Append-only and hash-chained. Every state-changing action lands here."
@@ -74,7 +94,7 @@ export function AuditPage() {
       {verify.data !== undefined && (
         <div
           className={cn(
-            'rounded border px-3 py-2 text-sm',
+            'rounded-lg border px-3 py-2 text-sm',
             verify.data.intact
               ? 'border-success/40 bg-success/10 text-ink'
               : 'border-danger/40 bg-danger/10 text-ink',
@@ -92,7 +112,7 @@ export function AuditPage() {
                 Chain BROKEN across {verify.data.breaks.length}{' '}
                 {verify.data.breaks.length === 1 ? 'entry' : 'entries'}.
               </p>
-              <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
+              <ul className="mt-1 space-y-0.5 font-mono text-xs">
                 {verify.data.breaks.map((entry) => (
                   <li key={entry.id}>
                     seq {entry.seq}: {entry.reason}
@@ -112,7 +132,27 @@ export function AuditPage() {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line/50">
+            {/* A client-side filter over the fetched PAGE, not a server-side
+                search — `tenancy.audit.list` takes only `limit`/`before`
+                (keyset on `seq`, §8.6's own reasoning against an offset that
+                could skip rows as the log grows), the identical shape
+                `platform-admin/audit-tab.tsx`'s own `TableSearch` already
+                filters this way for the operator-tier sibling of this exact
+                table. Narrowing what's on screen within the current page is
+                still the win a long, scrolling table needs most. */}
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Filter by action, resource, or actor…"
+              className="max-w-sm"
+            />
+
+            {/* `overflow-x-auto` only, no border/radius of its own — `.data-table`
+                (styles.css) already draws both, at `--radius-card` (10px). A
+                wrapper border here used to add a second, MISMATCHED one at the
+                bare 4px `rounded`, so the table's own rounded corners sat
+                inside a visibly squarer outer box instead of nesting cleanly. */}
+            <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -124,26 +164,34 @@ export function AuditPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.data.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="whitespace-nowrap text-ink-muted">
-                        {formatDateTime(entry.occurredAt)}
-                      </td>
-                      <td className="font-medium text-ink">{entry.action}</td>
-                      <td className="text-ink-muted">
-                        {entry.resourceType ?? '—'}
-                        {entry.resourceId !== null && (
-                          <span className="ml-1 font-mono text-[11px] text-ink-faint">
-                            {entry.resourceId.slice(0, 8)}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
+                  {visibleEntries.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center text-sm text-ink-faint">
+                        No entries match your search.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    visibleEntries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="font-mono text-ink-faint">{entry.seq}</td>
+                        <td className="whitespace-nowrap text-ink-muted">
+                          {formatDateTime(entry.occurredAt)}
+                        </td>
+                        <td className="font-medium text-ink">{entry.action}</td>
+                        <td className="text-ink-muted">
+                          {entry.resourceType ?? '—'}
+                          {entry.resourceId !== null && (
+                            <span className="ml-1 font-mono text-xs text-ink-faint">
+                              {entry.resourceId.slice(0, 8)}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -172,7 +220,7 @@ export function AuditPage() {
             </div>
           </>
         ))}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -210,7 +258,7 @@ function ActorCell({
         >
           SYS
         </span>
-        <span className="text-[11px] italic">system</span>
+        <span className="text-xs italic">system</span>
       </span>
     );
   }
@@ -233,7 +281,7 @@ function ActorCell({
   return (
     <span className="inline-flex items-center gap-1.5" title={`${actorEmail} · ${actorId}`}>
       <Avatar userId={actorId} label={actorEmail} size="xs" />
-      <span className="truncate text-[11px] text-ink-muted">{actorEmail}</span>
+      <span className="truncate text-xs text-ink-muted">{actorEmail}</span>
     </span>
   );
 }

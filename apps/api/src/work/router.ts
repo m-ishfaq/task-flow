@@ -227,6 +227,9 @@ const CardSummaryOutput = z
       checklistTotal: z.number().int().nonnegative(),
       version: z.number().int().positive(),
       archivedAt: z.date().nullable(),
+      /* Hex triplets for the tile's label-swatch row — see
+         `card.service.ts`'s `labelColorsByCard`. */
+      labelColors: z.array(z.string()).readonly(),
     }),
   )
   .readonly();

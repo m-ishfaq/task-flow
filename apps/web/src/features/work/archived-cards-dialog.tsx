@@ -153,7 +153,7 @@ function ArchivedListsList({
           <li key={list.listId} className="flex items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-ink">{list.name}</p>
-              <p className="text-[11px] text-ink-faint">
+              <p className="text-xs text-ink-faint">
                 {list.cardCount === 0
                   ? 'No cards'
                   : `${String(list.cardCount)} card${list.cardCount === 1 ? '' : 's'}`}
@@ -216,7 +216,7 @@ function ArchivedCardsList({ orgId, boardId }: ArchivedCardsDialogProps) {
           <li key={card.cardId} className="flex items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-ink">{card.title}</p>
-              <p className="text-[11px] text-ink-faint">{card.reference}</p>
+              <p className="text-xs text-ink-faint">{card.reference}</p>
             </div>
             <Button
               size="sm"

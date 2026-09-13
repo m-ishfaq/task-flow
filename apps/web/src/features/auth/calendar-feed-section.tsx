@@ -62,11 +62,7 @@ export function CalendarFeedSection() {
       {status.data !== undefined && mintedUrl === null && (
         <>
           <div className="flex items-center justify-between">
-            {status.data.active ? (
-              <Badge className="bg-success/15 text-success">Active</Badge>
-            ) : (
-              <Badge>Not set up</Badge>
-            )}
+            {status.data.active ? <Badge tone="success">Active</Badge> : <Badge>Not set up</Badge>}
             <Button
               variant="secondary"
               size="sm"
@@ -83,7 +79,7 @@ export function CalendarFeedSection() {
             </Button>
           </div>
           {status.data.active && (
-            <p className="mt-1 text-[11px] text-ink-faint">
+            <p className="mt-1 text-xs text-ink-faint">
               Regenerating replaces your existing feed — the old link stops working immediately.
             </p>
           )}
@@ -130,10 +126,10 @@ export function CalendarFeedSection() {
               by default: this is exactly the information needed the moment
               the link is on screen, not something to go looking for. */}
           <details open className="mt-3 border-t border-line pt-3">
-            <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
+            <summary className="cursor-pointer text-xs font-medium text-ink-muted">
               Where do I paste this?
             </summary>
-            <ul className="mt-2 space-y-2 text-[11px] text-ink-faint">
+            <ul className="mt-2 space-y-2 text-xs text-ink-faint">
               <li>
                 <span className="font-medium text-ink-muted">Google Calendar (web):</span> in the
                 left sidebar, next to &ldquo;Other calendars&rdquo;, click <strong>+</strong> →{' '}
@@ -156,7 +152,7 @@ export function CalendarFeedSection() {
                 <strong>Add Subscribed Calendar</strong>, then paste the link.
               </li>
             </ul>
-            <p className="mt-2 text-[11px] text-ink-faint">
+            <p className="mt-2 text-xs text-ink-faint">
               Every calendar app polls this link on its own schedule — a card you sync will usually
               appear within a few hours, not instantly.
             </p>

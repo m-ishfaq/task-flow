@@ -119,8 +119,8 @@ describe('OAuth sign-in', () => {
     await waitFor(() => {
       expect(oauthProvidersQuery).toHaveBeenCalled();
     });
-    expect(screen.queryByRole('button', { name: /sign in with google/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /sign in with github/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continue with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continue with github/i })).not.toBeInTheDocument();
   });
 
   it('renders a button only for a configured provider, and redirects on click', async () => {
@@ -130,8 +130,8 @@ describe('OAuth sign-in', () => {
     });
     renderPage();
 
-    const googleButton = await screen.findByRole('button', { name: /sign in with google/i });
-    expect(screen.queryByRole('button', { name: /sign in with github/i })).not.toBeInTheDocument();
+    const googleButton = await screen.findByRole('button', { name: /continue with google/i });
+    expect(screen.queryByRole('button', { name: /continue with github/i })).not.toBeInTheDocument();
 
     await userEvent.click(googleButton);
 

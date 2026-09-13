@@ -19,6 +19,7 @@ import {
   Empty,
   Field,
   Input,
+  PageContainer,
   Section,
   SkeletonRows,
   Spinner,
@@ -57,15 +58,15 @@ export function ProjectSettingsPage() {
 
   if (projects.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <PageContainer maxWidth="md">
         <ErrorView error={projects.error} title="Could not load this project" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (project === undefined) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <PageContainer maxWidth="md">
         <Empty
           title="No such project"
           description="It may have been archived, or belong to another organization."
@@ -75,19 +76,19 @@ export function ProjectSettingsPage() {
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-8">
       <div className="flex items-center gap-2">
         <Link to="/projects" className="text-sm text-accent underline">
           Projects
         </Link>
         <span className="text-ink-faint">/</span>
         <h1 className="text-lg font-semibold text-ink">{project.name}</h1>
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-ink-muted">
+        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-xs text-ink-muted">
           {project.key}
         </span>
       </div>
@@ -107,7 +108,7 @@ export function ProjectSettingsPage() {
           manage the project has no use for a control that would just be
           refused. */}
       {project.capabilities.update && <GuestAccessSection orgId={orgId} projectId={projectId} />}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -506,7 +507,7 @@ function LabelSettings({
                     aria-hidden="true"
                   />
                   <span className="flex-1 truncate text-sm text-ink">{label.name}</span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {label.cardCount} {label.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                   <Button
@@ -672,7 +673,7 @@ function StatusSettings({
                 </option>
               ))}
             </select>
-            <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+            <label className="flex items-center gap-1 text-xs text-ink-muted">
               <input
                 type="checkbox"
                 checked={draft.isDefault}
@@ -749,7 +750,7 @@ function StatusSettings({
                       </option>
                     ))}
                   </select>
-                  <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+                  <label className="flex items-center gap-1 text-xs text-ink-muted">
                     <input
                       type="checkbox"
                       checked={draft.isDefault}
@@ -782,13 +783,13 @@ function StatusSettings({
                   <span className="flex-1 truncate text-sm text-ink">
                     {status.name}
                     {status.isDefault && (
-                      <span className="ml-2 text-[11px] text-ink-faint">default</span>
+                      <span className="ml-2 text-xs text-ink-faint">default</span>
                     )}
                   </span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {STATUS_CATEGORY_LABEL[status.category]}
                   </span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {status.cardCount} {status.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                   <Button
@@ -925,10 +926,10 @@ function FieldSettings({
                   <span className="flex-1 truncate text-sm text-ink">
                     {field.name}
                     {field.archivedAt !== null && (
-                      <span className="ml-2 text-[11px] text-ink-faint">archived</span>
+                      <span className="ml-2 text-xs text-ink-faint">archived</span>
                     )}
                   </span>
-                  <span className="font-mono text-[11px] text-ink-faint">{field.type}</span>
+                  <span className="font-mono text-xs text-ink-faint">{field.type}</span>
                   <Button
                     size="sm"
                     variant="ghost"

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
-import { CreditCard, Search, ShieldAlert } from 'lucide-react';
+import { CreditCard, Search } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -12,6 +12,7 @@ import { ErrorView } from '../../components/error-view.js';
 import {
   OrgDetailDialog,
   Pagination,
+  StatusPill,
   StepUpGate,
   TableSearch,
   downloadCsv,
@@ -46,9 +47,7 @@ function BillingBarChart({
         const width = Math.max((item.value / maxValue) * 100, item.value > 0 ? 4 : 0);
         return (
           <div key={item.label} className="flex items-center gap-2">
-            <span className="w-20 shrink-0 text-right text-[11px] text-ink-muted">
-              {item.label}
-            </span>
+            <span className="w-20 shrink-0 text-right text-xs text-ink-muted">{item.label}</span>
             <div className="min-w-0 flex-1">
               <svg width="100%" height="16" className="overflow-visible">
                 <rect
@@ -62,7 +61,7 @@ function BillingBarChart({
                 />
               </svg>
             </div>
-            <span className="w-8 shrink-0 text-right text-[11px] font-medium text-ink">
+            <span className="w-8 shrink-0 text-right text-xs font-medium text-ink">
               {String(item.value)}
             </span>
           </div>
@@ -137,11 +136,11 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
     <div className="grid gap-3 sm:grid-cols-3">
       {/* MRR card */}
       <div className="rounded-xl border border-line bg-surface-raised p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-faint">
           Monthly recurring revenue
         </p>
         <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">{money(mrr, 'usd')}</p>
-        <p className="mt-0.5 text-[11px] text-ink-faint">
+        <p className="mt-0.5 text-xs text-ink-faint">
           from {String(statusCounts.active)} active organization
           {statusCounts.active === 1 ? '' : 's'}
         </p>
@@ -149,7 +148,7 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
 
       {/* Status breakdown */}
       <div className="rounded-xl border border-line bg-surface-raised p-4">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-ink-faint">
           By status
         </p>
         <BillingBarChart data={statusData} maxValue={maxStatus} />
@@ -157,11 +156,9 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
 
       {/* Plan distribution */}
       <div className="rounded-xl border border-line bg-surface-raised p-4">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
-          By plan
-        </p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-ink-faint">By plan</p>
         {planData.length === 0 ? (
-          <p className="text-[11px] text-ink-faint">No data</p>
+          <p className="text-xs text-ink-faint">No data</p>
         ) : (
           <BillingBarChart data={planData} maxValue={maxPlan} />
         )}
@@ -291,25 +288,25 @@ export function BillingTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Organization
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Status
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Plan
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Renews
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Last invoice
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Trial / grace ends
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">
                   Stripe customer
                 </th>
                 <th className="px-3 py-2.5" />
@@ -319,16 +316,16 @@ export function BillingTab({
               {(filteredOrgs ?? []).map((org) => (
                 <tr
                   key={org.orgId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                   onClick={() => {
                     setBillingDetailOrgId(org.orgId);
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
+                    <p className="font-medium text-ink transition-colors duration-(--motion-fast) group-hover:text-accent">
                       {org.name}
                     </p>
-                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-xs text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
                     <BillingStatusBadge billingStatus={org.billingStatus} />
@@ -336,12 +333,12 @@ export function BillingTab({
                   <td className="px-3 py-2.5">
                     <p className="text-ink">{org.planName ?? org.planId ?? '—'}</p>
                     {org.currentPriceCents !== null && (
-                      <p className="text-[11px] text-ink-faint">
+                      <p className="text-xs text-ink-faint">
                         {money(org.currentPriceCents, 'usd')}/{org.currentPriceInterval ?? 'month'}
                       </p>
                     )}
                     {org.pendingPlanId !== null && org.pendingPlanEffectiveAt !== null && (
-                      <p className="text-[11px] font-medium text-warning">
+                      <p className="text-xs font-medium text-warning">
                         → {org.pendingPlanId} {formatDate(org.pendingPlanEffectiveAt)}
                       </p>
                     )}
@@ -371,7 +368,7 @@ export function BillingTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[11px] text-ink-faint">
+                        <p className="text-xs text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
@@ -384,7 +381,7 @@ export function BillingTab({
                         ? formatDate(org.trialEndsAt)
                         : '—'}
                   </td>
-                  <td className="max-w-35 truncate px-3 py-2.5 font-mono text-[11px] text-ink-faint">
+                  <td className="max-w-35 truncate px-3 py-2.5 font-mono text-xs text-ink-faint">
                     {org.stripeCustomerId ?? '—'}
                   </td>
                   <td className="px-3 py-2.5 text-right">
@@ -489,10 +486,7 @@ export function BillingTab({
                 />
               </Field>
 
-              <div className="flex gap-2">
-                <Button type="submit" variant="primary" disabled={extend.isPending}>
-                  {extend.isPending ? 'Extending…' : 'Extend'}
-                </Button>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -500,6 +494,9 @@ export function BillingTab({
                   }}
                 >
                   Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={extend.isPending}>
+                  {extend.isPending ? 'Extending…' : 'Extend'}
                 </Button>
               </div>
             </form>
@@ -524,31 +521,13 @@ export function BillingTab({
 
 function BillingStatusBadge({ billingStatus }: { readonly billingStatus: string }) {
   if (billingStatus === 'active') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-        <span className="size-1.5 rounded-full bg-success" />
-        active
-      </span>
-    );
+    return <StatusPill tone="success" label="active" />;
   }
   if (billingStatus === 'trialing') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
-        trial
-      </span>
-    );
+    return <StatusPill tone="neutral" label="trial" />;
   }
   if (billingStatus === 'past_due') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        <ShieldAlert className="size-3" strokeWidth={2.5} />
-        past due
-      </span>
-    );
+    return <StatusPill tone="danger" label="past due" />;
   }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-      canceled
-    </span>
-  );
+  return <StatusPill tone="danger" label="canceled" />;
 }

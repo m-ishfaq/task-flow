@@ -36,7 +36,12 @@ export function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          'ui-fade z-50 rounded border border-line bg-surface-raised shadow-lg',
+          /* `rounded-card` (10px), matching `modal.tsx`'s and
+             `dropdown-menu.tsx`'s identical move — one shared radius for
+             every raised, floating panel in the app rather than the bare
+             `rounded` (4px) this shell (and, transitively, all nine call
+             sites the header comment above counts) used to carry. */
+          'ui-fade z-50 rounded-card border border-line bg-surface-raised shadow-lg',
           className,
         )}
         {...props}

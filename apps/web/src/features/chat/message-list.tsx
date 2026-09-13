@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, Pin } from 'lucide-react';
+import { Check, Paperclip, Pin } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { cn } from '../../lib/cn.js';
 import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
@@ -17,13 +17,20 @@ import { flattenDocument, formatTime } from './chat-helpers.js';
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅'] as const;
 
 /**
- * A group, WhatsApp/Telegram-style: the viewer's OWN messages align right in
- * an accent bubble with no avatar (the side is already the identity signal —
- * repeating your own name and picture next to it is the thing this layout
- * exists to avoid); everyone else's align left, with an avatar next to the
- * FIRST bubble in the group and a matching space held next to the rest, so
- * the second and third bubbles in a run still line up under the first
- * instead of drifting to the edge once the avatar is gone.
+ * A group, Slack-style (Design Bible §07): every message — including the
+ * viewer's own — renders left-aligned, full width, no bubble. An avatar and
+ * a `name · time` header sit once above the FIRST message in the group; the
+ * rest sit in the same content column with nothing repeated above them, so
+ * a run of several messages from one person reads as one continuous
+ * utterance rather than a stack of separately-labelled boxes.
+ *
+ * This used to be WhatsApp/Telegram-style — the viewer's own messages
+ * right-aligned in an accent bubble, everyone else's left with an avatar.
+ * Replaced outright rather than kept as a second layout: the bible's own
+ * mockup renders every message the same way regardless of author, and a
+ * flat list has no "which side" question left to answer. `isOwn` still
+ * matters for PERMISSIONS (only the author gets an Edit control) — it no
+ * longer decides anything about layout.
  */
 export function MessageGroupView({
   group,
@@ -79,48 +86,30 @@ export function MessageGroupView({
   if (first === undefined) return null;
 
   return (
-    <div className={cn('flex gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
-      <div className="w-6 shrink-0 self-end">
-        {!isOwn && group.authorId !== null && (
+    <div className="flex gap-[11px]">
+      <div className="w-6 shrink-0">
+        {group.authorId !== null && (
           <Avatar userId={group.authorId} label={authorLabel ?? group.authorId} size="sm" />
         )}
       </div>
 
-      {/* 85% on a phone, 75% from `sm` up.
-          A single 75% cap reads as a comfortable margin on a desktop and as a
-          cramped column on a phone, because the fixed costs around it do not
-          scale: the avatar gutter (`w-6`) and its gap take 2rem, and the list's
-          own horizontal padding takes another, before the percentage applies to
-          what's left. On a 375px viewport that is 75% of ~19rem rather than 75%
-          of the screen — bubbles a third of the width of the device, wrapping
-          every few words. Widening the cap below `sm` is what every chat
-          product does for the same arithmetic; the point of the cap at all is
-          to keep the opposite edge visible so left and right bubbles stay
-          distinguishable, and 85% still does that. */}
-      <div
-        className={cn(
-          'flex min-w-0 max-w-[85%] flex-col gap-0.5 sm:max-w-[75%]',
-          isOwn && 'items-end',
-        )}
-      >
-        {/* Own bubbles skip the name — the side they're on already says who
-            sent them — but every group still gets ONE relative timestamp,
-            because "who and when" is what a message header is for and only
-            half of that is redundant here. */}
-        {!isOwn && (
-          <span className="px-1 text-xs font-medium text-ink-muted">
-            {authorLabel ?? 'Unknown'}
-          </span>
-        )}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {/* One header for the whole group — name and the FIRST message's
+            time, Slack's own `.msg .mb .h` shape. Every subsequent message
+            in the group sits in this same column with no header of its
+            own, which is what makes a run of messages read as one
+            utterance rather than N separately-labelled ones. */}
+        <span className="flex items-baseline gap-1.5 px-0.5">
+          <span className="text-[13px] font-semibold text-ink">{authorLabel ?? 'Unknown'}</span>
+          <span className="text-xs text-ink-faint">{formatTime(first.createdAt)}</span>
+        </span>
 
-        {group.messages.map((message, index) => (
-          <MessageBubble
+        {group.messages.map((message) => (
+          <MessageRow
             key={message.messageId}
             message={message}
             isOwn={isOwn}
             canModerate={canModerate}
-            isFirstInGroup={index === 0}
-            isLastInGroup={index === group.messages.length - 1}
             isEditing={editingId === message.messageId}
             onStartEdit={() => {
               onStartEdit(message.messageId);
@@ -163,12 +152,10 @@ export function MessageGroupView({
   );
 }
 
-function MessageBubble({
+function MessageRow({
   message,
   canModerate,
   isOwn,
-  isFirstInGroup,
-  isLastInGroup,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -192,8 +179,6 @@ function MessageBubble({
   readonly message: Message;
   readonly isOwn: boolean;
   readonly canModerate: boolean;
-  readonly isFirstInGroup: boolean;
-  readonly isLastInGroup: boolean;
   readonly isEditing: boolean;
   readonly onStartEdit: () => void;
   readonly onCancelEdit: () => void;
@@ -216,16 +201,7 @@ function MessageBubble({
   readonly onOpenThread: () => void;
 }) {
   if (message.deletedAt !== null) {
-    return (
-      <p
-        className={cn(
-          'rounded-2xl px-3 py-1.5 text-xs text-ink-faint italic',
-          isOwn ? 'bg-accent/10' : 'bg-surface-raised',
-        )}
-      >
-        This message was deleted.
-      </p>
-    );
+    return <p className="px-0.5 text-xs text-ink-faint italic">This message was deleted.</p>;
   }
 
   if (isEditing) {
@@ -241,113 +217,75 @@ function MessageBubble({
     );
   }
 
-  /* A run of same-author bubbles gets one rounded corner shaved flat where
-     it touches its neighbour — the "tail only on the outermost bubble" shape
-     every chat product uses so a run of three reads as one utterance
-     instead of three separate boxes stacked with identical corners. */
-  const cornerClass = isOwn
-    ? cn(!isFirstInGroup && 'rounded-tr-md', !isLastInGroup && 'rounded-br-md')
-    : cn(!isFirstInGroup && 'rounded-tl-md', !isLastInGroup && 'rounded-bl-md');
-
   return (
-    <div className={cn('group/message relative flex flex-col gap-1', isOwn && 'items-end')}>
-      {/* The bubble's wrapper: a row with exactly one in-flow child (the
-          bubble) whose only other job is to be the positioning context for
-          the hover toolbar's `absolute top-full` — the toolbar floats BELOW
-          the bubble, so it is out of flow and never widens this row. `flex`
-          (not a plain block) is what keeps the bubble's `min-w-0` a real
-          bound against its widest child (see the bubble's own comment). */}
-      <div className="relative flex items-end">
-        <div
-          className={cn(
-            /* `min-w-0` because the bubble is a flex item whose automatic
-               minimum size would otherwise be its widest child, and two of
-               its children are wider than a phone: a link preview card is
-               `max-w-md` (28rem — a cap, but one no small viewport can
-               honour), and an attachment row's filename is `truncate`, which
-               is `white-space: nowrap` and therefore contributes the WHOLE
-               filename to min-content even though it renders as an ellipsis.
-               Both are clipped or capped for their own layout and neither can
-               shrink the box that contains them. Bounding the bubble here
-               instead means every child resolves against the 75% the message
-               column actually has, rather than the bubble growing to fit them
-               and taking the message list's horizontal scrollbar with it. */
-            /* `text-sm` — 14px, the size every chat product (Slack, WhatsApp,
-               Discord) sets its message body to. The base 16px is a reading
-               size for document surfaces; a message column at 16px reads as
-               shouting, and the bubble is the container that owns the size. */
-            'min-w-0 rounded-2xl px-3 py-1.5 max-w-2xl text-sm shadow-sm',
-            isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
-            /* Links inside the viewer's own bubble would otherwise be the
-               accent hue on an accent fill — invisible (see styles.css's
-               `.rich-text-on-accent` rule). Hanging it here scopes that
-               override to the accent bubble only; the receiver's side keeps
-               the normal accent link color on the light surface. */
-            isOwn && 'rich-text-on-accent',
-            cornerClass,
-          )}
-        >
+    <div className="group/message relative flex flex-col gap-1">
+      {/* The row's own positioning context for the hover toolbar. No bubble
+          left to float the toolbar over — Design Bible §07's own
+          `.msg .acts { position: absolute; top: -12px; right: 0 }`, applied
+          to the plain text row instead of a bubble's outer edge. Always
+          `right-0` now: there is no "own message" side anymore to switch
+          it to `left-0` for. */}
+      <div className="relative">
+        {/* `text-sm` — 14px, the size every chat product (Slack, WhatsApp,
+            Discord) sets its message body to. The base 16px is a reading
+            size for document surfaces; a message column at 16px reads as
+            shouting. */}
+        <div className="min-w-0 pr-0.5 text-sm text-ink">
           <RichTextView value={message.body} bare />
-          {/* The timestamp sits bottom-RIGHT inside the bubble, under the last
-              text line, in a muted tint of the bubble's own colour — metadata
-              about the bubble, not a second row of chrome (WhatsApp's own
-              placement; right-aligned in both the viewer's and others'). */}
-          <div
-            className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
-              isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
-            )}
-          >
-            <span>{formatTime(message.createdAt)}</span>
-            {message.editedAt !== null && <span>edited</span>}
-            {pinned && <Pin aria-label="Pinned" className="size-2.5" strokeWidth={2.25} />}
-          </div>
+          {/* "(edited)" and the pinned mark travel with the TEXT now, not a
+              bubble-owned metadata row — there is no bubble left to own one,
+              and a continuation message in a group (no header above it)
+              still needs somewhere to say it was edited or pinned. */}
+          {(message.editedAt !== null || pinned) && (
+            <span className="ml-1.5 inline-flex items-center gap-1 align-middle text-[10px] text-ink-faint">
+              {message.editedAt !== null && <span className="italic">(edited)</span>}
+              {pinned && <Pin aria-label="Pinned" className="size-2.5" strokeWidth={2.25} />}
+            </span>
+          )}
         </div>
 
-        {/* Hover actions float over the bubble's TOP edge, aligned to its
-            outer corner (`right-0` for the viewer's own bubble, `left-0` for
-            everyone else's) — the Slack placement. Chosen over "below the
-            bubble" for a concrete reason: reactions and the reply count live
-            BELOW the bubble, so a toolbar parked there covers the exact
-            things a hovering reader is about to click. At the top it
-            transiently overlaps the first line of the message's own text,
-            which is the trade Slack itself makes and nothing interactive is
-            ever hidden. Floating, not in-flow: the row appears on hover
-            only, and reserving space would push reactions and the next
-            message down for every message nobody is hovering.
+        {/* Chosen over "below the row" for the same reason it always was:
+            reactions and the reply count live BELOW, so a toolbar parked
+            there would cover the exact things a hovering reader is about
+            to click. At the top it transiently overlaps the first line of
+            the message's own text, which is the trade Slack itself makes
+            and nothing interactive is ever hidden. Floating, not in-flow:
+            the row appears on hover only, and reserving space would push
+            reactions and the next message down for every message nobody
+            is hovering.
 
             `pointer-events-none` is not cosmetic — it is the other half of
             the fix. An invisible `opacity-0` element still intercepts
-            clicks, so a toolbar parked below the bubble was blocking the
+            clicks, so a toolbar parked below the row was blocking the
             reaction pills beneath it even when it could not be seen.
             Click-through while hidden, interactive only once actually
             shown. The same `opacity-0 group-hover:opacity-100` shape
             `card-tile.tsx`'s quick actions use, visible on hover or
-            keyboard focus rather than as permanent clutter on every bubble.
+            keyboard focus rather than as permanent clutter on every row.
 
             Edit is author-only with no override, same reasoning as Work's
-            comments (CLAUDE.md, §8.2) — nobody else's edit control would ever
-            succeed, so it never renders for someone else's bubble regardless
-            of side. Delete stays visible wherever a moderator override is
-            possible; the server is the one that turns an unearned click into
-            an honest FORBIDDEN rather than a silent no-op. React and pin are
-            offered to everyone who can post — see `reaction.service.ts` and
-            `pin.service.ts` on why neither needs a stronger permission. */}
+            comments (CLAUDE.md, §8.2) — nobody else's edit control would
+            ever succeed, so it never renders for someone else's message.
+            Delete stays visible wherever a moderator override is possible;
+            the server is the one that turns an unearned click into an
+            honest FORBIDDEN rather than a silent no-op. React and pin are
+            offered to everyone who can post — see `reaction.service.ts`
+            and `pin.service.ts` on why neither needs a stronger
+            permission. */}
         <div
           className={cn(
-            'pointer-events-none absolute top-0 z-20 flex items-center gap-0.5 rounded-lg border border-line bg-surface-raised px-1 py-0.5 opacity-0 shadow-md transition-opacity',
-            isOwn ? 'right-0' : 'left-0',
+            'pointer-events-none absolute -top-3 right-0 z-20 flex items-center gap-0.5 rounded-lg border border-line bg-surface-raised px-1 py-0.5 opacity-0 shadow-md transition-opacity duration-(--motion-fast)',
             'group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100',
           )}
         >
           <EmojiPickerButton onPick={onToggleReaction} />
-          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onOpenThread}>
+          <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onOpenThread}>
             Reply
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onTogglePin(pinned);
             }}
@@ -357,7 +295,7 @@ function MessageBubble({
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1 text-[11px]"
+            className="h-5 px-1 text-xs"
             onClick={() => {
               onToggleSave(isSaved);
             }}
@@ -367,12 +305,7 @@ function MessageBubble({
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-5 px-1 text-[11px]"
-              onClick={onStartEdit}
-            >
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-xs" onClick={onStartEdit}>
               Edit
             </Button>
           )}
@@ -387,7 +320,7 @@ function MessageBubble({
         </div>
       </div>
 
-      {/* Files and link previews sit BELOW the bubble rather than inside it:
+      {/* Files and link previews sit BELOW the text rather than inside it:
           a preview card is about something the message points at, not part of
           what was written, and putting it inside would make an edit look like
           it changed the card too. */}
@@ -417,7 +350,7 @@ function MessageBubble({
 }
 
 /**
- * The bubble's delete control — Slack's two-way delete in one popover.
+ * A message's delete control — Slack's own two-way delete in one popover.
  *
  * "Remove for me" (hide) is always available: it writes a per-viewer hide
  * row and the message stays live for everyone else, so there is nothing to
@@ -440,7 +373,7 @@ function DeleteMenu({
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           Delete
         </Button>
       </PopoverTrigger>
@@ -450,7 +383,7 @@ function DeleteMenu({
           <button
             type="button"
             onClick={onHide}
-            className="flex flex-col items-start rounded px-1.5 py-1.5 text-left hover:bg-surface-hover"
+            className="flex flex-col items-start rounded-md px-1.5 py-1.5 text-left hover:bg-surface-hover"
           >
             <span className="text-sm font-medium text-ink">Remove for me</span>
             <span className="text-xs text-ink-faint">
@@ -461,7 +394,7 @@ function DeleteMenu({
             <button
               type="button"
               onClick={onDelete}
-              className="flex flex-col items-start rounded px-1.5 py-1.5 text-left hover:bg-surface-hover"
+              className="flex flex-col items-start rounded-md px-1.5 py-1.5 text-left hover:bg-surface-hover"
             >
               <span className="text-sm font-medium text-danger">Remove for everyone</span>
               <span className="text-xs text-ink-faint">
@@ -509,7 +442,7 @@ function ReactionBar({
                 type="button"
                 aria-label={`${emoji} — ${String(userIds.length)} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
                 className={cn(
-                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors duration-(--motion-fast)',
                   mine
                     ? 'border-accent bg-accent text-accent-ink'
                     : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
@@ -561,7 +494,7 @@ export function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string)
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-xs">
           React
         </Button>
       </PopoverTrigger>
@@ -573,7 +506,7 @@ export function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string)
               onClick={() => {
                 onPick(emoji);
               }}
-              className="rounded p-1 hover:bg-surface-hover"
+              className="rounded-lg p-1 hover:bg-surface-hover"
             >
               {emoji}
             </button>
@@ -661,7 +594,9 @@ export function AttachFileButton({
           inputRef.current?.click();
         }}
       >
-        📎
+        {/* A real glyph, not a 📎 emoji — same reasoning as every other
+            emoji-as-icon fix in this pass. */}
+        <Paperclip aria-hidden="true" className="size-4" strokeWidth={2} />
       </Button>
     </>
   );
@@ -683,7 +618,7 @@ export function SlashCommandMenu({ draft }: { readonly draft: DocumentNode }) {
   if (matches.length === 0) return null;
 
   return (
-    <ul className="mb-1 overflow-hidden rounded border border-line bg-surface-raised text-xs shadow-sm">
+    <ul className="mb-1 overflow-hidden rounded-card border border-line bg-surface-raised text-xs shadow-lg">
       {matches.map((command) => (
         <li key={command.name} className="flex gap-2 px-2 py-1">
           <span className="font-mono text-ink">{command.hint}</span>

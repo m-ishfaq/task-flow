@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Check, X } from 'lucide-react';
 import { PERMISSIONS, RESOURCE_TYPES, type Permission, type ResourceType } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { cn } from '../../lib/cn.js';
-import { Button, Field, Input, Spinner } from '../../components/primitives.js';
+import { Button, Field, Input, PageContainer, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { membersQuery } from '../org/api.js';
 
@@ -74,7 +75,7 @@ export function PermissionDebugPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+    <PageContainer maxWidth="xl" className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Permission debugger</h1>
         <p className="mt-1 text-sm text-ink-muted">
@@ -204,13 +205,22 @@ export function PermissionDebugPage() {
             <span
               aria-hidden="true"
               className={cn(
-                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full',
                 explanation.data.allowed
                   ? 'bg-success/20 text-success'
                   : 'bg-danger/20 text-danger',
               )}
             >
-              {explanation.data.allowed ? '✓' : '✗'}
+              {/* Design Bible §19's own account of what changed here: "the old
+                  page was a text-lg developer tool with ✓/✗ text glyphs..."
+                  — real icons, not characters, matching the redesigned
+                  verdict banner the rest of this file's own trace stepper
+                  already uses colored circles for. */}
+              {explanation.data.allowed ? (
+                <Check className="size-3.5" strokeWidth={3} />
+              ) : (
+                <X className="size-3.5" strokeWidth={3} />
+              )}
             </span>
 
             <div className="min-w-0">
@@ -260,12 +270,12 @@ export function PermissionDebugPage() {
                   <div className="min-w-0 pb-3">
                     <p className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-sm text-ink">{step.rule}</span>
-                      <span className="text-[11px] text-ink-faint">
+                      <span className="text-xs text-ink-faint">
                         {LAYER_NAMES[step.layer] ?? `Layer ${String(step.layer)}`}
                       </span>
                       <span
                         className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                          'rounded-md px-1.5 py-0.5 text-[10px] font-medium',
                           step.outcome === 'allow'
                             ? 'bg-success/15 text-success'
                             : step.outcome === 'deny'
@@ -295,12 +305,12 @@ export function PermissionDebugPage() {
                 server. Rendered as text in a <pre>, never as markup — there is
                 no HTML anywhere in this app, and `dangerouslySetInnerHTML` is a
                 lint error workspace-wide. */}
-            <pre className="overflow-x-auto border-t border-line/50 bg-surface-sunken p-3 font-mono text-[11px] text-ink-muted">
+            <pre className="overflow-x-auto border-t border-line/50 bg-surface-sunken p-3 font-mono text-xs text-ink-muted">
               {explanation.data.formatted}
             </pre>
           </details>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

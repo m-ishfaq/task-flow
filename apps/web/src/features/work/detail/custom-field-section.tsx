@@ -166,7 +166,7 @@ function AddFieldForm({
       <Button
         size="sm"
         variant="ghost"
-        className="h-6 px-1 text-[11px]"
+        className="h-6 px-1 text-xs"
         onClick={() => {
           setOpen(true);
         }}
@@ -339,7 +339,7 @@ function FieldInput({
               onClick={() => {
                 onCommit(on ? selected.filter((entry) => entry !== choice) : [...selected, choice]);
               }}
-              className={`rounded px-1.5 py-0.5 text-[11px] disabled:opacity-60 ${
+              className={`rounded px-1.5 py-0.5 text-xs disabled:opacity-60 ${
                 on ? 'bg-accent text-accent-ink' : 'bg-surface-hover text-ink-muted'
               }`}
             >

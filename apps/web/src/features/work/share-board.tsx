@@ -24,6 +24,7 @@ import { Button, Empty } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery } from '../org/api.js';
+import { UNKNOWN_PERSON_LABEL } from '../org/use-members.js';
 
 /**
  * Sharing a board with a person or a team — relationship tuples (§8.2).
@@ -125,7 +126,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
   });
 
   const emailOf = (userId: string) =>
-    members.data?.find((member) => member.userId === userId)?.email ?? userId;
+    members.data?.find((member) => member.userId === userId)?.email ?? UNKNOWN_PERSON_LABEL;
 
   return (
     <div className="mt-4 space-y-4">
@@ -139,7 +140,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
                 <p className="truncate text-sm text-ink">
                   {tuple.subjectType === 'user' ? emailOf(tuple.subjectId) : tuple.subjectId}
                 </p>
-                <p className="text-[11px] text-ink-faint">
+                <p className="text-xs text-ink-faint">
                   {tuple.subjectType} · {tuple.relation}
                   {/* Narrowed first: `grants.list` types `relation` as a plain
                       string, because the column is text and a tuple written by
@@ -180,7 +181,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
           onChange={(event) => {
             setSubjectId(event.target.value);
           }}
-          className="h-8 flex-1 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 flex-1 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Choose someone…</option>
           {(members.data ?? []).map((member) => (
@@ -196,7 +197,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
           onChange={(event) => {
             setRelation(event.target.value as Relation);
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           {RELATIONS.map((entry) => (
             <option key={entry} value={entry}>
@@ -214,7 +215,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
       {/* Shows what the chosen relation actually confers, read from the policy
           package. A relation name alone is not self-explanatory, and guessing
           wrong here hands out real access. */}
-      <p className="text-[11px] text-ink-faint">
+      <p className="text-xs text-ink-faint">
         <span className="font-medium">{relation}</span> confers:{' '}
         {permissionsForRelation(relation).join(', ') || 'nothing on its own'}
       </p>

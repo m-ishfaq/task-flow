@@ -131,16 +131,16 @@ export function StepUpDialog({ open, onClose, onConfirmed }: StepUpDialogProps) 
 
           {reauthenticate.isError && <ErrorView error={reauthenticate.error} />}
 
-          <div className="flex gap-2">
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
             <Button
               type="submit"
               variant="primary"
               disabled={reauthenticate.isPending || password === '' || email === ''}
             >
               {reauthenticate.isPending ? 'Confirming…' : 'Confirm'}
-            </Button>
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
             </Button>
           </div>
         </form>

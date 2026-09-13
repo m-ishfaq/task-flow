@@ -183,7 +183,7 @@ function PasskeyRow({ passkey, busy, onRename, onRemove }: PasskeyRowProps) {
   const [draft, setDraft] = useState(passkey.name ?? '');
 
   return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
+    <li className="group flex items-center gap-3 px-3 py-2 transition-colors duration-(--motion-fast) hover:bg-surface-hover">
       <div className="min-w-0 flex-1">
         {editing ? (
           <form
@@ -221,7 +221,7 @@ function PasskeyRow({ passkey, busy, onRename, onRemove }: PasskeyRowProps) {
         ) : (
           <p className="truncate text-sm text-ink">{passkey.name ?? 'Unnamed passkey'}</p>
         )}
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           {passkey.deviceType === 'multiDevice' ? 'Syncs across devices' : 'This device only'}
           {passkey.backedUp && ' · backed up'} · added {formatDate(passkey.createdAt)}
           {passkey.lastUsedAt !== null && ` · last used ${formatDateTime(passkey.lastUsedAt)}`}

@@ -126,7 +126,7 @@ export function ImportExportDialog({
                 onClick={() => {
                   setTab(entry);
                 }}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors duration-(--motion-fast) ${
                   tab === entry
                     ? 'bg-accent text-accent-ink'
                     : 'text-ink-muted hover:bg-surface-hover'
@@ -207,7 +207,7 @@ function ExportTab({
           onChange={(event) => {
             setScope(event.target.value);
           }}
-          className="mt-1 h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="mt-1 h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Whole project</option>
           <option value="board">This board</option>
@@ -226,7 +226,7 @@ function ExportTab({
           onChange={(event) => {
             setFormat(event.target.value as 'csv' | 'json');
           }}
-          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="csv">CSV (spreadsheet)</option>
           <option value="json">JSON</option>
@@ -374,7 +374,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           onChange={(event) => {
             setListId(event.target.value);
           }}
-          className="mt-1 h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          className="mt-1 h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink"
         >
           <option value="">Choose a list…</option>
           {(lists.data ?? []).map((list) => (
@@ -387,7 +387,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
             being where everything lands the moment rows started routing by
             their own `list` column, and a person importing a whole board needs
             to know their columns survive BEFORE they click. */}
-        <span className="mt-1 block text-[11px] text-ink-faint">
+        <span className="mt-1 block text-xs text-ink-faint">
           Rows carrying a <code className="font-mono">list</code> column go to the list of that name
           on this board. This is where the rest land.
         </span>
@@ -410,7 +410,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           }}
           className="mt-0.5"
         />
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-xs text-ink-muted">
           Create labels this project does not have
           <span className="block text-ink-faint">
             Statuses are never created — a status carries a category that decides whether a card
@@ -419,7 +419,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
         </span>
       </label>
 
-      <label className="block cursor-pointer rounded border border-dashed border-line bg-surface-sunken/60 p-4 text-center text-xs text-ink-muted transition-colors hover:bg-surface-hover">
+      <label className="block cursor-pointer rounded border border-dashed border-line bg-surface-sunken/60 p-4 text-center text-xs text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover">
         <input
           type="file"
           accept=".csv,.json,text/csv,application/json"
@@ -453,7 +453,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
         <div className="rounded border border-line/50">
           <p className="border-b border-line px-3 py-2 text-xs font-medium text-ink">
             Match the file&rsquo;s columns
-            <span className="mt-0.5 block font-normal text-[11px] text-ink-faint">
+            <span className="mt-0.5 block font-normal text-xs text-ink-faint">
               Guessed from the header names. Change anything that is wrong — only{' '}
               <code className="font-mono">title</code> is required.
             </span>
@@ -461,7 +461,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           <ul className="divide-y divide-line/40">
             {IMPORT_COLUMNS.map((column) => (
               <li key={column} className="flex items-center gap-2 px-3 py-1.5">
-                <span className="w-24 shrink-0 font-mono text-[11px] text-ink">
+                <span className="w-24 shrink-0 font-mono text-xs text-ink">
                   {column}
                   {column === 'title' && <span className="text-danger"> *</span>}
                 </span>
@@ -474,7 +474,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
                     /* The preview described the OLD mapping. */
                     setPreview(null);
                   }}
-                  className="h-7 min-w-0 flex-1 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+                  className="h-7 min-w-0 flex-1 rounded-md border border-line bg-surface-sunken px-1.5 text-xs text-ink"
                 >
                   <option value="">— not imported —</option>
                   {table.headers.map((header) => (
@@ -487,7 +487,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
             ))}
           </ul>
           {!titleMapped && (
-            <p className="border-t border-line px-3 py-2 text-[11px] text-danger">
+            <p className="border-t border-line px-3 py-2 text-xs text-danger">
               Point <code className="font-mono">title</code> at a column — a card cannot be created
               without one.
             </p>
@@ -541,7 +541,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
                 project:
               </span>{' '}
               <span className="text-ink-muted">{preview.missingLabels.join(', ')}</span>
-              <span className="mt-0.5 block text-[11px] text-ink-faint">
+              <span className="mt-0.5 block text-xs text-ink-faint">
                 {createLabels
                   ? 'These will be created when you import.'
                   : 'Tick “Create labels this project does not have” above, or add them in project settings first.'}
@@ -586,7 +586,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
       )}
 
       {done !== null && (
-        <div className="rounded border border-line bg-surface-sunken/60 p-3 text-xs">
+        <div className="rounded-md border border-line bg-surface-sunken/60 p-3 text-xs">
           <p className="font-medium text-ink">
             Imported {done.created} {done.created === 1 ? 'card' : 'cards'}
             {done.errors.length > 0 &&

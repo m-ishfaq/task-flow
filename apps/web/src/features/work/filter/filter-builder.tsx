@@ -125,7 +125,7 @@ export function FilterBuilder({
       <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
         <div
           className={cn(
-            'mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]',
+            'mb-2 inline-flex overflow-hidden rounded border border-line text-xs',
             !tqlAvailable && 'hidden',
           )}
         >
@@ -263,14 +263,14 @@ function TqlEditor({
            the obvious-looking `status = todo AND assignee = me` is refused by
            the very validator this box runs. */
         placeholder="priority = high AND creator = me"
-        className="block w-full resize-y rounded border border-line bg-surface px-2 py-1.5 font-mono text-xs leading-5 text-ink outline-none focus:border-accent placeholder:font-sans placeholder:text-ink-faint"
+        className="block w-full resize-y rounded border border-line bg-surface px-2 py-1.5 font-mono text-xs leading-5 text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 placeholder:font-sans placeholder:text-ink-faint"
       />
       {error !== null && (
         <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}
-      <p className="text-[11px] text-ink-faint">
+      <p className="text-xs text-ink-faint">
         The same language the Search page speaks. Switch back to Builder to see it as chips.
       </p>
     </div>
@@ -311,7 +311,7 @@ function GroupEditor({
   return (
     <div className={cn('space-y-2', depth > 0 && 'rounded border border-line p-2')}>
       <div className="flex items-center gap-2">
-        <div className="inline-flex overflow-hidden rounded border border-line text-[11px]">
+        <div className="inline-flex overflow-hidden rounded border border-line text-xs">
           {(['and', 'or'] as const).map((combinator) => (
             <button
               key={combinator}
@@ -331,7 +331,7 @@ function GroupEditor({
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           {group.combinator === 'and' ? 'all of these match' : 'any of these match'}
         </span>
       </div>

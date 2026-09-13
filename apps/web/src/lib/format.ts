@@ -98,6 +98,28 @@ export function formatCallDuration(totalSeconds: number): string {
 }
 
 /**
+ * A LIVE call's elapsed time as a clock face — "4:12", or "1:02:07" past an
+ * hour — the Design Bible's own in-call widget convention (§07, "Connected ·
+ * 04:12"), deliberately separate from `formatCallDuration` above rather than
+ * a second mode on it: that one is for a FINISHED call's length, read once,
+ * where "3m 12s" is the more natural English phrase; this one ticks once a
+ * second next to a live status word ("Connected"), where a clock face is the
+ * more natural reading — the same distinction a phone's own in-call screen
+ * and its recent-calls list already draw. Minutes are never zero-padded
+ * (`4:12`, not `04:12`) to match how a real clock reads below an hour;
+ * seconds always are.
+ */
+export function formatCallClock(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  const ss = String(remainder).padStart(2, '0');
+  return hours > 0 ? `${String(hours)}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
  * An integer-cents amount, as USD.
  *
  * Every telephony money value is `CentsSchema` — an integer, never a float

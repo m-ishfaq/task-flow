@@ -258,7 +258,7 @@ export function IntegrationsCallbackPage() {
           webhook config. Recovered-after-refresh renders without the secret
           and says so. */}
       {recovered ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-ink">
+        <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-ink">
           This page was refreshed, so the verification secret is gone. It was shown once at connect
           time; reconnect to mint a new one.
         </div>
@@ -318,7 +318,7 @@ export function IntegrationsCallbackPage() {
                     onClick={() => {
                       pick(repo.fullName);
                     }}
-                    className="w-full rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-ink transition-colors hover:border-accent hover:bg-surface-hover disabled:opacity-60"
+                    className="w-full rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-ink transition-colors duration-(--motion-fast) hover:border-accent hover:bg-surface-hover disabled:opacity-60"
                   >
                     {repo.fullName}
                   </button>

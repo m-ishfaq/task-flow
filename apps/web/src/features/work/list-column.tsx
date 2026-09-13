@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
@@ -46,7 +46,17 @@ export interface ListColumnProps {
    * `card:create`, which a plain Member holds.
    */
   readonly canManage: boolean;
+  /**
+   * This column's position among its board's lists, left to right — used
+   * only to cycle the five `--column-tint-*` washes (styles.css) for ambient
+   * variety. Not a status or category: a list has no such field, so this is
+   * deliberately position, never a guess at the column's meaning from its
+   * name. See styles.css's own comment on `--column-tint-1..5` for why.
+   */
+  readonly columnIndex: number;
 }
+
+const COLUMN_TINT_COUNT = 5;
 
 export function ListColumn({
   orgId,
@@ -54,6 +64,7 @@ export function ListColumn({
   list,
   count,
   siblings,
+  columnIndex,
   canManage,
   children,
 }: ListColumnProps) {
@@ -68,12 +79,17 @@ export function ListColumn({
         'column-container flex max-h-full w-72 shrink-0 flex-col',
         isOver && 'ring-2 ring-accent/50 border-accent/30',
       )}
+      style={
+        {
+          '--column-tint': `var(--column-tint-${String((columnIndex % COLUMN_TINT_COUNT) + 1)})`,
+        } as CSSProperties
+      }
     >
       <header className="column-header justify-between">
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'rounded-full px-2 py-0.5 text-xs font-medium',
             overLimit ? 'bg-warning/15 text-warning' : 'bg-surface-hover/80 text-ink-faint',
           )}
           title={
@@ -208,7 +224,7 @@ function ListMenu({
   if (editing) {
     return (
       <form
-        className="absolute z-10 mt-24 w-64 space-y-2 rounded border border-line bg-surface-raised p-2 shadow-lg"
+        className="absolute z-10 mt-24 w-64 space-y-2 rounded-card border border-line bg-surface-raised p-2 shadow-lg"
         onSubmit={(event) => {
           event.preventDefault();
           const parsed = Number.parseInt(wip, 10);
@@ -466,7 +482,7 @@ function AddCard({
         // it on the cards already in view above the input instead, the same
         // direction a chat composer's mention picker opens for the identical
         // reason.
-        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
+        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded-card border border-line bg-surface shadow-lg">
           <li className="px-2 py-1 text-[10px] font-medium text-ink-faint">Might already exist</li>
           {matches.map((hit) => (
             <li key={hit.entityId}>

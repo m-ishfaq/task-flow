@@ -184,6 +184,14 @@ export interface PinnedMessageSummary {
  * simply stops resolving rather than re-disclosing it, and an excerpt read
  * in one batch rather than one query per row.
  */
+/** An org that pins liberally across many channels has no natural ceiling on
+ *  this query otherwise — Design Bible §20, the identical reasoning
+ *  `PAGE_VERSION_LIST_LIMIT` gives its own sibling in `apps/api/src/docs`.
+ *  `chat-sidebar.tsx`'s own disclosure note restates this number rather
+ *  than importing across the API boundary, the same trade that file's
+ *  header already accepts for `notifications.ts`'s `PAGE_SIZE`. */
+export const PINNED_LIST_LIMIT = 200;
+
 export async function listAllPinned(actor: ChatActor): Promise<readonly PinnedMessageSummary[]> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const rows = await tx
@@ -194,7 +202,8 @@ export async function listAllPinned(actor: ChatActor): Promise<readonly PinnedMe
         pinnedAt: schema.pinnedMessages.pinnedAt,
       })
       .from(schema.pinnedMessages)
-      .orderBy(desc(schema.pinnedMessages.pinnedAt));
+      .orderBy(desc(schema.pinnedMessages.pinnedAt))
+      .limit(PINNED_LIST_LIMIT);
 
     if (rows.length === 0) return [];
 

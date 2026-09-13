@@ -35,7 +35,13 @@ export function DropdownMenuContent({
              (shell.tsx's own org switcher and account menu, among others)
              would otherwise render behind that backdrop on a narrow
              viewport with the sidebar open. */
-          'ui-fade z-40 min-w-40 rounded border border-line bg-surface-raised p-1 shadow-lg',
+          /* `rounded-card` (10px), not the bare `rounded` (4px) this used to
+             be — the Design Bible's own floating panels (a popover, a
+             dropdown, the command palette) all sit well above 4px, and
+             `modal.tsx`'s Content already made the identical move to this
+             exact token; using it here rather than a fresh value keeps
+             every raised panel in the app on one shared radius. */
+          'ui-fade z-40 min-w-40 rounded-card border border-line bg-surface-raised p-1 shadow-lg',
           className,
         )}
         {...props}
@@ -65,7 +71,7 @@ export function DropdownMenuItem({ tone = 'default', className, ...props }: Drop
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm outline-none',
+        'flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm outline-none',
         'data-[highlighted]:bg-surface-hover',
         ITEM_TONE[tone],
         className,

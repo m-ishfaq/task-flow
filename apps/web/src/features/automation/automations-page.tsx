@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
+import { KeyRound, Plug, Webhook, Workflow, Zap } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -10,7 +11,14 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
@@ -205,14 +213,15 @@ export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
  * not have permission to do that" for anyone with a partial grant.
  */
 const TABS = [
-  { id: 'rules', label: 'Rules', capability: 'manageAutomations' },
-  { id: 'webhooks', label: 'Webhooks', capability: 'manageWebhooks' },
-  { id: 'apiTokens', label: 'API tokens', capability: 'createApiTokens' },
-  { id: 'integrations', label: 'Integrations', capability: 'manageIntegrations' },
+  { id: 'rules', label: 'Rules', capability: 'manageAutomations', icon: Workflow },
+  { id: 'webhooks', label: 'Webhooks', capability: 'manageWebhooks', icon: Webhook },
+  { id: 'apiTokens', label: 'API tokens', capability: 'createApiTokens', icon: KeyRound },
+  { id: 'integrations', label: 'Integrations', capability: 'manageIntegrations', icon: Plug },
 ] as const satisfies readonly {
   id: string;
   label: string;
   capability: keyof SettingsCapabilities;
+  icon: typeof Workflow;
 }[];
 
 type TabId = AutomationTabId;
@@ -310,30 +319,36 @@ export function AutomationsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2 md:px-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Automations</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          When something happens, check a condition, then act. Rules run with the permissions of
-          whoever created them.
-        </p>
+        <PageHeader
+          title="Automations"
+          description="When something happens, check a condition, then act. Rules run with the permissions of whoever created them."
+          icon={<Zap aria-hidden="true" className="size-4" strokeWidth={2.25} />}
+        />
 
-        <nav aria-label="Automation sections" className="mt-3 flex gap-1">
+        <div
+          role="tablist"
+          aria-label="Automation sections"
+          className="mt-3 flex gap-1 overflow-x-auto"
+        >
           {visibleTabs.map((item) => {
             const count = counts[item.id];
             return (
               <button
                 key={item.id}
                 type="button"
-                aria-current={tab === item.id ? 'page' : undefined}
+                role="tab"
+                aria-selected={tab === item.id}
                 onClick={() => {
                   selectTab(item.id);
                 }}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors duration-(--motion-fast)',
                   tab === item.id
-                    ? 'bg-accent text-accent-ink shadow-sm'
-                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                    ? 'bg-accent/10 text-accent'
+                    : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
                 )}
               >
+                <item.icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
                 {item.label}
                 {/* Deliberately rendered only once the query has settled. A
                     zero that is really "still loading" is the one number worth
@@ -342,8 +357,8 @@ export function AutomationsPage() {
                 {count !== undefined && (
                   <span
                     className={cn(
-                      'rounded px-1 text-[10px] tabular-nums',
-                      tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
+                      'rounded-md px-1 text-[10px] tabular-nums',
+                      tab === item.id ? 'bg-accent/15' : 'bg-surface-sunken text-ink-faint',
                     )}
                   >
                     {count}
@@ -352,7 +367,7 @@ export function AutomationsPage() {
               </button>
             );
           })}
-        </nav>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -552,7 +567,7 @@ function RuleRow({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border transition-colors',
+        'overflow-hidden rounded-xl border transition-colors duration-(--motion-fast)',
         rule.enabled ? 'border-line/50' : 'border-line/30',
       )}
     >
@@ -584,7 +599,7 @@ function RuleRow({
             </span>
             {rule.conditionBroken && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
                 title="The stored condition no longer parses, so this rule is refused on every event"
               >
                 Broken
@@ -599,7 +614,7 @@ function RuleRow({
               `When`/`Then` are spelled out rather than implied by an arrow
               alone: the arrow reads as an arrow only once you already know the
               shape, and this row is where someone learns it. */}
-          <p className="truncate text-[11px] text-ink-faint">
+          <p className="truncate text-xs text-ink-faint">
             <span className="text-ink-faint">When </span>
             <span className="text-ink-muted">{triggerLabel(rule.triggerEvent)}</span>
             {rule.condition !== null && (
@@ -616,7 +631,7 @@ function RuleRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             disabled={setEnabled.isPending}
             onClick={() => {
               setEnabled.mutate(!rule.enabled);
@@ -625,14 +640,14 @@ function RuleRow({
             {rule.enabled ? 'Disable' : 'Enable'}
           </Button>
 
-          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onEdit}>
+          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={onEdit}>
             Edit
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             aria-expanded={expanded}
             onClick={onToggleExpanded}
           >
@@ -646,7 +661,7 @@ function RuleRow({
             label="Delete"
             confirmLabel="Delete rule"
             disabled={remove.isPending}
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             onConfirm={() => {
               remove.mutate();
             }}
@@ -685,7 +700,7 @@ function RunHistory({
   if (runs.isError) return <ErrorText error={runs.error} />;
   if (runs.data.length === 0) {
     return (
-      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-xs text-ink-faint">
         This rule has not run yet. A run is recorded every time its trigger fires — including when
         the condition does not match.
       </p>
@@ -695,7 +710,7 @@ function RunHistory({
   return (
     <ul className="border-t border-line/50/50">
       {runs.data.map((run) => (
-        <li key={run.runId} className="px-3 py-1.5 text-[11px]">
+        <li key={run.runId} className="px-3 py-1.5 text-xs">
           <div className="flex items-center gap-2">
             <span
               className={cn('w-16 shrink-0 font-medium', STATUS_COLOR[run.status] ?? 'text-ink')}
@@ -890,7 +905,7 @@ function RuleEditor({
           }}
           maxLength={120}
           placeholder="Notify the team when something ships"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </Field>
 
@@ -911,7 +926,7 @@ function RuleEditor({
             if (resourceForTrigger(next) !== resourceForTrigger(triggerEvent)) setCondition(null);
             setTriggerEvent(next);
           }}
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         >
           {TRIGGER_OPTIONS.map((option) => (
             <option key={option.event} value={option.event}>
@@ -938,7 +953,7 @@ function RuleEditor({
             onChange={setCondition}
           />
           {condition === null && (
-            <span className="text-[11px] text-ink-faint">
+            <span className="text-xs text-ink-faint">
               {conditionResource === 'connector'
                 ? 'Runs on every event from every connected workspace or repository.'
                 : 'Runs every time the trigger fires.'}
@@ -961,7 +976,7 @@ function RuleEditor({
         <Field label="Project (for list, status and label choices)" htmlFor="automation-project">
           <div id="automation-project" className="space-y-1">
             <ProjectScopePicker orgId={orgId} value={scopeProject} onChange={setScopeProject} />
-            <p className="text-[11px] text-ink-faint">
+            <p className="text-xs text-ink-faint">
               Those actions only apply to cards in this project — a card from another project
               records a failed run.
             </p>
@@ -1001,7 +1016,7 @@ function RuleEditor({
               onClick={() => {
                 setActions([...actions, blankAction()]);
               }}
-              className="rounded border border-dashed border-line px-2 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
+              className="rounded-md border border-dashed border-line px-2 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
             >
               + Add action
             </button>
@@ -1023,7 +1038,7 @@ function RuleEditor({
           Cancel
         </button>
         {name.trim() !== '' && !actionsComplete(actions) && (
-          <span className="text-[11px] text-ink-faint">Finish choosing each action to save.</span>
+          <span className="text-xs text-ink-faint">Finish choosing each action to save.</span>
         )}
       </div>
     </form>
@@ -1077,7 +1092,7 @@ function ActionRow({
           onChange(blankAction(event.target.value, action.key));
         }}
         aria-label="Action"
-        className="shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+        className="shrink-0 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       >
         {options.map(([type, text]) => (
           <option key={type} value={type}>
@@ -1293,7 +1308,7 @@ function WebhookCreateForm({
           }}
           maxLength={120}
           placeholder="Release notifications"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </Field>
       <Field label="URL" htmlFor="webhook-url">
@@ -1306,9 +1321,9 @@ function WebhookCreateForm({
           }}
           maxLength={2048}
           placeholder="https://hooks.example.com/on-release"
-          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
-        <p className="text-[11px] text-ink-faint">
+        <p className="text-xs text-ink-faint">
           Public endpoints only — internal and private addresses are refused, and every redirect is
           re-checked at delivery.
         </p>
@@ -1394,7 +1409,7 @@ function WebhookRow({
             </span>
             {!webhook.enabled && webhook.disabledAt !== null && (
               <span
-                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                className="shrink-0 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
                 title={`Auto-disabled after ${String(webhook.failureCount)} consecutive failed deliveries`}
               >
                 Disabled by failures
@@ -1404,7 +1419,7 @@ function WebhookRow({
           {/* `font-mono` because this is a URL somebody will compare character
               by character against what they configured in their receiver, and
               a proportional font makes `rn` and `m` the same shape. */}
-          <p className="truncate font-mono text-[11px] text-ink-faint" title={webhook.url}>
+          <p className="truncate font-mono text-xs text-ink-faint" title={webhook.url}>
             {webhook.url}
           </p>
         </div>
@@ -1413,7 +1428,7 @@ function WebhookRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             disabled={setEnabled.isPending}
             onClick={() => {
               setEnabled.mutate(!webhook.enabled);
@@ -1425,7 +1440,7 @@ function WebhookRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             aria-expanded={expanded}
             onClick={onToggleExpanded}
           >
@@ -1439,7 +1454,7 @@ function WebhookRow({
             label="Delete"
             confirmLabel="Delete endpoint"
             disabled={remove.isPending}
-            className="h-6 px-1.5 text-[11px]"
+            className="h-6 px-1.5 text-xs"
             onConfirm={() => {
               remove.mutate();
             }}
@@ -1474,7 +1489,7 @@ function WebhookDeliveries({
   if (deliveries.isError) return <ErrorText error={deliveries.error} />;
   if (deliveries.data.length === 0) {
     return (
-      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-xs text-ink-faint">
         No deliveries yet — this endpoint appears in no rule runs.
       </p>
     );
@@ -1483,7 +1498,7 @@ function WebhookDeliveries({
   return (
     <ul className="border-t border-line/50/50">
       {deliveries.data.map((delivery) => (
-        <li key={delivery.deliveryId} className="px-3 py-1.5 text-[11px]">
+        <li key={delivery.deliveryId} className="px-3 py-1.5 text-xs">
           <div className="flex items-center gap-2">
             <span
               className={cn(

@@ -15,9 +15,17 @@ import type { CardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useFeatureGranted } from '../../lib/entitlements.js';
 import { formatDate } from '../../lib/format.js';
-import { Avatar, Button, Empty, PageHeader, SkeletonRows } from '../../components/primitives.js';
+import {
+  Avatar,
+  Button,
+  Empty,
+  PageContainer,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
+import { UNKNOWN_PERSON_LABEL } from '../org/use-members.js';
 import { projectsQuery } from '../work/api.js';
 import type { Priority } from '../work/api.js';
 import { PRIORITY_LABEL, PRIORITY_SWATCH } from '../work/priority-colors.js';
@@ -138,10 +146,14 @@ export function StandupPage() {
   const project = (projects.data ?? []).find((entry) => entry.projectId === projectId);
 
   if (standup.isError)
-    return <ErrorView error={standup.error} title="Could not load the standup" />;
+    return (
+      <PageContainer maxWidth="lg">
+        <ErrorView error={standup.error} title="Could not load the standup" />
+      </PageContainer>
+    );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <PageContainer maxWidth="lg" className="space-y-6">
       <PageHeader
         title="Standup"
         description={`${project?.name ?? 'This project'} — the last ${String(sinceHours)} hours, plus this sprint's urgent work.`}
@@ -275,7 +287,7 @@ export function StandupPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -308,16 +320,16 @@ function MemberRow({
           setExpanded((current) => !current);
         }}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/40"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-(--motion-fast) hover:bg-surface-hover/40"
       >
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />
         ) : (
           <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />
         )}
-        <Avatar userId={member.userId} label={member.name ?? member.userId} size="sm" />
+        <Avatar userId={member.userId} label={member.name ?? UNKNOWN_PERSON_LABEL} size="sm" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-          {member.name ?? 'Unknown'}
+          {member.name ?? UNKNOWN_PERSON_LABEL}
         </span>
 
         <span className="flex shrink-0 items-center gap-3 text-xs">
@@ -433,13 +445,13 @@ function Bucket({
 }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-ink-faint">
         {icon}
         {label}
         <span className="ml-auto tabular-nums">{cards.length}</span>
       </p>
       {cards.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">Nothing</p>
+        <p className="text-xs text-ink-faint">Nothing</p>
       ) : (
         <ul className="space-y-1">
           {cards.map((card) => (

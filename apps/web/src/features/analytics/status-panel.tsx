@@ -44,7 +44,7 @@ export function StatusPanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Analytics Status</h2>
+      <h2 className="text-sm font-semibold text-ink">Analytics Status</h2>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <InfoCard
@@ -83,9 +83,9 @@ function InfoCard({
 }) {
   return (
     <div className="rounded-lg border border-line/50 p-3">
-      <div className="text-xs text-ink/50">{label}</div>
+      <div className="text-xs text-ink-faint">{label}</div>
       <div className="mt-1 text-sm font-medium text-ink">{value}</div>
-      {hint && <div className="mt-0.5 text-[10px] text-ink/40">{hint}</div>}
+      {hint && <div className="mt-0.5 text-[10px] text-ink-faint">{hint}</div>}
     </div>
   );
 }

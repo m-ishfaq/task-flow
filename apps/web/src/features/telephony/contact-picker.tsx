@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, User } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { Avatar, Input } from '../../components/primitives.js';
 import { cn } from '../../lib/cn.js';
@@ -117,15 +118,24 @@ export function ContactPicker({
                 aria-label="Choose a person"
                 title="Choose a person"
                 className={cn(
-                  'flex h-9 shrink-0 items-center gap-1 rounded border border-line px-2',
+                  'flex h-9 shrink-0 items-center gap-1 rounded-lg border border-line px-2',
                   'text-xs text-ink-muted hover:bg-surface-hover hover:text-ink',
-                  'focus:border-accent focus:outline-none disabled:opacity-50',
+                  /* No `focus:outline-none` here, unlike the text-input fields
+                     elsewhere in this file — this is a BUTTON, and suppressing
+                     the outline on `focus:` (which fires on a mouse click too,
+                     unlike `:focus-visible`) removed the app's own global
+                     keyboard focus ring (styles.css's `:focus-visible` rule)
+                     with nothing put back in its place. `focus:border-accent`
+                     alone is harmless extra feedback on any focus and does not
+                     need the outline gone to work. */
+                  'focus:border-accent disabled:opacity-50',
                 )}
               >
-                <span aria-hidden="true">👤</span>
-                <span aria-hidden="true" className="text-[10px]">
-                  ▾
-                </span>
+                {/* Real glyphs, not an emoji — a 👤 renders at the OS's own
+                    size and weight, never matches the 1.75px-stroke icon
+                    language every other control in this app uses. */}
+                <User aria-hidden="true" className="size-3.5" strokeWidth={2} />
+                <ChevronDown aria-hidden="true" className="size-3" strokeWidth={2.25} />
               </button>
             </PopoverTrigger>
 
@@ -160,7 +170,7 @@ export function ContactPicker({
                             onChange(person.phone);
                           }}
                           className={cn(
-                            'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                            'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs',
                             person.userId === matched?.userId
                               ? 'bg-accent text-accent-ink'
                               : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -192,7 +202,7 @@ export function ContactPicker({
       </div>
 
       {matched !== undefined && (
-        <p className="flex items-center gap-1 text-[11px] text-ink-muted">
+        <p className="flex items-center gap-1 text-xs text-ink-muted">
           <Avatar userId={matched.userId} label={matched.label} size="xs" />
           <span className="truncate">{matched.label}</span>
         </p>

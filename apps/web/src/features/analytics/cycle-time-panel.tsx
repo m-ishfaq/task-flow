@@ -3,7 +3,12 @@ import { cycleTimeQuery } from './api.js';
 import { SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.4 — Cycle Time: median and p85 time from active to done. */
+/**
+ * §3.4 — Cycle Time: median and p85 time from active to done.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Cycle Time tab is gone.
+ */
 export function CycleTimePanel() {
   const { data, isLoading, error } = useQuery(cycleTimeQuery());
 
@@ -21,8 +26,6 @@ export function CycleTimePanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Cycle Time</h2>
-
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Median" value={formatHours(result.medianHours)} />
         <StatCard label="P85" value={formatHours(result.p85Hours)} />
@@ -31,7 +34,9 @@ export function CycleTimePanel() {
       </div>
 
       {result.count === 0 && (
-        <p className="text-xs text-ink/50">No completed cards with active→done transitions yet.</p>
+        <p className="text-xs text-ink-muted">
+          No completed cards with active→done transitions yet.
+        </p>
       )}
     </div>
   );
@@ -40,7 +45,7 @@ export function CycleTimePanel() {
 function StatCard({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-lg border border-line/50 p-3">
-      <div className="text-xs text-ink/50">{label}</div>
+      <div className="text-xs text-ink-faint">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
     </div>
   );

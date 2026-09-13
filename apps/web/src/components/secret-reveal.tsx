@@ -22,18 +22,18 @@ export function SecretReveal({
 
   return (
     <div className="mt-3 space-y-1.5 rounded-lg border border-warning/40 bg-warning/5 p-3">
-      <p className="text-[11px] text-ink">
+      <p className="text-xs text-ink">
         Secret for “{name}” — <span className="font-medium">shown once, never again.</span> Copy it
         into whatever will use it, then click done.
       </p>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-ink">
+        <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-xs text-ink">
           {secret}
         </code>
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-1.5 text-[11px]"
+          className="h-6 px-1.5 text-xs"
           onClick={() => {
             void navigator.clipboard.writeText(secret).then(() => {
               setCopied(true);
@@ -46,7 +46,7 @@ export function SecretReveal({
           type="button"
           onClick={onDismiss}
           aria-label="Done with the secret"
-          className="text-xs text-ink-faint hover:text-ink"
+          className="text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
         >
           Done
         </button>

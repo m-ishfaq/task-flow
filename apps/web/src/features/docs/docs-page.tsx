@@ -6,9 +6,15 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  History,
+  Link2,
+  LayoutTemplate,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
+  Share2,
 } from 'lucide-react';
 import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -16,17 +22,19 @@ import { useUi } from '../../lib/ui-store.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
+import { formatRelative } from '../../lib/format.js';
 import {
+  AvatarStack,
   Badge,
   Button,
   Empty,
-  Field,
   FocusOnMountInput,
   Skeleton,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
-import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
+import { useMembers } from '../org/use-members.js';
+import { DocsEditor, useDocsPresence, type DocsEditorHandle } from './editor/docs-editor.js';
 import { PublishPanel } from './publish-panel.js';
 import { VersionHistoryPanel } from './version-history.js';
 import { CommentsSuggestionsPanel } from './comments-suggestions.js';
@@ -125,6 +133,12 @@ export function DocsPage() {
             onBack={() => {
               void navigate({ to: '/docs', search: { space: search.space, page: undefined } });
             }}
+            onNavigatePage={(pageId) => {
+              // Re-checked rather than asserted: `search.space` narrows fine
+              // as a direct prop value above, but not through this closure.
+              if (search.space === undefined) return;
+              selectPage(search.space, pageId);
+            }}
           />
         )}
       </div>
@@ -175,7 +189,7 @@ function SpaceTreePanel({
   return (
     <aside
       className={cn(
-        'shrink-0 flex-col border-r border-line bg-surface-raised transition-[width] md:flex',
+        'shrink-0 flex-col border-r border-line bg-surface-raised transition-[width] duration-(--motion-base) md:flex',
         spacesOpen ? 'md:w-64' : 'md:w-12',
         /* Same list/detail hide as `chat-page.tsx`'s `ChannelListPanel` —
            full width when shown below `md`, `hidden` rather than shrunk to
@@ -184,7 +198,14 @@ function SpaceTreePanel({
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line/50 px-2">
-        {spacesOpen && <h2 className="truncate px-1 text-sm font-semibold text-ink">Spaces</h2>}
+        {/* Same uppercase, tracked-out eyebrow `sidebar.tsx`'s own section
+            labels already use — the Design Bible's own tree header reads as
+            a wiki title, not a plain sub-heading. */}
+        {spacesOpen && (
+          <h2 className="truncate px-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Spaces
+          </h2>
+        )}
         <div className={cn('flex items-center gap-1', spacesOpen ? 'ml-auto' : 'mx-auto')}>
           {spacesOpen && canCreateSpace && (
             <Button
@@ -212,7 +233,7 @@ function SpaceTreePanel({
               onClick={toggleSpaces}
               aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
               aria-expanded={spacesOpen}
-              className="rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+              className="rounded-lg p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
             >
               {spacesOpen ? (
                 <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -267,7 +288,7 @@ function SpaceTreePanel({
               onClick={() => {
                 setShowArchived((value) => !value);
               }}
-              className="mt-2 block px-1 text-[11px] text-ink-faint underline hover:text-ink-muted"
+              className="mt-2 block px-1 text-xs text-ink-faint underline hover:text-ink-muted"
             >
               {showArchived ? 'Hide archived spaces' : `Show archived (${String(archived.length)})`}
             </button>
@@ -347,6 +368,23 @@ function SpaceNode({
   const isArchived = space.archivedAt !== null;
   const live = (pages.data ?? []).filter((page) => page.archivedAt === null);
   const byParent = groupByParent(live);
+  /* Every `PageNode` used to mount already expanded (`useState(false)`),
+     regardless of depth or relevance — a real org's tree renders every
+     branch open at once, which is the "wall of truncated text" a real
+     screenshot showed: five or six levels deep, every sibling branch fanned
+     out, nothing to do with what's actually open. Two sources, combined,
+     decide what starts expanded instead: every ROOT page's own immediate
+     children (an ordinary two-level "Getting Started > Onboarding" list is
+     not the problem, and hiding it by default would be worse, not better),
+     plus the full ANCESTOR chain of the selected page, however deep it
+     goes (reusing `pageAncestors`, the same helper the page panel's own
+     breadcrumb walks) — so the active page's own location is always
+     visible. Everything else — a sibling branch nobody opened, a deep
+     chain with nothing selected in it — starts collapsed, matching how
+     Notion/Confluence's own tree behaves rather than a flat unroll. */
+  const rootPageIds = (byParent.get(null) ?? []).map((row) => row.pageId);
+  const ancestorIds = pageAncestors(live, selectedPage ?? '').map((row) => row.pageId);
+  const expandedPageIds = new Set([...rootPageIds, ...ancestorIds]);
 
   const restore = useMutation({
     mutationFn: () => archiveSpace({ spaceId, restore: true }),
@@ -360,7 +398,7 @@ function SpaceNode({
 
   return (
     <li>
-      <div className="group flex items-center rounded hover:bg-surface-hover">
+      <div className="group flex items-center rounded-md hover:bg-surface-hover">
         <button
           type="button"
           onClick={() => {
@@ -368,7 +406,7 @@ function SpaceNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${space.name}` : `Collapse ${space.name}`}
-          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
         >
           {collapsed ? (
             <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
@@ -383,7 +421,7 @@ function SpaceNode({
             setCollapsed((value) => !value);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs font-medium',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs font-medium',
             isArchived ? 'text-ink-faint' : 'text-ink-muted hover:text-ink',
           )}
           title={space.name}
@@ -445,7 +483,7 @@ function SpaceNode({
           ) : pages.isError ? (
             <ErrorView error={pages.error} title="Could not load pages" />
           ) : live.length === 0 && !addingRootPage ? (
-            <p className="py-1 text-[11px] text-ink-faint">No pages</p>
+            <p className="py-1 text-xs text-ink-faint">No pages</p>
           ) : (
             <ul>
               {(byParent.get(null) ?? []).map((page) => (
@@ -456,6 +494,7 @@ function SpaceNode({
                   page={page}
                   byParent={byParent}
                   selectedPage={selectedPage}
+                  expandedPageIds={expandedPageIds}
                   onSelect={(pageId) => {
                     onSelectPage(spaceId, pageId);
                   }}
@@ -490,6 +529,7 @@ function PageNode({
   page,
   byParent,
   selectedPage,
+  expandedPageIds,
   onSelect,
   depth,
 }: {
@@ -498,11 +538,16 @@ function PageNode({
   readonly page: PageSummary;
   readonly byParent: ReadonlyMap<string | null, readonly PageSummary[]>;
   readonly selectedPage: PageId | undefined;
+  /** Ancestors of the selected page — see `SpaceNode`'s own comment. */
+  readonly expandedPageIds: ReadonlySet<string>;
   readonly onSelect: (pageId: PageId) => void;
   /** How far from a space root this page sits. Root pages are 0. */
   readonly depth: number;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  /* Seeded from the ancestor set once, on mount — not re-derived on every
+     render, so a person who manually opens a branch keeps it open even
+     after selecting a page elsewhere in the tree. */
+  const [collapsed, setCollapsed] = useState(() => !expandedPageIds.has(page.pageId));
   const [addingChild, setAddingChild] = useState(false);
   const pageId = page.pageId as PageId;
   const children = byParent.get(page.pageId) ?? [];
@@ -517,8 +562,12 @@ function PageNode({
     <li>
       <div
         className={cn(
-          'group flex items-center rounded',
-          selected ? 'bg-surface-hover' : 'hover:bg-surface-hover',
+          'group flex items-center rounded-md',
+          /* The Design Bible's own `.doc-tree .dt.on` takes the Docs
+             module's own suite hue, not a plain hover tint — matching the
+             identical fix already applied to the sidebar's own Docs nav
+             item and Chat's active channel row. */
+          selected ? 'bg-suite-docs/10' : 'hover:bg-surface-hover',
         )}
       >
         {children.length > 0 ? (
@@ -529,7 +578,7 @@ function PageNode({
             }}
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Expand ${page.title}` : `Collapse ${page.title}`}
-            className="flex w-4 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+            className="flex w-4 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
           >
             {collapsed ? (
               <ChevronRight aria-hidden="true" className="size-3" strokeWidth={2.25} />
@@ -547,12 +596,16 @@ function PageNode({
             onSelect(pageId);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs',
-            selected ? 'font-medium text-ink' : 'text-ink-muted hover:text-ink',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs',
+            selected ? 'font-medium text-suite-docs' : 'text-ink-muted hover:text-ink',
           )}
           title={page.title}
         >
-          <FileText aria-hidden="true" className="size-3 shrink-0 text-ink-faint" strokeWidth={2} />
+          <FileText
+            aria-hidden="true"
+            className={cn('size-3 shrink-0', selected ? 'text-suite-docs' : 'text-ink-faint')}
+            strokeWidth={2}
+          />
           <span className="truncate">{page.title}</span>
         </button>
 
@@ -600,6 +653,7 @@ function PageNode({
                 page={child}
                 byParent={byParent}
                 selectedPage={selectedPage}
+                expandedPageIds={expandedPageIds}
                 onSelect={onSelect}
                 depth={depth + 1}
               />
@@ -687,7 +741,7 @@ function CreatePageForm({
           onChange={(event) => {
             setTemplateId(event.target.value);
           }}
-          className="h-7 w-full rounded border border-line bg-surface-raised px-1.5 text-xs text-ink-muted"
+          className="h-7 w-full rounded-md border border-line bg-surface-raised px-1.5 text-xs text-ink-muted"
         >
           <option value="">Blank page</option>
           {(templates.data ?? []).map((template) => (
@@ -719,25 +773,75 @@ function groupByParent(
  * Page panel
  * -------------------------------------------------------------------------- */
 
+/**
+ * Every ancestor of `pageId`, ROOT first — walked client-side over the same
+ * flat, already-fetched `pages` list `groupByParent` builds the tree from,
+ * rather than a second request. This is the Design Bible §08 mockup's own
+ * "breadcrumbs" ask: a page nested three deep should say where it lives
+ * ("Design system › Foundations"), not just its own title. Deliberately
+ * does not include `pageId` itself — its title is already the big `h1`
+ * right below, so repeating it as the trail's own last crumb would be the
+ * exact "duplicate heading" shape this codebase already fixed once for the
+ * app shell (`shell.tsx`'s `breadcrumbsFor`).
+ */
+function pageAncestors(pages: readonly PageSummary[], pageId: string): readonly PageSummary[] {
+  const byId = new Map(pages.map((page) => [page.pageId, page] as const));
+  const chain: PageSummary[] = [];
+  let current = byId.get(pageId);
+  while (current !== undefined && current.parentPageId !== null) {
+    const parent = byId.get(current.parentPageId);
+    if (parent === undefined) break;
+    chain.unshift(parent);
+    current = parent;
+  }
+  return chain;
+}
+
+/**
+ * The utility strip below the document body — Publish/Version history/
+ * Comments & suggestions/Templates/Backlinks used to render as five
+ * always-visible, always-fetching panels stacked with `space-y-6`, which is
+ * the literal "rest is beneath that is very simple" complaint: a page of
+ * real prose followed by five boxy mini-sections nobody asked to see yet.
+ * One tab active at a time — matching `platform-admin-page.tsx`'s own
+ * `role="tablist"` icon-strip shape — means only the tab someone actually
+ * opens ever fires its query, the same "don't fetch what nobody asked to
+ * see" instinct behind Comments' own inner Comments/Suggestions split.
+ */
+const DOC_TOOLS = [
+  ['comments', 'Comments', MessageSquare],
+  ['history', 'Version history', History],
+  ['publish', 'Publish', Share2],
+  ['templates', 'Templates', LayoutTemplate],
+  ['backlinks', 'What links here', Link2],
+] as const;
+
+type DocTool = (typeof DOC_TOOLS)[number][0];
+
 function PagePanel({
   orgId,
   spaceId,
   pageId,
   onBack,
+  onNavigatePage,
 }: {
   readonly orgId: string;
   readonly spaceId: SpaceId;
   readonly pageId: PageId;
   /** Below `md`, returns to the space tree — see `DocsPage`'s comment. */
   readonly onBack: () => void;
+  /** The breadcrumb trail's own navigation — a click on the space name or an ancestor page. `undefined` means "back to the space, no page open". */
+  readonly onNavigatePage: (pageId: PageId | undefined) => void;
 }) {
   const navigate = useNavigate();
   const pages = useQuery(pagesQuery(orgId, spaceId));
+  const spaces = useQuery(spacesQuery(orgId));
   const queryClient = useQueryClient();
   const toast = useToast();
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState('');
   const [editorHandle, setEditorHandle] = useState<DocsEditorHandle | null>(null);
+  const [tool, setTool] = useState<DocTool>('comments');
   /* Bumped after a version restore to force `DocsEditor` to remount with a
      fresh Hocuspocus connection — `version-history.tsx`'s own header on why
      a restore is otherwise invisible until the next reload. */
@@ -750,6 +854,22 @@ function PagePanel({
   }, []);
 
   const page = (pages.data ?? []).find((row) => row.pageId === pageId);
+  const spaceName = spaces.data?.find((row) => row.spaceId === spaceId)?.name ?? 'Space';
+  const ancestors = pageAncestors(pages.data ?? [], pageId);
+
+  /* Design Bible §08's own "Edited N ago · 2 people here now" line — see
+     `useDocsPresence`'s own header for why this hook, not a component, is
+     what moved here. `others` excludes the viewer themself — real, but it
+     meant "who is live now" showed literally NOTHING for the overwhelming
+     common case (nobody else has the page open right now), which is exactly
+     the case where a person most needs to SEE the presence feature is
+     alive, not just take it on faith. The viewer's own avatar joins the
+     roster below so the presence UI is always demonstrably live, matching
+     the mockup's own always-visible avatar pair. */
+  const others = useDocsPresence(editorHandle?.provider ?? null);
+  const viewerId = useSession((state) => state.userId);
+  const { personOf } = useMembers();
+  const presenceRoster = viewerId === null ? others : [personOf(viewerId), ...others];
 
   const rename = useMutation({
     mutationFn: (nextTitle: string) => renamePage({ pageId, title: nextTitle }),
@@ -802,96 +922,167 @@ function PagePanel({
 
   const isArchived = page.archivedAt !== null;
 
+  /* Click-to-edit, not a separate "Rename" form — the mockup's own ask is a
+     title that behaves like the rest of a Google Docs page: click it, type,
+     it's saved. Skips the mutation entirely for an unchanged or blanked-out
+     value rather than round-tripping a no-op write. */
+  const commitTitle = () => {
+    const trimmed = title.trim();
+    if (trimmed.length === 0 || trimmed === page.title) {
+      setEditingTitle(false);
+      return;
+    }
+    rename.mutate(trimmed);
+  };
+
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-6">
+    <div className="mx-auto max-w-[85%] space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
           comment on the list/detail split this belongs to. */}
       <button
         type="button"
         onClick={onBack}
-        className="-ml-1.5 flex items-center gap-1 rounded p-1.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+        className="-ml-1.5 flex items-center gap-1 rounded-lg p-1.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
       >
         <span aria-hidden="true">←</span> Spaces
       </button>
 
-      <div className="flex items-start justify-between gap-3">
-        {editingTitle ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (title.trim().length === 0) return;
-              rename.mutate(title);
-            }}
-            className="flex flex-1 items-end gap-2"
-          >
-            <div className="flex-1">
-              <Field label="Title" htmlFor="page-title">
-                <FocusOnMountInput
-                  id="page-title"
-                  value={title}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                  }}
-                />
-              </Field>
-            </div>
-            <Button type="submit" size="sm" variant="primary" disabled={rename.isPending}>
-              Save
-            </Button>
-            <Button
+      {/* The mockup's own breadcrumb — "Design system › Foundations" above
+          the title, at every viewport (unlike the mobile-only ← Spaces link
+          just above). The space name is always known once `spaces` has
+          loaded; ancestors are only there for a page nested under another
+          page. */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
+        <button
+          type="button"
+          onClick={() => {
+            onNavigatePage(undefined);
+          }}
+          className="-mx-1 truncate rounded px-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+        >
+          {spaceName}
+        </button>
+        {ancestors.map((ancestor) => (
+          <span key={ancestor.pageId} className="flex min-w-0 shrink items-center gap-1">
+            <ChevronRight aria-hidden="true" className="size-3 shrink-0 text-ink-faint" />
+            <button
               type="button"
+              onClick={() => {
+                onNavigatePage(ancestor.pageId as PageId);
+              }}
+              title={ancestor.title}
+              className="-mx-1 truncate rounded px-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+            >
+              {ancestor.title}
+            </button>
+          </span>
+        ))}
+      </nav>
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {editingTitle ? (
+            <FocusOnMountInput
+              value={title}
+              onChange={(event) => {
+                setTitle(event.target.value);
+              }}
+              onBlur={commitTitle}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitTitle();
+                } else if (event.key === 'Escape') {
+                  setEditingTitle(false);
+                }
+              }}
+              aria-label="Page title"
+              className="h-auto w-full border-0 bg-transparent px-0 font-display text-3xl font-bold tracking-tight text-ink focus:bg-transparent focus:ring-0"
+            />
+          ) : (
+            /* Click-to-edit, not a separate "Rename" form/button — the
+               Design Bible §08 mockup's own ask: a title that behaves like
+               the rest of a real document, editable in place. Still a real
+               `<h1>` (heading role, accessible name = the title) wrapped in
+               a plain clickable button rather than a `contenteditable`
+               element, so the actual EDIT still goes through the same
+               validated `renamePage` mutation every other rename in this
+               app uses — never raw DOM content trusted as the new title. */
+            <button
+              type="button"
+              onClick={() => {
+                setTitle(page.title);
+                setEditingTitle(true);
+              }}
+              /* Explicit, distinct from the plain title text: the tree
+                 panel's own row for this same page (`PageNode`) is ALSO a
+                 button whose accessible name is the bare title, and both
+                 can be on screen at once (the desktop layout keeps the tree
+                 mounted beside an open page) — an unlabelled button here
+                 would be indistinguishable from that unrelated control to
+                 anything that queries by accessible name, screen readers
+                 included. */
+              aria-label={`Rename "${page.title}"`}
+              className="group -mx-1.5 flex max-w-full items-center gap-2 rounded-lg px-1.5 py-0.5 text-left hover:bg-surface-hover"
+            >
+              <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+                {page.title}
+                {isArchived && <Badge tone="warning">archived</Badge>}
+              </h1>
+              <Pencil
+                aria-hidden="true"
+                className="size-4 shrink-0 text-ink-faint opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-100"
+                strokeWidth={2}
+              />
+            </button>
+          )}
+          {/* "Edited N ago · N people here now" — the mockup's own metadata
+              line. `page.updatedAt` is bumped on rename/move/archive, never
+              a body edit (the router's own output-schema comment explains
+              why), so this is honest about what it can see rather than
+              promising a live "last edited" instant no route here actually
+              tracks. The headcount now always includes the viewer — see
+              `presenceRoster`'s own comment above. */}
+          <p className="mt-1 text-xs text-ink-faint">
+            Edited {formatRelative(page.updatedAt)}
+            {presenceRoster.length > 0 &&
+              ` · ${String(presenceRoster.length)} ${presenceRoster.length === 1 ? 'person' : 'people'} here now`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {/* The mockup's own top-right avatar pair — real faces, not a
+              count, the same `AvatarStack` a board card's assignees already
+              use. Includes the viewer's own avatar (`presenceRoster`), so
+              this is never empty for anyone with the page open. */}
+          {presenceRoster.length > 0 && (
+            <span title={`Here now: ${presenceRoster.map((person) => person.label).join(', ')}`}>
+              <AvatarStack people={presenceRoster} max={4} size="xs" />
+            </span>
+          )}
+          {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
+              per page — `page.capabilities.archive` is the server's own
+              answer, not a rule re-derived here. Hidden entirely for a
+              Member with no grant, rather than shown and left to answer
+              FORBIDDEN (Phase 15 §1's sweep). */}
+          {page.capabilities.archive && (
+            <Button
               size="sm"
               variant="ghost"
               onClick={() => {
-                setEditingTitle(false);
+                // `restore: true` means "un-archive" — when the page is
+                // NOT currently archived, this button archives it, so the
+                // mutation's `restore` argument is `isArchived` itself,
+                // not its negation. (Caught by an end-to-end smoke test:
+                // the flipped version silently no-oped on every click,
+                // since "restore" on a live page has nothing to undo.)
+                archive.mutate(isArchived);
               }}
+              disabled={archive.isPending}
             >
-              Cancel
+              {isArchived ? 'Restore' : 'Archive'}
             </Button>
-          </form>
-        ) : (
-          <>
-            <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
-              {page.title}
-              {isArchived && <Badge className="text-warning">archived</Badge>}
-            </h1>
-            <div className="flex shrink-0 gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setTitle(page.title);
-                  setEditingTitle(true);
-                }}
-              >
-                Rename
-              </Button>
-              {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
-                  per page — `page.capabilities.archive` is the server's own
-                  answer, not a rule re-derived here. Hidden entirely for a
-                  Member with no grant, rather than shown and left to answer
-                  FORBIDDEN (Phase 15 §1's sweep). */}
-              {page.capabilities.archive && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    // `restore: true` means "un-archive" — when the page is
-                    // NOT currently archived, this button archives it, so the
-                    // mutation's `restore` argument is `isArchived` itself,
-                    // not its negation. (Caught by an end-to-end smoke test:
-                    // the flipped version silently no-oped on every click,
-                    // since "restore" on a live page has nothing to undo.)
-                    archive.mutate(isArchived);
-                  }}
-                  disabled={archive.isPending}
-                >
-                  {isArchived ? 'Restore' : 'Archive'}
-                </Button>
-              )}
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       <DocsEditor
@@ -902,33 +1093,79 @@ function PagePanel({
         onReady={handleEditorReady}
       />
 
-      <div className="space-y-6 border-t border-line pt-4">
-        <PublishPanel
-          orgId={orgId}
-          spaceId={spaceId}
-          pageId={pageId}
-          publishedAt={page.publishedAt}
-        />
+      {/* One tool at a time, not five stacked panels — see `DOC_TOOLS`'s own
+          header for why. */}
+      <div className="space-y-3 border-t border-line pt-4">
+        <div role="tablist" aria-label="Page tools" className="flex gap-1 overflow-x-auto">
+          {DOC_TOOLS.map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tool === value}
+              onClick={() => {
+                setTool(value);
+              }}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors duration-(--motion-fast)',
+                /* The Docs suite hue, not a generic accent — the same fix
+                   already applied to a selected page in the tree and Chat's
+                   own active channel row. */
+                tool === value
+                  ? 'bg-suite-docs/10 text-suite-docs'
+                  : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              <Icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
+              {label}
+            </button>
+          ))}
+        </div>
 
-        <VersionHistoryPanel
-          orgId={orgId}
-          pageId={pageId}
-          onRestored={() => {
-            setEditorGeneration((generation) => generation + 1);
-          }}
-        />
-
-        <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
-
-        <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
-
-        <BacklinksPanel
-          orgId={orgId}
-          pageId={pageId}
-          onNavigate={(targetSpaceId, targetPageId) => {
-            void navigate({ to: '/docs', search: { space: targetSpaceId, page: targetPageId } });
-          }}
-        />
+        {/* `min-h-64` — a real report, not a hypothesis: switching between a
+            tall tab (Comments, once a thread or two exists) and a short one
+            (Publish, Backlinks on a page nothing links to) collapsed the
+            whole panel down to a couple of lines and back, which yanks
+            everything below it (nothing here today, but the panel itself)
+            and reads as the page reflowing under you. A floor, not a fixed
+            height — a genuinely long Comments thread still grows past it. */}
+        <div className="min-h-64 rounded-xl border border-line bg-surface-raised p-4">
+          {tool === 'comments' && (
+            <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
+          )}
+          {tool === 'history' && (
+            <VersionHistoryPanel
+              orgId={orgId}
+              pageId={pageId}
+              onRestored={() => {
+                setEditorGeneration((generation) => generation + 1);
+              }}
+            />
+          )}
+          {tool === 'publish' && (
+            <PublishPanel
+              orgId={orgId}
+              spaceId={spaceId}
+              pageId={pageId}
+              publishedAt={page.publishedAt}
+            />
+          )}
+          {tool === 'templates' && (
+            <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
+          )}
+          {tool === 'backlinks' && (
+            <BacklinksPanel
+              orgId={orgId}
+              pageId={pageId}
+              onNavigate={(targetSpaceId, targetPageId) => {
+                void navigate({
+                  to: '/docs',
+                  search: { space: targetSpaceId, page: targetPageId },
+                });
+              }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

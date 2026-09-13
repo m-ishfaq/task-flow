@@ -147,7 +147,7 @@ function PersonRow({ member }: { readonly member: DirectoryMember }) {
         router.push(`/person/${member.userId}`);
       }}
     >
-      <Avatar label={label} size={36} />
+      <Avatar label={label} size={36} seed={member.userId} />
       <View style={styles.rowText}>
         <Text style={styles.rowName} numberOfLines={1}>
           {label}

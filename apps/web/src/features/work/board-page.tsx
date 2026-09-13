@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
-import type { CardId, ProjectId } from '@taskflow/contracts';
+import { ChevronDown, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { unsafeAsId, type CardId, type ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
 import { useSession } from '../../lib/session.js';
 import { useIsDesktop } from '../../lib/use-media-query.js';
-import { Skeleton } from '../../components/primitives.js';
+import { Segmented, Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
 import { boardsQuery, cardsQuery, listsQuery, projectsQuery, statusesQuery } from './api.js';
@@ -115,12 +115,12 @@ export function BoardPage() {
     ...boardsQuery(orgId, projectId ?? ('' as ProjectId)),
     enabled: projectId !== null,
   });
-  const canManageBoard =
-    boards.data?.find((board) => board.boardId === boardId)?.capabilities.update ?? false;
+  const currentBoard = boards.data?.find((board) => board.boardId === boardId);
+  const canManageBoard = currentBoard?.capabilities.update ?? false;
 
   const projects = useQuery(projectsQuery(orgId));
-  const canManageProject =
-    projects.data?.find((project) => project.projectId === projectId)?.capabilities.update ?? false;
+  const currentProject = projects.data?.find((project) => project.projectId === projectId);
+  const canManageProject = currentProject?.capabilities.update ?? false;
 
   /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
      and patches/invalidates the queries above live as the full Wave 2 event
@@ -187,7 +187,18 @@ export function BoardPage() {
   if (lists.isError || cards.isError) {
     return (
       <div className="mx-auto max-w-2xl p-6">
-        <ErrorView error={lists.error ?? cards.error} title="Could not load this board" />
+        <ErrorView
+          error={lists.error ?? cards.error}
+          title="Could not load this board"
+          onRetry={() => {
+            // Whichever query actually failed — the request almost never
+            // reached the server at all (Design Bible §17's own framing for
+            // this exact state), so a retry is just asking React Query to
+            // try both again rather than diagnosing which one to target.
+            if (lists.isError) void lists.refetch();
+            if (cards.isError) void cards.refetch();
+          }}
+        />
       </div>
     );
   }
@@ -213,6 +224,38 @@ export function BoardPage() {
           and anchoring it to the viewport would put it over the sidebar. */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-line/50 bg-surface-raised/80 backdrop-blur-sm">
+          {/* The real "Website Redesign › Delivery board" context line the
+              app shell's own top-bar breadcrumb deliberately does NOT show —
+              `shell.tsx`'s `breadcrumbsFor` stays generic ("Projects" ›
+              "Board") on purpose, to avoid giving the global shell a data
+              dependency on every navigation. This page already fetches
+              `projects`/`boards` for its own capability checks above, so
+              resolving the real names here costs no extra query — the same
+              "local, resolved breadcrumb below the generic global one"
+              pattern `project-settings-page.tsx` already established.
+              Renders nothing until at least one name has actually loaded,
+              rather than a "Loading…" placeholder that would just be
+              replaced a moment later. */}
+          {(currentProject !== undefined || currentBoard !== undefined) && (
+            <div className="flex min-w-0 items-center gap-1.5 px-4 pt-2.5 text-[13px]">
+              {currentProject !== undefined && (
+                <>
+                  <Link
+                    to="/projects/$projectId"
+                    params={{ projectId: unsafeAsId<'ProjectId'>(currentProject.projectId) }}
+                    className="truncate text-ink-faint transition-colors duration-(--motion-fast) hover:text-ink"
+                  >
+                    {currentProject.name}
+                  </Link>
+                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-ink-faint" />
+                </>
+              )}
+              <span className="truncate font-semibold text-ink">
+                {currentBoard?.name ?? 'Board'}
+              </span>
+            </div>
+          )}
+
           {/* Compact bar — small screens only (`isDesktop` false below `md:`).
               Always visible there regardless of `toolbarExpanded`, so there is
               always a way back to collapsing the full row again. Renders
@@ -228,7 +271,7 @@ export function BoardPage() {
                 onClick={() => {
                   setToolbarExpanded((previous) => !previous);
                 }}
-                className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-line/60 bg-surface-sunken/40 px-2.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-line/60 bg-surface-sunken/40 px-2.5 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 Tools
@@ -308,7 +351,7 @@ export function BoardPage() {
               <Link
                 to="/projects/$projectId/standup"
                 params={{ projectId }}
-                className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
               >
                 Standup
               </Link>
@@ -466,6 +509,17 @@ export function BoardPage() {
   );
 }
 
+const VIEW_TOGGLE_OPTIONS = [
+  { value: 'board', label: 'Board' },
+  { value: 'list', label: 'List' },
+  { value: 'table', label: 'Table' },
+  { value: 'calendar', label: 'Calendar' },
+  { value: 'insights', label: 'Insights' },
+] as const satisfies readonly {
+  value: 'board' | 'table' | 'list' | 'calendar' | 'insights';
+  label: string;
+}[];
+
 function ViewToggle({
   value,
   onChange,
@@ -474,30 +528,7 @@ function ViewToggle({
   readonly onChange: (value: 'board' | 'table' | 'list' | 'calendar' | 'insights') => void;
 }) {
   return (
-    <div
-      className="inline-flex rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5"
-      role="group"
-      aria-label="View"
-    >
-      {(['board', 'list', 'table', 'calendar', 'insights'] as const).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          aria-pressed={value === mode}
-          onClick={() => {
-            onChange(mode);
-          }}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all duration-[var(--motion-fast)]',
-            value === mode
-              ? 'bg-accent text-accent-ink shadow-sm'
-              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-          )}
-        >
-          {mode}
-        </button>
-      ))}
-    </div>
+    <Segmented value={value} onChange={onChange} options={VIEW_TOGGLE_OPTIONS} aria-label="View" />
   );
 }
 

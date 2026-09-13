@@ -26,6 +26,7 @@ import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
+import { SUITE_STYLES, type Suite } from '../lib/suite.js';
 import { cn } from '../lib/cn.js';
 import {
   activeSprintsQuery,
@@ -131,6 +132,28 @@ interface NavItem {
    * gating on a single capability key here would hide it for them too.
    */
   readonly anyOfCapabilities?: readonly (keyof SettingsCapabilities)[];
+  /**
+   * Design Bible §01's suite spectrum — which product module this item
+   * belongs to, so its active indicator and icon take that module's own hue
+   * (`../lib/suite.ts`'s `SUITE_STYLES`) instead of the generic accent every
+   * item used before. Absent for "Where you start" items (My tasks, Search, Assistant)
+   * and Automations: those are entry points and configuration, not a product
+   * module competing for its own color the way Chat/Docs/Calls/People do.
+   */
+  readonly suite?: Suite;
+}
+
+/** The active-row bar/tint for a given suite, or the generic accent when none. */
+function activeStylesFor(suite: Suite | undefined): string {
+  if (suite === undefined) {
+    return cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR);
+  }
+  const styles = SUITE_STYLES[suite];
+  return cn(
+    styles.active,
+    'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b',
+    styles.bar,
+  );
 }
 
 const PRIMARY_SECTIONS: readonly {
@@ -157,16 +180,23 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
-      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
+      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat', suite: 'chat' },
+      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs', suite: 'docs' },
       {
         to: '/calls',
         label: 'Calls',
         icon: Phone,
         flag: 'telephony',
         anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
+        suite: 'calls',
       },
-      { to: '/people', label: 'People', icon: Users, capability: 'viewDirectory' },
+      {
+        to: '/people',
+        label: 'People',
+        icon: Users,
+        capability: 'viewDirectory',
+        suite: 'people',
+      },
       {
         to: '/analytics',
         label: 'Analytics',
@@ -253,6 +283,17 @@ const ACTIVE_BAR =
   'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-accent before:to-accent/0';
 
 /**
+ * The same bar, in the Work suite's own hue — the project and board links in
+ * the tree below are the Work module, per the Design Bible's suite spectrum
+ * (§01), so their "you are here" bar reads `--color-suite-work` rather than
+ * the generic accent every other nav item without a `suite` falls back to.
+ */
+const WORK_TREE_BAR = cn(
+  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b',
+  SUITE_STYLES.work.bar,
+);
+
+/**
  * The tint, applied to the ROW rather than to the link.
  *
  * `activeProps` can only style the `<Link>`, and a link that starts after a
@@ -278,11 +319,13 @@ function NavLink({
   label,
   icon: Icon,
   locked = false,
+  suite,
 }: {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
   readonly locked?: boolean;
+  readonly suite?: Suite | undefined;
 }) {
   return (
     <Link
@@ -295,7 +338,7 @@ function NavLink({
           : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
-        className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
+        className: activeStylesFor(suite),
       }}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
@@ -370,7 +413,7 @@ export function Sidebar() {
            an inner scroll region from ever resolving a height, because a
            `flex-1` child inside a percentage-height parent still needs
            `min-h-0` above it to be allowed to shrink. */
-        'flex min-h-0 flex-1 flex-col border-r border-line bg-surface-raised transition-[width]',
+        'flex min-h-0 flex-1 flex-col border-r border-line bg-surface-raised transition-[width] duration-(--motion-base)',
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
@@ -378,7 +421,7 @@ export function Sidebar() {
         {open && (
           <Link
             to="/projects"
-            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
+            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors duration-(--motion-fast) hover:text-accent"
           >
             {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
@@ -400,7 +443,7 @@ export function Sidebar() {
             onClick={toggleSidebar}
             aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
             aria-expanded={open}
-            className="ml-auto rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+            className="ml-auto rounded p-1.5 text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
           >
             {open ? (
               <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
@@ -429,6 +472,7 @@ export function Sidebar() {
                     label={item.label}
                     icon={item.icon}
                     locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
+                    suite={item.suite}
                   />
                 ))}
               </div>
@@ -453,7 +497,8 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold tracking-wide uppercase',
+                'transition-colors duration-[var(--motion-fast)]',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -551,7 +596,7 @@ function ProjectNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
-          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
         >
           {collapsed ? (
             <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
@@ -563,8 +608,8 @@ function ProjectNode({
         <Link
           to="/projects/$projectId"
           params={{ projectId }}
-          className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted hover:text-ink"
-          activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+          className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted transition-colors duration-[var(--motion-fast)] hover:text-ink"
+          activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
           title={`${name} (${projectKey}) — open project settings`}
         >
           {name}
@@ -636,7 +681,7 @@ function ActiveSprintLine({
     <Link
       to="/projects/$projectId/sprints"
       params={{ projectId }}
-      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint hover:text-ink"
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:text-ink"
       activeProps={{ className: 'text-accent' }}
       title={`${sprint.name} — ends ${sprint.endsOn}`}
     >
@@ -710,7 +755,7 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-ink-faint transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
         >
           <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
           {isFirst ? 'Add the first board' : 'Board'}
@@ -744,7 +789,7 @@ function AddBoard({
               setAdding(false);
             }
           }}
-          className="h-6 w-full text-[11px]"
+          className="h-6 w-full text-xs"
         />
         {create.isError && (
           <p role="alert" className="px-1 py-0.5 text-[10px] text-danger">
@@ -769,7 +814,7 @@ function BoardLink({
   return (
     <li
       className={cn(
-        'group relative flex items-center rounded-md hover:bg-surface-hover',
+        'group relative flex items-center rounded-md transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover',
         ACTIVE_ROW,
       )}
     >
@@ -786,8 +831,8 @@ function BoardLink({
            un-highlights the board you are looking at. The path is what
            identifies a board; `view` and `project` are state on top of it. */
         activeOptions={{ includeSearch: false }}
-        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
-        activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted transition-colors duration-[var(--motion-fast)] hover:text-ink"
+        activeProps={{ className: cn('font-medium text-suite-work', WORK_TREE_BAR) }}
       >
         {board.name}
       </Link>
@@ -803,7 +848,7 @@ function BoardLink({
            hover puts it out of reach of the keyboard entirely, which is the
            standard way this pattern excludes people. */
         className={cn(
-          'shrink-0 px-1.5 py-1 focus-visible:opacity-100',
+          'shrink-0 px-1.5 py-1 transition-[color,opacity] duration-[var(--motion-fast)] focus-visible:opacity-100',
           pinned
             ? 'text-warning opacity-100'
             : 'text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink',
@@ -841,7 +886,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
         <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>

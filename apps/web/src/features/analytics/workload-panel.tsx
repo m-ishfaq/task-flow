@@ -3,7 +3,12 @@ import { workloadQuery } from './api.js';
 import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
-/** §3.5 — Workload: open cards per assignee. */
+/**
+ * §3.5 — Workload: open cards per assignee.
+ *
+ * Renders no title of its own — `overview-panel.tsx`'s `DashboardCard`
+ * supplies it now that the standalone Workload tab is gone.
+ */
 export function WorkloadPanel() {
   const { data, isLoading, error } = useQuery(workloadQuery());
 
@@ -24,12 +29,13 @@ export function WorkloadPanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-medium text-ink/80">Workload</h2>
-
       <div className="space-y-2">
         {entries.map((entry) => (
           <div key={entry.userId} className="flex items-center gap-3">
-            <div className="w-32 truncate text-xs text-ink/80" title={entry.email ?? entry.userId}>
+            <div
+              className="w-32 truncate text-xs text-ink-muted"
+              title={entry.email ?? entry.userId}
+            >
               {entry.name ?? entry.email?.split('@')[0] ?? entry.userId.slice(0, 8) + '…'}
             </div>
             <div className="flex-1">

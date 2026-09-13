@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { ShieldAlert } from 'lucide-react';
+import { CreditCard, LayoutGrid, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '@taskflow/client';
+import { wire, type Wire } from '@taskflow/client';
 import {
   Badge,
   Button,
@@ -16,7 +16,15 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { LIMIT_COPY, featureDescription, featureLabel } from '../../lib/feature-labels.js';
-import { StepUpGate, TableSearch, ceiling, money } from './shared.js';
+import {
+  ModalIconHeader,
+  SectionHeader,
+  StepUpGate,
+  TableSearch,
+  ceiling,
+  money,
+} from './shared.js';
+import { cn } from '../../lib/cn.js';
 
 /**
  * The plan catalog.
@@ -96,8 +104,28 @@ export function PlansTab({
     );
   });
 
+  /* The mockup's own "MOST SOLD" ribbon is a marketing label with nothing
+     behind it in an operator console — this is not a pricing page a
+     customer browses, it's a tool an operator reads real numbers from. The
+     honest equivalent is the same ribbon POSITION carrying a number this
+     table already has: the active, sellable plan with the most orgs
+     actually on it. Never rendered with only one active plan (nothing to
+     stand out from) or when nobody is on any plan yet (an empty-database
+     ribbon is noise, not a signal). */
+  const activePlans = (plans.data ?? []).filter((plan) => plan.isActive);
+  const mostActivePlanId = (() => {
+    if (activePlans.length < 2) return null;
+    const top = activePlans.reduce((max, plan) => (plan.orgCount > max.orgCount ? plan : max));
+    return top.orgCount > 0 ? top.id : null;
+  })();
+
   return (
     <section aria-label="Plans">
+      <SectionHeader
+        icon={LayoutGrid}
+        title="Plans"
+        subtitle="catalog, limits, entitlements — editable per org, no migration"
+      />
       <div className="flex items-start justify-between gap-3">
         <p className="max-w-2xl text-xs text-ink-muted">
           What tenants may buy. Creating or repricing a plan writes to the payment processor
@@ -133,152 +161,42 @@ export function PlansTab({
             description="Create your first plan to start defining what tenants can buy."
           />
         ) : (
-          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(filteredPlans ?? []).map((plan) => (
-              <li
+              <PlanCard
                 key={plan.id}
-                className="flex flex-col gap-2 px-4 py-4 transition-colors hover:bg-surface-hover/30"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
-                      {plan.name}
-                      <span className="font-mono text-[11px] text-ink-faint">{plan.id}</span>
-                      {plan.isDefault && <Badge>default</Badge>}
-                      {!plan.isActive && <Badge>retired</Badge>}
-                      {plan.stripeProductId === null && <Badge>no processor product</Badge>}
-                    </p>
-                    {plan.description !== null && (
-                      <p className="truncate text-xs text-ink-muted">{plan.description}</p>
-                    )}
-
-                    <p className="mt-1 text-xs text-ink">
-                      {plan.currentPrices.length === 0 ? (
-                        <span className="text-ink-faint">no price configured</span>
-                      ) : (
-                        plan.currentPrices
-                          .map(
-                            (price) =>
-                              `${money(price.amountCents, price.currency)}/${price.interval}`,
-                          )
-                          .join(' · ')
-                      )}
-                    </p>
-
-                    <p className="mt-1 text-[11px] text-ink-faint">
-                      {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
-                      {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
-                      {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
-                      {ceiling(plan.turnIssuancePerDay, 'issues/day')} · AI{' '}
-                      {ceiling(plan.aiTokenBudgetMonthlyCents, 'cents/mo')}
-                      {plan.telephonyIncludedCents > 0 &&
-                        ` · includes ${money(plan.telephonyIncludedCents, 'usd')} usage`}
-                      {plan.telephonyMarkupPct > 0 &&
-                        ` · +${String(plan.telephonyMarkupPct)}% markup`}
-                    </p>
-
-                    <p className="mt-1 text-[11px] text-ink-faint">
-                      {plan.features.length === 0
-                        ? 'core only — no flagged modules'
-                        : plan.features.join(', ')}
-                    </p>
-
-                    {/* The processor ids, with a link where there is a console
-                        to link to. A stored id is a CLAIM that the object was
-                        created; it is not evidence the object is still there,
-                        or that it belongs to the Stripe account this
-                        deployment currently points at. Only looking settles
-                        that, so the console makes looking one click. */}
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
-                      {plan.stripeProductId === null ? (
-                        <span>not yet at the processor — created on first price</span>
-                      ) : (
-                        <ProcessorRef
-                          label="product"
-                          id={plan.stripeProductId}
-                          url={plan.stripeProductUrl}
-                        />
-                      )}
-                      {plan.currentPrices.map((price) =>
-                        price.stripePriceId === null ? null : (
-                          <ProcessorRef
-                            key={price.id}
-                            label={price.interval}
-                            id={price.stripePriceId}
-                            url={price.stripePriceUrl}
-                          />
-                        ),
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <Button
-                      onClick={() => {
-                        setEditingFeatures(plan.id);
-                      }}
-                    >
-                      Features
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setEditingLimits(plan.id);
-                      }}
-                    >
-                      Limits
-                    </Button>
-                    {/* Shown for ANY active plan, including one with no
-                        processor product yet. `setPrice` creates the product
-                        on demand — hiding this button for a product-less plan
-                        was a dead end: migration 0063 seeds `free` and `pro`
-                        without one (a migration cannot call Stripe), so on a
-                        fresh database neither seeded plan could ever be given
-                        a price and no org could ever upgrade. */}
-                    {plan.isActive && (
-                      <Button
-                        onClick={() => {
-                          setPricing(plan.id);
-                        }}
-                      >
-                        Set price
-                      </Button>
-                    )}
-                    {!plan.isDefault && plan.isActive && (
-                      <Button
-                        disabled={setDefault.isPending}
-                        onClick={() => {
-                          setDefault.mutate({ planId: plan.id });
-                        }}
-                      >
-                        Make default
-                      </Button>
-                    )}
-                    {plan.isActive && !plan.isDefault && (
-                      <Button
-                        variant="danger"
-                        disabled={archive.isPending}
-                        onClick={() => {
-                          setRetireTarget({
-                            planId: plan.id,
-                            name: plan.name,
-                            orgCount: plan.orgCount,
-                            features: plan.features,
-                          });
-                        }}
-                      >
-                        Retire
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </li>
+                plan={plan}
+                featured={plan.id === mostActivePlanId}
+                setDefaultPending={setDefault.isPending}
+                archivePending={archive.isPending}
+                onEditFeatures={() => {
+                  setEditingFeatures(plan.id);
+                }}
+                onEditLimits={() => {
+                  setEditingLimits(plan.id);
+                }}
+                onSetPrice={() => {
+                  setPricing(plan.id);
+                }}
+                onSetDefault={() => {
+                  setDefault.mutate({ planId: plan.id });
+                }}
+                onRetire={() => {
+                  setRetireTarget({
+                    planId: plan.id,
+                    name: plan.name,
+                    orgCount: plan.orgCount,
+                    features: plan.features,
+                  });
+                }}
+              />
             ))}
             {(filteredPlans ?? []).length === 0 && search.trim() !== '' && (
-              <li className="px-4 py-8 text-center text-sm text-ink-faint">
+              <p className="col-span-full px-4 py-8 text-center text-sm text-ink-faint">
                 No plans match your search.
-              </li>
+              </p>
             )}
-          </ul>
+          </div>
         ))}
 
       {archive.isError && <ErrorView error={archive.error} title="Could not retire the plan" />}
@@ -358,6 +276,171 @@ export function PlansTab({
   );
 }
 
+type PlanRow = Wire<Awaited<ReturnType<typeof api.platformAdmin.plans.list.query>>>[number];
+
+/**
+ * One plan, as a pricing-page-shaped card — Design Bible §18's own mockup,
+ * replacing what used to be a dense, paragraph-like row of every field
+ * concatenated with middle dots. The real data is unchanged; only the
+ * shape changed, from "everything on one run-on line" to "the four numbers
+ * that actually matter, plus the processor links and remaining actions
+ * folded into a footer instead of competing with them for space."
+ *
+ * `featured` draws the accent ring/border — see `PlansTab`'s own
+ * `mostActivePlanId` computation for why that is a real, data-driven
+ * signal (orgs actually on the plan) rather than the mockup's own
+ * hardcoded "MOST SOLD" marketing ribbon, which has no meaning in a
+ * console an operator reads real numbers from.
+ */
+function PlanCard({
+  plan,
+  featured,
+  setDefaultPending,
+  archivePending,
+  onEditFeatures,
+  onEditLimits,
+  onSetPrice,
+  onSetDefault,
+  onRetire,
+}: {
+  readonly plan: PlanRow;
+  readonly featured: boolean;
+  readonly setDefaultPending: boolean;
+  readonly archivePending: boolean;
+  readonly onEditFeatures: () => void;
+  readonly onEditLimits: () => void;
+  readonly onSetPrice: () => void;
+  readonly onSetDefault: () => void;
+  readonly onRetire: () => void;
+}) {
+  const hasAnalytics = plan.features.includes('analytics');
+
+  return (
+    <div
+      className={cn(
+        'relative flex flex-col gap-3 rounded-xl border p-4',
+        featured ? 'border-accent/50 bg-accent/[0.03] ring-1 ring-accent/20' : 'border-line',
+        !plan.isActive && 'opacity-70',
+      )}
+    >
+      {featured && (
+        <span className="absolute -top-2.5 left-4 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold tracking-wide text-accent-ink uppercase">
+          Most active
+        </span>
+      )}
+
+      <div className="min-w-0">
+        <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">
+          {plan.name}
+          {plan.isDefault && <Badge>default</Badge>}
+          {!plan.isActive && <Badge>retired</Badge>}
+        </p>
+        <p className="font-mono text-xs text-ink-faint">{plan.id}</p>
+      </div>
+
+      <p className="text-lg font-semibold tracking-tight text-ink">
+        {plan.currentPrices.length === 0 ? (
+          <span className="text-sm font-normal text-ink-faint">no price configured</span>
+        ) : (
+          plan.currentPrices
+            .map((price) => `${money(price.amountCents, price.currency)}/${price.interval}`)
+            .join(' · ')
+        )}
+      </p>
+
+      <dl className="flex flex-col gap-1.5 border-t border-line/60 pt-3 text-xs">
+        <PlanLimitRow label="Telephony" value={ceiling(plan.telephonyCapCents, 'cents')} />
+        <PlanLimitRow
+          label="AI budget"
+          value={ceiling(plan.aiTokenBudgetMonthlyCents, 'cents/mo')}
+        />
+        <PlanLimitRow label="Automation" value={ceiling(plan.automationRunsPerHour, 'runs/hr')} />
+        <div className="flex items-center justify-between">
+          <dt className="text-ink-faint">Analytics</dt>
+          <dd className={hasAnalytics ? 'text-success' : 'text-ink-faint'}>
+            {hasAnalytics ? '✓' : '—'}
+          </dd>
+        </div>
+      </dl>
+
+      {plan.description !== null && <p className="text-xs text-ink-muted">{plan.description}</p>}
+
+      <p className="text-xs text-ink-faint">
+        {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'}
+        {plan.features.length > 0 && ` · ${plan.features.join(', ')}`}
+      </p>
+
+      {/* The processor ids, with a link where there is a console to link to.
+          A stored id is a CLAIM that the object was created; it is not
+          evidence the object is still there, or that it belongs to the
+          Stripe account this deployment currently points at. Only looking
+          settles that, so the card makes looking one click. */}
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs text-ink-faint">
+        {plan.stripeProductId === null ? (
+          <span>not yet at the processor — created on first price</span>
+        ) : (
+          <ProcessorRef label="product" id={plan.stripeProductId} url={plan.stripeProductUrl} />
+        )}
+        {plan.currentPrices.map((price) =>
+          price.stripePriceId === null ? null : (
+            <ProcessorRef
+              key={price.id}
+              label={price.interval}
+              id={price.stripePriceId}
+              url={price.stripePriceUrl}
+            />
+          ),
+        )}
+      </p>
+
+      <div className="mt-auto flex flex-col gap-1.5 border-t border-line/60 pt-3">
+        <button
+          type="button"
+          onClick={onEditLimits}
+          className="text-left text-xs font-medium text-accent hover:underline"
+        >
+          Edit limits
+        </button>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" onClick={onEditFeatures}>
+            Features
+          </Button>
+          {/* Shown for ANY active plan, including one with no processor
+              product yet. `setPrice` creates the product on demand — hiding
+              this button for a product-less plan was a dead end: migration
+              0063 seeds `free` and `pro` without one (a migration cannot
+              call Stripe), so on a fresh database neither seeded plan could
+              ever be given a price and no org could ever upgrade. */}
+          {plan.isActive && (
+            <Button size="sm" onClick={onSetPrice}>
+              Set price
+            </Button>
+          )}
+          {!plan.isDefault && plan.isActive && (
+            <Button size="sm" disabled={setDefaultPending} onClick={onSetDefault}>
+              Make default
+            </Button>
+          )}
+          {plan.isActive && !plan.isDefault && (
+            <Button size="sm" variant="danger" disabled={archivePending} onClick={onRetire}>
+              Retire
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanLimitRow({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-ink-faint">{label}</dt>
+      <dd className="text-ink">{value}</dd>
+    </div>
+  );
+}
+
 /**
  * Confirmation dialog before retiring a plan.
  *
@@ -389,18 +472,13 @@ function RetirePlanDialog({
       }}
     >
       <ModalContent size="sm" className="p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger/15 text-danger">
-            <ShieldAlert className="size-5" strokeWidth={2} />
-          </span>
-          <div>
-            <ModalTitle>Retire {plan.name}?</ModalTitle>
-            <ModalDescription>
-              This plan has {String(plan.orgCount)} active organization
-              {plan.orgCount === 1 ? '' : 's'}.
-            </ModalDescription>
-          </div>
-        </div>
+        <ModalIconHeader icon={ShieldAlert} tone="danger">
+          <ModalTitle>Retire {plan.name}?</ModalTitle>
+          <ModalDescription>
+            This plan has {String(plan.orgCount)} active organization
+            {plan.orgCount === 1 ? '' : 's'}.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="space-y-3 text-sm text-ink">
           <p>
@@ -415,7 +493,7 @@ function RetirePlanDialog({
                 {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on
                 this plan
               </p>
-              <p className="mt-0.5 text-[11px] text-ink-muted">
+              <p className="mt-0.5 text-xs text-ink-muted">
                 They will continue to have access to all features until their plan is manually
                 changed or they cancel.
               </p>
@@ -574,18 +652,20 @@ function EditLimitsDialog({
           onChange(event.target.value);
         }}
       />
-      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
+      <p className="mt-0.5 text-xs text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
     </Field>
   );
 
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>{plan.name} limits</ModalTitle>
-        <ModalDescription>
-          These are <strong>ceilings, not values</strong> — the most an org on this plan may be
-          raised to. Leave a field empty for unlimited; enter 0 for none at all.
-        </ModalDescription>
+        <ModalIconHeader icon={LayoutGrid} tone="accent">
+          <ModalTitle>{plan.name} limits</ModalTitle>
+          <ModalDescription>
+            These are <strong>ceilings, not values</strong> — the most an org on this plan may be
+            raised to. Leave a field empty for unlimited; enter 0 for none at all.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {limitField(
@@ -789,11 +869,13 @@ function EditFeaturesDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>{plan.name} features</ModalTitle>
-        <ModalDescription>
-          Which modules this tier includes. Turning one off does not delete anything — orgs on this
-          plan keep their data and lose access to it until the module is included again.
-        </ModalDescription>
+        <ModalIconHeader icon={ShieldCheck} tone="accent">
+          <ModalTitle>{plan.name} features</ModalTitle>
+          <ModalDescription>
+            Which modules this tier includes. Turning one off does not delete anything — orgs on
+            this plan keep their data and lose access to it until the module is included again.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           {registry.isPending && <SkeletonRows rows={4} className="*:h-10" />}
@@ -824,7 +906,7 @@ function EditFeaturesDialog({
                     >
                       <span className="block text-sm text-ink">
                         {featureLabel(flag.flagName)}
-                        <span className="ml-1.5 font-mono text-[11px] text-ink-faint">
+                        <span className="ml-1.5 font-mono text-xs text-ink-faint">
                           {flag.flagName}
                         </span>
                       </span>
@@ -900,11 +982,13 @@ function CreatePlanDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>New plan</ModalTitle>
-        <ModalDescription>
-          The id is permanent — it is written onto every org that subscribes, and it appears in logs
-          and support conversations. Features and ceilings are edited after creation.
-        </ModalDescription>
+        <ModalIconHeader icon={LayoutGrid} tone="accent">
+          <ModalTitle>New plan</ModalTitle>
+          <ModalDescription>
+            The id is permanent — it is written onto every org that subscribes, and it appears in
+            logs and support conversations. Features and ceilings are edited after creation.
+          </ModalDescription>
+        </ModalIconHeader>
 
         <div className="mt-3 flex flex-col gap-3">
           <Field label="Id" htmlFor="plan-id">
@@ -1025,24 +1109,26 @@ function SetPriceDialog({
   return (
     <ModalRoot open onOpenChange={onClose}>
       <ModalContent className="p-4">
-        <ModalTitle>Set {plan.name} price</ModalTitle>
-        <ModalDescription>
-          {existing === undefined ? (
-            <>No {interval}ly price yet — this creates the first one.</>
-          ) : (
-            <>
-              Currently {money(existing.amountCents, existing.currency)}/{interval}. Saving retires
-              that price and creates a new one.{' '}
-              <strong>
-                The {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} on this plan keep paying
-                what they signed up for
-              </strong>{' '}
-              — only new subscriptions get the new amount.
-            </>
-          )}
-        </ModalDescription>
+        <ModalIconHeader icon={CreditCard} tone="accent">
+          <ModalTitle>Set {plan.name} price</ModalTitle>
+          <ModalDescription>
+            {existing === undefined ? (
+              <>No {interval}ly price yet — this creates the first one.</>
+            ) : (
+              <>
+                Currently {money(existing.amountCents, existing.currency)}/{interval}. Saving
+                retires that price and creates a new one.{' '}
+                <strong>
+                  The {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} on this plan keep paying
+                  what they signed up for
+                </strong>{' '}
+                — only new subscriptions get the new amount.
+              </>
+            )}
+          </ModalDescription>
+        </ModalIconHeader>
 
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <Field label="Interval" htmlFor="plan-interval">
             <div className="flex gap-1.5">
               {(['month', 'year'] as const).map((value) => (

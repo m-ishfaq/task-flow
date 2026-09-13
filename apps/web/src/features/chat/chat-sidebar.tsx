@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Pin } from 'lucide-react';
+import { Bookmark, Lock, Pin, Plus } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -8,15 +8,18 @@ import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
   Avatar,
+  AvatarStack,
   Button,
   Empty,
   Field,
   FocusOnMountInput,
-  Input,
+  SearchInput,
   Skeleton,
 } from '../../components/primitives.js';
-import { useMembers } from '../org/use-members.js';
+import { UNKNOWN_PERSON_LABEL, useMembers, type Person } from '../org/use-members.js';
 import {
+  PINNED_LIST_LIMIT,
+  SAVED_LIST_LIMIT,
   allPinsQuery,
   channelsQuery,
   createChannel,
@@ -59,7 +62,7 @@ export function ChannelListPanel({
      (CLAUDE.md §8.2: the server decides, the client never re-derives). */
   const canCreateChannel = channels.data?.canCreateChannel ?? false;
   const list = channels.data?.channels ?? [];
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
 
   const unread = useQuery({
     ...unreadCountsQuery(
@@ -96,9 +99,7 @@ export function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-          Channels
-        </h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Channels</h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
@@ -126,7 +127,7 @@ export function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Direct messages
         </h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
@@ -134,7 +135,7 @@ export function ChannelListPanel({
 
       <ul className="px-1.5 pb-3">
         {directs.map((channel) => (
-          <ChannelRow
+          <DirectMessageRow
             key={channel.channelId}
             channel={channel}
             /* A DM has no name — the database refuses one — so it is labelled by
@@ -144,6 +145,7 @@ export function ChannelListPanel({
                where `member:read` is denied and the lookup returns nothing;
                rendering a raw uuid there would be worse than saying nothing. */
             label={directLabel(channel.participantIds, personOf)}
+            people={peopleOf(channel.participantIds)}
             active={selected === channel.channelId}
             unreadCount={unreadByChannel.get(channel.channelId) ?? 0}
             onSelect={onSelect}
@@ -202,8 +204,17 @@ function ChannelRow({
         }}
         className={cn(
           'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+          /* The Design Bible's own `.chan.on` uses the module's own suite
+             hue (`--surf-hue`), not a generic accent tint — Chat's active
+             channel row takes `--color-suite-chat` for the identical
+             reason the sidebar's own Chat nav item does. The 15%-opacity
+             tint is the same non-text-safe pairing the sidebar already
+             uses; the text itself, at suite-chat's 66% lightness, clears
+             4.5:1 against every dark surface tone in this app with real
+             margin — lighter than the already-audited 55-58%-lightness
+             accent tokens, which pass the same bar. */
           active
-            ? 'bg-accent/15 text-accent'
+            ? 'bg-suite-chat/15 text-suite-chat'
             : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         )}
       >
@@ -211,6 +222,86 @@ function ChannelRow({
           <ChannelTypePrefix type={channel.type} />
           {label}
         </span>
+        {unreadCount > 0 && (
+          <span
+            className={cn(
+              'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold',
+              active ? 'bg-accent-ink/20 text-accent-ink' : 'bg-accent text-accent-ink',
+            )}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * A direct message, as a person — not as a row of plain text.
+ *
+ * The Design Bible's own §07 (Chat rebuilt) names this explicitly: "DMs
+ * show a person's name, avatar, presence and last-message preview instead
+ * of a raw email." `directLabel` had already fixed the "raw email" half —
+ * this fixes the "avatar" half, the other structural piece a text-only
+ * `ChannelRow` could never carry. A named CHANNEL stays plain text on
+ * purpose (the mockup's own `# design-system` row has no avatar either —
+ * a channel is not a person, and giving it one would blur the exact
+ * distinction this row exists to draw).
+ *
+ * `presence` and the last-message preview are deliberately NOT here yet:
+ * presence would need a genuinely new, org-wide "who's online" broadcast
+ * (today's realtime presence is scoped per-ROOM, for "who's looking at
+ * this channel right now" — `use-channel-room.ts`'s own doc comment —
+ * which cannot answer "is Rosa online anywhere" for every DM in this list
+ * at once without joining every one of their rooms just to find out). A
+ * preview would need the channel list to know each DM's most recent
+ * message, which `listChannels` does not fetch today and has no safe,
+ * un-verified-against-real-Postgres way to add in this pass (no denormalized
+ * `last_message_id` column exists yet, and a correlated "latest per
+ * channel" query needs either a migration or a raw-SQL aggregate this
+ * codebase reserves for `packages/db`, a human-review-flagged package).
+ * Both are real, separate follow-ups, not oversights.
+ */
+function DirectMessageRow({
+  channel,
+  label,
+  people,
+  active,
+  unreadCount,
+  onSelect,
+}: {
+  readonly channel: ChannelSummary;
+  readonly label: string;
+  readonly people: readonly Person[];
+  readonly active: boolean;
+  readonly unreadCount: number;
+  readonly onSelect: (channelId: ChannelId) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => {
+          onSelect(channel.channelId as ChannelId);
+        }}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
+          active
+            ? 'bg-suite-chat/15 text-suite-chat'
+            : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+        )}
+      >
+        {people.length > 1 ? (
+          <AvatarStack people={people} max={2} size="xs" />
+        ) : (
+          <Avatar
+            userId={people[0]?.userId ?? channel.channelId}
+            label={people[0]?.label ?? label}
+            size="xs"
+          />
+        )}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
         {unreadCount > 0 && (
           <span
             className={cn(
@@ -253,6 +344,15 @@ function PinnedMessagesButton({
   const toast = useToast();
   const pins = useQuery({ ...allPinsQuery(orgId), enabled: orgId !== '' });
   const list = pins.data ?? [];
+  const [search, setSearch] = useState('');
+  const needle = search.trim().toLowerCase();
+  const visibleList = list.filter((row) => {
+    if (needle === '') return true;
+    return (
+      (row.channelName?.toLowerCase().includes(needle) ?? false) ||
+      (row.excerpt?.toLowerCase().includes(needle) ?? false)
+    );
+  });
 
   const unpin = useMutation({
     mutationFn: (input: { channelId: ChannelId; messageId: MessageId }) => unpinMessage(input),
@@ -273,7 +373,7 @@ function PinnedMessagesButton({
           aria-label={
             list.length > 0 ? `Pinned messages, ${String(list.length)}` : 'Pinned messages'
           }
-          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
             <Pin aria-hidden="true" className="size-3.5" strokeWidth={2} />
@@ -292,6 +392,12 @@ function PinnedMessagesButton({
           <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
         </header>
 
+        {list.length > 15 && (
+          <div className="border-b border-line px-3 py-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search pins…" />
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           {list.length === 0 ? (
             <div className="p-3">
@@ -300,9 +406,11 @@ function PinnedMessagesButton({
                 description="Pin a message to find it here later."
               />
             </div>
+          ) : visibleList.length === 0 ? (
+            <p className="p-3 text-sm text-ink-faint">No pins match your search.</p>
           ) : (
             <ul>
-              {list.map((row) => (
+              {visibleList.map((row) => (
                 <PinnedMessageSidebarRow
                   key={row.messageId}
                   row={row}
@@ -319,6 +427,13 @@ function PinnedMessagesButton({
                 />
               ))}
             </ul>
+          )}
+          {/* `listAllPinned` takes a hard limit, never a cursor — see
+              `PINNED_LIST_LIMIT`'s own comment in `pin.service.ts`. */}
+          {list.length === PINNED_LIST_LIMIT && (
+            <p className="p-2 text-center text-xs text-ink-faint">
+              Showing your {PINNED_LIST_LIMIT} most recently pinned messages.
+            </p>
           )}
         </div>
       </PopoverContent>
@@ -347,7 +462,7 @@ function PinnedMessageSidebarRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Pinned {new Date(row.pinnedAt).toLocaleString()}
         </span>
       </button>
@@ -355,7 +470,7 @@ function PinnedMessageSidebarRow({
         type="button"
         disabled={pending}
         onClick={onUnpin}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unpin
       </button>
@@ -387,6 +502,15 @@ function SavedMessagesButton({
   const toast = useToast();
   const saved = useQuery({ ...savedQuery(orgId), enabled: orgId !== '' });
   const list = saved.data ?? [];
+  const [search, setSearch] = useState('');
+  const needle = search.trim().toLowerCase();
+  const visibleList = list.filter((row) => {
+    if (needle === '') return true;
+    return (
+      (row.channelName?.toLowerCase().includes(needle) ?? false) ||
+      (row.excerpt?.toLowerCase().includes(needle) ?? false)
+    );
+  });
 
   const unsave = useMutation({
     mutationFn: (messageId: MessageId) => unsaveMessage(messageId),
@@ -404,10 +528,12 @@ function SavedMessagesButton({
         <button
           type="button"
           aria-label={list.length > 0 ? `Saved messages, ${String(list.length)}` : 'Saved messages'}
-          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
-            <span aria-hidden>🔖</span>
+            {/* A real glyph, not a 🔖 emoji — same reasoning as every other
+                emoji-as-icon fix in this pass. */}
+            <Bookmark aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} />
             Saved messages
           </span>
           {list.length > 0 && (
@@ -423,6 +549,12 @@ function SavedMessagesButton({
           <h2 className="text-sm font-medium text-ink">Saved messages</h2>
         </header>
 
+        {list.length > 15 && (
+          <div className="border-b border-line px-3 py-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search saved…" />
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           {list.length === 0 ? (
             <div className="p-3">
@@ -431,9 +563,11 @@ function SavedMessagesButton({
                 description="Save a message from its menu to find it here later."
               />
             </div>
+          ) : visibleList.length === 0 ? (
+            <p className="p-3 text-sm text-ink-faint">No saved messages match your search.</p>
           ) : (
             <ul>
-              {list.map((row) => (
+              {visibleList.map((row) => (
                 <SavedMessageRow
                   key={row.messageId}
                   row={row}
@@ -447,6 +581,13 @@ function SavedMessagesButton({
                 />
               ))}
             </ul>
+          )}
+          {/* `listSaved` takes a hard limit, never a cursor — see
+              `SAVED_LIST_LIMIT`'s own comment in `saved.service.ts`. */}
+          {list.length === SAVED_LIST_LIMIT && (
+            <p className="p-2 text-center text-xs text-ink-faint">
+              Showing your {SAVED_LIST_LIMIT} most recently saved messages.
+            </p>
           )}
         </div>
       </PopoverContent>
@@ -475,7 +616,7 @@ function SavedMessageRow({
         <span className="line-clamp-2 text-xs text-ink-muted">
           {row.excerpt ?? '(message deleted)'}
         </span>
-        <span className="text-[11px] text-ink-faint">
+        <span className="text-xs text-ink-faint">
           Saved {new Date(row.savedAt).toLocaleString()}
         </span>
       </button>
@@ -483,7 +624,7 @@ function SavedMessageRow({
         type="button"
         disabled={pending}
         onClick={onUnsave}
-        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+        className="mt-1 text-xs text-ink-faint hover:text-ink"
       >
         Unsave
       </button>
@@ -529,9 +670,9 @@ function NewChannelPopover({
         <button
           type="button"
           aria-label="New channel"
-          className="flex h-5 w-5 items-center justify-center rounded text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex size-5 items-center justify-center rounded-md text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          +
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-2 p-3">
@@ -553,7 +694,7 @@ function NewChannelPopover({
               setType('public');
             }}
             className={cn(
-              'flex-1 rounded px-2 py-1 text-xs',
+              'flex-1 rounded-md px-2 py-1 text-xs',
               type === 'public'
                 ? 'bg-accent text-accent-ink'
                 : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
@@ -567,7 +708,7 @@ function NewChannelPopover({
               setType('private');
             }}
             className={cn(
-              'flex-1 rounded px-2 py-1 text-xs',
+              'flex-1 rounded-md px-2 py-1 text-xs',
               type === 'private'
                 ? 'bg-accent text-accent-ink'
                 : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
@@ -658,20 +799,18 @@ function NewDirectMessagePopover({
         <button
           type="button"
           aria-label="New direct message"
-          className="flex h-5 w-5 items-center justify-center rounded text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex size-5 items-center justify-center rounded-md text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          +
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
-        <Input
+        <SearchInput
           aria-label="Search people"
           placeholder="Search people…"
           value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          className="h-7 text-xs"
+          onChange={setQuery}
+          className="h-7"
         />
 
         {selected.length > 0 && (
@@ -685,9 +824,9 @@ function NewDirectMessagePopover({
                     onClick={() => {
                       toggle(userId);
                     }}
-                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent hover:bg-accent/20"
                   >
-                    <span className="truncate">{member?.email ?? userId}</span>
+                    <span className="truncate">{member?.email ?? UNKNOWN_PERSON_LABEL}</span>
                     <span aria-hidden="true">×</span>
                   </button>
                 </li>

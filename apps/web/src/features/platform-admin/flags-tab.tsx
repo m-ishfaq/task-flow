@@ -65,22 +65,22 @@ export function FlagsTab({
             {flags.data.map((flag) => (
               <li
                 key={flag.flagName}
-                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
+                className="flex items-center gap-3 px-4 py-3 transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
               >
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                     {flag.flagName}
-                    <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-ink-faint">
+                    <span className="rounded-md bg-surface-hover px-1.5 py-0.5 font-mono text-xs text-ink-faint">
                       Phase {flag.phase}
                     </span>
                     {flag.perOrg && (
-                      <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent">
+                      <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
                         org-toggleable
                       </span>
                     )}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-ink-muted">{flag.description}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-faint">
+                  <p className="mt-0.5 text-xs text-ink-faint">
                     {flag.source === 'override' ? (
                       <>
                         <span className="font-medium text-warning">overridden</span> — default was{' '}
@@ -101,7 +101,7 @@ export function FlagsTab({
                       onClick={() => {
                         set.mutate({ flagName: flag.flagName, value: null });
                       }}
-                      className="rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
                     >
                       Reset
                     </button>
@@ -116,7 +116,7 @@ export function FlagsTab({
                       set.mutate({ flagName: flag.flagName, value: !flag.value });
                     }}
                     className={cn(
-                      'relative h-6 w-11 rounded-full transition-colors',
+                      'relative h-6 w-11 rounded-full transition-colors duration-(--motion-fast)',
                       flag.value ? 'bg-accent' : 'bg-surface-hover',
                     )}
                   >

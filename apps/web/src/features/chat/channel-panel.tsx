@@ -1,12 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Lock, Users } from 'lucide-react';
+import { ChevronLeft, Hash, Lock, Search, Users } from 'lucide-react';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, Empty, Skeleton } from '../../components/primitives.js';
+import { AvatarStack, Button, Empty, IconButton, Skeleton } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { CallButton } from '../rtc/call-button.js';
 import { callHistoryQuery, type CallHistoryEntry } from '../rtc/api.js';
@@ -60,9 +59,11 @@ import {
   appendText,
   channelSubtitle,
   channelTitle,
+  dayKeyOf,
   describeTyping,
   firstUnreadAfter,
   flattenDocument,
+  formatDayLabel,
   groupByMessage,
   groupReactions,
   textDocument,
@@ -89,6 +90,24 @@ type TimelineItem =
       readonly entry: CallHistoryEntry;
     };
 
+/**
+ * Three staggered bouncing dots — the animated cue Design Bible §07's own
+ * typing indicator carries next to "Rosa is typing…", replacing what used to
+ * be plain italic text with no motion at all. Each dot uses Tailwind's own
+ * `animate-bounce` with a negative delay staggering the three by 150ms, the
+ * same "each one a beat behind the last" cadence a typing dot cluster reads
+ * as everywhere else this pattern is used.
+ */
+function TypingDots() {
+  return (
+    <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-300ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-150ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint" />
+    </span>
+  );
+}
+
 export function ChannelPanel({
   orgId,
   channelId,
@@ -100,17 +119,18 @@ export function ChannelPanel({
   readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
-  /* `useChannelRoom` still runs — its broadcast invalidation is what makes
-     live messages appear — but presence is deliberately not rendered in the
-     header anymore: the member/presence readout moved out of the header to
-     keep it about the conversation, and the details panel is where who's
-     here belongs. */
-  useChannelRoom(orgId, channelId);
+  /* `presence` (who's currently in this room) is deliberately not rendered
+     in the header — the member/presence readout moved out of it to keep
+     the header about the conversation, and `ChannelDetailsPanel` below is
+     where who's here belongs, now genuinely: it was computed and simply
+     discarded here for a while, a wiring gap this comment used to describe
+     as already fixed. */
+  const { presence } = useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -635,8 +655,54 @@ export function ChannelPanel({
                   {channelSubtitle(channel.data)}
                 </span>
               )}
+              {/* The member count, restored — Design Bible §07's own header
+                  shows it next to the name ("design-system · 12 members"),
+                  which is what prompted revisiting the "noise" reasoning this
+                  comment used to give for leaving it out. A 1:1 DM still
+                  omits it (the header title already names the one other
+                  person; "2 members" would say nothing new), but a real
+                  channel or a group DM's roster size is exactly the kind of
+                  glance-and-know fact the mockup treats as identity, not
+                  noise. `channel.data.memberIds` is already fetched by this
+                  same query for `channelTitle`/`channelSubtitle` above, so
+                  this costs no extra request. */}
+              {channel.data !== undefined && channel.data.type !== 'dm' && (
+                <span className="block text-xs leading-tight text-ink-faint">
+                  {channel.data.memberIds.length}{' '}
+                  {channel.data.memberIds.length === 1 ? 'member' : 'members'}
+                </span>
+              )}
             </span>
           </button>
+          {/* A small overlapping-avatar preview of who's in this channel —
+              the same `AvatarStack` a board card's assignees already use,
+              here as a read-only "who's here" glance rather than a control.
+              Omitted for a 1:1 DM for the identical reason the member count
+              above is: the header already shows that one person. */}
+          {channel.data !== undefined && channel.data.type !== 'dm' && (
+            <AvatarStack
+              people={peopleOf(channel.data.memberIds)}
+              max={3}
+              className="hidden shrink-0 sm:flex"
+            />
+          )}
+          {/* A way into Search from wherever a conversation is open, matching
+              the mockup's own header search icon. Opens the app's real
+              search rather than a second, channel-scoped search
+              implementation — TQL's message fields (§8's own closed field
+              set) have no per-channel filter to scope a query to just this
+              conversation, so a second search surface here would either be a
+              plain client-side substring filter over whatever happens to be
+              loaded (not a real search) or duplicate backend work out of
+              scope for a header icon. */}
+          <IconButton
+            onClick={() => {
+              void navigate({ to: '/search', search: { q: 'type = message' } });
+            }}
+            aria-label="Search messages"
+          >
+            <Search aria-hidden="true" className="size-4" strokeWidth={2.25} />
+          </IconButton>
           {/* In-app voice (Phase 13). Public channels cannot start a call in
               Wave 1 — the ring list comes from the channel's member tuples and
               a public channel has none, so the control is not offered rather
@@ -646,24 +712,18 @@ export function ChannelPanel({
             <CallButton orgId={orgId} channelId={channelId} />
           )}
           {/* Channel details (members, media, retention). Icon-only — the
-              member COUNT is intentionally not shown here: it is one tap
-              away in the panel, and a number in the header is noise next to
-              the conversation's identity. */}
-          <button
-            type="button"
+              roster COUNT now has its own place next to the name above; this
+              button still opens the full panel (members, media, retention),
+              which a number or an avatar stack alone cannot replace. */}
+          <IconButton
             onClick={() => {
               setDetailsOpen((open) => !open);
             }}
             aria-label="Channel details"
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
-              detailsOpen
-                ? 'bg-accent/10 text-accent'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
+            active={detailsOpen}
           >
             <Users aria-hidden="true" className="size-4" strokeWidth={2.25} />
-          </button>
+          </IconButton>
         </header>
 
         {/* `px-3 sm:px-4`, matched by the header, the typing line and the
@@ -684,16 +744,36 @@ export function ChannelPanel({
             />
           ) : (
             <div className="space-y-4">
-              {timeline.map((item) =>
-                item.kind === 'call' ? (
-                  <CallTimelineCard
-                    key={item.key}
-                    entry={item.entry}
-                    viewerId={viewerId}
-                    personOf={personOf}
-                  />
+              {timeline.map((item, index) => {
+                /* A day divider whenever the timeline crosses midnight —
+                   `index === 0` always gets one too, so a channel opened
+                   mid-scroll still says which day its first visible message
+                   is from rather than assuming "obviously today". Computed
+                   against the PREVIOUS TIMELINE ITEM, not the previous
+                   message, so a call sitting between two messages from the
+                   same day never triggers a spurious divider around it. */
+                const previous = index > 0 ? timeline[index - 1] : undefined;
+                const showDayDivider =
+                  previous === undefined || dayKeyOf(item.at) !== dayKeyOf(previous.at);
+
+                const dayDivider = showDayDivider && (
+                  <div className="flex items-center gap-2" role="separator">
+                    <span className="h-px flex-1 bg-line/60" />
+                    <span className="text-xs font-medium text-ink-faint">
+                      {formatDayLabel(item.at)}
+                    </span>
+                    <span className="h-px flex-1 bg-line/60" />
+                  </div>
+                );
+
+                return item.kind === 'call' ? (
+                  <Fragment key={item.key}>
+                    {dayDivider}
+                    <CallTimelineCard entry={item.entry} viewerId={viewerId} personOf={personOf} />
+                  </Fragment>
                 ) : (
                   <Fragment key={item.key}>
+                    {dayDivider}
                     {/* The "new messages" line, placed by the read CURSOR rather
                         than by counting back from the end. A count-based position
                         lands somewhere plausible and wrong the moment a message
@@ -712,7 +792,7 @@ export function ChannelPanel({
                       ) && (
                         <div className="flex items-center gap-2" role="separator">
                           <span className="h-px flex-1 bg-danger/40" />
-                          <span className="text-[11px] font-medium text-danger">New messages</span>
+                          <span className="text-xs font-medium text-danger">New messages</span>
                           <span className="h-px flex-1 bg-danger/40" />
                         </div>
                       )}
@@ -757,15 +837,16 @@ export function ChannelPanel({
                       onOpenThread={setOpenThreadId}
                     />
                   </Fragment>
-                ),
-              )}
+                );
+              })}
             </div>
           )}
         </div>
 
         {typingLabel !== null && (
-          <div className="h-5 shrink-0 px-3 text-xs text-ink-faint italic sm:px-4">
-            {typingLabel}
+          <div className="flex h-5 shrink-0 items-center gap-1.5 px-3 text-xs text-ink-faint sm:px-4">
+            <TypingDots />
+            <span className="italic">{typingLabel}</span>
           </div>
         )}
 
@@ -837,7 +918,6 @@ export function ChannelPanel({
               orgId={orgId}
               channelId={channelId}
               rootMessage={rootMessage}
-              viewerId={viewerId}
               personOf={personOf}
               onClose={() => {
                 setOpenThreadId(null);
@@ -855,6 +935,7 @@ export function ChannelPanel({
         <ChannelDetailsPanel
           orgId={orgId}
           channelId={channelId}
+          presence={presence}
           onClose={() => {
             setDetailsOpen(false);
           }}

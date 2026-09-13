@@ -40,15 +40,31 @@ function initialsOf(label: string): string {
 export function Avatar({
   label,
   size = 32,
+  seed,
 }: {
   readonly label: string;
   readonly size?: number;
+  /**
+   * Design Bible §15's "IDENTITY" finding: color keyed on `label` means a
+   * display-name change (or a screen showing the same person by email in
+   * one place and by name in another) recolors them — "renames change a
+   * colour." Pass the person's own stable `userId` here wherever it is
+   * available (every call site that has one now does) so the color is
+   * keyed on IDENTITY; `initials` still reads from `label`, since that is
+   * genuinely about what the name currently is.
+   */
+  readonly seed?: string | undefined;
 }): ReactNode {
   return (
     <View
       style={[
         styles.circle,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(label) },
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colorFor(seed ?? label),
+        },
       ]}
     >
       <Text style={[styles.text, { fontSize: size * 0.4 }]}>{initialsOf(label)}</Text>

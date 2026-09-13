@@ -173,12 +173,20 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
     },
   });
 
+  const empty = checklists.isSuccess && checklists.data.length === 0;
+
   return (
     <section className="space-y-3">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Checklists
       </h3>
+
+      {/* A viewer/commenter-relation guest gets neither the list below (there
+          is none) nor the "New checklist" form — without this, the section
+          is a bare header over nothing, which reads as broken rather than
+          as "there just isn't one yet". */}
+      {empty && !canEdit && <p className="text-xs text-ink-faint">No checklist yet.</p>}
 
       {(checklists.data ?? []).map((checklist) => {
         const done = checklist.items.filter((item) => item.done).length;
@@ -187,14 +195,14 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
           <div key={checklist.checklistId} className="space-y-1.5">
             <div className="flex items-center gap-2">
               <h4 className="text-xs font-medium text-ink">{checklist.name}</h4>
-              <span className="text-[11px] text-ink-faint">
+              <span className="text-xs text-ink-faint">
                 {done}/{checklist.items.length}
               </span>
               {canEdit && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-5 px-1 text-[11px]"
+                  className="ml-auto h-5 px-1 text-xs"
                   onClick={() => {
                     removeList.mutate(checklist.checklistId as ChecklistId);
                   }}
@@ -203,6 +211,32 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
                 </Button>
               )}
             </div>
+
+            {/* The colored progress meter `card-tile.tsx`'s own board card
+                already carries for the CARD's aggregate checklist total —
+                the exact same treatment, one level down, for each individual
+                checklist here. The panel used to show only the "7/9"
+                fraction above with nothing a person could read at a glance;
+                the bar answers "how close," the fraction still answers "how
+                many," same division of labor as the tile's own comment on
+                this. Absent for an empty checklist for the identical reason
+                the tile's own bar is absent for a card with none — a bar
+                at 0% reads as "behind," not "nothing to do yet." */}
+            {checklist.items.length > 0 && (
+              <div
+                className="h-1 overflow-hidden rounded-sm bg-surface-sunken"
+                role="progressbar"
+                aria-label={`${checklist.name} progress`}
+                aria-valuenow={done}
+                aria-valuemin={0}
+                aria-valuemax={checklist.items.length}
+              >
+                <div
+                  className="h-full rounded-sm bg-gradient-to-r from-success to-[oklch(74%_0.13_175)]"
+                  style={{ width: `${String((done / checklist.items.length) * 100)}%` }}
+                />
+              </div>
+            )}
 
             <ul className="space-y-0.5">
               {checklist.items.map((item) => (
@@ -239,7 +273,7 @@ export function ChecklistSection({ orgId, boardId, cardId, canEdit }: ChecklistS
                       onClick={() => {
                         removeItem.mutate(item.itemId as ChecklistItemId);
                       }}
-                      className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
+                      className="text-xs text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
                     >
                       ✕
                     </button>

@@ -1,13 +1,30 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { CircleDot, Flag } from 'lucide-react';
-import type { BoardId, CardId, ProjectId, StatusId } from '@taskflow/contracts';
+import type { BoardId, CardId, ProjectId, StatusCategory, StatusId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
 import { useOptimistic } from '../../../lib/optimistic.js';
 import { patchBoardCards, patchCardDetail, statusesQuery, type Priority } from '../api.js';
-import { PRIORITIES, PRIORITY_LABEL, PRIORITY_SWATCH } from '../priority-colors.js';
+import { PRIORITIES, PRIORITY_LABEL, PRIORITY_SWATCH, PRIORITY_TINT } from '../priority-colors.js';
 import { cn } from '../../../lib/cn.js';
 import { useUpdateCard } from '../use-update-card.js';
+
+/**
+ * A light tint per status CATEGORY, not per individual status — the schema
+ * has no per-status color of its own (`work.statuses.category` is the only
+ * classification a status carries, `not_started`/`active`/`done`), so this
+ * is the coarsest grouping that's actually true of the data, the same
+ * "classification stays deterministic, never invented" instinct
+ * `standup.service.ts`'s own bucketing already applies elsewhere in this
+ * codebase. Kept local rather than in `priority-colors.ts` — nothing else
+ * in this app colors a status yet, and extracting a shared module for one
+ * caller would be the premature abstraction §6 already warns against.
+ */
+const STATUS_CATEGORY_TINT: Readonly<Record<StatusCategory, string>> = {
+  not_started: 'bg-surface-hover',
+  active: 'bg-accent/15',
+  done: 'bg-success/15',
+};
 
 /**
  * Status and priority — the two card-level fields Wave 2 adds
@@ -59,12 +76,20 @@ export function StatusSection({
     }),
   });
 
+  const category = list.data?.find((status) => status.statusId === statusId)?.category ?? null;
+
   return (
     <section className="space-y-2">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <CircleDot aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Status
       </h3>
+      {/* A colored pill, not a plain white form field — the select is still
+          the real control (and the read display, per this prop's own doc
+          comment), just tinted by the current status's own CATEGORY so it
+          reads at a glance the way every other status/priority surface in
+          this app already does, rather than looking like an unstyled
+          `<select>` waiting to be filled in. */}
       <select
         aria-label="Status"
         value={statusId ?? ''}
@@ -73,7 +98,17 @@ export function StatusSection({
           const value = event.target.value;
           setStatus.mutate(value === '' ? null : (value as StatusId));
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        /* No `outline-none` — unlike the plain-bordered inputs elsewhere in
+           this app, this pill has `border-0` (the tint IS its whole shape),
+           so removing the outline unconditionally left keyboard focus with
+           NO visible indicator at all, not merely a weaker one. The app's
+           own global `:focus-visible` rule (styles.css) already draws a 2px
+           accent outline with a 2px offset, which reads cleanly around a
+           rounded-full pill without any extra class here. */
+        className={cn(
+          'h-8 w-full rounded-full border-0 px-3 text-xs font-medium text-ink disabled:opacity-50',
+          category === null ? STATUS_CATEGORY_TINT.not_started : STATUS_CATEGORY_TINT[category],
+        )}
       >
         <option value="">No status</option>
         {(list.data ?? []).map((status) => (
@@ -118,16 +153,18 @@ export function PrioritySection({
         <Flag aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Priority
       </h3>
-      {/* The swatch previews the SELECTED value — a native `<option>` cannot
-          carry its own background color, so this is the one place the
-          priority-colors.ts palette becomes visible in this control. Absent
-          for "No priority": there is no color for "none" to show. */}
+      {/* The swatch previews the SELECTED value at the pill's leading edge —
+          a native `<option>` cannot carry its own background color, so this
+          is the one place the priority-colors.ts palette becomes visible
+          INSIDE the control (`PRIORITY_TINT` colors the pill itself now, a
+          step further than the old plain-white select this used to be).
+          Absent for "No priority": there is no color for "none" to show. */}
       <div className="relative">
         {priority !== null && (
           <span
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute top-1/2 left-2 size-2 -translate-y-1/2 rounded-full',
+              'pointer-events-none absolute top-1/2 left-3 size-2 -translate-y-1/2 rounded-full',
               PRIORITY_SWATCH[priority],
             )}
           />
@@ -143,9 +180,12 @@ export function PrioritySection({
               patch: { priority: value === '' ? null : (value as Priority) },
             });
           }}
+          /* Same reasoning as StatusSection's own select above — no
+             `outline-none`, so the global `:focus-visible` ring is what
+             makes keyboard focus visible on a border-0 pill. */
           className={cn(
-            'h-8 w-full rounded border border-line bg-surface-sunken pr-2 text-xs text-ink disabled:opacity-50',
-            priority !== null ? 'pl-6' : 'pl-2',
+            'h-8 w-full rounded-full border-0 pr-3 text-xs font-medium text-ink disabled:opacity-50',
+            priority !== null ? cn(PRIORITY_TINT[priority], 'pl-7') : 'bg-surface-hover pl-3',
           )}
         >
           <option value="">No priority</option>
