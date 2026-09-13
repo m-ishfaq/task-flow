@@ -676,6 +676,53 @@
   }
 
   /**
+   * A generous reading typography for the ONE genuinely article-shaped
+   * surface in this app — the anonymous public page reader
+   * (`public-page.tsx`), the same "landing-page-scoped" surface named by
+   * this rebuild's own build guide (`ai/design-rebuild-warm-dark.md` §5)
+   * as where `taste-skill`'s guidance actually applies, unlike everywhere
+   * else `.rich-text` renders.
+   *
+   * Deliberately a DESCENDANT override, never a change to `.rich-text`
+   * itself: that base class's tight `line-height: 1.6`/`margin-block:
+   * 0.5rem`/small heading sizes are correct for where it is reused
+   * everywhere else — a card description, a comment, a chat message, a
+   * Docs editor's own working view — contexts where space is scarce and
+   * the reader is scanning, not settling in. An anonymous visitor reading
+   * one published page start to finish is the opposite case, and is the
+   * only place this override reaches: `.docs-article .rich-text`, never a
+   * bare `.rich-text` rule that would leak into every other surface
+   * sharing the class.
+   */
+  .docs-article .rich-text {
+    font-size: 1.0625rem;
+    line-height: 1.75;
+  }
+  .docs-article .rich-text p {
+    margin-block: 1.1rem;
+  }
+  .docs-article .rich-text h1 {
+    font-size: 1.75rem;
+    margin-block: 2rem 0.75rem;
+  }
+  .docs-article .rich-text h2 {
+    font-size: 1.375rem;
+    margin-block: 1.75rem 0.6rem;
+  }
+  .docs-article .rich-text h3 {
+    font-size: 1.15rem;
+    margin-block: 1.5rem 0.5rem;
+  }
+  .docs-article .rich-text ul,
+  .docs-article .rich-text ol {
+    margin-block: 1rem;
+  }
+  .docs-article .rich-text blockquote {
+    margin-block: 1.25rem;
+    padding-inline-start: 1rem;
+  }
+
+  /**
    * A data table — the org directory, the user directory, the audit log.
    *
    * The redesign pass's standardization of the three hand-rolled `<table>`s
