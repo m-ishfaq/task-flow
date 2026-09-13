@@ -254,7 +254,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               className={cn(
                 'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
                 facet === entry.id
-                  ? 'border-accent bg-accent text-white'
+                  ? 'border-accent bg-accent text-accent-ink'
                   : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
               )}
             >

@@ -673,7 +673,7 @@ function MessageBubble({
       // to read, never for a person to see in their own sent bubble.
       return (
         <div className="flex justify-end">
-          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-white">
+          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-accent-ink">
             {stripReferenceEmbeds(message.content)}
           </p>
         </div>

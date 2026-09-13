@@ -508,8 +508,8 @@ function BrandingPreview({
           <div className="flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2">
             <span className="text-[11px] font-semibold text-ink">Projects</span>
             <span
-              className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white"
-              style={{ backgroundColor: colors.base }}
+              className="rounded-md px-2 py-0.5 text-[10px] font-medium"
+              style={{ backgroundColor: colors.base, color: colors.ink }}
             >
               New project
             </span>

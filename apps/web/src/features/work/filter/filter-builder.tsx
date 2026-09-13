@@ -139,7 +139,7 @@ export function FilterBuilder({
               }}
               className={cn(
                 'px-2 py-0.5',
-                mode === value ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink',
+                mode === value ? 'bg-accent text-accent-ink' : 'text-ink-muted hover:text-ink',
               )}
             >
               {value === 'builder' ? 'Builder' : 'TQL'}
