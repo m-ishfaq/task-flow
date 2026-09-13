@@ -624,7 +624,7 @@ function CapabilitiesPanel({
               onClick={() => {
                 onUseExample(prompt);
               }}
-              className="rounded-full border border-line/50 bg-surface px-2.5 py-1 text-[12px] text-ink-muted transition-colors hover:border-accent/60 hover:text-accent"
+              className="rounded-full border border-line/50 bg-surface px-2.5 py-1 text-[12px] text-ink-muted transition-colors duration-(--motion-fast) hover:border-accent/60 hover:text-accent"
             >
               {prompt}
             </button>
@@ -640,7 +640,7 @@ function CapabilitiesPanel({
         <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-ink-faint hover:text-ink-muted">
           <ChevronRight
             aria-hidden="true"
-            className="size-3 shrink-0 transition-transform group-open:rotate-90"
+            className="size-3 shrink-0 transition-transform duration-(--motion-fast) group-open:rotate-90"
           />
           Everything it can do
         </summary>
@@ -859,7 +859,7 @@ function PendingActions({
                     onClick={() => {
                       decide(call.id, true);
                     }}
-                    className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity duration-(--motion-fast) hover:opacity-90 disabled:opacity-50"
                   >
                     Approve · {describePendingAction(call)}
                   </button>
@@ -869,7 +869,7 @@ function PendingActions({
                     onClick={() => {
                       decide(call.id, false);
                     }}
-                    className="flex h-9 items-center rounded-lg border border-line bg-surface-raised px-4 text-[13px] font-medium text-ink-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    className="flex h-9 items-center rounded-lg border border-line bg-surface-raised px-4 text-[13px] font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -898,7 +898,7 @@ function PendingActions({
             onClick={() => {
               onRespond([...approved]);
             }}
-            className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity duration-(--motion-fast) hover:opacity-90 disabled:opacity-50"
           >
             Continue
           </button>

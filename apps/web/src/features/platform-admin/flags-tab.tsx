@@ -65,7 +65,7 @@ export function FlagsTab({
             {flags.data.map((flag) => (
               <li
                 key={flag.flagName}
-                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
+                className="flex items-center gap-3 px-4 py-3 transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
               >
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
@@ -101,7 +101,7 @@ export function FlagsTab({
                       onClick={() => {
                         set.mutate({ flagName: flag.flagName, value: null });
                       }}
-                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
                     >
                       Reset
                     </button>
@@ -116,7 +116,7 @@ export function FlagsTab({
                       set.mutate({ flagName: flag.flagName, value: !flag.value });
                     }}
                     className={cn(
-                      'relative h-6 w-11 rounded-full transition-colors',
+                      'relative h-6 w-11 rounded-full transition-colors duration-(--motion-fast)',
                       flag.value ? 'bg-accent' : 'bg-surface-hover',
                     )}
                   >

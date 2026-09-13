@@ -100,7 +100,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
             >
               <div
                 className={cn(
-                  'h-full rounded-full transition-all',
+                  'h-full rounded-full transition-all duration-(--motion-fast)',
                   over ? 'bg-danger' : ratio > 0.8 ? 'bg-warning' : 'bg-accent',
                 )}
                 style={{ width: `${String(Math.min(ratio * 100, 100))}%` }}
@@ -144,7 +144,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                 >
                   <div
                     className={cn(
-                      'h-full rounded-full transition-all',
+                      'h-full rounded-full transition-all duration-(--motion-fast)',
                       automationOver
                         ? 'bg-danger'
                         : automationRatio > 0.8
@@ -192,7 +192,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                   {report.data.map((row) => (
                     <tr
                       key={row.kind}
-                      className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
+                      className="border-b border-line/60 text-ink transition-colors duration-(--motion-fast) last:border-b-0 hover:bg-surface-hover"
                     >
                       <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>

@@ -250,7 +250,7 @@ export function CardTile({
       {onToggleSelect !== undefined && (
         <label
           className={cn(
-            'absolute top-1.5 left-1.5 transition-opacity',
+            'absolute top-1.5 left-1.5 transition-opacity duration-(--motion-fast)',
             selected === true
               ? 'opacity-100'
               : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
@@ -277,7 +277,7 @@ export function CardTile({
       {orgId !== undefined && (
         <div
           className={cn(
-            'absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 transition-opacity',
+            'absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-(--motion-fast)',
             'group-hover:opacity-100 group-focus-within:opacity-100',
           )}
         >

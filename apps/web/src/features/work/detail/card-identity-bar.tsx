@@ -125,7 +125,7 @@ function CalendarSyncToggle({
         toggle.mutate(!synced);
       }}
       className={cn(
-        'press inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors disabled:opacity-50',
+        'press inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors duration-(--motion-fast) disabled:opacity-50',
         synced
           ? 'border-accent/30 bg-accent/10 text-accent hover:border-accent/50'
           : 'border-line/30 bg-surface-hover/80 text-ink-muted hover:border-line-strong hover:text-ink',
@@ -161,7 +161,7 @@ function CopyableReference({ reference }: { readonly reference: string }) {
           }, 1500);
         });
       }}
-      className="press inline-flex shrink-0 items-center gap-1 rounded-md border border-line/50 bg-surface-sunken px-1.5 py-0.5 font-mono text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-surface-hover hover:text-ink"
+      className="press inline-flex shrink-0 items-center gap-1 rounded-md border border-line/50 bg-surface-sunken px-1.5 py-0.5 font-mono text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:border-line-strong hover:bg-surface-hover hover:text-ink"
     >
       {reference}
       {copied ? (
@@ -193,7 +193,7 @@ function IdentityChip({
       rel="noopener noreferrer"
       title={title}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-md border border-line/30 bg-surface-hover/80 px-1.5 py-0.5 text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-surface-hover hover:text-accent',
+        'inline-flex shrink-0 items-center gap-1 rounded-md border border-line/30 bg-surface-hover/80 px-1.5 py-0.5 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:border-line-strong hover:bg-surface-hover hover:text-accent',
         truncate && 'max-w-[9rem]',
       )}
     >

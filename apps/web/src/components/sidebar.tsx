@@ -421,7 +421,7 @@ export function Sidebar() {
         {open && (
           <Link
             to="/projects"
-            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
+            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors duration-(--motion-fast) hover:text-accent"
           >
             {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />

@@ -229,7 +229,7 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
         <div
           className={cn(
-            'h-full rounded-full transition-all',
+            'h-full rounded-full transition-all duration-(--motion-fast)',
             pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-accent',
           )}
           style={{ width: `${String(pct)}%` }}
@@ -257,7 +257,7 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false);
         }}
-        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
+        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors duration-(--motion-fast) hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
       >
         <MoreHorizontal className="size-3.5" strokeWidth={2} />
       </button>
@@ -694,7 +694,7 @@ export function OrgDetailDialog({
                 {data.features.map((feature) => (
                   <li
                     key={feature.flagName}
-                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                   >
                     <EntitlementMark enabled={feature.enabled} />
                     <span className="min-w-0 flex-1">
@@ -723,7 +723,7 @@ export function OrgDetailDialog({
                 {data.members.map((member) => (
                   <li
                     key={member.userId}
-                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                   >
                     <Avatar userId={member.userId} label={member.name ?? member.email} />
                     <span className="min-w-0 flex-1 truncate text-ink">
@@ -750,7 +750,7 @@ export function OrgDetailDialog({
                   {data.invoices.map((invoice) => (
                     <li
                       key={invoice.providerInvoiceId}
-                      className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                      className="flex items-center gap-2 px-3 py-2 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                     >
                       <span className="w-20 shrink-0 text-ink-muted">
                         {formatDate(invoice.issuedAt)}

@@ -1569,7 +1569,7 @@ function PermissionGrantChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-2 pr-1.5 text-xs transition-colors',
+        'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-2 pr-1.5 text-xs transition-colors duration-(--motion-fast)',
         selected ? 'border-accent/50 bg-accent/10' : 'border-line/50 bg-surface-sunken',
       )}
     >
@@ -1797,7 +1797,7 @@ function MemberRow({
   onStartOffboarding,
 }: MemberRowProps) {
   return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
+    <li className="group flex items-center gap-3 px-3 py-2 transition-colors duration-(--motion-fast) hover:bg-surface-hover">
       <Avatar userId={member.userId} label={member.email} />
 
       <div className="min-w-0 flex-1">
@@ -2180,7 +2180,7 @@ function TeamAddPicker({
         <button
           type="button"
           aria-label={`Add someone to ${teamName}`}
-          className="flex h-8 w-full items-center rounded-lg border border-line/50 bg-surface-sunken px-2 text-left text-xs text-ink-muted transition-colors hover:border-line hover:text-ink"
+          className="flex h-8 w-full items-center rounded-lg border border-line/50 bg-surface-sunken px-2 text-left text-xs text-ink-muted transition-colors duration-(--motion-fast) hover:border-line hover:text-ink"
         >
           Add member…
         </button>
@@ -2206,7 +2206,7 @@ function TeamAddPicker({
                     setOpen(false);
                     setQuery('');
                   }}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-ink transition-colors hover:bg-surface-hover disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-ink transition-colors duration-(--motion-fast) hover:bg-surface-hover disabled:opacity-50"
                 >
                   <Avatar userId={member.userId} label={member.email} size="xs" />
                   <span className="truncate">{member.email}</span>

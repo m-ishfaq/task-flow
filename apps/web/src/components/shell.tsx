@@ -658,7 +658,7 @@ function Breadcrumbs() {
               {crumb.to !== undefined ? (
                 <Link
                   to={crumb.to}
-                  className="shrink-0 truncate text-[13px] text-ink-faint transition-colors hover:text-ink"
+                  className="shrink-0 truncate text-[13px] text-ink-faint transition-colors duration-(--motion-fast) hover:text-ink"
                 >
                   {crumb.label}
                 </Link>

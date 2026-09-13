@@ -108,7 +108,7 @@ export function AiTab({
               {providers.data.map((row) => (
                 <li
                   key={row.id}
-                  className="flex flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
+                  className="flex flex-wrap items-center gap-3 px-4 py-3 transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                 >
                   <ProviderMark provider={row.provider} />
                   <div className="min-w-0 flex-1">
@@ -522,7 +522,7 @@ function OrgOverridePanel({
                     <li key={candidate.orgId}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-hover/50"
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors duration-(--motion-fast) hover:bg-surface-hover/50"
                         onClick={() => {
                           setSelectedOrg({
                             orgId: candidate.orgId as OrgId,
@@ -706,7 +706,7 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
                       setExpanded(open ? null : rowKey);
                     }}
                     aria-expanded={open}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-surface-hover/40"
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/40"
                   >
                     {open ? (
                       <ChevronDown

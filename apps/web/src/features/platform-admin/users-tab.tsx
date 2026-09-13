@@ -158,7 +158,7 @@ export function UsersTab({
               {(filteredUsers ?? []).map((user) => (
                 <tr
                   key={user.userId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                   onClick={() => {
                     setDetailUserId(user.userId);
                   }}
@@ -167,7 +167,7 @@ export function UsersTab({
                     <div className="flex items-center gap-2">
                       <Avatar userId={user.userId} label={user.name ?? user.email} />
                       <div className="min-w-0">
-                        <p className="max-w-full truncate font-medium text-ink transition-colors group-hover:text-accent">
+                        <p className="max-w-full truncate font-medium text-ink transition-colors duration-(--motion-fast) group-hover:text-accent">
                           {user.name ?? user.email}
                         </p>
                         {user.name !== null && (
@@ -354,7 +354,7 @@ function UserDetailDialog({
                   {data.memberships.map((membership) => (
                     <li
                       key={membership.orgId}
-                      className="px-3 py-2.5 text-xs transition-colors hover:bg-surface-hover/30"
+                      className="px-3 py-2.5 text-xs transition-colors duration-(--motion-fast) hover:bg-surface-hover/30"
                     >
                       <div className="flex items-center gap-2">
                         <OrgBadge orgId={membership.orgId} name={membership.orgName} />

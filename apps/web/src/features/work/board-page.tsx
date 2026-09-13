@@ -243,7 +243,7 @@ export function BoardPage() {
                   <Link
                     to="/projects/$projectId"
                     params={{ projectId: unsafeAsId<'ProjectId'>(currentProject.projectId) }}
-                    className="truncate text-ink-faint transition-colors hover:text-ink"
+                    className="truncate text-ink-faint transition-colors duration-(--motion-fast) hover:text-ink"
                   >
                     {currentProject.name}
                   </Link>
@@ -271,7 +271,7 @@ export function BoardPage() {
                 onClick={() => {
                   setToolbarExpanded((previous) => !previous);
                 }}
-                className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-line/60 bg-surface-sunken/40 px-2.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-line/60 bg-surface-sunken/40 px-2.5 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 Tools
@@ -351,7 +351,7 @@ export function BoardPage() {
               <Link
                 to="/projects/$projectId/standup"
                 params={{ projectId }}
-                className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                className="inline-flex h-7 items-center rounded px-2 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
               >
                 Standup
               </Link>

@@ -98,7 +98,7 @@ export function Button({
            puts every button at 9px; 8px is the nearest step this app's
            existing radius scale already has, so this is the one component
            that needed to move, not a new radius token. */
-        'press inline-flex items-center justify-center rounded-lg font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded-lg font-medium transition-colors duration-(--motion-fast)',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
@@ -223,7 +223,7 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all',
+        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all duration-(--motion-fast)',
         /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
            — is the "considered" touch here: a field that visibly comes
            forward when it takes focus. A soft `ring-2` at 25% accent is the
@@ -304,7 +304,7 @@ export function SearchInput({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-full w-full rounded-lg border border-line/50 bg-surface-sunken pr-8 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+        className="h-full w-full rounded-lg border border-line/50 bg-surface-sunken pr-8 pl-8 text-sm text-ink transition-all duration-(--motion-fast) placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
       />
       {value !== '' && (
         <button
@@ -313,7 +313,7 @@ export function SearchInput({
           onClick={() => {
             onChange('');
           }}
-          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-ink-faint transition-colors hover:text-ink"
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-ink-faint transition-colors duration-(--motion-fast) hover:text-ink"
         >
           <X aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
@@ -328,7 +328,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        'w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink transition-all',
+        'w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink transition-all duration-(--motion-fast)',
         /* Same reasoning as Input's `focus:bg-surface` above. */
         'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
         className,

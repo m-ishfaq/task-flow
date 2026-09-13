@@ -64,7 +64,7 @@ function LockedFeature({ flag }: { readonly flag: string }) {
         </div>
         <Link
           to="/settings"
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-colors duration-(--motion-fast) hover:bg-accent-hover"
         >
           View plans
         </Link>

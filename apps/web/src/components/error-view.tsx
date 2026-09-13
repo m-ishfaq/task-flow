@@ -62,7 +62,7 @@ export function ErrorView({ error, className, title, onRetry }: ErrorViewProps) 
         <button
           type="button"
           onClick={onRetry}
-          className="mt-1.5 rounded-md border border-danger/30 bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-hover"
+          className="mt-1.5 rounded-md border border-danger/30 bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors duration-(--motion-fast) hover:bg-surface-hover"
         >
           Try again
         </button>

@@ -227,7 +227,7 @@ export function OrgsTab({
               {(filteredOrgs ?? []).map((org) => (
                 <tr
                   key={org.orgId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                   onClick={() => {
                     setDetailOrgId(org.orgId);
                   }}
@@ -236,7 +236,7 @@ export function OrgsTab({
                     <div className="flex items-center gap-2">
                       <OrgBadge orgId={org.orgId} name={org.name} />
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink transition-colors group-hover:text-accent">
+                        <p className="truncate font-medium text-ink transition-colors duration-(--motion-fast) group-hover:text-accent">
                           {org.name}
                         </p>
                         <p className="truncate font-mono text-xs text-ink-faint">{org.slug}</p>
@@ -347,7 +347,7 @@ export function OrgsTab({
                         <RowActionsMenu>
                           <button
                             type="button"
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger/10"
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors duration-(--motion-fast) hover:bg-danger/10"
                             disabled={remove.isPending}
                             onClick={() => {
                               setConfirmSlug('');

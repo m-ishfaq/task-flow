@@ -136,7 +136,7 @@ export function OrgPickerPage() {
           <Link
             to="/platform-admin"
             className={cn(
-              'group flex items-center gap-3 rounded-xl border border-line bg-surface-raised transition-colors hover:border-accent/40 hover:bg-surface-hover',
+              'group flex items-center gap-3 rounded-xl border border-line bg-surface-raised transition-colors duration-(--motion-fast) hover:border-accent/40 hover:bg-surface-hover',
               showOperatorLanding ? 'p-4' : 'p-3',
             )}
           >
@@ -167,7 +167,7 @@ export function OrgPickerPage() {
             </span>
             <span
               aria-hidden="true"
-              className="shrink-0 text-ink-faint transition-transform group-hover:translate-x-0.5"
+              className="shrink-0 text-ink-faint transition-transform duration-(--motion-fast) group-hover:translate-x-0.5"
             >
               &rarr;
             </span>
@@ -186,7 +186,7 @@ export function OrgPickerPage() {
                     onClick={() => {
                       choose(org.orgId as OrgId);
                     }}
-                    className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                    className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors duration-(--motion-fast) hover:border-accent/40 hover:bg-surface-hover"
                   >
                     <OrgMark name={org.name} />
 
@@ -202,7 +202,7 @@ export function OrgPickerPage() {
                     <Badge>{org.role}</Badge>
                     <span
                       aria-hidden="true"
-                      className="text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-ink-muted"
+                      className="text-ink-faint transition-transform duration-(--motion-fast) group-hover:translate-x-0.5 group-hover:text-ink-muted"
                     >
                       &rarr;
                     </span>
