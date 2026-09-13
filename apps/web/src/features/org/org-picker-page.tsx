@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { TerminalSquare } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { keys, resetCache } from '../../lib/query.js';
+import { cn } from '../../lib/cn.js';
 import { Badge, Button, Field, Input, SkeletonRows } from '../../components/primitives.js';
 import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
@@ -20,6 +22,12 @@ import { orgsQuery } from './api.js';
  * that query runs under `withUserScope`, whose two policies are `FOR SELECT`
  * with no `WITH CHECK` — see the Phase 2 notes in CLAUDE.md.
  *
+ * `auth-backdrop` (styles.css) is the same soft radial-gradient treatment
+ * `login-page.tsx` opens on — this is, functionally, the other half of the
+ * same "first thing you see" moment (arriving with a session but no tenant
+ * chosen yet), and it read as a bare, unstyled form dropped onto a plain
+ * page next to that one.
+ *
  * ## Two states, and they need opposite layouts
  *
  * Someone with no organizations needs a form; someone with four needs a list and
@@ -27,6 +35,19 @@ import { orgsQuery } from './api.js';
  * COLLAPSED behind a button when orgs exist and expanded when none do — same
  * component, and the decision is made from the data rather than by the person
  * arriving on a page that is mostly empty either way.
+ *
+ * ## A third state: an operator with no organization at all
+ *
+ * Reported directly: a platform operator's account routinely has zero org
+ * memberships (Wave 1's own design — operator power and org membership are
+ * unrelated), and this page used to force the create-organization form open
+ * for them exactly as it would for anyone else, with no acknowledgment that
+ * they might not want a tenant at all — they came for the console. Below,
+ * `showOperatorLanding` swaps the heading and copy for that case and stops
+ * forcing the create panel open (an operator can still expand "+ New
+ * organization" if they genuinely want one); the Platform console link
+ * itself becomes the page's own hero card rather than a small link squeezed
+ * above a form nobody asked to see yet.
  */
 
 interface CreateValues {
@@ -64,121 +85,164 @@ export function OrgPickerPage() {
 
   if (orgs.isPending) {
     return (
-      <div className="mx-auto w-full max-w-xl p-6">
-        <SkeletonRows rows={3} className="*:h-16" />
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center p-8">
+          <SkeletonRows rows={3} className="*:h-16" />
+        </div>
       </div>
     );
   }
 
   if (orgs.isError) {
     return (
-      <div className="mx-auto max-w-xl p-6">
-        <ErrorView error={orgs.error} title="Could not load your organizations" />
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center p-8">
+          <ErrorView error={orgs.error} title="Could not load your organizations" />
+        </div>
       </div>
     );
   }
 
   const isEmpty = orgs.data.length === 0;
+  const operator = isOperator.data === true;
+  /* The one case this page never used to treat specially — see this file's
+     own header comment. */
+  const showOperatorLanding = isEmpty && operator;
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
-      <div className="flex items-center gap-3">
-        <BrandMark size={36} className="text-accent" />
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-            {isEmpty ? 'Create your first organization' : 'Choose an organization'}
-          </h1>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            {isEmpty
-              ? 'An organization owns its own projects, members and audit trail. You become its owner.'
-              : 'Everything you see afterwards belongs to the one you pick.'}
-          </p>
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center gap-6 p-8">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <BrandMark size={44} />
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+              {showOperatorLanding
+                ? 'Welcome back, Operator'
+                : isEmpty
+                  ? 'Create your first organization'
+                  : 'Choose an organization'}
+            </h1>
+            <p className="mt-1.5 text-sm text-ink-muted">
+              {showOperatorLanding
+                ? "Your account has operator access but belongs to no organization — open the platform console, or create one if you'd rather use the rest of the product."
+                : isEmpty
+                  ? 'An organization owns its own projects, members and audit trail. You become its owner.'
+                  : 'Everything you see afterwards belongs to the one you pick.'}
+            </p>
+          </div>
         </div>
-      </div>
 
-      {isOperator.data === true && (
-        <Link
-          to="/platform-admin"
-          className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-ink">Platform console</span>
-            <span className="block text-[11px] text-ink-faint">
-              Operator tools — organizations, users, plans and the operator audit log.
+        {operator && (
+          <Link
+            to="/platform-admin"
+            className={cn(
+              'group flex items-center gap-3 rounded-xl border border-line bg-surface-raised transition-colors hover:border-accent/40 hover:bg-surface-hover',
+              showOperatorLanding ? 'p-4' : 'p-3',
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex shrink-0 items-center justify-center rounded-lg bg-surface-hover text-ink-muted',
+                showOperatorLanding ? 'size-11' : 'size-9',
+              )}
+            >
+              <TerminalSquare
+                className={showOperatorLanding ? 'size-5' : 'size-4'}
+                strokeWidth={2}
+              />
             </span>
-          </span>
-          <span aria-hidden="true" className="text-ink-faint">
-            &rarr;
-          </span>
-        </Link>
-      )}
+            <span className="min-w-0 flex-1">
+              <span
+                className={cn(
+                  'block font-medium text-ink',
+                  showOperatorLanding ? 'text-base' : 'text-sm',
+                )}
+              >
+                Platform console
+              </span>
+              <span className="block text-[11px] text-ink-faint">
+                Operator tools — organizations, users, plans and the operator audit log.
+              </span>
+            </span>
+            <span
+              aria-hidden="true"
+              className="shrink-0 text-ink-faint transition-transform group-hover:translate-x-0.5"
+            >
+              &rarr;
+            </span>
+          </Link>
+        )}
 
-      <CreateOrgPanel startOpen={isEmpty} onCreated={choose} />
+        <CreateOrgPanel startOpen={isEmpty && !operator} onCreated={choose} />
 
-      {!isEmpty && (
-        <ul className="space-y-2">
-          {orgs.data.map((org) =>
-            org.orgStatus === 'active' && org.membershipStatus === 'active' ? (
-              <li key={org.orgId}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    choose(org.orgId as OrgId);
-                  }}
-                  className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
+        {!isEmpty && (
+          <ul className="space-y-2">
+            {orgs.data.map((org) =>
+              org.orgStatus === 'active' && org.membershipStatus === 'active' ? (
+                <li key={org.orgId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      choose(org.orgId as OrgId);
+                    }}
+                    className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                  >
+                    <OrgMark name={org.name} />
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-ink">
+                        {org.name}
+                      </span>
+                      <span className="block truncate font-mono text-[11px] text-ink-faint">
+                        {org.slug}
+                      </span>
+                    </span>
+
+                    <Badge>{org.role}</Badge>
+                    <span
+                      aria-hidden="true"
+                      className="text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-ink-muted"
+                    >
+                      &rarr;
+                    </span>
+                  </button>
+                </li>
+              ) : (
+                // Shown, not omitted — the identical fix `OrgGate`'s own header
+                // documents for the currently-selected case, applied here so a
+                // suspended membership never simply vanishes from this list the
+                // way it used to (indistinguishable from an org this account was
+                // never part of at all). Not a `<button>`: there is nothing to
+                // do here besides know why it's not clickable.
+                //
+                // Org status is checked FIRST — the same "the bigger fact wins"
+                // rule OrgGate applies — since a suspended ORG (Phase 12 Wave
+                // 1's platform console) used to show here as an ordinary,
+                // clickable row: `membershipStatus` alone said nothing about
+                // it, and clicking through only failed on the NEXT screen.
+                <li
+                  key={org.orgId}
+                  className="flex w-full items-center gap-3 rounded-lg border border-dashed border-line/60 bg-surface-sunken/40 p-3 opacity-70"
                 >
                   <OrgMark name={org.name} />
 
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-ink">{org.name}</span>
-                    <span className="block truncate font-mono text-[11px] text-ink-faint">
-                      {org.slug}
+                    <span className="block truncate text-sm font-medium text-ink-muted">
+                      {org.name}
+                    </span>
+                    <span className="block truncate text-[11px] text-ink-faint">
+                      {org.orgStatus !== 'active'
+                        ? 'This organization has been suspended'
+                        : 'Your membership is suspended'}
                     </span>
                   </span>
-
-                  <Badge>{org.role}</Badge>
-                  <span
-                    aria-hidden="true"
-                    className="text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-ink-muted"
-                  >
-                    &rarr;
-                  </span>
-                </button>
-              </li>
-            ) : (
-              // Shown, not omitted — the identical fix `OrgGate`'s own header
-              // documents for the currently-selected case, applied here so a
-              // suspended membership never simply vanishes from this list the
-              // way it used to (indistinguishable from an org this account was
-              // never part of at all). Not a `<button>`: there is nothing to
-              // do here besides know why it's not clickable.
-              //
-              // Org status is checked FIRST — the same "the bigger fact wins"
-              // rule OrgGate applies — since a suspended ORG (Phase 12 Wave
-              // 1's platform console) used to show here as an ordinary,
-              // clickable row: `membershipStatus` alone said nothing about
-              // it, and clicking through only failed on the NEXT screen.
-              <li
-                key={org.orgId}
-                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-line/60 bg-surface-sunken/40 p-3 opacity-70"
-              >
-                <OrgMark name={org.name} />
-
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-ink-muted">
-                    {org.name}
-                  </span>
-                  <span className="block truncate text-[11px] text-ink-faint">
-                    {org.orgStatus !== 'active'
-                      ? 'This organization has been suspended'
-                      : 'Your membership is suspended'}
-                  </span>
-                </span>
-              </li>
-            ),
-          )}
-        </ul>
-      )}
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

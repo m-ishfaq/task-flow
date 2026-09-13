@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle,
   Bot,
   Building2,
   ChevronDown,
@@ -87,11 +86,19 @@ import { AiTab } from './ai-tab.js';
  * and `body.platform-admin-active` (`styles.css`, toggled by `Shell`) —
  * a colder, darker, near-neutral palette scoped under that class so this
  * page's own surfaces read as a distinct console rather than the product's
- * own theme reused. The "every action is logged" notice, previously a big
- * banner at the top of scrolling content (which scrolls out of view on any
- * section taller than one screen — a strange place for something meant to
- * be impossible to forget), now lives in the sidebar's own footer, which
- * never scrolls away as long as this page is open.
+ * own theme reused.
+ *
+ * ## No danger-red banner, on purpose
+ *
+ * An earlier pass added a permanent "acting across all organizations, every
+ * action is logged" strip (sidebar footer on desktop, compact-bar footer
+ * below `md:`) reasoning that a cross-tenant tool needs a reminder
+ * impossible to forget. Reported back directly: it read as an alarm rather
+ * than a place, painted over a console this page already spends its own
+ * sidebar and cold palette making unmistakable on sight. Removed outright —
+ * nothing about the access model changes: `platformRoute` still gates every
+ * query and mutation behind this page, step-up included, reads included
+ * (this file's own header above), whether or not a banner says so.
  */
 const NAV_ITEMS = [
   ['orgs', 'Organizations', Building2],
@@ -346,27 +353,6 @@ export function PlatformAdminPage() {
               </button>
             ))}
           </nav>
-
-          {/* The one persistent safety notice — in the sidebar footer rather
-              than a banner atop scrolling content, so it stays on screen for
-              as long as this console is open, not just until someone scrolls
-              past it. Nothing about the access model changes here —
-              `platformRoute` already gates every query and mutation behind
-              this page, step-up included, reads included (this file's own
-              top header comment) — this is only where the reminder lives. */}
-          <div className="border-t border-line p-3">
-            <div className="flex items-start gap-2 rounded-lg border-l-2 border-danger bg-danger/10 px-2.5 py-2">
-              <AlertTriangle
-                aria-hidden="true"
-                className="mt-0.5 size-3.5 shrink-0 text-danger"
-                strokeWidth={2}
-              />
-              <p className="text-[11px] leading-snug text-ink-muted">
-                Acting across <span className="font-medium text-ink">all organizations</span>. Every
-                action is logged.
-              </p>
-            </div>
-          </div>
         </aside>
       )}
 
@@ -431,20 +417,6 @@ export function PlatformAdminPage() {
                 ))}
               </nav>
             )}
-
-            <div className="border-t border-line/60 px-3 py-2">
-              <div className="flex items-center gap-1.5 rounded-md border-l-2 border-danger bg-danger/10 px-2 py-1.5">
-                <AlertTriangle
-                  aria-hidden="true"
-                  className="size-3 shrink-0 text-danger"
-                  strokeWidth={2}
-                />
-                <p className="text-[10px] leading-snug text-ink-muted">
-                  Acting across <span className="font-medium text-ink">all organizations</span>.
-                  Every action is logged.
-                </p>
-              </div>
-            </div>
           </div>
         )}
 

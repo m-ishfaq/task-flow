@@ -368,7 +368,12 @@ function TopBar({ isPlatformAdmin }: { readonly isPlatformAdmin: boolean }) {
       </Link>
 
       {isPlatformAdmin ? (
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-danger uppercase">
+        /* Neutral, not danger-toned — this console's own distinct identity
+           (`platform-admin-page.tsx`'s sidebar, `body.platform-admin-active`'s
+           cold palette in styles.css) already makes "you are somewhere
+           different" unmistakable; a second alarm-red badge here on top of
+           that was reported as reading as a warning rather than a place. */
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-hover px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
           <ShieldCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
           Platform admin
         </span>
