@@ -544,7 +544,7 @@ function SavedSearches({
             maxLength={60}
             aria-label="Name for this saved search"
             placeholder="Name it"
-            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
+            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
           />
           {canShare && (
             <label className="flex items-center gap-1.5 text-xs text-ink-muted">

@@ -61,7 +61,7 @@ export interface PickerProps {
 }
 
 const SELECT_CLASS =
-  'min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent';
+  'min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25';
 
 export function ArgumentPicker(props: PickerProps) {
   switch (props.kind) {

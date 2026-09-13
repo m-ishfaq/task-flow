@@ -905,7 +905,7 @@ function RuleEditor({
           }}
           maxLength={120}
           placeholder="Notify the team when something ships"
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </Field>
 
@@ -926,7 +926,7 @@ function RuleEditor({
             if (resourceForTrigger(next) !== resourceForTrigger(triggerEvent)) setCondition(null);
             setTriggerEvent(next);
           }}
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         >
           {TRIGGER_OPTIONS.map((option) => (
             <option key={option.event} value={option.event}>
@@ -1092,7 +1092,7 @@ function ActionRow({
           onChange(blankAction(event.target.value, action.key));
         }}
         aria-label="Action"
-        className="shrink-0 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+        className="shrink-0 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
       >
         {options.map(([type, text]) => (
           <option key={type} value={type}>
@@ -1308,7 +1308,7 @@ function WebhookCreateForm({
           }}
           maxLength={120}
           placeholder="Release notifications"
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </Field>
       <Field label="URL" htmlFor="webhook-url">
@@ -1321,7 +1321,7 @@ function WebhookCreateForm({
           }}
           maxLength={2048}
           placeholder="https://hooks.example.com/on-release"
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
         <p className="text-[11px] text-ink-faint">
           Public endpoints only — internal and private addresses are refused, and every redirect is

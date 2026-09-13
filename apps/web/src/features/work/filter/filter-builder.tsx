@@ -263,7 +263,7 @@ function TqlEditor({
            the obvious-looking `status = todo AND assignee = me` is refused by
            the very validator this box runs. */
         placeholder="priority = high AND creator = me"
-        className="block w-full resize-y rounded border border-line bg-surface px-2 py-1.5 font-mono text-xs leading-5 text-ink outline-none focus:border-accent placeholder:font-sans placeholder:text-ink-faint"
+        className="block w-full resize-y rounded border border-line bg-surface px-2 py-1.5 font-mono text-xs leading-5 text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 placeholder:font-sans placeholder:text-ink-faint"
       />
       {error !== null && (
         <p role="alert" className="text-xs text-danger">

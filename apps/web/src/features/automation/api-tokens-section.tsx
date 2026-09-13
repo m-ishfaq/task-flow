@@ -214,7 +214,7 @@ function TokenCreateForm({
           }}
           maxLength={120}
           placeholder="Release CI"
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
       </Field>
 
@@ -293,7 +293,7 @@ function TokenCreateForm({
           onChange={(event) => {
             setExpiresInDays(Number(event.target.value));
           }}
-          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         >
           <option value={30}>30 days</option>
           <option value={60}>60 days</option>

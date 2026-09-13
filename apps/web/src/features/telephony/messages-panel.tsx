@@ -314,7 +314,7 @@ function ComposeView({
                 onChange={(event) => {
                   setFromPhoneNumberId(event.target.value);
                 }}
-                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none"
+                className="h-9 min-w-36 rounded-md border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
               >
                 {(numbers.data ?? []).map((number) => (
                   <option key={number.phoneNumberId} value={number.phoneNumberId}>
@@ -336,7 +336,7 @@ function ComposeView({
             onChange={(event) => {
               setBody(event.target.value);
             }}
-            className="w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+            className="w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
           />
         </Field>
 
@@ -476,7 +476,7 @@ function ThreadView({
             onChange={(event) => {
               setFromPhoneNumberId(event.target.value);
             }}
-            className="h-9 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+            className="h-9 rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25"
           >
             {(numbers.data ?? []).map((number) => (
               <option key={number.phoneNumberId} value={number.phoneNumberId}>

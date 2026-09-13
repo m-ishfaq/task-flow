@@ -98,8 +98,15 @@ export function StatusSection({
           const value = event.target.value;
           setStatus.mutate(value === '' ? null : (value as StatusId));
         }}
+        /* No `outline-none` — unlike the plain-bordered inputs elsewhere in
+           this app, this pill has `border-0` (the tint IS its whole shape),
+           so removing the outline unconditionally left keyboard focus with
+           NO visible indicator at all, not merely a weaker one. The app's
+           own global `:focus-visible` rule (styles.css) already draws a 2px
+           accent outline with a 2px offset, which reads cleanly around a
+           rounded-full pill without any extra class here. */
         className={cn(
-          'h-8 w-full rounded-full border-0 px-3 text-xs font-medium text-ink outline-none disabled:opacity-50',
+          'h-8 w-full rounded-full border-0 px-3 text-xs font-medium text-ink disabled:opacity-50',
           category === null ? STATUS_CATEGORY_TINT.not_started : STATUS_CATEGORY_TINT[category],
         )}
       >
@@ -173,8 +180,11 @@ export function PrioritySection({
               patch: { priority: value === '' ? null : (value as Priority) },
             });
           }}
+          /* Same reasoning as StatusSection's own select above — no
+             `outline-none`, so the global `:focus-visible` ring is what
+             makes keyboard focus visible on a border-0 pill. */
           className={cn(
-            'h-8 w-full rounded-full border-0 pr-3 text-xs font-medium text-ink outline-none disabled:opacity-50',
+            'h-8 w-full rounded-full border-0 pr-3 text-xs font-medium text-ink disabled:opacity-50',
             priority !== null ? cn(PRIORITY_TINT[priority], 'pl-7') : 'bg-surface-hover pl-3',
           )}
         >
