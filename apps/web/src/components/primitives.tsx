@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from '../lib/cn.js';
+import { hueOf } from './avatar-color.js';
 
 /**
  * The primitives this app actually uses.
@@ -225,28 +226,6 @@ export function Badge({ children, className, title }: BadgeProps) {
       {children}
     </span>
   );
-}
-
-/**
- * Hues an avatar can take, spread around the wheel.
- *
- * Chosen from the id rather than from a counter, so the same person is the same
- * colour on every board and in every list — which is the only property that
- * makes a colour worth having. A per-render counter would recolour everyone the
- * moment one card was filtered out.
- */
-const AVATAR_HUES = [12, 45, 92, 150, 196, 258, 302, 334] as const;
-
-function hueOf(id: string): number {
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    /* An ordinary string hash, and deliberately not from @taskflow/security: this
-       picks a colour. Reaching for a CSPRNG here would say the choice is
-       security-relevant, and it also has to be STABLE, which a random source is
-       not. */
-    hash = (hash * 31 + id.charCodeAt(index)) % 1_000_003;
-  }
-  return AVATAR_HUES[hash % AVATAR_HUES.length] ?? 258;
 }
 
 /**
