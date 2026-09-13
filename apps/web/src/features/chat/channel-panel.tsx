@@ -704,16 +704,33 @@ export function ChannelPanel({
                         OWN — the cursor advances in the same beat as the send,
                         so the line would otherwise flash above your own just-sent
                         message for a render or two. "New" means "arrived while
-                        you were away", and your own message is not that. */}
+                        you were away", and your own message is not that.
+
+                        Recolored from `danger` to `accent` during the warm-dark
+                        rebuild's own Chat-module pass
+                        (ai/design-rebuild-warm-dark.md §5): this line is purely
+                        informational — "you left off here" — never an error or a
+                        warning, and `danger` (red) is this app's own reserved
+                        vocabulary for exactly those, used nowhere else for a
+                        neutral marker. The label is now a real pill, using
+                        `--shadow-glow-accent` (`styles.css`) — a token that had
+                        been correctly kept branding-aware across two separate
+                        accent-hue rebuilds and had NO consumer anywhere in
+                        apps/web until this — for the same "inner glow for
+                        focused/active elements" role its own header already
+                        names. A cursor position genuinely is that: the one
+                        thing on screen this render is drawing the eye to. */}
                     {firstUnreadId !== null &&
                       firstUnreadAuthorId !== viewerId &&
                       item.group.messages.some(
                         (message) => message.messageId === firstUnreadId,
                       ) && (
                         <div className="flex items-center gap-2" role="separator">
-                          <span className="h-px flex-1 bg-danger/40" />
-                          <span className="text-[11px] font-medium text-danger">New messages</span>
-                          <span className="h-px flex-1 bg-danger/40" />
+                          <span className="h-px flex-1 bg-accent/40" />
+                          <span className="shadow-glow-accent rounded-full bg-accent/10 px-2.5 py-0.5 text-[11px] font-medium text-accent">
+                            New messages
+                          </span>
+                          <span className="h-px flex-1 bg-accent/40" />
                         </div>
                       )}
                     <MessageGroupView
