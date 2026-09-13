@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle, StatusPill } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { Building2, Search, ShieldAlert } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
@@ -513,24 +513,22 @@ export function OrgsTab({
 function StatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
     return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-        <ShieldAlert className="size-3" strokeWidth={2.5} />
+      <StatusPill tone="danger" className="min-w-[88px] justify-center">
         suspended
-      </span>
+      </StatusPill>
     );
   }
   if (status === 'deleted') {
     return (
-      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
+      <StatusPill tone="neutral" className="min-w-[88px] justify-center">
         deleted
-      </span>
+      </StatusPill>
     );
   }
   return (
-    <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-      <span className="size-1.5 rounded-full bg-success" />
+    <StatusPill tone="success" className="min-w-[88px] justify-center">
       active
-    </span>
+    </StatusPill>
   );
 }
 
