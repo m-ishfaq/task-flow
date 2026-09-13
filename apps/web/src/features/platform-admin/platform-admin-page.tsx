@@ -88,17 +88,36 @@ import { AiTab } from './ai-tab.js';
  * page's own surfaces read as a distinct console rather than the product's
  * own theme reused.
  *
- * ## No danger-red banner, on purpose
+ * ## The safety signal — restored, redesigned, not a boxed alarm
  *
  * An earlier pass added a permanent "acting across all organizations, every
- * action is logged" strip (sidebar footer on desktop, compact-bar footer
- * below `md:`) reasoning that a cross-tenant tool needs a reminder
- * impossible to forget. Reported back directly: it read as an alarm rather
- * than a place, painted over a console this page already spends its own
- * sidebar and cold palette making unmistakable on sight. Removed outright —
- * nothing about the access model changes: `platformRoute` still gates every
- * query and mutation behind this page, step-up included, reads included
- * (this file's own header above), whether or not a banner says so.
+ * action is logged" strip — a filled `bg-danger/10` box with a left border
+ * and an `AlertTriangle` glyph, in the sidebar footer (desktop) and the
+ * compact bar (mobile below `md:`). Reported back directly as reading like
+ * an alarm rather than a place, and removed outright.
+ *
+ * Reversed on further review: the signal itself was right, only its
+ * treatment was wrong. A cross-tenant tool where one click changes another
+ * company's access genuinely needs a reminder that cannot be missed — that
+ * is a security-communication control, not decoration, and this page's own
+ * sidebar/cold-palette identity making the console feel DIFFERENT was never
+ * the same claim as making the STAKES visible. What actually read as an
+ * alarm was the filled color box and the triangle glyph competing for
+ * attention with everything else on the page, not the fact of the message
+ * itself.
+ *
+ * The redesign keeps the message and drops the box: a hairline danger-tinted
+ * top edge on the whole console frame (below, on the outermost wrapper) as
+ * an ambient, always-present cue that costs nothing to look at, plus one
+ * slim status line — a small solid dot and a single sentence in the
+ * console's own muted type, never a filled background or an alert icon —
+ * directly under the identity block on both the desktop sidebar and the
+ * mobile compact bar (never gated behind the mobile nav toggle, matching
+ * this file's own long-standing rule that the one thing meant to be
+ * impossible to forget should not be one tap from hidden). Nothing about the
+ * access model changes either way: `platformRoute` still gates every query
+ * and mutation behind this page, step-up included, reads included (this
+ * file's own header above), whether or not this signal is on screen at all.
  */
 const NAV_ITEMS = [
   ['orgs', 'Organizations', Building2],
@@ -311,7 +330,13 @@ export function PlatformAdminPage() {
   );
 
   return (
-    <div className="flex h-full overflow-hidden text-ink">
+    /* The hairline top edge is the "ambient, always-present" half of the
+       safety signal — see this file's own header comment. A 2px border
+       rather than a filled bar: at low opacity it reads as a considered
+       accent line the way this app's own elevation system already uses
+       edges and shadows to signal depth, not as a second alert box stacked
+       on top of the status line below it. */
+    <div className="flex h-full overflow-hidden border-t-2 border-danger/40 text-ink">
       {/* The sidebar, replacing the horizontal tab strip — see this file's
           own header comment for why a structural change, not just a color
           swap, is what actually answers "looks like the same client". Only
@@ -330,6 +355,19 @@ export function PlatformAdminPage() {
                 taskflow_platform_admin
               </p>
             </div>
+          </div>
+
+          {/* The status line — see this file's own header comment. One
+              sentence, one small solid dot, the console's own muted type:
+              no filled background, no alert icon. `border-b` rather than
+              its own boxed panel, so it reads as part of the identity
+              block above it, not a second, separate notice. */}
+          <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-danger" />
+            <p className="min-w-0 flex-1 text-[11px] leading-snug text-ink-faint">
+              Acting across <span className="text-ink-muted">all organizations</span> — every action
+              is logged
+            </p>
           </div>
 
           <nav aria-label="Platform administration sections" className="flex-1 space-y-0.5 p-2">
@@ -388,6 +426,17 @@ export function PlatformAdminPage() {
                   )}
                 />
               </button>
+            </div>
+
+            {/* Same status line as the desktop sidebar, and for the same
+                reason placed OUTSIDE `navOpen` below — never gated behind
+                the collapse toggle. */}
+            <div className="flex items-center gap-2 border-t border-line/70 px-3 py-1.5">
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-danger" />
+              <p className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                Acting across <span className="text-ink-muted">all organizations</span> — every
+                action is logged
+              </p>
             </div>
 
             {navOpen && (
