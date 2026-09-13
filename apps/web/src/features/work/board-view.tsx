@@ -377,7 +377,7 @@ export function BoardView({
       >
         <div className={cn('flex h-full items-start gap-3 p-3')}>
           {groupBy === 'list'
-            ? lists.map((list) => {
+            ? lists.map((list, columnIndex) => {
                 const columnCards = groups.find((g) => g.key === list.listId)?.cards ?? [];
                 return (
                   <ListColumn
@@ -387,6 +387,7 @@ export function BoardView({
                     list={list}
                     count={columnCards.length}
                     siblings={lists}
+                    columnIndex={columnIndex}
                     canManage={canManageBoard}
                   >
                     <SortableContext

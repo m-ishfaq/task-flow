@@ -344,7 +344,26 @@ function PaletteDialog({
             filtered.map((command, index) => {
               const Icon = command.icon;
               return (
-                <li key={command.id}>
+                <li
+                  key={command.id}
+                  data-state="open"
+                  className="ui-fade"
+                  /* A per-row entrance, not a per-keystroke one — React keeps
+                     the same DOM node for a command that stays in `filtered`
+                     across a keystroke (same key), so this only actually
+                     plays for a row that is genuinely new on screen: the
+                     palette's first open, or a fresh match appearing as the
+                     query narrows. Capped at the 8th row so a long default
+                     list still reads as "appeared," not "is still arriving"
+                     — `--motion-fast` is what `.ui-fade` itself no-ops to
+                     under reduced motion, so multiplying it keeps this delay
+                     honoring that preference for free, the same reasoning
+                     `.ui-fade`'s own comment gives for reusing `--motion-base`
+                     rather than a second, unguarded duration. */
+                  style={{
+                    transitionDelay: `calc(var(--motion-fast) * ${String(Math.min(index, 8))})`,
+                  }}
+                >
                   <button
                     type="button"
                     role="option"

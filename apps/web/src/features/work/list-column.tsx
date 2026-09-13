@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
@@ -46,7 +46,17 @@ export interface ListColumnProps {
    * `card:create`, which a plain Member holds.
    */
   readonly canManage: boolean;
+  /**
+   * This column's position among its board's lists, left to right — used
+   * only to cycle the five `--column-tint-*` washes (styles.css) for ambient
+   * variety. Not a status or category: a list has no such field, so this is
+   * deliberately position, never a guess at the column's meaning from its
+   * name. See styles.css's own comment on `--column-tint-1..5` for why.
+   */
+  readonly columnIndex: number;
 }
+
+const COLUMN_TINT_COUNT = 5;
 
 export function ListColumn({
   orgId,
@@ -54,6 +64,7 @@ export function ListColumn({
   list,
   count,
   siblings,
+  columnIndex,
   canManage,
   children,
 }: ListColumnProps) {
@@ -68,6 +79,11 @@ export function ListColumn({
         'column-container flex max-h-full w-72 shrink-0 flex-col',
         isOver && 'ring-2 ring-accent/50 border-accent/30',
       )}
+      style={
+        {
+          '--column-tint': `var(--column-tint-${String((columnIndex % COLUMN_TINT_COUNT) + 1)})`,
+        } as CSSProperties
+      }
     >
       <header className="column-header justify-between">
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
