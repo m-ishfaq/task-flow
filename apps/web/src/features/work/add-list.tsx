@@ -159,7 +159,7 @@ export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
 
   return (
     <div className="flex h-full items-start justify-center p-6">
-      <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,oklch(58%_0.17_285/7%),transparent_70%)] bg-surface-sunken/30 p-10 text-center">
+      <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,color-mix(in_oklab,var(--color-accent)_7%,transparent),transparent_70%)] bg-surface-sunken/30 p-10 text-center">
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           <Columns3 aria-hidden="true" className="size-5" strokeWidth={1.75} />
         </span>

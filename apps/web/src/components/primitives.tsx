@@ -45,8 +45,14 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      highlight along the top edge is what makes it read as a physical
      control. On the accent fill it is nearly invisible, which is the point:
      it is a boundary, not a decoration. */
+  /* The glow is `color-mix()` against `--color-accent`, not a literal
+     `oklch(.. 285)` — a literal hue here stayed indigo regardless of an
+     org's chosen branding palette (`BrandingProvider` only ever overrides
+     `--color-accent`/`-hover`/`-ink`), the highest-visibility instance of
+     the "palette only half applies" defect fixed alongside this one; see
+     `styles.css`'s `--color-accent-strong` comment for the rest. */
   primary:
-    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.17_285/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.17_285/40%)]',
+    'bg-accent text-accent-ink shadow-[0_2px_8px_color-mix(in_oklab,var(--color-accent)_30%,transparent)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]',
   /* `shadow-top-light` composed alongside the existing flat `shadow-sm` via
      an arbitrary value (Tailwind utilities can't be layered — the last
      `shadow-*` class simply wins, since they all set the same property) —
@@ -658,7 +664,7 @@ export function Empty({
   readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,oklch(58%_0.17_285/7%),transparent_70%)] bg-surface-sunken/30 p-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line-strong/60 bg-[radial-gradient(420px_200px_at_50%_0%,color-mix(in_oklab,var(--color-accent)_7%,transparent),transparent_70%)] bg-surface-sunken/30 p-12 text-center">
       {icon !== undefined && (
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           {icon}

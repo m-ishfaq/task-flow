@@ -42,8 +42,12 @@ export function VelocityChart({ points }: { readonly points: readonly VelocityPo
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="oklch(62% 0.18 285)" stopOpacity="0.3" />
-          <stop offset="1" stopColor="oklch(62% 0.18 285)" stopOpacity="0" />
+          {/* `var(--color-accent-strong)`, matching the polyline below —
+              not a literal `oklch(.. 285)`, which stayed indigo regardless
+              of an org's branding palette (see styles.css's own
+              `--color-accent-strong` comment for the wider fix). */}
+          <stop offset="0" stopColor="var(--color-accent-strong)" stopOpacity="0.3" />
+          <stop offset="1" stopColor="var(--color-accent-strong)" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -65,13 +69,13 @@ export function VelocityChart({ points }: { readonly points: readonly VelocityPo
             strokeLinejoin="round"
             points={coords.map((c) => `${String(c.x)},${String(c.y)}`).join(' ')}
           />
-          <circle cx={last.x} cy={last.y} r={4} fill="oklch(66% 0.18 285)" />
+          <circle cx={last.x} cy={last.y} r={4} fill="var(--color-accent-strong)" />
           <circle
             cx={last.x}
             cy={last.y}
             r={7.5}
             fill="none"
-            stroke="oklch(66% 0.18 285)"
+            stroke="var(--color-accent-strong)"
             strokeOpacity="0.35"
             strokeWidth="2"
           />

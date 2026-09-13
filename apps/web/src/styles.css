@@ -168,12 +168,19 @@
    * still clears the 3:1 non-text bar against all four surface tones — these
    * are icon/indicator swatches, the same non-text-only rule the priority
    * tokens above document, never rendered as body text on a bare surface.
-   * `--color-accent` (285) and `--color-suite-work` (also 285, lighter) are
-   * deliberately the same hue: Work is the product's home base, not a module
-   * competing with the others, so it borrows the brand hue instead of
-   * claiming a new one.
+   * `--color-accent` and `--color-suite-work` are deliberately the same hue:
+   * Work is the product's home base, not a module competing with the others,
+   * so it borrows the brand hue instead of claiming a new one — literally,
+   * via `color-mix()` against `--color-accent` rather than its own literal
+   * hue, so a branded deployment's Work icon/nav-tint/thread actually track
+   * whatever palette that org picked instead of staying indigo (the same
+   * "half-applied palette" defect `--color-accent-strong`'s own comment
+   * documents finding and fixing). `--color-suite-chat`/`-docs`/`-calls`/
+   * `-people` keep their own literal, independent hues below — those four are
+   * meant to stay fixed regardless of branding, only Work is meant to move
+   * with the brand.
    */
-  --color-suite-work: oklch(64% 0.16 285);
+  --color-suite-work: color-mix(in oklab, var(--color-accent) 78%, white);
   --color-suite-chat: oklch(66% 0.12 220);
   --color-suite-docs: oklch(66% 0.13 158);
   --color-suite-calls: oklch(74% 0.13 66);
@@ -183,8 +190,20 @@
      wordmark, illustration lines — where the audited `--color-accent` (tuned
      for a solid fill with text on top of it) reads slightly flat. Never used
      for text or a filled control; those keep `--color-accent`'s own audited
-     value untouched. */
-  --color-accent-strong: oklch(60% 0.18 285);
+     value untouched.
+     `color-mix()` against `--color-accent` rather than a second literal hue:
+     `BrandingProvider` (apps/web/src/features/branding/branding-provider.tsx)
+     overrides only `--color-accent`/`-hover`/`-ink` on an org's chosen
+     palette — a literal `oklch(.. 285)` here would stay indigo regardless of
+     what an org actually picked, which is exactly the "palette only half
+     applies" defect found in a real audit (Button's own glow, the empty-state
+     glow, and the velocity chart's line/dot all had the identical literal-hue
+     bug, fixed alongside this token). Mixing toward white rather than
+     rotating L/C independently is a deliberate approximation, not a
+     re-derivation of the WCAG math per palette — this token is non-text
+     (strokes/glyphs) by its own header above, so it does not need the same
+     audited precision `--color-accent`'s text-bearing fill does. */
+  --color-accent-strong: color-mix(in oklab, var(--color-accent) 88%, white);
 
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
@@ -215,8 +234,13 @@
   --shadow-lg: 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
   --shadow-xl: 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
 
-  /* Subtle inner glow for focused/active elements */
-  --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
+  /* Subtle inner glow for focused/active elements. The glow half is
+     `color-mix()` against `--color-accent`, not a literal `oklch(.. 285)` —
+     see `--color-accent-strong`'s own comment for why a literal hue here
+     would silently ignore a branded deployment's chosen palette. */
+  --shadow-glow-accent:
+    0 0 0 1px var(--color-accent),
+    0 0 12px color-mix(in oklab, var(--color-accent) 25%, transparent);
 
   /**
    * Design Bible §03's depth ladder, as Tailwind v4 `--shadow-*` overrides
