@@ -266,11 +266,38 @@
    * for dark theme. These are at ~3-5% opacity so they read as a whisper
    * of color, not a painted surface. Applied via inline style or a utility
    * class on the column wrapper.
+   *
+   * Found completely UNUSED — zero references in any `.tsx` file, and
+   * none elsewhere in this file either — while auditing the Work module
+   * for the warm-dark rebuild (`ai/design-rebuild-warm-dark.md` §5): the
+   * comment above describes a real plan ("applied via inline style or a
+   * utility class") that was never actually carried out. Left dead rather
+   * than wired in here: `board-view.tsx`'s columns are LISTS, arbitrary
+   * user-named text ("Backlog", "To Do", ... or anything else an org
+   * chooses to call them), not a fixed five-value enum these five token
+   * names assume — matching a real list to one of these tints would need
+   * a fragile name-heuristic that would silently do nothing for the
+   * common case of a renamed or custom list. Wiring this in for real is
+   * separate work needing that design question answered first, not a
+   * token-value fix.
+   *
+   * `backlog`/`todo` still had their hue values corrected here regardless
+   * (262 was the OLD cold-neutral family's hue, unrelated to any semantic
+   * meaning — this rebuild's own neutral family moved to 55), and `review`
+   * from 285 — the accent's OWN old hue before EITHER of this codebase's
+   * two rebuilds (258->285->88, per `--shadow-glow-accent`'s own header) —
+   * to 88, tracking the CURRENT accent. `progress` (200, cyan) and `done`
+   * (155, green) are independent semantic choices tied to neither the old
+   * neutral nor the old accent, so neither needed a hue change. Fixed as
+   * plain hardcoded hues, not `color-mix()` against `--color-accent` the
+   * way `--shadow-glow-accent` now does — that would be the more
+   * future-proof fix for `review` specifically, but is not worth the extra
+   * complexity for a token with no real caller yet.
    */
-  --column-tint-backlog: oklch(22% 0.01 262);
-  --column-tint-todo: oklch(22% 0.012 262);
+  --column-tint-backlog: oklch(22% 0.01 55);
+  --column-tint-todo: oklch(22% 0.012 55);
   --column-tint-progress: oklch(22% 0.02 200);
-  --column-tint-review: oklch(22% 0.015 285);
+  --column-tint-review: oklch(22% 0.015 88);
   --column-tint-done: oklch(22% 0.015 155);
 
   /**
