@@ -82,12 +82,22 @@ export const colors = {
 
   /**
    * `styles.css`'s own token also carries `/ 60%` alpha, dropped here: a
-   * single hex cannot express it, and a modal scrim is exactly where the
-   * DIFFERENCE between "opaque dark color" and "60%-transparent dark color"
-   * is the entire visual effect. `apps/mobile`'s own overlay usage (once a
-   * modal exists to need one, Wave 2+) applies opacity as a separate RN
-   * style property alongside this hex, the same way `styles.css`'s alpha is
-   * a separate channel from its L/C/H.
+   * bare `ColorToken` has no alpha channel of its own, so the real usage
+   * (found by the warm-dark rebuild's own mobile-primitives audit,
+   * `ai/design-rebuild-warm-dark.md` §4) is `colors.overlay.hex + '99'` at
+   * the call site — an 8-digit hex string, which React Native's own color
+   * parser accepts directly as `backgroundColor`, the identical
+   * hex-plus-alpha-suffix convention `apps/mobile`'s own screens already use
+   * for a translucent border (`colors.line.hex + '80'`). This corrects an
+   * earlier version of this comment, which predicted a separate RN
+   * `opacity` style property instead — that plan was never how any of the
+   * ~20 real modal/sheet backdrops that have since been written actually
+   * did it; every one used a RAW `'#00000099'` literal, this token's own
+   * warm hue never reaching any of them until this pass replaced each with
+   * `colors.overlay.hex` plus its own call site's alpha suffix (`'66'` for
+   * a lighter menu backdrop, `'ee'` for a near-opaque image-preview
+   * backdrop, `'99'` for every ordinary modal/sheet — matching `styles.css`'s
+   * own 60%).
    */
   overlay: { oklch: { l: 15, c: 0.02, h: 55 }, hex: '#120904' },
 } as const satisfies Record<string, ColorToken>;

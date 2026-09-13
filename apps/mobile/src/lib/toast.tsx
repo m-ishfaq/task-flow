@@ -75,15 +75,40 @@ function Toast({ msg, onDismiss }: { readonly msg: ToastMessage; readonly onDism
     ]).start();
   }, [opacity, translateY]);
 
+  /* Found during the warm-dark rebuild's own raw-color-literal audit
+     (ai/design-rebuild-warm-dark.md §4): the success branch was a bare
+     '#22c55e' literal that had drifted from `colors.success.hex`
+     ('#3bb974'), and the info/default branch used `colors.ink.hex` — the
+     TEXT ink token, near-white by design in this dark-first app — as a
+     BACKGROUND, which combined with the text's own former literal '#fff'
+     made every info toast invisible (near-white on near-white). Each
+     background now pairs with the ink actually verified (real WCAG math,
+     not eyeballed) to read against it: `success` is light (L=70%) and
+     needs a DARK ink (`surface.hex` measures 7.74:1); `danger` is mid
+     (L=55%) and needs its own paired light ink (`dangerInk.hex`, 5.02:1);
+     info/default uses a dark neutral surface (`surfaceRaised.hex`) with
+     the app's ordinary light `ink.hex` (14.72:1) — the same
+     dark-surface-plus-light-ink pairing every other screen in this app
+     already uses. */
   const bgColor =
-    msg.kind === 'success' ? '#22c55e' : msg.kind === 'error' ? colors.danger.hex : colors.ink.hex;
+    msg.kind === 'success'
+      ? colors.success.hex
+      : msg.kind === 'error'
+        ? colors.danger.hex
+        : colors.surfaceRaised.hex;
+  const textColor =
+    msg.kind === 'success'
+      ? colors.surface.hex
+      : msg.kind === 'error'
+        ? colors.dangerInk.hex
+        : colors.ink.hex;
 
   return (
     <Animated.View
       style={[styles.toast, { backgroundColor: bgColor, opacity, transform: [{ translateY }] }]}
     >
       <Pressable style={styles.inner} onPress={onDismiss}>
-        <Text style={styles.text} numberOfLines={2}>
+        <Text style={[styles.text, { color: textColor }]} numberOfLines={2}>
           {msg.text}
         </Text>
       </Pressable>
@@ -110,7 +135,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   text: {
-    color: '#fff',
+    /* No color here — always overridden per-kind above (see `textColor`). */
     fontSize: 14,
     fontWeight: '500',
   },

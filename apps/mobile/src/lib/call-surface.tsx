@@ -739,7 +739,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   hangUpButtonText: {
-    color: '#fff',
+    /* Not a literal '#fff' — this button sits on `colors.danger.hex`;
+       `dangerInk` is that color's own paired ink token, found during the
+       warm-dark rebuild's own raw-color-literal audit
+       (ai/design-rebuild-warm-dark.md §4). */
+    color: colors.dangerInk.hex,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -795,7 +799,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {

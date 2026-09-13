@@ -2199,7 +2199,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   reactionSheetCard: {
@@ -2343,7 +2343,7 @@ const styles = StyleSheet.create({
   },
   imagePreviewBackdrop: {
     flex: 1,
-    backgroundColor: '#000000ee',
+    backgroundColor: colors.overlay.hex + 'ee',
     justifyContent: 'center',
     alignItems: 'center',
   },

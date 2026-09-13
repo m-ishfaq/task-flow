@@ -267,11 +267,15 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#fff',
+    /* Not a literal '#fff' — this badge sits on `colors.danger.hex`, and
+       `dangerInk` is that color's own paired ink token (verified: 5.02:1,
+       passes WCAG text contrast), found during the warm-dark rebuild's own
+       raw-color-literal audit (ai/design-rebuild-warm-dark.md §4). */
+    color: colors.dangerInk.hex,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {
@@ -334,7 +338,14 @@ const styles = StyleSheet.create({
   unreadCountPillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#fff',
+    /* Not a literal '#fff' — a real contrast bug, found and fixed during
+       the warm-dark rebuild's own raw-color-literal audit
+       (ai/design-rebuild-warm-dark.md §4): this pill sits on
+       `colors.accent.hex`, which the rebuild lightened to L=72%, and white
+       text on it measures 2.50:1 — a clear WCAG failure. `accentInk` (the
+       token's own paired ink, since accent got light enough to need a dark
+       one) measures 7.75:1. */
+    color: colors.accentInk.hex,
   },
   markAllReadButton: {
     borderRadius: 999,

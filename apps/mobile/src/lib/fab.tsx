@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: '#00000066',
+    backgroundColor: colors.overlay.hex + '66',
   },
   menu: {
     position: 'absolute',
