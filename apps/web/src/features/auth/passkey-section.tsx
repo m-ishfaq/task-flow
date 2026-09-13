@@ -183,7 +183,7 @@ function PasskeyRow({ passkey, busy, onRename, onRemove }: PasskeyRowProps) {
   const [draft, setDraft] = useState(passkey.name ?? '');
 
   return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
+    <li className="group flex items-center gap-3 px-3 py-2 transition-colors duration-(--motion-fast) hover:bg-surface-hover">
       <div className="min-w-0 flex-1">
         {editing ? (
           <form

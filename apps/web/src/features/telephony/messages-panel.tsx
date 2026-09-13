@@ -146,7 +146,7 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                       selectThread(thread.threadId);
                     }}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
+                      'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors duration-(--motion-fast)',
                       /* Calls' own suite hue for "this is the open thread" —
                          the same module-identity fix already applied to
                          Chat's active channel row and Docs' active page. */

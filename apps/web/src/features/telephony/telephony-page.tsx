@@ -116,7 +116,7 @@ export function TelephonyPage() {
                 selectTab(item.id);
               }}
               className={cn(
-                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors duration-(--motion-fast)',
                 /* The Calls suite hue — the same identity fix already applied
                    to Docs' own tool tabs and Chat's active channel row. */
                 tab === item.id

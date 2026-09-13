@@ -111,7 +111,7 @@ export function ListView({
                   aria-hidden="true"
                   strokeWidth={2.25}
                   className={cn(
-                    'size-4 shrink-0 text-ink-faint transition-transform',
+                    'size-4 shrink-0 text-ink-faint transition-transform duration-(--motion-fast)',
                     !isCollapsed && 'rotate-90',
                   )}
                 />

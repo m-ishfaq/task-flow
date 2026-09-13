@@ -126,7 +126,7 @@ export function ImportExportDialog({
                 onClick={() => {
                   setTab(entry);
                 }}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors duration-(--motion-fast) ${
                   tab === entry
                     ? 'bg-accent text-accent-ink'
                     : 'text-ink-muted hover:bg-surface-hover'
@@ -419,7 +419,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
         </span>
       </label>
 
-      <label className="block cursor-pointer rounded border border-dashed border-line bg-surface-sunken/60 p-4 text-center text-xs text-ink-muted transition-colors hover:bg-surface-hover">
+      <label className="block cursor-pointer rounded border border-dashed border-line bg-surface-sunken/60 p-4 text-center text-xs text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover">
         <input
           type="file"
           accept=".csv,.json,text/csv,application/json"

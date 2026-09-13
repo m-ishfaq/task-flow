@@ -342,7 +342,7 @@ export function AutomationsPage() {
                   selectTab(item.id);
                 }}
                 className={cn(
-                  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors duration-(--motion-fast)',
                   tab === item.id
                     ? 'bg-accent/10 text-accent'
                     : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
@@ -567,7 +567,7 @@ function RuleRow({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border transition-colors',
+        'overflow-hidden rounded-xl border transition-colors duration-(--motion-fast)',
         rule.enabled ? 'border-line/50' : 'border-line/30',
       )}
     >

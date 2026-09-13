@@ -100,7 +100,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   {(filteredEntries ?? []).map((entry) => (
                     <tr
                       key={entry.seq}
-                      className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                      className="border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                     >
                       <td className="px-3 py-2.5 font-mono text-xs text-ink-faint">{entry.seq}</td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">

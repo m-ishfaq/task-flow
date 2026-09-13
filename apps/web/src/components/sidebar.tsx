@@ -413,7 +413,7 @@ export function Sidebar() {
            an inner scroll region from ever resolving a height, because a
            `flex-1` child inside a percentage-height parent still needs
            `min-h-0` above it to be allowed to shrink. */
-        'flex min-h-0 flex-1 flex-col border-r border-line bg-surface-raised transition-[width]',
+        'flex min-h-0 flex-1 flex-col border-r border-line bg-surface-raised transition-[width] duration-(--motion-base)',
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >

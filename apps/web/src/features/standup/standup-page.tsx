@@ -320,7 +320,7 @@ function MemberRow({
           setExpanded((current) => !current);
         }}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/40"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-(--motion-fast) hover:bg-surface-hover/40"
       >
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />

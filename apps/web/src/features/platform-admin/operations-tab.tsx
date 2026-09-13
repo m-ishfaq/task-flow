@@ -126,7 +126,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   {(filteredEvents ?? []).map((event) => (
                     <tr
                       key={event.id}
-                      className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                      className="border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                     >
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(event.occurredAt)}

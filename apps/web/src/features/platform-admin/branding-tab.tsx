@@ -308,7 +308,7 @@ export function BrandingTab({
                       setBranding.mutate({ paletteId });
                     }}
                     className={cn(
-                      'size-8 rounded-full border-2 transition-transform',
+                      'size-8 rounded-full border-2 transition-transform duration-(--motion-fast)',
                       (previewPalette ?? data.paletteId) === paletteId
                         ? 'scale-110 border-ink ring-2 ring-accent/30'
                         : 'border-transparent hover:scale-105',
@@ -378,7 +378,7 @@ function BrandingAssetUpload({
   readonly onSelect: (file: File) => void;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line p-4 transition-colors hover:bg-surface-hover/20">
+    <div className="flex items-center gap-4 rounded-xl border border-line p-4 transition-colors duration-(--motion-fast) hover:bg-surface-hover/20">
       <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-sunken">
         {currentUrl !== null ? (
           <img src={currentUrl} alt="" className="max-h-full max-w-full rounded object-contain" />

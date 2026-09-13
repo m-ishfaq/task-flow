@@ -189,7 +189,7 @@ function SpaceTreePanel({
   return (
     <aside
       className={cn(
-        'shrink-0 flex-col border-r border-line bg-surface-raised transition-[width] md:flex',
+        'shrink-0 flex-col border-r border-line bg-surface-raised transition-[width] duration-(--motion-base) md:flex',
         spacesOpen ? 'md:w-64' : 'md:w-12',
         /* Same list/detail hide as `chat-page.tsx`'s `ChannelListPanel` —
            full width when shown below `md`, `hidden` rather than shrunk to
@@ -1031,7 +1031,7 @@ function PagePanel({
               </h1>
               <Pencil
                 aria-hidden="true"
-                className="size-4 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+                className="size-4 shrink-0 text-ink-faint opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-100"
                 strokeWidth={2}
               />
             </button>
@@ -1107,7 +1107,7 @@ function PagePanel({
                 setTool(value);
               }}
               className={cn(
-                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors duration-(--motion-fast)',
                 /* The Docs suite hue, not a generic accent — the same fix
                    already applied to a selected page in the tree and Chat's
                    own active channel row. */

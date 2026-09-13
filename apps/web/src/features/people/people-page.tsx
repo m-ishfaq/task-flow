@@ -181,7 +181,7 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
             <Link
               to="/people/$userId"
               params={{ userId: member.userId }}
-              className="flex flex-col items-center gap-1 rounded-card border border-line/50 bg-surface-raised p-4 text-center transition-colors hover:border-line-strong hover:bg-surface-hover/50"
+              className="flex flex-col items-center gap-1 rounded-card border border-line/50 bg-surface-raised p-4 text-center transition-colors duration-(--motion-fast) hover:border-line-strong hover:bg-surface-hover/50"
             >
               <Avatar userId={member.userId} label={label} size="lg" className="mb-1" />
               <span className="truncate text-sm font-semibold text-ink">{label}</span>

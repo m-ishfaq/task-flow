@@ -108,7 +108,7 @@ export function SprintsPage() {
           <ul className="space-y-1.5">
             {sprints.data.map((sprint) => {
               const row = (
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors hover:border-accent">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors duration-(--motion-fast) hover:border-accent">
                   <div className="min-w-0 flex-1 basis-48">
                     <p className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>

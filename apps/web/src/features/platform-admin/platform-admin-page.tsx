@@ -415,7 +415,7 @@ export function PlatformAdminPage() {
                 onClick={() => {
                   setNavOpen((previous) => !previous);
                 }}
-                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line/60 bg-surface/40 px-2.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-line/60 bg-surface/40 px-2.5 text-xs font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink"
               >
                 {currentLabel}
                 <ChevronDown

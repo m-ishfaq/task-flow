@@ -316,13 +316,13 @@ export function BillingTab({
               {(filteredOrgs ?? []).map((org) => (
                 <tr
                   key={org.orgId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all duration-(--motion-fast) hover:border-l-accent hover:bg-surface-hover/50"
                   onClick={() => {
                     setBillingDetailOrgId(org.orgId);
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
+                    <p className="font-medium text-ink transition-colors duration-(--motion-fast) group-hover:text-accent">
                       {org.name}
                     </p>
                     <p className="font-mono text-xs text-ink-faint">{org.slug}</p>

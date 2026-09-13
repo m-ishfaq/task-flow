@@ -240,7 +240,7 @@ export function BroadcastTab({
                   <li key={candidate.orgId}>
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-hover/50"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors duration-(--motion-fast) hover:bg-surface-hover/50"
                       onClick={() => {
                         setSelectedOrg({
                           orgId: candidate.orgId as OrgId,
@@ -350,7 +350,7 @@ export function BroadcastTab({
                       <label
                         key={member.userId}
                         className={cn(
-                          'flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-surface-hover/30',
+                          'flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors duration-(--motion-fast) hover:bg-surface-hover/30',
                           member.hasPushDevice ? 'text-ink' : 'text-ink-faint',
                         )}
                       >

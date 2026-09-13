@@ -274,7 +274,7 @@ function MessageRow({
             permission. */}
         <div
           className={cn(
-            'pointer-events-none absolute -top-3 right-0 z-20 flex items-center gap-0.5 rounded-lg border border-line bg-surface-raised px-1 py-0.5 opacity-0 shadow-md transition-opacity',
+            'pointer-events-none absolute -top-3 right-0 z-20 flex items-center gap-0.5 rounded-lg border border-line bg-surface-raised px-1 py-0.5 opacity-0 shadow-md transition-opacity duration-(--motion-fast)',
             'group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100',
           )}
         >
@@ -442,7 +442,7 @@ function ReactionBar({
                 type="button"
                 aria-label={`${emoji} — ${String(userIds.length)} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
                 className={cn(
-                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors duration-(--motion-fast)',
                   mine
                     ? 'border-accent bg-accent text-accent-ink'
                     : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
