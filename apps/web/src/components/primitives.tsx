@@ -630,3 +630,88 @@ export function ConfirmButton({
     </span>
   );
 }
+
+/**
+ * A `role="tablist"` bar for a search-param-driven section switcher — the
+ * shape `platform-admin-page.tsx`, `analytics-page.tsx`, and
+ * `import-export-dialog.tsx` had each hand-rolled independently, found while
+ * auditing the warm-dark rebuild's own component-consolidation pass
+ * (`ai/design-rebuild-warm-dark.md` §3): the same `role="tablist"`/
+ * `role="tab"`/`aria-selected` shape, the same active/inactive class pair,
+ * each with its own small drift from the other two (a plain template-literal
+ * className instead of `cn()`, a solid `bg-accent` active background instead
+ * of the ring style below, no shared way to stretch tabs to equal width).
+ * Lives here rather than `platform-admin/shared.tsx` (where the first,
+ * two-caller version of this started) because every one of its real callers
+ * now spans unrelated features — this is the shared-across-features layer.
+ *
+ * Generic over the value type so a nullable "All" filter and a plain
+ * non-null string union share one implementation instead of one being a
+ * near-copy of the other with a `?? 'all'` key fallback bolted on.
+ *
+ * `icon` is a rendered node, not a component reference — the same choice
+ * `Empty`'s own `icon` prop makes just above, so this file never needs to
+ * import `lucide-react` itself; the caller renders its own icon element
+ * exactly as it would inline.
+ *
+ * `stretch` makes every tab share the row's width equally
+ * (`import-export-dialog.tsx`'s two-item export/import switch, whose narrow
+ * dialog width makes an intrinsic-width row look wrong) — a real, deliberate
+ * visual change for that one adopter (solid active background → this
+ * component's own ring-based one), not an accidental behavior change.
+ */
+export function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  stretch = false,
+  className,
+}: {
+  readonly items: readonly {
+    readonly value: T;
+    readonly label: string;
+    readonly icon?: ReactNode;
+  }[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly stretch?: boolean;
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
+        className,
+      )}
+    >
+      {items.map(({ value: itemValue, label, icon }) => (
+        <button
+          key={itemValue ?? 'null'}
+          type="button"
+          role="tab"
+          aria-selected={value === itemValue}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'relative flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap transition-all duration-150',
+            size === 'sm' ? 'text-sm' : 'text-xs',
+            stretch && 'flex-1',
+            value === itemValue
+              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {icon}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}

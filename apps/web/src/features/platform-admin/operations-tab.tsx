@@ -6,9 +6,9 @@ import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
-import { SkeletonRows } from '../../components/primitives.js';
+import { SkeletonRows, TabBar } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { Pagination, StepUpGate, TabBar, TableSearch } from './shared.js';
+import { Pagination, StepUpGate, TableSearch } from './shared.js';
 
 /* -------------------------------------------------------------------------- *
  * Operations dashboard — "did a system action succeed or fail" (mail
@@ -19,12 +19,15 @@ import { Pagination, StepUpGate, TabBar, TableSearch } from './shared.js';
 
 type OperationalEventKind = 'mail' | 'billing_webhook' | 'billing_sweep' | 'push';
 
-const OPERATIONAL_EVENT_KINDS: readonly (readonly [OperationalEventKind | null, string])[] = [
-  [null, 'All'],
-  ['mail', 'Mail'],
-  ['billing_webhook', 'Billing webhook'],
-  ['billing_sweep', 'Billing sweep'],
-  ['push', 'Push'],
+const OPERATIONAL_EVENT_KINDS: readonly {
+  readonly value: OperationalEventKind | null;
+  readonly label: string;
+}[] = [
+  { value: null, label: 'All' },
+  { value: 'mail', label: 'Mail' },
+  { value: 'billing_webhook', label: 'Billing webhook' },
+  { value: 'billing_sweep', label: 'Billing sweep' },
+  { value: 'push', label: 'Push' },
 ];
 
 export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {

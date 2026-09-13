@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, ListId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { Button, Empty, Spinner } from '../../components/primitives.js';
+import { Button, Empty, Spinner, TabBar } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { listsQuery } from './api.js';
 import {
@@ -110,32 +110,25 @@ export function ImportExportDialog({
           same path the UI uses — nothing an import makes is a card you could not have made.
         </ModalDescription>
 
-        <div
-          className="mt-3 flex gap-1 rounded border border-line p-1"
-          role="tablist"
-          aria-label="Import or export"
-        >
-          {(['export', 'import'] as const)
+        {/* `TabBar` (`primitives.tsx`, consolidated during the warm-dark
+            rebuild — `ai/design-rebuild-warm-dark.md` §3) replaces a
+            hand-rolled `role="tablist"` that had drifted to a solid
+            `bg-accent` active state instead of this app's own established
+            ring style. `stretch` keeps the two-item row filling this
+            dialog's own narrow width, matching the removed version's
+            `flex-1` — a deliberate visual change only for the active-state
+            color, not the layout. */}
+        <TabBar
+          ariaLabel="Import or export"
+          size="xs"
+          stretch
+          value={tab}
+          onChange={setTab}
+          className="mt-3"
+          items={(['export', 'import'] as const)
             .filter((entry) => entry === 'export' || canManageProject)
-            .map((entry) => (
-              <button
-                key={entry}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry}
-                onClick={() => {
-                  setTab(entry);
-                }}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-                  tab === entry
-                    ? 'bg-accent text-accent-ink'
-                    : 'text-ink-muted hover:bg-surface-hover'
-                }`}
-              >
-                {entry}
-              </button>
-            ))}
-        </div>
+            .map((entry) => ({ value: entry, label: entry === 'export' ? 'Export' : 'Import' }))}
+        />
 
         {tab === 'export' ? (
           <ExportTab orgId={orgId} boardId={boardId} projectId={projectId} />

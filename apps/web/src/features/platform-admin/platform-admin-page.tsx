@@ -16,8 +16,7 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { cn } from '../../lib/cn.js';
-import { Button, PageHeader } from '../../components/primitives.js';
+import { Button, PageHeader, TabBar } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
 import { StatCard, downloadCsv, money } from './shared.js';
@@ -267,45 +266,64 @@ export function PlatformAdminPage() {
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
           switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1 shadow-sm"
-      >
-        {(
-          [
-            ['orgs', 'Organizations', Building2],
-            ['users', 'Users', Users],
-            ['plans', 'Plans', LayoutGrid],
-            ['billing', 'Billing', CreditCard],
-            ['ai', 'AI Models', Bot],
-            ['flags', 'Feature flags', Flag],
-            ['branding', 'Branding', Palette],
-            ['broadcast', 'Broadcast', Megaphone],
-            ['audit', 'Operator audit', Shield],
-            ['operations', 'Operations', Zap],
-          ] as const
-        ).map(([value, label, Icon]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
-              tab === value
-                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        ariaLabel="Platform administration sections"
+        value={tab}
+        onChange={setTab}
+        className="sticky top-0 z-10 flex overflow-x-auto shadow-sm"
+        items={[
+          {
+            value: 'orgs',
+            label: 'Organizations',
+            icon: <Building2 aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'users',
+            label: 'Users',
+            icon: <Users aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'plans',
+            label: 'Plans',
+            icon: <LayoutGrid aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'billing',
+            label: 'Billing',
+            icon: <CreditCard aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'ai',
+            label: 'AI Models',
+            icon: <Bot aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'flags',
+            label: 'Feature flags',
+            icon: <Flag aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'branding',
+            label: 'Branding',
+            icon: <Palette aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'broadcast',
+            label: 'Broadcast',
+            icon: <Megaphone aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'audit',
+            label: 'Operator audit',
+            icon: <Shield aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+          {
+            value: 'operations',
+            label: 'Operations',
+            icon: <Zap aria-hidden="true" className="size-4" strokeWidth={2} />,
+          },
+        ]}
+      />
 
       {tab === 'orgs' && (
         <OrgsTab

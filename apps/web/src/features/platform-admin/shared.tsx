@@ -210,64 +210,6 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
 }
 
 /**
- * A `role="tablist"` bar — the shell this console needed twice (the
- * top-level section switcher in platform-admin-page.tsx, and
- * `OperationsTab`'s kind filter) and had, until now, copied verbatim both
- * times, right down to the `bg-surface-raised text-ink shadow-sm`
- * active-state classes. Generic over the value type so a nullable "All"
- * filter and a plain non-null string union share one implementation instead
- * of one being a near-copy of the other with a `?? 'all'` key fallback
- * bolted on.
- */
-export function TabBar<T extends string | null>({
-  items,
-  value,
-  onChange,
-  ariaLabel,
-  size = 'sm',
-  className,
-}: {
-  readonly items: readonly (readonly [T, string])[];
-  readonly value: T;
-  readonly onChange: (value: T) => void;
-  readonly ariaLabel: string;
-  readonly size?: 'sm' | 'xs';
-  readonly className?: string;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className={cn(
-        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
-        className,
-      )}
-    >
-      {items.map(([itemValue, label]) => (
-        <button
-          key={itemValue ?? 'null'}
-          type="button"
-          role="tab"
-          aria-selected={value === itemValue}
-          onClick={() => {
-            onChange(itemValue);
-          }}
-          className={cn(
-            'relative rounded-lg px-3 py-1.5 font-medium transition-all duration-150',
-            size === 'sm' ? 'text-sm' : 'text-xs',
-            value === itemValue
-              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
  * The read gate every tab renders when its query hits STEP_UP_REQUIRED.
  *
  * Separate from `useStepUp`'s mutation flow because a query cannot be replayed

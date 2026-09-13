@@ -1,5 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useSession } from '../../lib/session.js';
+import { TabBar } from '../../components/primitives.js';
 import { VelocityPanel } from './velocity-panel.js';
 import { BurndownPanel } from './burndown-panel.js';
 import { CfdPanel } from './cfd-panel.js';
@@ -18,20 +19,27 @@ import { StatusPanel } from './status-panel.js';
  *
  * Tab-based navigation (same pattern as telephony-page.tsx): a search
  * param rather than nested routes, so the open tab is shareable and
- * back-button-correct.
+ * back-button-correct. The tab row itself is `primitives.tsx`'s shared
+ * `TabBar` (moved there during the warm-dark rebuild's own component-
+ * consolidation pass, `ai/design-rebuild-warm-dark.md` §3) rather than a
+ * hand-rolled `role="tablist"` — this page's own version had drifted from
+ * platform-admin's copy in exactly the small ways duplication always drifts
+ * (a template-literal className instead of `cn()`, `text-ink/60` instead of
+ * the shared `text-ink-muted`, no `shadow-sm ring-1 ring-accent/20` on the
+ * active tab).
  */
 
 const TABS = [
-  { id: 'velocity', label: 'Velocity' },
-  { id: 'burndown', label: 'Burndown' },
-  { id: 'cfd', label: 'Flow' },
-  { id: 'cycle-time', label: 'Cycle Time' },
-  { id: 'workload', label: 'Workload' },
-  { id: 'volume', label: 'Volume' },
-  { id: 'status', label: 'Status' },
+  { value: 'velocity', label: 'Velocity' },
+  { value: 'burndown', label: 'Burndown' },
+  { value: 'cfd', label: 'Flow' },
+  { value: 'cycle-time', label: 'Cycle Time' },
+  { value: 'workload', label: 'Workload' },
+  { value: 'volume', label: 'Volume' },
+  { value: 'status', label: 'Status' },
 ] as const;
 
-type TabId = (typeof TABS)[number]['id'];
+type TabId = (typeof TABS)[number]['value'];
 
 export function AnalyticsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
@@ -46,25 +54,13 @@ export function AnalyticsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line/50 px-4 pt-4 pb-2">
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Analytics</h1>
-        <div className="mt-2 flex gap-1 overflow-x-auto" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => {
-                selectTab(t.id);
-              }}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-accent/10 text-accent'
-                  : 'text-ink/60 hover:bg-surface-hover hover:text-ink'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar
+          ariaLabel="Analytics dashboards"
+          value={tab}
+          onChange={selectTab}
+          className="mt-2 flex overflow-x-auto"
+          items={TABS}
+        />
       </header>
 
       <div className="flex-1 overflow-auto p-4">
