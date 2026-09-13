@@ -490,10 +490,7 @@ export function BillingTab({
                 />
               </Field>
 
-              <div className="flex gap-2">
-                <Button type="submit" variant="primary" disabled={extend.isPending}>
-                  {extend.isPending ? 'Extending…' : 'Extend'}
-                </Button>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -501,6 +498,9 @@ export function BillingTab({
                   }}
                 >
                   Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={extend.isPending}>
+                  {extend.isPending ? 'Extending…' : 'Extend'}
                 </Button>
               </div>
             </form>

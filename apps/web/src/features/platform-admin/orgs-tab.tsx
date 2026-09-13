@@ -475,14 +475,7 @@ export function OrgsTab({
 
               {remove.isError && <ErrorView error={remove.error} />}
 
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  variant="danger"
-                  disabled={remove.isPending || confirmSlug !== deleteTarget.slug}
-                >
-                  {remove.isPending ? 'Deleting…' : 'Delete forever'}
-                </Button>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -490,6 +483,13 @@ export function OrgsTab({
                   }}
                 >
                   Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  disabled={remove.isPending || confirmSlug !== deleteTarget.slug}
+                >
+                  {remove.isPending ? 'Deleting…' : 'Delete forever'}
                 </Button>
               </div>
             </form>
