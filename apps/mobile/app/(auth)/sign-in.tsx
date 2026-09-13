@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
@@ -8,6 +8,7 @@ import { apiClient, session } from '../../src/lib/app-session.js';
 import { apiErrorOf, errorCodeOf, errorMessageOf } from '../../src/lib/trpc-client.js';
 import { useIsOffline } from '../../src/lib/use-network-status.js';
 import { loadPasskeys } from '../../src/lib/passkeys.js';
+import { Button } from '../../src/lib/primitives.js';
 import {
   OAUTH_PROVIDER_LABEL,
   OAUTH_REDIRECT_URL,
@@ -188,19 +189,15 @@ export default function SignIn() {
           style={styles.input}
         />
         {verifyTotp.isError && <FormError error={verifyTotp.error} />}
-        <Pressable
-          style={styles.button}
-          disabled={verifyTotp.isPending || code.length === 0}
+        <Button
+          label="Verify"
+          loading={verifyTotp.isPending}
+          disabled={code.length === 0}
           onPress={() => {
             verifyTotp.mutate();
           }}
-        >
-          {verifyTotp.isPending ? (
-            <ActivityIndicator color={colors.accentInk.hex} />
-          ) : (
-            <Text style={styles.buttonText}>Verify</Text>
-          )}
-        </Pressable>
+          style={styles.buttonSpacing}
+        />
       </View>
     );
   }
@@ -242,38 +239,31 @@ export default function SignIn() {
                 If that address has an account, a new link is on its way.
               </Text>
             ) : (
-              <Pressable
-                style={styles.secondaryButton}
-                disabled={resendVerification.isPending}
+              <Button
+                variant="secondary"
+                label="Resend verification email"
+                loading={resendVerification.isPending}
                 onPress={() => {
                   resendVerification.mutate();
                 }}
-              >
-                {resendVerification.isPending ? (
-                  <ActivityIndicator color={colors.ink.hex} />
-                ) : (
-                  <Text style={styles.secondaryButtonText}>Resend verification email</Text>
-                )}
-              </Pressable>
+                style={styles.secondaryButtonSize}
+                textStyle={styles.secondaryButtonTextSize}
+              />
             )}
             {resendVerification.isError && <FormError error={resendVerification.error} />}
           </View>
         ) : (
           <FormError error={signIn.error} />
         ))}
-      <Pressable
-        style={styles.button}
-        disabled={signIn.isPending || email.length === 0 || password.length === 0}
+      <Button
+        label="Sign in"
+        loading={signIn.isPending}
+        disabled={email.length === 0 || password.length === 0}
         onPress={() => {
           signIn.mutate();
         }}
-      >
-        {signIn.isPending ? (
-          <ActivityIndicator color={colors.accentInk.hex} />
-        ) : (
-          <Text style={styles.buttonText}>Sign in</Text>
-        )}
-      </Pressable>
+        style={styles.buttonSpacing}
+      />
       <View style={styles.linkRow}>
         <Pressable
           onPress={() => {
@@ -294,38 +284,31 @@ export default function SignIn() {
       {(['google', 'github'] as const)
         .filter((provider) => oauthProviders.data?.[provider] === true)
         .map((provider) => (
-          <Pressable
+          <Button
             key={provider}
-            style={styles.oauthButton}
+            variant="secondary"
+            label={`Continue with ${OAUTH_PROVIDER_LABEL[provider]}`}
+            loading={oauth.isPending && oauth.variables === provider}
             disabled={oauth.isPending}
             onPress={() => {
               oauth.mutate(provider);
             }}
-          >
-            {oauth.isPending && oauth.variables === provider ? (
-              <ActivityIndicator color={colors.ink.hex} />
-            ) : (
-              <Text style={styles.oauthButtonText}>
-                Continue with {OAUTH_PROVIDER_LABEL[provider]}
-              </Text>
-            )}
-          </Pressable>
+            style={styles.buttonSpacing}
+            textStyle={styles.oauthButtonTextSize}
+          />
         ))}
       {passkey.isError && <FormError error={passkey.error} />}
       {passkeySupported && (
-        <Pressable
-          style={styles.oauthButton}
-          disabled={passkey.isPending}
+        <Button
+          variant="secondary"
+          label="Sign in with a passkey"
+          loading={passkey.isPending}
           onPress={() => {
             passkey.mutate();
           }}
-        >
-          {passkey.isPending ? (
-            <ActivityIndicator color={colors.ink.hex} />
-          ) : (
-            <Text style={styles.oauthButtonText}>Sign in with a passkey</Text>
-          )}
-        </Pressable>
+          style={styles.buttonSpacing}
+          textStyle={styles.oauthButtonTextSize}
+        />
       )}
     </View>
   );
@@ -375,31 +358,26 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
   },
-  button: {
-    backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard + 2,
-    paddingVertical: 14,
-    alignItems: 'center',
+  /* The shared spacing every button on this screen used to carry inline
+     (`marginTop: 4`) — kept as its own style since `Button` (`primitives.js`)
+     has no opinion on the space above it. */
+  buttonSpacing: {
     marginTop: 4,
   },
-  buttonText: {
-    color: colors.accentInk.hex,
-    fontSize: 16,
-    fontWeight: '600',
+  /* This one button is smaller than the rest — inline inside a notice box,
+     not a full-width screen action — so it overrides `Button`'s own
+     default `paddingVertical: 14` and `fontSize: 16` down to what it was
+     before this screen's buttons moved onto the shared primitive. */
+  secondaryButtonSize: {
+    paddingVertical: 10,
   },
-  oauthButton: {
-    borderWidth: 1,
-    borderColor: colors.line.hex + '80',
-    borderRadius: radiusCard + 2,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-    backgroundColor: colors.surfaceRaised.hex,
+  secondaryButtonTextSize: {
+    fontSize: 14,
   },
-  oauthButtonText: {
-    color: colors.ink.hex,
+  /* The oauth/passkey buttons' own label was always one size down from the
+     primary "Sign in" button's — preserved the same way. */
+  oauthButtonTextSize: {
     fontSize: 15,
-    fontWeight: '600',
   },
   error: {
     color: colors.danger.hex,
@@ -420,18 +398,6 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.inkMuted.hex,
     fontSize: 12,
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: colors.line.hex + '80',
-    borderRadius: radiusCard,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: colors.ink.hex,
-    fontSize: 14,
-    fontWeight: '600',
   },
   linkRow: {
     flexDirection: 'row',
