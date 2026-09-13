@@ -70,7 +70,7 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/60">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <th className="w-14 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                       Seq
                     </th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
@@ -93,7 +93,26 @@ export function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       key={entry.seq}
                       className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
                     >
-                      <td className="px-3 py-2.5 font-mono text-xs text-ink-faint">{entry.seq}</td>
+                      {/* A real chain rail, not decoration — this table's own
+                          intro copy already says every entry lands in a
+                          global hash chain, and nothing here ever showed
+                          that. A continuous line down the Seq column, with
+                          one dot per entry, is the same "linked record"
+                          shape a commit graph or a block explorer uses for
+                          the identical property: each row's own hash
+                          depends on the one before it. Warm-dark rebuild's
+                          own Platform-admin module pass
+                          (ai/design-rebuild-warm-dark.md §5). */}
+                      <td className="relative px-3 py-2.5 font-mono text-xs text-ink-faint">
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-y-0 left-[15px] w-px bg-line"
+                        />
+                        <span className="relative z-10 flex items-center gap-2">
+                          <span className="size-1.5 shrink-0 rounded-full bg-accent ring-2 ring-surface" />
+                          {entry.seq}
+                        </span>
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
                       </td>
