@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../../lib/session.js';
-import { cn } from '../../lib/cn.js';
+import { NavTabs } from '../../components/primitives.js';
 import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { CallsPanel } from './calls-panel.js';
 import { NumbersPanel } from './numbers-panel.js';
@@ -99,26 +99,17 @@ export function TelephonyPage() {
         <p className="mt-1 text-sm text-ink-muted">
           Phone numbers, calls, SMS, and spend — one carrier account per organization.
         </p>
-        <nav aria-label="Voice & Messaging sections" className="mt-3 flex gap-1">
-          {visibleTabs.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-current={tab === item.id ? 'page' : undefined}
-              onClick={() => {
-                selectTab(item.id);
-              }}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                tab === item.id
-                  ? 'bg-accent text-accent-ink shadow-sm'
-                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        {/* `NavTabs` (`primitives.tsx`, consolidated during the warm-dark
+            rebuild — `ai/design-rebuild-warm-dark.md` §3) is this exact
+            markup, extracted after being found duplicated byte-for-byte
+            in automations-page.tsx. */}
+        <NavTabs
+          ariaLabel="Voice & Messaging sections"
+          value={tab}
+          onChange={selectTab}
+          className="mt-3"
+          items={visibleTabs.map((item) => ({ value: item.id, label: item.label }))}
+        />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">

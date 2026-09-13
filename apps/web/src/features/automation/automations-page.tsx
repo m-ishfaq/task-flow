@@ -10,7 +10,14 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  NavTabs,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
@@ -316,43 +323,27 @@ export function AutomationsPage() {
           whoever created them.
         </p>
 
-        <nav aria-label="Automation sections" className="mt-3 flex gap-1">
-          {visibleTabs.map((item) => {
-            const count = counts[item.id];
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-current={tab === item.id ? 'page' : undefined}
-                onClick={() => {
-                  selectTab(item.id);
-                }}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  tab === item.id
-                    ? 'bg-accent text-accent-ink shadow-sm'
-                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-                )}
-              >
-                {item.label}
-                {/* Deliberately rendered only once the query has settled. A
-                    zero that is really "still loading" is the one number worth
-                    not guessing at here — it is the difference between "you
-                    have no webhooks" and "we have not asked yet". */}
-                {count !== undefined && (
-                  <span
-                    className={cn(
-                      'rounded px-1 text-[10px] tabular-nums',
-                      tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
-                    )}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
+        {/* `NavTabs` (`primitives.tsx`, consolidated during the warm-dark
+            rebuild — `ai/design-rebuild-warm-dark.md` §3) is this exact
+            markup, extracted after being found duplicated byte-for-byte
+            in telephony-page.tsx. The per-tab count comment moved to
+            `NavTabs`'s own `badge` doc comment — still true here, since
+            `counts[item.id]` stays `undefined` until its own query
+            settles. */}
+        <NavTabs
+          ariaLabel="Automation sections"
+          value={tab}
+          onChange={selectTab}
+          className="mt-3"
+          items={visibleTabs.map((item) => {
+            const badge = counts[item.id];
+            return {
+              value: item.id,
+              label: item.label,
+              ...(badge !== undefined ? { badge } : {}),
+            };
           })}
-        </nav>
+        />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

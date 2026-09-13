@@ -715,3 +715,75 @@ export function TabBar<T extends string | null>({
     </div>
   );
 }
+
+/**
+ * A `<nav>` + `aria-current="page"` section switcher — deliberately NOT
+ * `TabBar` (`role="tablist"`/`role="tab"`/`aria-selected`) above, even
+ * though every one of its real callers looks identical to a TabBar caller
+ * at a glance. The ARIA distinction is real: a `tablist` describes several
+ * panels of one widget, none individually a navigable destination; every
+ * caller of THIS component (`automations-page.tsx`, `telephony-page.tsx`)
+ * is a search-param-driven view with its own shareable, back-button-correct
+ * URL — a `nav` of page-like links is the correct semantic for that, the
+ * same reasoning those two files' own header comments already state for
+ * choosing `aria-current` over `aria-selected` in the first place. Found
+ * duplicated byte-for-byte between the two files during the warm-dark
+ * rebuild's own component-consolidation pass
+ * (`ai/design-rebuild-warm-dark.md` §3): the identical button classes,
+ * the identical `bg-accent text-accent-ink shadow-sm` active state, only
+ * automations-page.tsx's optional per-tab count badge differing.
+ */
+export function NavTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  readonly items: readonly {
+    readonly value: T;
+    readonly label: string;
+    /** A small count pill after the label — automations-page.tsx's own
+     * per-tab "how many" indicator. Omitted entirely (not just hidden)
+     * while still loading, so a zero that means "no data yet" is never
+     * shown as if it meant "confirmed empty". */
+    readonly badge?: string | number;
+  }[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly className?: string;
+}) {
+  return (
+    <nav aria-label={ariaLabel} className={cn('flex gap-1', className)}>
+      {items.map(({ value: itemValue, label, badge }) => (
+        <button
+          key={itemValue}
+          type="button"
+          aria-current={value === itemValue ? 'page' : undefined}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            value === itemValue
+              ? 'bg-accent text-accent-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {label}
+          {badge !== undefined && (
+            <span
+              className={cn(
+                'rounded px-1 text-[10px] tabular-nums',
+                value === itemValue ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
+              )}
+            >
+              {badge}
+            </span>
+          )}
+        </button>
+      ))}
+    </nav>
+  );
+}
