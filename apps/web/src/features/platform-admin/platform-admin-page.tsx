@@ -397,7 +397,7 @@ export function PlatformAdminPage() {
                 <ChevronDown
                   aria-hidden="true"
                   className={cn(
-                    'size-3.5 transition-transform duration-[var(--motion-fast)]',
+                    'size-3.5 transition-transform duration-(--motion-fast)',
                     navOpen && 'rotate-180',
                   )}
                 />
