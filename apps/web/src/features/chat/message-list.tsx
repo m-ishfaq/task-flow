@@ -623,7 +623,7 @@ export function SlashCommandMenu({ draft }: { readonly draft: DocumentNode }) {
   if (matches.length === 0) return null;
 
   return (
-    <ul className="mb-1 overflow-hidden rounded-lg border border-line bg-surface-raised text-xs shadow-sm">
+    <ul className="mb-1 overflow-hidden rounded-card border border-line bg-surface-raised text-xs shadow-lg">
       {matches.map((command) => (
         <li key={command.name} className="flex gap-2 px-2 py-1">
           <span className="font-mono text-ink">{command.hint}</span>

@@ -112,7 +112,15 @@ export function ThreadPanel({
      for a 320px sidebar next to a conversation. `md:static md:w-80` restores
      the side-by-side layout above the breakpoint. */
   return (
-    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised md:static md:w-80">
+    // `shadow-lg md:shadow-none` — below `md:` this panel floats as an
+    // overlay above the message list (the `absolute` positioning), and a
+    // border alone doesn't read as "raised above the content behind it"
+    // the way every other floating surface in this app (Popover,
+    // DropdownMenu, Modal) already gets from a real shadow. At `md:` and
+    // above it becomes an ordinary docked flex sibling, where a shadow
+    // would look like a stray highlight on a surface sitting flush against
+    // its neighbours rather than floating over anything.
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised shadow-lg md:static md:w-80 md:shadow-none">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-3">
         <h3 className="text-sm font-medium text-ink">Thread</h3>
         <button

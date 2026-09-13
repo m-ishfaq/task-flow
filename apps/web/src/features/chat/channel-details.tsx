@@ -125,14 +125,16 @@ export function ChannelDetailsPanel({
      breakpoint; the panel's own ✕ returns to the conversation either way. */
   if (data === undefined) {
     return (
-      <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line md:static md:w-72">
+      <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised shadow-lg md:static md:w-72 md:shadow-none">
         <PanelHeader title="Details" onClose={onClose} />
       </aside>
     );
   }
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line bg-surface-raised md:static md:w-72">
+    // Same shadow-below-md reasoning as the loading-state `<aside>` above,
+    // and as thread-panel.tsx's own identical mobile-overlay panel.
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line bg-surface-raised shadow-lg md:static md:w-72 md:shadow-none">
       {/* This panel was rendering on a literal `bg-black` — visible against
           any theme, not just dark mode, and the single clearest reason this
           panel read as "very simple" compared to the rest of the app: every

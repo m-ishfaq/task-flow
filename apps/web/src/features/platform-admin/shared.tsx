@@ -273,7 +273,7 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
               if (e.key === 'Escape') setOpen(false);
             }}
           />
-          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-xl border border-line bg-surface-raised p-1 shadow-lg">
+          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-card border border-line bg-surface-raised p-1 shadow-lg">
             {children}
           </div>
         </>

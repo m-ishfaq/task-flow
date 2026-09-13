@@ -208,7 +208,7 @@ function ListMenu({
   if (editing) {
     return (
       <form
-        className="absolute z-10 mt-24 w-64 space-y-2 rounded border border-line bg-surface-raised p-2 shadow-lg"
+        className="absolute z-10 mt-24 w-64 space-y-2 rounded-card border border-line bg-surface-raised p-2 shadow-lg"
         onSubmit={(event) => {
           event.preventDefault();
           const parsed = Number.parseInt(wip, 10);
@@ -466,7 +466,7 @@ function AddCard({
         // it on the cards already in view above the input instead, the same
         // direction a chat composer's mention picker opens for the identical
         // reason.
-        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded border border-line bg-surface shadow-lg">
+        <ul className="absolute inset-x-2 bottom-full z-10 mb-1 max-h-40 overflow-y-auto rounded-card border border-line bg-surface shadow-lg">
           <li className="px-2 py-1 text-[10px] font-medium text-ink-faint">Might already exist</li>
           {matches.map((hit) => (
             <li key={hit.entityId}>

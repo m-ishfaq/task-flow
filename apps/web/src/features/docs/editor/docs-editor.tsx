@@ -257,7 +257,12 @@ function DocsEditorReady({
        real document app's formatting bar while the page (not this component
        — `docs-page.tsx`'s own `overflow-y-auto` pane) scrolls underneath it. */
     <div>
-      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-line bg-surface/95 px-1 py-1.5 backdrop-blur sm:-mx-2 sm:px-2">
+      {/* `shadow-xs` on top of the border — the same `shell.tsx` Header
+          treatment for the identical reason: a single hairline border reads
+          as a boundary on paper but is nearly invisible against a large
+          flat surface, and this is the one fixed element the page's own
+          content scrolls up underneath. */}
+      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-line bg-surface/95 px-1 py-1.5 shadow-xs backdrop-blur sm:-mx-2 sm:px-2">
         <Toolbar editor={editor} />
         {/* Presence moved to the page header (`docs-page.tsx`'s `PagePanel`,
             via `useDocsPresence`) — see that hook's own comment for why it
