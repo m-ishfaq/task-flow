@@ -68,22 +68,39 @@
    * a border alone. Inputs keep the darker sunken fill so their boundary is
    * dual-coded even with a hairline border.
    */
-  --color-surface: oklch(16% 0.015 262);
-  --color-surface-raised: oklch(20% 0.018 262);
-  --color-surface-sunken: oklch(12% 0.013 262);
-  --color-surface-hover: oklch(23% 0.018 262);
+  /**
+   * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.1): the whole
+   * neutral family moves off this cold hue-262 blue-grey to a warm hue-55
+   * amber-grey. L and C are kept close to their previous values — the
+   * existing lightness ladder (surface-sunken darkest, surface-hover
+   * lightest, ink legible against all four) already works and isn't part
+   * of what this rebuild is changing — only the hue moves. Chroma nudged up
+   * a touch (e.g. 0.013->0.012 became 0.012, several others +0.001-0.002)
+   * because a warm hue at very low chroma reads as "the same grey, renamed"
+   * rather than genuinely warm; a cold hue holds its color at lower chroma
+   * than a warm one does. Verified against the §2.4 checklist using the same
+   * `@csstools/color-helpers` pipeline `packages/tokens/src/colors.test.ts`
+   * already trusts: `--color-ink` clears 13.76:1-16.50:1 against all four
+   * surfaces (needs 4.5:1), `-muted` clears 5.42:1-6.50:1, `-faint` clears
+   * 3.63:1-4.35:1 (needs 3:1 as the non-text/small-text floor) — all with
+   * real margin, no nudging needed.
+   */
+  --color-surface: oklch(16% 0.014 55);
+  --color-surface-raised: oklch(20% 0.017 55);
+  --color-surface-sunken: oklch(12% 0.012 55);
+  --color-surface-hover: oklch(23% 0.017 55);
 
-  --color-ink: oklch(93% 0.008 262);
-  --color-ink-muted: oklch(66% 0.015 262);
+  --color-ink: oklch(93% 0.01 55);
+  --color-ink-muted: oklch(66% 0.016 55);
   /* GitHub's tertiary (#6e7681, L ~53%) — the two-step grey hierarchy its
      secondary/tertiary pair uses: muted for real content one step down,
      faint for placeholders, hints and captions. On the darker surface the
      faint still clears 4.5:1 for the small text it is used on (a darker
      background only raises light text's contrast). */
-  --color-ink-faint: oklch(56% 0.014 262);
+  --color-ink-faint: oklch(56% 0.015 55);
 
-  --color-line: oklch(28% 0.012 262);
-  --color-line-strong: oklch(35% 0.014 262);
+  --color-line: oklch(28% 0.013 55);
+  --color-line-strong: oklch(35% 0.015 55);
 
   /* Both darkened from the audit's 65%/70%: white text on 65% measured
      3.09:1, below AA's 4.5:1 for the primary button label. 55% clears it
@@ -104,11 +121,30 @@
      (not eyeballed): accent-vs-accent-ink now 4.86:1 (was 4.67:1),
      accent-hover-vs-ink 6.04:1 (was 5.79:1), accent-vs-surface 3.44:1 and
      accent-vs-surface-raised 3.11:1 (both still clear the 3:1 non-text bar,
-     was 3.59:1 against --color-surface). `branding-palettes.ts`'s `default`
-     palette must stay in sync with this hue — see that file's own header. */
-  --color-accent: oklch(55% 0.17 285);
-  --color-accent-ink: oklch(98% 0.01 285);
-  --color-accent-hover: oklch(50% 0.17 285);
+     was 3.59:1 against --color-surface).
+
+     Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.2): hue moves again,
+     285 -> 88 — from violet to a true warm gold, the single biggest change in
+     that document. A gold this warm reads as gold, not brown/olive, only at
+     a meaningfully HIGHER lightness than the old violet's 55% — pushed up to
+     72% here — and at 72% L, white `accent-ink` fails outright; gold that
+     light needs a DARK ink, the same physics `pbakaus/impeccable`'s own
+     `dark-ink` token exists for ("foreground on gold; never theme-remapped").
+     So `--color-accent-ink` flips from 98% (white) to 16% (near-black) — a
+     contrast REQUIREMENT of the lighter gold, not a matching aesthetic
+     choice. `--color-accent-hover` follows the existing "darker on press"
+     direction, scaled to the new base (72% -> 66%, the same proportional step
+     the old 55% -> 50% used). Verified against §2.4's checklist: accent-ink
+     on accent clears 7.77:1 (needs 4.5:1 text), accent-ink on accent-hover
+     clears 6.21:1, and accent against all four surfaces clears 6.78:1-8.14:1
+     (needs 3:1 non-text) — all with real margin. `branding-palettes.ts`'s
+     ENTIRE palette set (not just `default`) must stay in sync with this hue
+     AND this lightness/chroma pair — see that file's own header for why all
+     six org-selectable accents share one L/C, and for its own equivalent
+     verification against the six hues that pair now needs to clear. */
+  --color-accent: oklch(72% 0.14 88);
+  --color-accent-ink: oklch(16% 0.02 88);
+  --color-accent-hover: oklch(66% 0.15 88);
 
   /* 62% -> 55%: white text on the danger fill measured 3.76:1, below AA.
      55% clears it at 5.04:1. Same audit as --color-accent above. */
@@ -154,15 +190,27 @@
    * The 2026-08-16 surface re-tune (above) darkens every background, which
    * only raises these ratios — the swatches were re-checked against the new
    * four surface tones and still clear 3:1 with margin.
-   */
+   *
+   * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.3): `urgent` keeps
+   * hue 22 (tied to `--color-danger`'s hue, which does not change — see the
+   * direction statement in §1) — but it still needs re-checking against the
+   * new §2.1 surface tones, not assumed to still clear 3:1 just because the
+   * hue is unchanged; the SURFACES it's checked against moved. `medium`
+   * follows accent's hue move (285 -> 88, §2.2) to keep signaling "this
+   * relates to the brand," at 60% L, carried forward from the old value as a
+   * starting point and then actually re-verified, not assumed: `urgent`
+   * clears 3.90:1-4.68:1 and `medium` clears 4.29:1-5.14:1 against all four
+   * new surface tones (needs 3:1) — the old lightness happened to still
+   * work, but only checking (§2.4's `@csstools/color-helpers` pipeline, not
+   * eyeballing) proves that rather than assumes it. */
   --color-priority-urgent: oklch(60% 0.19 22);
-  --color-priority-medium: oklch(60% 0.17 285);
+  --color-priority-medium: oklch(60% 0.16 88);
 
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
      on how dark the backdrop behind them should be. */
-  --color-overlay: oklch(15% 0.02 265 / 60%);
+  --color-overlay: oklch(15% 0.02 55 / 60%);
 
   --radius-card: 0.625rem;
 
@@ -187,8 +235,20 @@
   --shadow-lg: 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
   --shadow-xl: 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
 
-  /* Subtle inner glow for focused/active elements */
-  --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
+  /* Subtle inner glow for focused/active elements.
+     The glow half is `color-mix()` against `--color-accent`, not a literal
+     `oklch(.. 285)` — a hardcoded duplicate of accent's OLD value is exactly
+     how this token silently kept the violet glow the first time accent's
+     hue moved (258->285) and would have done so again this rebuild (285->88)
+     had it not been caught here. `color-mix()` tracks whatever `--color-accent`
+     resolves to at render time, including a branded org's own runtime-
+     overridden accent (BrandingProvider sets exactly 3 inline root CSS vars —
+     see that component's own header) — a literal here silently ignores a
+     custom palette the same way this exact token already ignored one before
+     the fix. */
+  --shadow-glow-accent:
+    0 0 0 1px var(--color-accent),
+    0 0 12px color-mix(in oklab, var(--color-accent) 25%, transparent);
 
   /* Column-specific elevation for better depth hierarchy */
   --shadow-column: 0 1px 3px oklch(0% 0 0 / 8%), 0 1px 2px oklch(0% 0 0 / 6%);
@@ -386,7 +446,11 @@
     border-radius: 0.375rem;
     border: 1px solid var(--color-line);
     background-color: var(--color-surface-sunken);
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.014 262)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    /* A data-URI can't reference `var(--color-ink-faint)` — it's a static
+       string, not something the cascade resolves — so this stroke color has
+       to be a literal duplicate of that token's value, updated by hand
+       whenever ink-faint changes. Warm-dark rebuild (§2.1): 262 -> 55. */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.015 55)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     background-size: 1rem;
