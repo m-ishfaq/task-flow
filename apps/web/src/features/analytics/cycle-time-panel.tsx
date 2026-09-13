@@ -34,7 +34,9 @@ export function CycleTimePanel() {
       </div>
 
       {result.count === 0 && (
-        <p className="text-xs text-ink/50">No completed cards with active→done transitions yet.</p>
+        <p className="text-xs text-ink-muted">
+          No completed cards with active→done transitions yet.
+        </p>
       )}
     </div>
   );
@@ -43,7 +45,7 @@ export function CycleTimePanel() {
 function StatCard({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-lg border border-line/50 p-3">
-      <div className="text-xs text-ink/50">{label}</div>
+      <div className="text-xs text-ink-faint">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
     </div>
   );

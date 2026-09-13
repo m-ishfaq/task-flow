@@ -77,7 +77,7 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
             ))}
           </select>
         )}
-        <span className="text-xs text-ink/50">
+        <span className="text-xs text-ink-muted">
           {points[0]?.remaining} → {points[points.length - 1]?.remaining} remaining
         </span>
       </div>
@@ -129,7 +129,7 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
         })()}
       </svg>
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-[10px] text-ink-faint">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>

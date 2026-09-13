@@ -35,15 +35,15 @@ export function VelocityPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline gap-3">
-        <h2 className="text-sm font-medium text-ink/80">Velocity</h2>
-        <span className="text-xs text-ink/50">
+        <h2 className="text-sm font-semibold text-ink">Velocity</h2>
+        <span className="text-xs text-ink-muted">
           {total} cards done in {days} days
         </span>
       </div>
 
       <VelocityChart points={points} />
 
-      <div className="flex justify-between text-[10px] text-ink/40">
+      <div className="flex justify-between text-[10px] text-ink-faint">
         <span>{points[0]?.date}</span>
         <span>{points[points.length - 1]?.date}</span>
       </div>
