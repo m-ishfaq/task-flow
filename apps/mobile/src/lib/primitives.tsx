@@ -10,6 +10,8 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { colors, radiusCard } from '@taskflow/tokens';
 
 /**
@@ -36,6 +38,26 @@ import { colors, radiusCard } from '@taskflow/tokens';
  * of another platform's" instinct `avatar.tsx`'s own header states for why
  * it draws initials rather than porting web's `AvatarStack`.
  */
+
+/* This app's first real adoption of `react-native-reanimated` and
+   `expo-haptics` (both new dependencies as of this pass —
+   `ai/design-rebuild-warm-dark.md` §4's own confirmed decision to adopt
+   now rather than defer). Scoped deliberately narrow: a press-scale
+   animation plus a light haptic tap on `Button` itself, not a port of any
+   EXISTING working animation (`skeleton.tsx`'s shimmer, `toast.tsx`'s
+   slide-in) — this sandbox has no device or simulator to verify a change
+   to an animation already relied upon everywhere in the app, so the safer
+   proof is new code with no prior behavior to regress. `react-native-
+   gesture-handler` is also installed and root-wired (`app/_layout.tsx`'s
+   new `GestureHandlerRootView`) but deliberately has no real gesture
+   built on it yet in this pass — a `Pan`/`Fling` gesture has real,
+   device-specific correctness questions (simultaneous-recognizer
+   conflicts, touch-target overlap) this sandbox cannot honestly verify
+   either way; wiring the required root component now, with no gesture
+   riding on it, is the responsible stopping point until someone can test
+   on a real device. */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const PRESS_SPRING = { damping: 15, stiffness: 300 } as const;
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
@@ -73,18 +95,36 @@ export function Button({
   readonly textStyle?: TextStyle;
 }) {
   const textColor = BUTTON_TEXT_COLOR[variant];
+  const isInert = disabled || loading;
+
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: disabled || loading }}
-      disabled={disabled || loading}
-      onPress={onPress}
+      accessibilityState={{ disabled: isInert }}
+      disabled={isInert}
+      onPressIn={() => {
+        if (!isInert) scale.value = withSpring(0.97, PRESS_SPRING);
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, PRESS_SPRING);
+      }}
+      onPress={() => {
+        // A ghost button is a plain text link (Terms/"Forgot password?"-
+        // shaped elsewhere in this app), not a committed action — reserve
+        // the tap for the two variants that actually do something.
+        if (variant !== 'ghost') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       style={[
         variant === 'ghost' ? styles.ghostButton : styles.button,
         variant !== 'ghost' && { backgroundColor: BUTTON_BG[variant] },
         variant === 'secondary' && styles.secondaryButtonBorder,
-        (disabled || loading) && styles.buttonDisabled,
+        isInert && styles.buttonDisabled,
         style,
+        animatedStyle,
       ]}
     >
       {loading ? (
@@ -92,7 +132,7 @@ export function Button({
       ) : (
         <Text style={[styles.buttonText, { color: textColor }, textStyle]}>{label}</Text>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
