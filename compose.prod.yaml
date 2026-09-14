@@ -201,7 +201,7 @@ services:
   # coturn from running — this default only has to be loud, not enforced.
   # Verify RTC_TURN_SECRET is real before ever passing `--profile turn`.
   coturn:
-    image: coturn/coturn:latest@sha256:aa68aab64a3b929d57fc2924c98ea447bf996cf8dade2508e7b71eaf23f1f14e
+    image: coturn/coturn:latest@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     restart: unless-stopped
     network_mode: host
     profiles: ['turn']
