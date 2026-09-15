@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link2 } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, SkeletonRows } from '../../components/primitives.js';
+import { Badge, Button, ConfirmButton, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { integrationCapabilitiesQuery, integrationsQuery } from './api.js';
 
@@ -51,23 +52,40 @@ export function IntegrationsSection({ orgId }: { readonly orgId: string }) {
   );
 
   return (
-    <section className="space-y-4">
-      <p className="text-xs text-ink-faint">
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link2 aria-hidden="true" className="size-4 text-ink-faint" />
+          <h2 className="text-sm font-semibold text-ink">Integrations</h2>
+          {integrations.data !== undefined && integrations.data.length > 0 && (
+            <Badge>{integrations.data.length}</Badge>
+          )}
+        </div>
+      </div>
+
+      <p className="mb-4 text-xs text-ink-faint">
         Connect a Slack workspace or GitHub repository so automation rules can act as this
         organization on it. Connecting is a deliberate act: it grants the org's outbound identity,
         so it requires re-authenticating first.
       </p>
 
       {configured.length === 0 ? (
-        <Empty
-          title="No connectors configured on this server"
-          description="An operator must set the connector client credentials in the deployment environment before anything can be connected here."
-        />
+        <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-6 text-center">
+          <Link2 aria-hidden="true" className="mx-auto mb-2 size-5 text-ink-faint" />
+          <p className="text-sm font-medium text-ink-muted">No connectors configured</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            An operator must set the connector client credentials in the deployment environment
+            before anything can be connected here.
+          </p>
+        </div>
       ) : integrations.data.length === 0 ? (
-        <Empty
-          title="Nothing connected yet"
-          description="Connect a Slack workspace or GitHub repository below, then use it from a rule's actions."
-        />
+        <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-6 text-center">
+          <Link2 aria-hidden="true" className="mx-auto mb-2 size-5 text-ink-faint" />
+          <p className="text-sm font-medium text-ink-muted">Nothing connected yet</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            Connect a Slack workspace or GitHub repository below, then use it from a rule's actions.
+          </p>
+        </div>
       ) : null}
 
       <div className="space-y-2">
@@ -81,7 +99,7 @@ export function IntegrationsSection({ orgId }: { readonly orgId: string }) {
           />
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 

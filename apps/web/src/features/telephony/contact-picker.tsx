@@ -118,7 +118,7 @@ export function ContactPicker({
                 title="Choose a person"
                 className={cn(
                   'flex h-9 shrink-0 items-center gap-1 rounded border border-line px-2',
-                  'text-xs text-ink-muted hover:bg-surface-hover hover:text-ink',
+                  'text-xs text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover hover:text-ink',
                   'focus:border-accent focus:outline-none disabled:opacity-50',
                 )}
               >
@@ -140,7 +140,7 @@ export function ContactPicker({
                   onChange={(event) => {
                     setQuery(event.target.value);
                   }}
-                  className="h-7 text-xs"
+                  className="h-8 text-xs"
                 />
               )}
 
@@ -159,8 +159,8 @@ export function ContactPicker({
                           onClick={() => {
                             onChange(person.phone);
                           }}
-                          className={cn(
-                            'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                  className={cn(
+                    'flex w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-left text-xs',
                             person.userId === matched?.userId
                               ? 'bg-accent text-accent-ink'
                               : 'text-ink-muted hover:bg-surface-hover hover:text-ink',

@@ -70,11 +70,11 @@ function SpendGaugeBar({
       aria-label={ariaLabel}
       className={cn(
         'overflow-hidden rounded-full bg-surface-sunken',
-        height === 'thin' ? 'h-1' : 'h-1.5',
+        height === 'thin' ? 'h-1.5' : 'h-2.5',
       )}
     >
       <div
-        className={cn('h-full rounded-full transition-all', GAUGE_FILL[tone])}
+        className={cn('h-full rounded-full transition-all duration-500 ease-out', GAUGE_FILL[tone])}
         style={{ width: `${String(Math.min(ratio * 100, 100))}%` }}
       />
     </div>
@@ -103,7 +103,7 @@ function SpendBadge({
   return (
     <span
       className={cn(
-        'ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium',
+        'ml-auto rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap',
         tone === 'danger'
           ? 'bg-danger/15 text-danger'
           : tone === 'warning'
@@ -143,7 +143,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
      RULE may spend, checked IN ADDITION to the org cap. Null means the org has
      configured no separate ceiling — the org cap alone bounds automation — and
      the section is hidden entirely: a rule's spend still appears in the report
-     below, so nothing is invisible, and a phantom bar saying “no ceiling”
+     below, so nothing is invisible, and a phantom bar saying "no ceiling"
      would be noise. */
   const automationCapCents = current.data?.automationCapCents ?? null;
   const automationSpentCents = current.data?.automationSpentCents ?? 0;
@@ -164,15 +164,17 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
         ) : current.isError ? (
           <ErrorView error={current.error} title="Could not load spend" />
         ) : (
-          <div className="rounded-lg border border-line bg-surface-raised p-4">
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-semibold text-ink">{formatCents(spentCents ?? 0)}</p>
+          <div className="rounded-lg border border-line bg-surface-raised p-5">
+            <div className="flex items-baseline gap-3">
+              <p className="text-3xl font-semibold tabular-nums tracking-tight text-ink">
+                {formatCents(spentCents ?? 0)}
+              </p>
               <p className="text-xs text-ink-muted">
                 of {formatCents(capCents ?? 0)} cap · rolling 30 days
               </p>
               <SpendBadge ratio={ratio} reachedLabel="Cap reached" />
             </div>
-            <div className="mt-3">
+            <div className="mt-4">
               <SpendGaugeBar ratio={ratio} ariaLabel="Spend against cap" />
             </div>
 
@@ -181,7 +183,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                  down — same figures that `checkOutboundAllowed` enforces
                  against (`readSpendState` feeds both), so what this bar shows
                  and what a rule's refusal cites cannot drift. */
-              <div className="mt-3 border-t border-line/60 pt-2.5">
+              <div className="mt-4 border-t border-line/60 pt-3">
                 <div className="flex items-baseline gap-2">
                   <p className="text-[11px] font-medium text-ink-muted">Automation allowance</p>
                   <p className="text-[11px] text-ink-faint">
@@ -194,7 +196,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                     healthyTone="neutral"
                   />
                 </div>
-                <div className="mt-1.5">
+                <div className="mt-2">
                   <SpendGaugeBar
                     ratio={automationRatio}
                     ariaLabel="Automation spend against allowance"
@@ -225,28 +227,33 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
               description="Place a call or send an SMS to see it itemized here."
             />
           ) : (
-            <div className="overflow-hidden rounded-lg border border-line/50">
+            <div className="overflow-hidden rounded-lg border border-line/50 bg-surface-raised">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-line bg-surface-raised text-ink-faint">
-                    <th className="px-3 py-2 font-medium">Kind</th>
-                    <th className="px-3 py-2 text-right font-medium">Count</th>
-                    <th className="px-3 py-2 text-right font-medium">Estimated</th>
-                    <th className="px-3 py-2 text-right font-medium">Billed</th>
+                    <th className="px-4 py-2.5 font-medium">Kind</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Count</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Estimated</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Billed</th>
                   </tr>
                 </thead>
                 <tbody className="bg-surface">
-                  {report.data.map((row) => (
+                  {report.data.map((row, index) => (
                     <tr
                       key={row.kind}
-                      className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
+                      className={cn(
+                        'border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover',
+                        index % 2 === 1 && 'bg-surface-raised/30',
+                      )}
                     >
-                      <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td className="px-4 py-2.5 font-medium">
+                        {KIND_LABELS.get(row.kind) ?? row.kind}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{row.count}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
                         {formatCents(row.estimatedCents)}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium">
                         {formatCents(row.billedCents)}
                       </td>
                     </tr>

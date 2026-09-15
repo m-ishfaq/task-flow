@@ -535,7 +535,7 @@ function ActiveCallBar() {
           <Button
             size="sm"
             variant="primary"
-            className="bg-danger! text-white!"
+            className="bg-danger! text-danger-ink!"
             onClick={() => {
               void hangUp().then(() => invalidateCalls(queryClient, orgId, channelId ?? undefined));
             }}

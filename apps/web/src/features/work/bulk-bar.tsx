@@ -97,7 +97,7 @@ export function BulkBar({ orgId, boardId, selected, statuses, people, onClear }:
             }),
           );
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="select-premium h-8"
       >
         <option value="">Status…</option>
         <option value="__none__">No status</option>
@@ -132,7 +132,7 @@ export function BulkBar({ orgId, boardId, selected, statuses, people, onClear }:
             });
           });
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="select-premium h-8"
       >
         <option value="">Priority…</option>
         <option value="__none__">No priority</option>
@@ -160,7 +160,7 @@ export function BulkBar({ orgId, boardId, selected, statuses, people, onClear }:
             }),
           );
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="select-premium h-8"
       >
         <option value="">Assign…</option>
         <option value="__none__">Unassign</option>

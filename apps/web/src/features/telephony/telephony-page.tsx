@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { Hash, MessageSquare, Mic, Phone, Wallet } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
-import { NavTabs } from '../../components/primitives.js';
+import { cn } from '../../lib/cn.js';
+import { PageHeader } from '../../components/primitives.js';
 import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { CallsPanel } from './calls-panel.js';
 import { NumbersPanel } from './numbers-panel.js';
@@ -14,7 +16,7 @@ import { SpendPanel } from './spend-panel.js';
  * Voice & Messaging (Phase 7 Wave 5 — the browser half of the phase; the API
  * itself is `apps/api/src/telephony`, Waves 1-4).
  *
- * Four tabs over one org-scoped resource, the identical shape `settings-page.tsx`
+ * Five tabs over one org-scoped resource, the identical shape `settings-page.tsx`
  * uses for its own sections — a search param rather than nested routes, so the
  * open tab is a shareable, back-button-correct link (the same reasoning
  * `chatRoute`'s `channel` and `docsRoute`'s `page` already establish).
@@ -37,15 +39,16 @@ import { SpendPanel } from './spend-panel.js';
  */
 
 const TABS = [
-  { id: 'calls', label: 'Calls', capability: 'readCalls' },
-  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers' },
-  { id: 'messages', label: 'Messages', capability: 'readSms' },
-  { id: 'recordings', label: 'Recordings', capability: 'readRecordings' },
-  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers' },
+  { id: 'calls', label: 'Calls', capability: 'readCalls', icon: Phone },
+  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers', icon: Hash },
+  { id: 'messages', label: 'Messages', capability: 'readSms', icon: MessageSquare },
+  { id: 'recordings', label: 'Recordings', capability: 'readRecordings', icon: Mic },
+  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers', icon: Wallet },
 ] as const satisfies readonly {
   id: string;
   label: string;
   capability: keyof SettingsCapabilities;
+  icon: typeof Phone;
 }[];
 
 type TabId = (typeof TABS)[number]['id'];
@@ -92,37 +95,66 @@ export function TelephonyPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line/50 px-4 pt-4 pb-2">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Voice &amp; Messaging
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Phone numbers, calls, SMS, and spend — one carrier account per organization.
-        </p>
-        {/* `NavTabs` (`primitives.tsx`, consolidated during the warm-dark
-            rebuild — `ai/design-rebuild-warm-dark.md` §3) is this exact
-            markup, extracted after being found duplicated byte-for-byte
-            in automations-page.tsx. */}
-        <NavTabs
-          ariaLabel="Voice & Messaging sections"
-          value={tab}
-          onChange={selectTab}
-          className="mt-3"
-          items={visibleTabs.map((item) => ({ value: item.id, label: item.label }))}
+      <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2">
+        <PageHeader
+          title="Voice & Messaging"
+          description="Phone numbers, calls, SMS, and spend — one carrier account per organization."
         />
+        <div
+          role="tablist"
+          aria-label="Voice & Messaging sections"
+          className="mt-3 flex gap-1 overflow-x-auto"
+        >
+          {visibleTabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.id}
+              onClick={() => {
+                selectTab(item.id);
+              }}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 min-h-8 text-xs font-medium transition-colors duration-(--motion-fast)',
+                tab === item.id
+                  ? 'bg-suite-calls/10 text-suite-calls'
+                  : 'text-ink-faint hover:bg-surface-hover hover:text-ink',
+              )}
+            >
+              <item.icon aria-hidden="true" className="size-3.5" strokeWidth={2} />
+              {item.label}
+            </button>
+          ))}
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel orgId={orgId} />}
-        {tab === 'numbers' && capabilities?.readPhoneNumbers === true && (
-          <NumbersPanel orgId={orgId} />
-        )}
-        {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
-        {tab === 'recordings' && capabilities?.readRecordings === true && (
-          <RecordingsPanel orgId={orgId} />
-        )}
-        {tab === 'spend' && capabilities?.readPhoneNumbers === true && <SpendPanel orgId={orgId} />}
-      </div>
+      {/* Calls and Messages are panel-managed, full-height master-detail
+          views — the identical `PageContainer`-vs-panel distinction that
+          component's own header already draws for Chat/Board/Docs. Wrapping
+          them in this page's OWN `overflow-y-auto` (right, for the three
+          plain list tabs below) produced a real, reported bug: two
+          independently scrolling regions stacked on top of each other, the
+          page's own and the panel's own internal one. Each of these two
+          tabs supplies its own padding and its own single scroll region
+          instead. */}
+      {tab === 'calls' || tab === 'messages' ? (
+        <div className="min-h-0 flex-1">
+          {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel orgId={orgId} />}
+          {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel orgId={orgId} />}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {tab === 'numbers' && capabilities?.readPhoneNumbers === true && (
+            <NumbersPanel orgId={orgId} />
+          )}
+          {tab === 'recordings' && capabilities?.readRecordings === true && (
+            <RecordingsPanel orgId={orgId} />
+          )}
+          {tab === 'spend' && capabilities?.readPhoneNumbers === true && (
+            <SpendPanel orgId={orgId} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

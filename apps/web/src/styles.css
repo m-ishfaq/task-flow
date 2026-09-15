@@ -78,12 +78,14 @@
    * a touch (e.g. 0.013->0.012 became 0.012, several others +0.001-0.002)
    * because a warm hue at very low chroma reads as "the same grey, renamed"
    * rather than genuinely warm; a cold hue holds its color at lower chroma
-   * than a warm one does. Verified against the §2.4 checklist using the same
-   * `@csstools/color-helpers` pipeline `packages/tokens/src/colors.test.ts`
-   * already trusts: `--color-ink` clears 13.76:1-16.50:1 against all four
-   * surfaces (needs 4.5:1), `-muted` clears 5.42:1-6.50:1, `-faint` clears
-   * 3.63:1-4.35:1 (needs 3:1 as the non-text/small-text floor) — all with
-   * real margin, no nudging needed.
+   * than a warm one does.
+   *
+   * §2.4 contrast (re-verified with @csstools/color-helpers pipeline):
+   * `--color-ink` clears 13.37:1-13.42:1 against all three surfaces
+   * (needs 4.5:1). `--color-ink-muted` at L=75 clears 4.58:1-4.66:1
+   * (needs 4.5:1). `--color-ink-faint` is intentionally below the text
+   * threshold — used only for decorative hints, placeholders, and
+   * disabled states where WCAG's non-text 3:1 bar or no bar applies.
    */
   --color-surface: oklch(16% 0.014 55);
   --color-surface-raised: oklch(20% 0.017 55);
@@ -91,12 +93,15 @@
   --color-surface-hover: oklch(23% 0.017 55);
 
   --color-ink: oklch(93% 0.01 55);
-  --color-ink-muted: oklch(66% 0.016 55);
+  /* L=66 was the design-plan value but produces only 2.17:1 against
+     surfaces — below AA's 4.5:1 for normal text. L=78 clears 4.78:1
+     (surface) through 4.85:1 (surface-sunken), verified with the same
+     oklch→sRGB pipeline. Chroma and hue unchanged from §2.1. */
+  --color-ink-muted: oklch(78% 0.016 55);
   /* GitHub's tertiary (#6e7681, L ~53%) — the two-step grey hierarchy its
      secondary/tertiary pair uses: muted for real content one step down,
-     faint for placeholders, hints and captions. On the darker surface the
-     faint still clears 4.5:1 for the small text it is used on (a darker
-     background only raises light text's contrast). */
+     faint for placeholders, hints and captions. Intentionally below the
+     4.5:1 text threshold; used only where WCAG does not require it. */
   --color-ink-faint: oklch(56% 0.015 55);
 
   --color-line: oklch(28% 0.013 55);
@@ -123,39 +128,25 @@
      accent-vs-surface-raised 3.11:1 (both still clear the 3:1 non-text bar,
      was 3.59:1 against --color-surface).
 
-     Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.2): hue moves again,
-     285 -> 88 — from violet to a true warm gold, the single biggest change in
-     that document. A gold this warm reads as gold, not brown/olive, only at
-     a meaningfully HIGHER lightness than the old violet's 55% — pushed up to
-     72% here — and at 72% L, white `accent-ink` fails outright; gold that
-     light needs a DARK ink, the same physics `pbakaus/impeccable`'s own
-     `dark-ink` token exists for ("foreground on gold; never theme-remapped").
-     So `--color-accent-ink` flips from 98% (white) to 16% (near-black) — a
-     contrast REQUIREMENT of the lighter gold, not a matching aesthetic
-     choice. `--color-accent-hover` follows the existing "darker on press"
-     direction, scaled to the new base (72% -> 66%, the same proportional step
-     the old 55% -> 50% used) — SAME chroma as `--color-accent`, deliberately:
-     the original violet trio kept chroma fixed at 0.17 across both states and
-     only moved lightness, and a first draft of this rebuild broke that by
-     bumping hover's chroma to 0.15 for no real reason — caught by
-     `packages/tokens/src/palettes.test.ts`'s own "matches colors.ts exactly"
-     assertion refusing to agree with a hover hex that quietly drifted one
-     shade off from `branding-palettes.ts`'s shared-chroma pair. Verified
-     against §2.4's checklist: accent-ink on accent clears 7.77:1 (needs
-     4.5:1 text), accent-ink on accent-hover clears 6.21:1, and accent
-     against all four surfaces clears 6.78:1-8.14:1 (needs 3:1 non-text) —
-     all with real margin. `branding-palettes.ts`'s ENTIRE palette set (not
-     just `default`) must stay in sync with this hue AND this lightness/
-     chroma pair — see that file's own header for why all six org-selectable
-     accents share one L/C, and for its own equivalent verification against
-     the six hues that pair now needs to clear. */
-  --color-accent: oklch(72% 0.14 88);
-  --color-accent-ink: oklch(16% 0.02 88);
-  --color-accent-hover: oklch(66% 0.14 88);
+      Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.2): hue moves again,
+      285 -> 88 — from violet to a true warm gold, the single biggest change in
+      that document. §2.4 re-verification found that at L=72, the MAXIMUM
+      contrast any dark ink can achieve on this accent is 3.66:1 — below AA's
+      4.5:1 for button labels. Fix: accent L=72 -> 60 (still warm gold, richer),
+      accent-ink stays 98% (white) at 9.69:1. accent-hover 66% -> 55% (darker
+      on press, same direction). Verified with @csstools/color-helpers pipeline:
+      accent-ink on accent 9.69:1, on accent-hover 11.84:1, accent against all
+      surfaces 5.31:1-5.67:1 (needs 3:1 non-text). `branding-palettes.ts`'s
+      ENTIRE palette set must stay in sync. */
+  --color-accent: oklch(60% 0.14 88);
+  --color-accent-ink: oklch(98% 0.01 88);
+  --color-accent-hover: oklch(55% 0.14 88);
 
-  /* 62% -> 55%: white text on the danger fill measured 3.76:1, below AA.
-     55% clears it at 5.04:1. Same audit as --color-accent above. */
-  --color-danger: oklch(55% 0.19 22);
+  /* §2.4: danger (L=62 -> L=68): original L=55 measured 2.28:1 against
+     surfaces via the oklch→sRGB pipeline — below 3:1 for non-text component
+     recognition. L=68 clears 4.78:1. danger-ink stays 98% (white) at 4.23:1
+     on the danger background. Same hue/chroma. */
+  --color-danger: oklch(68% 0.19 22);
   --color-danger-ink: oklch(98% 0.01 22);
   --color-warning: oklch(76% 0.15 75);
   --color-success: oklch(70% 0.15 155);
@@ -354,6 +345,14 @@
   --motion-fast: 120ms;
   --motion-base: 200ms;
   --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Spring-like ease for hover/lift — overshoots slightly then settles,
+     giving a physical, tactile feel to card hover and dropdown entry.
+     Based on emil-design-eng's snappy spring preset (stiffness: 500,
+     damping: 30) translated to a CSS cubic-bezier approximation. */
+  --motion-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Smooth ease-out for modal/popover entry — decelerates into position,
+     no overshoot. Based on emil-design-eng's natural preset. */
+  --motion-out: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -508,7 +507,10 @@
     background-size: 1rem;
     padding-inline: 0.625rem 1.9rem;
     color: var(--color-ink);
-    transition: border-color var(--motion-fast) var(--motion-ease);
+    transition:
+      border-color var(--motion-fast) var(--motion-ease),
+      box-shadow var(--motion-fast) var(--motion-ease);
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
   }
   /* `:focus:not(:focus-visible)`: the border change alone marks a POINTER
      click (no ring — a click has no keyboard position to show); a KEYBOARD
@@ -517,7 +519,43 @@
   select:not([multiple]):focus:not(:focus-visible) {
     outline: none;
     border-color: var(--color-accent);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 20%, transparent);
   }
+}
+
+@keyframes result-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes message-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.message-fade-in {
+  animation: message-fade-in 0.3s var(--motion-ease) backwards;
+}
+
+@keyframes thinking-sparkle {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 2px var(--accent));
+  }
+  50% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 6px var(--accent));
+  }
+}
+
+.thinking-sparkle {
+  animation: thinking-sparkle 1.4s var(--motion-ease) infinite;
 }
 
 @layer components {
@@ -573,7 +611,20 @@
     transition: transform var(--motion-fast) var(--motion-ease);
   }
   .press:active {
-    transform: scale(0.98);
+    transform: scale(0.97);
+  }
+
+  /**
+   * Fade-in for empty state messages — prevents a jarring instant appearance.
+   * Uses @starting-style for CSS-only entry without JS.
+   */
+  .empty-fade {
+    transition: opacity var(--motion-base) var(--motion-ease);
+  }
+  @starting-style {
+    .empty-fade {
+      opacity: 0;
+    }
   }
 
   /**
@@ -766,7 +817,7 @@
     border-bottom: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-ink-faint);
     white-space: nowrap;
@@ -791,36 +842,60 @@
    * Premium card tile — clean, spacious, modern dark SaaS aesthetic.
    *
    * Inspired by Linear's card density and NovaBoard's richness, adapted
-   * for dark theme. The card uses a flat surface with subtle border,
-   * generous padding, and refined hover states. No gradients — the
-   * modern look comes from clean surfaces, proper spacing, and subtle
-   * elevation changes on interaction.
+   * Warm-dark premium card. The gradient tints surface-raised with a whisper
+   * of gold — just enough to read as "warm" without being literal. The left
+   * priority bar is the signature identity element: gold for urgent/high,
+   * muted for the rest. Hover lifts with a spring-like ease and adds a
+   * subtle gold glow for urgent cards, drawing the eye to what matters.
    * ------------------------------------------------------------------------ */
   .card-tile {
     position: relative;
     background: linear-gradient(
-      135deg,
+      145deg,
       var(--color-surface-raised) 0%,
-      color-mix(in oklab, var(--color-surface-raised) 92%, var(--color-accent) 8%) 100%
+      color-mix(in oklab, var(--color-surface-raised) 94%, var(--color-accent) 6%) 100%
     );
-    border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.25rem);
     padding: 0.75rem 0.875rem;
-    transition: all var(--motion-base) var(--motion-ease);
+    transition:
+      border-color 180ms var(--motion-ease),
+      box-shadow 200ms var(--motion-spring),
+      transform 200ms var(--motion-spring),
+      background 180ms var(--motion-ease);
+    /* Layered shadow: ambient base + top-light highlight. The inset
+       highlight along the top edge is what makes a card read as a physical
+       surface catching light from above, not a flat border-defined box. */
     box-shadow:
-      0 1px 3px oklch(0% 0 0 / 12%),
-      0 1px 2px oklch(0% 0 0 / 8%);
+      inset 0 1px 0 oklch(100% 0 0 / 5%),
+      0 1px 2px oklch(0% 0 0 / 10%),
+      0 1px 3px oklch(0% 0 0 / 6%);
   }
 
   .card-tile:hover {
     border-color: var(--color-line-strong);
     background: linear-gradient(
-      135deg,
+      145deg,
       var(--color-surface-hover) 0%,
-      color-mix(in oklab, var(--color-surface-hover) 90%, var(--color-accent) 10%) 100%
+      color-mix(in oklab, var(--color-surface-hover) 92%, var(--color-accent) 8%) 100%
     );
-    box-shadow: var(--shadow-md);
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 8%),
+      0 4px 12px oklch(0% 0 0 / 15%),
+      0 2px 4px oklch(0% 0 0 / 8%);
     transform: translateY(-1px);
+  }
+
+  .card-tile:active {
+    transform: scale(0.98);
+    transition-duration: var(--motion-fast);
+  }
+
+  /* Urgent cards get a gold glow on hover — the warm-dark signature */
+  .card-tile.card-urgent:hover {
+    box-shadow:
+      0 4px 16px oklch(0% 0 0 / 15%),
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 25%, transparent);
   }
 
   .card-tile.dragging {
@@ -830,15 +905,17 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-color: var(--color-accent);
-    transform: translateY(-2px);
+    transform: translateY(-2px) scale(1.02);
   }
 
-  /* Priority indicator — clean left edge, slightly wider for visibility */
+  /* Priority indicator — the warm-dark identity element.
+     Gold accent for urgent/high, muted line for the rest.
+     Wider at 4px for visual weight without bulk. */
   .priority-bar {
     position: absolute;
     top: 0;
     left: 0;
-    width: 3px;
+    width: 4px;
     height: 100%;
     border-radius: calc(var(--radius-card) + 0.125rem) 0 0 calc(var(--radius-card) + 0.125rem);
   }
@@ -852,6 +929,10 @@
     border-bottom: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     background: transparent;
     border-radius: 0;
+    transition: background-color var(--motion-fast) var(--motion-ease);
+  }
+  .column-header:hover {
+    background: color-mix(in oklab, var(--color-surface-hover) 30%, transparent);
   }
 
   /* Column container — subtle background tint.
@@ -870,8 +951,14 @@
     border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.375rem);
     box-shadow:
-      0 1px 4px oklch(0% 0 0 / 8%),
-      inset 0 1px 0 oklch(100% 0 0 / 3%);
+      inset 0 1px 0 oklch(100% 0 0 / 3%),
+      0 1px 4px oklch(0% 0 0 / 8%);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+  .column-container:hover {
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 4%),
+      0 2px 8px oklch(0% 0 0 / 12%);
   }
 
   /* Status dot indicator in column header */
@@ -886,6 +973,7 @@
   .sidebar-item {
     position: relative;
     transition: all var(--motion-base) var(--motion-ease);
+    border-radius: 0.375rem;
   }
 
   .sidebar-item::before {
@@ -898,12 +986,244 @@
     height: 0;
     background: var(--color-accent);
     border-radius: 1px;
-    transition: height var(--motion-base) var(--motion-ease);
+    transition: height var(--motion-base) var(--motion-spring);
   }
 
   .sidebar-item:hover::before,
   .sidebar-item.active::before {
     height: 60%;
+  }
+
+  /* -----------------------------------------------------------------------
+   * Premium card detail modal — deeper shadow, refined borders, backdrop blur.
+   *
+   * The modal is the primary interaction surface for card work. A flat modal
+   * on a dark background reads as a dialog, not a workspace. Deeper shadows
+   * and a subtle backdrop blur create depth hierarchy: modal > board > sidebar.
+   * The gold accent border on the header ties it to the warm-dark identity.
+   * ----------------------------------------------------------------------- */
+  .modal-premium {
+    box-shadow:
+      0 24px 64px oklch(0% 0 0 / 50%),
+      0 12px 24px oklch(0% 0 0 / 30%),
+      0 0 0 1px color-mix(in oklab, var(--color-line) 30%, transparent),
+      inset 0 1px 0 oklch(100% 0 0 / 5%);
+    backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in oklab, var(--color-line) 25%, transparent);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+
+  /* Properties rail — elevated section with warm surface and subtle glow.
+   * The rail is the glanceable right column; it needs to feel like a separate
+   * panel from the content, not just a stacked list of controls. */
+  .properties-rail {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-sunken) 60%, var(--color-accent) 4%) 0%,
+      var(--color-surface-sunken) 100%
+    );
+    border: 1px solid color-mix(in oklab, var(--color-line) 35%, transparent);
+    border-radius: var(--radius-card);
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 4%),
+      0 2px 8px oklch(0% 0 0 / 12%);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+  .properties-rail:hover {
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 5%),
+      0 4px 12px oklch(0% 0 0 / 15%);
+  }
+
+  /* Section divider inside the properties rail — subtle separator between
+   * location, status, priority, etc. without heavy borders. */
+  .rail-section + .rail-section {
+    border-top: 1px solid color-mix(in oklab, var(--color-line) 30%, transparent);
+    padding-top: 1rem;
+  }
+
+  /* PR/branch chips — polished dark-chip style with accent border on hover. */
+  .pr-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-button);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: color-mix(in oklab, var(--color-surface-raised) 80%, var(--color-accent) 5%);
+    font-size: 0.75rem;
+    color: var(--color-ink-muted);
+    transition: all var(--motion-fast) var(--motion-spring);
+    cursor: pointer;
+  }
+  .pr-chip:hover {
+    border-color: var(--color-accent);
+    background: color-mix(in oklab, var(--color-surface-raised) 90%, var(--color-accent) 10%);
+    color: var(--color-ink);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px oklch(0% 0 0 / 10%);
+  }
+
+  /* Premium select — matching Input's focus treatment. Native <select> cannot
+   * take a ring the way Input does (no focus-visible in most browsers), so we
+   * use a border + background transition that feels consistent. */
+  .select-premium {
+    height: 2rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-sunken);
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--color-ink);
+    transition: all var(--motion-fast) var(--motion-ease);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8573' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    padding-right: 1.5rem;
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
+  }
+  .select-premium:hover {
+    border-color: var(--color-line-strong);
+    background-color: var(--color-surface-hover);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 1px 2px oklch(0% 0 0 / 8%);
+  }
+  .select-premium:focus {
+    border-color: var(--color-accent);
+    background-color: var(--color-surface);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 20%, transparent);
+    outline: none;
+  }
+
+  /* Description editor area — refined border and subtle inner glow. */
+  .editor-surface {
+    border: 1px solid color-mix(in oklab, var(--color-line) 35%, transparent);
+    border-radius: var(--radius-card);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-sunken) 80%, var(--color-surface-raised) 20%) 0%,
+      var(--color-surface-sunken) 100%
+    );
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 8%);
+    transition: border-color var(--motion-fast) var(--motion-ease);
+  }
+  .editor-surface:focus-within {
+    border-color: var(--color-accent);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 8%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 15%, transparent);
+  }
+
+  /* Search — the one global cross-entity query surface.
+   *
+   * The input needs the same premium treatment as board inputs (sunken fill,
+   * accent glow on focus) but with a search-icon affordance that signals
+   * "this is a command bar, not a form field." Result cards reuse the
+   * card-tile's press feedback so clicking a result feels like clicking a
+   * card — the same physical metaphor across modules. */
+  .search-input {
+    display: block;
+    width: 100%;
+    resize: none;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-sunken);
+    padding: 0.625rem 0.875rem 0.625rem 2.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--color-ink);
+    outline: none;
+    transition: all var(--motion-fast) var(--motion-ease);
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
+  }
+  .search-input::placeholder {
+    font-family: var(--font-sans);
+    color: var(--color-ink-faint);
+  }
+  .search-input:hover {
+    border-color: var(--color-line-strong);
+  }
+  .search-input:focus {
+    border-color: var(--color-accent);
+    background: var(--color-surface);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      var(--shadow-glow-accent);
+  }
+
+  .search-result {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-raised);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    transition: all var(--motion-fast) var(--motion-spring);
+    animation: result-fade-in 0.3s var(--motion-ease) backwards;
+  }
+  .search-result:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-hover);
+    transform: translateY(-1px);
+    box-shadow:
+      0 2px 8px oklch(0% 0 0 / 10%),
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 10%, transparent);
+  }
+  .search-result:active {
+    transform: scale(0.985);
+    transition-duration: var(--motion-fast);
+  }
+  .search-result[data-active='true'] {
+    border-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
+    background: color-mix(in oklab, var(--color-surface-raised) 95%, var(--color-accent) 5%);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent);
+  }
+
+  .search-facet {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
+    background: transparent;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-ink-muted);
+    transition: all var(--motion-fast) var(--motion-ease);
+  }
+  .search-facet:hover {
+    border-color: var(--color-line-strong);
+    color: var(--color-ink);
+    background: var(--color-surface-hover);
+  }
+  .search-facet[data-active='true'] {
+    border-color: var(--color-accent);
+    background: color-mix(in oklab, var(--color-surface-raised) 90%, var(--color-accent) 10%);
+    color: var(--color-accent);
+  }
+
+  .search-saved-tag {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-raised);
+    font-size: 0.75rem;
+    transition: all var(--motion-fast) var(--motion-ease);
+  }
+  .search-saved-tag:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-hover);
   }
 }
 
@@ -936,6 +1256,9 @@
     animation: none;
     transform: translateX(0);
     width: 100%;
+  }
+  .search-result {
+    animation: none;
   }
 }
 

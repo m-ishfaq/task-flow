@@ -64,7 +64,7 @@ export function SprintPicker({
             const next = event.target.value;
             onChange(next === '' ? null : next === 'backlog' ? 'backlog' : (next as SprintId));
           }}
-          className="h-7 max-w-48 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+          className="select-premium h-7 max-w-48"
         >
           <option value="">All</option>
           <option value="backlog">Backlog</option>
@@ -131,8 +131,8 @@ const STATUS_LABEL: Readonly<Record<Sprint['status'], string>> = {
 
 const STATUS_COLOR: Readonly<Record<Sprint['status'], string>> = {
   planned: 'text-ink-faint',
-  active: 'text-emerald-600',
-  completed: 'text-blue-600',
+  active: 'text-success',
+  completed: 'text-accent',
   cancelled: 'text-danger',
 };
 
@@ -372,7 +372,7 @@ export function SprintsManagerDialog({
           {sprints.isPending && <p className="p-2 text-xs text-ink-faint">Loading…</p>}
 
           {(sprints.data ?? []).length === 0 ? (
-            <p className="rounded border border-line p-3 text-xs text-ink-faint">
+            <p className="empty-fade rounded border border-line p-3 text-xs text-ink-faint">
               No sprints yet. Plan the first window above — cards join it from the card panel's
               Sprint field.
             </p>

@@ -133,12 +133,12 @@ export function LabelSection({
            from it either. */
         <ul className="flex flex-wrap gap-1">
           {(onCard.data ?? []).length === 0 ? (
-            <p className="text-xs text-ink-faint">No labels.</p>
+            <p className="empty-fade text-xs text-ink-faint">No labels.</p>
           ) : (
             (onCard.data ?? []).map((label) => (
               <li key={label.labelId}>
                 <span
-                  className="rounded px-1.5 py-0.5 text-[11px] text-white"
+                  className="rounded px-1.5 py-0.5 text-xs text-white"
                   style={{ backgroundColor: label.color }}
                 >
                   {label.name}
@@ -148,7 +148,7 @@ export function LabelSection({
           )}
         </ul>
       ) : all.data === undefined ? null : all.data.length === 0 ? (
-        <p className="text-xs text-ink-faint">This project has no labels yet.</p>
+        <p className="empty-fade text-xs text-ink-faint">This project has no labels yet.</p>
       ) : (
         <ul className="flex flex-wrap gap-1">
           {all.data.map((label) => {
@@ -167,7 +167,7 @@ export function LabelSection({
                     toggle(label.labelId);
                   }}
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-[11px]',
+                    'rounded px-1.5 py-0.5 text-xs',
                     on ? 'text-white' : 'bg-surface-hover text-ink-muted hover:text-ink',
                   )}
                   style={on ? { backgroundColor: label.color } : undefined}

@@ -29,18 +29,12 @@ import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
  *
  * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.7): mirrors
  * `branding-palettes.ts`'s own warm-dark update — `default`'s hue moves
- * 285 -> 88 (violet to gold) at a higher shared lightness (55% -> 72%),
- * which relights all six palettes since they share one L/C pair by design
- * (see that file's header for why — the project owner confirmed directly
- * that this should apply to all six, not just `default`). `amber` moves
- * 75 -> 45 for the identical reason it does there: 75 sat only 13° from
- * the new default's 88, too close to stay visually distinct. `ink` was
- * ALSO fixed here, not just carried forward stale: the old value (hue
- * 258, light 98%) was already a documented drift from `branding-
- * palettes.ts`'s own then-current hue, and at the new 72% shared
- * lightness, a LIGHT ink fails contrast outright regardless — it has to
- * be dark now, the same requirement driving `colors.ts`'s `accentInk`
- * flip.
+ * 285 -> 88 (violet to gold) at shared L=60/C=0.14 (§2.4 re-verification
+ * found L=72 gave max 3.66:1 for dark ink, below AA 4.5:1; at L=60, white
+ * accentInk clears 9.69:1). `amber` moves 75 -> 45 for the identical reason:
+ * 75 sat only 13° from the new default's 88, too close to stay visually
+ * distinct. `ink` is now white (L=98) on all palettes, matching
+ * `colors.ts`'s `accentInk` flip.
  *
  * ## Why hex, not oklch strings
  *
@@ -77,8 +71,10 @@ export interface PaletteColors {
    contrast requirement, not a style choice. Matches `branding-
    palettes.ts`'s own `INK` exactly: hue 55 (the new neutral family), not
    88 (accent's hue) or the old stale 258 — ink is meant to read as dark
-   neutral text, not a tint of the accent. */
-const INK: PaletteColorToken = { oklch: { l: 16, c: 0.02, h: 55 }, hex: '#140b06' };
+   neutral text, not a tint of the accent. Now white (L=98) at the same
+   lightness as `colors.ts`'s `accentInk` — dark ink failed contrast on
+   the lighter accent. */
+const INK: PaletteColorToken = { oklch: { l: 98, c: 0.02, h: 55 }, hex: '#fff5ec' };
 
 export const PALETTE_TOKENS: Record<
   PaletteId,
@@ -89,18 +85,18 @@ export const PALETTE_TOKENS: Record<
   }
 > = {
   default: {
-    base: { oklch: { l: 72, c: 0.14, h: 88 }, hex: '#c99e1e' },
-    hover: { oklch: { l: 66, c: 0.14, h: 88 }, hex: '#b68c00' },
+    base: { oklch: { l: 60, c: 0.14, h: 88 }, hex: '#a37900' },
+    hover: { oklch: { l: 55, c: 0.14, h: 88 }, hex: '#936a00' },
     ink: INK,
   },
   violet: {
-    base: { oklch: { l: 72, c: 0.14, h: 320 }, hex: '#cb86db' },
-    hover: { oklch: { l: 66, c: 0.14, h: 320 }, hex: '#b774c7' },
+    base: { oklch: { l: 60, c: 0.14, h: 320 }, hex: '#a462b4' },
+    hover: { oklch: { l: 55, c: 0.14, h: 320 }, hex: '#9553a4' },
     ink: INK,
   },
   green: {
-    base: { oklch: { l: 72, c: 0.14, h: 152 }, hex: '#56bd78' },
-    hover: { oklch: { l: 66, c: 0.14, h: 152 }, hex: '#41aa66' },
+    base: { oklch: { l: 60, c: 0.14, h: 152 }, hex: '#2a9754' },
+    hover: { oklch: { l: 55, c: 0.14, h: 152 }, hex: '#108846' },
     ink: INK,
   },
   /* Retuned 75 -> 45 for the warm-dark rebuild: 75 sat only 13° from the new
@@ -108,19 +104,19 @@ export const PALETTE_TOKENS: Record<
      identical collision `violet` was already moved once before to avoid —
      see `branding-palettes.ts`'s own comment on this exact move. */
   amber: {
-    base: { oklch: { l: 72, c: 0.14, h: 45 }, hex: '#eb8656' },
-    hover: { oklch: { l: 66, c: 0.14, h: 45 }, hex: '#d77343' },
+    base: { oklch: { l: 60, c: 0.14, h: 45 }, hex: '#c26030' },
+    hover: { oklch: { l: 55, c: 0.14, h: 45 }, hex: '#b2511e' },
     ink: INK,
   },
   rose: {
-    base: { oklch: { l: 72, c: 0.14, h: 18 }, hex: '#ef7d83' },
-    hover: { oklch: { l: 66, c: 0.14, h: 18 }, hex: '#da6b71' },
+    base: { oklch: { l: 60, c: 0.14, h: 18 }, hex: '#c65860' },
+    hover: { oklch: { l: 55, c: 0.14, h: 18 }, hex: '#b54952' },
     ink: INK,
   },
   /** The one deliberate exception to "same L/C, different H" — low chroma, not a hue shift. */
   slate: {
-    base: { oklch: { l: 72, c: 0.02, h: 88 }, hex: '#aaa497' },
-    hover: { oklch: { l: 66, c: 0.02, h: 88 }, hex: '#979285' },
+    base: { oklch: { l: 60, c: 0.02, h: 88 }, hex: '#858073' },
+    hover: { oklch: { l: 55, c: 0.02, h: 88 }, hex: '#767165' },
     ink: INK,
   },
 };

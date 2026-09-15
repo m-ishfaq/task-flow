@@ -117,12 +117,18 @@ export function FilterBuilder({
         <Button size="sm" variant={value === null ? 'secondary' : 'primary'}>
           Filter
           {value !== null && (
-            <span className="rounded bg-black/20 px-1 text-[10px]">{countComparisons(value)}</span>
+            <span className="rounded bg-accent/20 px-1 text-[10px] text-accent">
+              {countComparisons(value)}
+            </span>
           )}
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[calc(100vw-2rem)] max-w-[34rem] p-3"
+      >
         <div
           className={cn(
             'mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]',
@@ -480,7 +486,7 @@ function ComparisonEditor({
         onChange={(event) => {
           changeField(event.target.value);
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        className="select-premium h-7"
       >
         {fieldsOf(resource).map((entry) => (
           <option key={entry.name} value={entry.name}>
@@ -495,7 +501,7 @@ function ComparisonEditor({
         onChange={(event) => {
           changeOperator(event.target.value as Operator);
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        className="select-premium h-7"
       >
         {operators.map((operator) => (
           <option key={operator} value={operator}>

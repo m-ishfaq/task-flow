@@ -139,7 +139,7 @@ function VersionRow({
   readonly restorePending: boolean;
 }) {
   return (
-    <li className="flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-surface-hover">
+    <li className="flex items-center justify-between gap-2 rounded px-1.5 py-1 transition-colors hover:bg-surface-hover">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <Badge className={version.kind === 'publish' ? 'text-success' : ''}>{version.kind}</Badge>
         {/* Same fix as `comments-suggestions.tsx` — a version's author was

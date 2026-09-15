@@ -6,6 +6,7 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from 'react';
+import { Search } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { hueOf } from './avatar-color.js';
 
@@ -46,7 +47,7 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      control. On the accent fill it is nearly invisible, which is the point:
      it is a boundary, not a decoration. */
   primary:
-    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.17_285/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.17_285/40%)]',
+    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.14_88/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.14_88/40%)]',
   secondary:
     'bg-surface-raised text-ink border border-line/60 shadow-sm hover:bg-surface-hover hover:border-line-strong',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
@@ -78,10 +79,46 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'press inline-flex items-center justify-center rounded font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded font-medium transition-[color,box-shadow,border-color,background-color] duration-150 ease-out',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export type IconButtonSize = 'sm' | 'md';
+
+/**
+ * A plain, borderless icon-only button — the shell's own hamburger and
+ * keyboard-shortcuts triggers, and chat's header icons, had each written
+ * the identical `flex size-8 shrink-0 items-center justify-center
+ * rounded-lg ...` class string by hand. `Button`'s own sizes carry
+ * horizontal padding built for text and are the wrong shape for an
+ * icon-only square, which is why this is a second, small primitive.
+ */
+export function IconButton({
+  size = 'md',
+  active = false,
+  className,
+  type,
+  ...props
+}: ComponentPropsWithoutRef<'button'> & {
+  readonly size?: IconButtonSize;
+  readonly active?: boolean;
+}) {
+  return (
+    <button
+      type={type ?? 'button'}
+      className={cn(
+        'press flex shrink-0 items-center justify-center rounded-lg transition-colors duration-150 ease-out',
+        size === 'sm' ? 'size-7' : 'size-8',
+        active
+          ? 'bg-accent/10 text-accent'
+          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         className,
       )}
       {...props}
@@ -97,7 +134,7 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all',
+        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all shadow-[inset_0_1px_2px_oklch(0%_0_0/6%)]',
         /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
            — is the "considered" touch here: a field that visibly comes
            forward when it takes focus. A soft `ring-2` at 25% accent is the
@@ -112,6 +149,40 @@ export function Input({ className, ...props }: InputProps) {
       )}
       {...props}
     />
+  );
+}
+
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  'aria-label': ariaLabel,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly className?: string;
+  readonly 'aria-label'?: string;
+}) {
+  return (
+    <div className={cn('relative h-9', className)}>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-faint"
+        strokeWidth={2}
+      />
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel ?? placeholder}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken py-2 pr-3 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+      />
+    </div>
   );
 }
 
@@ -412,7 +483,7 @@ export function Empty({
   readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
+    <div className="empty-fade flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
       {icon !== undefined && (
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           {icon}

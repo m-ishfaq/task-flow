@@ -20,3 +20,8 @@ export {
   Trigger as PopoverTrigger,
   Close as PopoverClose,
 } from '@radix-ui/react-popover';
+export {
+  Root as TooltipRoot,
+  Trigger as TooltipTrigger,
+  Provider as TooltipProvider,
+} from '@radix-ui/react-tooltip';

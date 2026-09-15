@@ -1,12 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Lock, Users } from 'lucide-react';
+import { ChevronLeft, Hash, Lock, Search, Users } from 'lucide-react';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, Empty, Skeleton } from '../../components/primitives.js';
+import { AvatarStack, Button, Empty, IconButton, Skeleton } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { CallButton } from '../rtc/call-button.js';
 import { callHistoryQuery, type CallHistoryEntry } from '../rtc/api.js';
@@ -60,9 +59,11 @@ import {
   appendText,
   channelSubtitle,
   channelTitle,
+  dayKeyOf,
   describeTyping,
   firstUnreadAfter,
   flattenDocument,
+  formatDayLabel,
   groupByMessage,
   groupReactions,
   textDocument,
@@ -89,6 +90,19 @@ type TimelineItem =
       readonly entry: CallHistoryEntry;
     };
 
+/**
+ * Three staggered bouncing dots — the animated typing indicator cue.
+ */
+function TypingDots() {
+  return (
+    <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-300ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint [animation-delay:-150ms]" />
+      <span className="size-1 animate-bounce rounded-full bg-ink-faint" />
+    </span>
+  );
+}
+
 export function ChannelPanel({
   orgId,
   channelId,
@@ -105,12 +119,12 @@ export function ChannelPanel({
      header anymore: the member/presence readout moved out of the header to
      keep it about the conversation, and the details panel is where who's
      here belongs. */
-  useChannelRoom(orgId, channelId);
+  const { presence } = useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -287,7 +301,25 @@ export function ChannelPanel({
   const attach = useMutation({
     mutationFn: async (file: File) => {
       const carrier = isEmptyDocument(draft)
-        ? await sendMessage({ channelId, body: textDocument(`Shared **${file.name}**`) })
+        ? await sendMessage({
+            channelId,
+            body: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [
+                    { type: 'text', text: 'Shared ' },
+                    {
+                      type: 'text',
+                      text: file.name,
+                      marks: [{ type: 'bold' }],
+                    },
+                  ],
+                },
+              ],
+            },
+          })
         : await sendMessage({ channelId, body: draft });
 
       setDraft(EMPTY_DOCUMENT);
@@ -594,19 +626,25 @@ export function ChannelPanel({
           already carries the identical argument for the other axis. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-13 shrink-0 items-center gap-2.5 border-b border-line/50 px-3 sm:px-4">
-          {/* The whole header is the way back to the channel list below `md`
-              (tap the name, not a tiny arrow) — see `ChatPage`'s comment on
-              the list/detail split this belongs to. */}
+          {/* Mobile back button — below `md` only. */}
           <button
             type="button"
             onClick={onBack}
             aria-label="Back to conversations"
-            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-surface-hover md:cursor-default md:hover:bg-transparent"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
           >
-            <ChevronLeft aria-hidden="true" className="size-4 shrink-0 text-ink-faint md:hidden" />
-            {/* The channel glyph — `#` for a public channel, a lock for a
-                private one, nothing for a DM (the person's name IS the
-                identity). */}
+            <ChevronLeft aria-hidden="true" className="size-4" />
+          </button>
+          {/* Channel name — toggles the details panel on all screen sizes.
+              On mobile the separate ChevronLeft back button above handles
+              navigation back to the channel list, so tapping the name
+              opens details rather than duplicating the back affordance. */}
+          <button
+            type="button"
+            onClick={() => { setDetailsOpen((o) => !o); }}
+            aria-label="Toggle channel details"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-surface-hover md:cursor-pointer"
+          >
             {channel.data?.type === 'public' && (
               <Hash
                 aria-hidden="true"
@@ -625,18 +663,37 @@ export function ChannelPanel({
               <span className="block min-w-0 truncate font-display text-[15px] font-semibold leading-tight text-ink">
                 {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
               </span>
-              {/* The second line carries whichever of the two things the
-                  channel actually has: a topic for a named channel, the other
-                  person for a DM. Rendered only when there is something to say
-                  — an empty sub-line makes every header taller for no
-                  information. */}
               {channel.data !== undefined && channelSubtitle(channel.data) !== null && (
                 <span className="block min-w-0 truncate text-xs leading-tight text-ink-faint">
                   {channelSubtitle(channel.data)}
                 </span>
               )}
+              {channel.data !== undefined && channel.data.type !== 'dm' && (
+                <span className="block text-xs leading-tight text-ink-faint">
+                  {channel.data.memberIds.length}{' '}
+                  {channel.data.memberIds.length === 1 ? 'member' : 'members'}
+                </span>
+              )}
             </span>
           </button>
+          {/* Overlapping-avatar preview for non-DM channels. */}
+          {channel.data !== undefined && channel.data.type !== 'dm' && (
+            <div className="hidden shrink-0 sm:flex">
+              <AvatarStack
+                people={peopleOf(channel.data.memberIds)}
+                max={3}
+              />
+            </div>
+          )}
+          {/* Search — navigates to the app's real search. */}
+          <IconButton
+            onClick={() => {
+              void navigate({ to: '/search', search: { q: 'type = message' } });
+            }}
+            aria-label="Search messages"
+          >
+            <Search aria-hidden="true" className="size-4" strokeWidth={2.25} />
+          </IconButton>
           {/* In-app voice (Phase 13). Public channels cannot start a call in
               Wave 1 — the ring list comes from the channel's member tuples and
               a public channel has none, so the control is not offered rather
@@ -645,25 +702,16 @@ export function ChannelPanel({
           {channel.data !== undefined && channel.data.type !== 'public' && (
             <CallButton orgId={orgId} channelId={channelId} />
           )}
-          {/* Channel details (members, media, retention). Icon-only — the
-              member COUNT is intentionally not shown here: it is one tap
-              away in the panel, and a number in the header is noise next to
-              the conversation's identity. */}
-          <button
-            type="button"
+          {/* Channel details (members, media, retention). */}
+          <IconButton
             onClick={() => {
               setDetailsOpen((open) => !open);
             }}
             aria-label="Channel details"
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
-              detailsOpen
-                ? 'bg-accent/10 text-accent'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
+            active={detailsOpen}
           >
             <Users aria-hidden="true" className="size-4" strokeWidth={2.25} />
-          </button>
+          </IconButton>
         </header>
 
         {/* `px-3 sm:px-4`, matched by the header, the typing line and the
@@ -684,16 +732,33 @@ export function ChannelPanel({
             />
           ) : (
             <div className="space-y-4">
-              {timeline.map((item) =>
-                item.kind === 'call' ? (
-                  <CallTimelineCard
-                    key={item.key}
-                    entry={item.entry}
-                    viewerId={viewerId}
-                    personOf={personOf}
-                  />
+              {timeline.map((item, index) => {
+                const previous = index > 0 ? timeline[index - 1] : undefined;
+                const showDayDivider =
+                  previous === undefined || dayKeyOf(item.at) !== dayKeyOf(previous.at);
+
+                const dayDivider = showDayDivider && (
+                  <div className="flex items-center gap-2" role="separator">
+                    <span className="h-px flex-1 bg-line/60" />
+                    <span className="text-xs font-medium text-ink-faint">
+                      {formatDayLabel(item.at)}
+                    </span>
+                    <span className="h-px flex-1 bg-line/60" />
+                  </div>
+                );
+
+                return item.kind === 'call' ? (
+                  <Fragment key={item.key}>
+                    {dayDivider}
+                    <CallTimelineCard
+                      entry={item.entry}
+                      viewerId={viewerId}
+                      personOf={personOf}
+                    />
+                  </Fragment>
                 ) : (
                   <Fragment key={item.key}>
+                    {dayDivider}
                     {/* The "new messages" line, placed by the read CURSOR rather
                         than by counting back from the end. A count-based position
                         lands somewhere plausible and wrong the moment a message
@@ -774,15 +839,16 @@ export function ChannelPanel({
                       onOpenThread={setOpenThreadId}
                     />
                   </Fragment>
-                ),
-              )}
+                );
+              })}
             </div>
           )}
         </div>
 
         {typingLabel !== null && (
-          <div className="h-5 shrink-0 px-3 text-xs text-ink-faint italic sm:px-4">
-            {typingLabel}
+          <div className="flex h-5 shrink-0 items-center gap-1.5 px-3 text-xs text-ink-faint sm:px-4">
+            <TypingDots />
+            <span className="italic">{typingLabel}</span>
           </div>
         )}
 
@@ -854,7 +920,6 @@ export function ChannelPanel({
               orgId={orgId}
               channelId={channelId}
               rootMessage={rootMessage}
-              viewerId={viewerId}
               personOf={personOf}
               onClose={() => {
                 setOpenThreadId(null);
@@ -872,6 +937,7 @@ export function ChannelPanel({
         <ChannelDetailsPanel
           orgId={orgId}
           channelId={channelId}
+          presence={presence}
           onClose={() => {
             setDetailsOpen(false);
           }}

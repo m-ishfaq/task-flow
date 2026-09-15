@@ -11,14 +11,20 @@ import {
   PopoverTrigger,
 } from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
-import { DIRECTLY_ASSIGNABLE_ROLES, GRANTABLE_PERMISSIONS, type Role } from '@taskflow/policy';
+import {
+  DIRECTLY_ASSIGNABLE_ROLES,
+  GRANTABLE_PERMISSIONS,
+  isGuestRole,
+  isAdminRole,
+  isOwnerRole,
+  type Role,
+} from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import {
-  AddPanel,
   Avatar,
   Badge,
   Button,
@@ -27,11 +33,13 @@ import {
   Field,
   Input,
   PageHeader,
+  SearchInput,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { hueOf } from '../../components/avatar-color.js';
 import { useBranding } from '../../lib/branding-context.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
@@ -77,7 +85,7 @@ export function SettingsPage() {
   const org = useQuery(orgDetailQuery(orgId));
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-5xl flex-col gap-9 p-8">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
@@ -138,41 +146,51 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 
   return (
     <Section title="Organization">
-      <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
-          }}
-        >
-          <div className="flex-1">
-            <Field label="Name" htmlFor="org-name">
-              <Input
-                id="org-name"
-                value={current}
-                disabled={!canRename}
-                title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-              />
-            </Field>
-          </div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!canRename || rename.isPending || current === org.data.name}
+      <div className="overflow-hidden rounded-xl border border-line/50 bg-surface-raised shadow-sm">
+        <div className="p-5">
+          <form
+            className="flex items-end gap-3 max-sm:flex-col max-sm:items-stretch"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
+            }}
           >
-            Save
-          </Button>
-        </form>
+            <div className="min-w-0 flex-1">
+              <Field label="Organization name" htmlFor="org-name">
+                <Input
+                  id="org-name"
+                  value={current}
+                  disabled={!canRename}
+                  title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                  className="h-10 text-[15px]"
+                />
+              </Field>
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!canRename || rename.isPending || current === org.data.name}
+              className="h-10 max-sm:w-full"
+            >
+              {rename.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </form>
+        </div>
 
-        <p className="mt-2 text-xs text-ink-faint">
-          Slug <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
-          {formatDate(org.data.createdAt)}. The slug is fixed — it appears in links that already
-          exist.
-        </p>
+        <div className="flex items-center gap-4 border-t border-line/40 bg-surface-sunken/30 px-5 py-3">
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <span className="text-ink-faint">Slug</span>
+            <span className="font-mono text-ink">{org.data.slug}</span>
+          </div>
+          <span className="text-line/60">·</span>
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <span className="text-ink-faint">Created</span>
+            <span className="text-ink">{formatDate(org.data.createdAt)}</span>
+          </div>
+        </div>
       </div>
 
       {rename.isError && <ErrorText error={rename.error} />}
@@ -371,16 +389,11 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       count={members.data?.length}
       description="Everyone with access to this organization. A role decides what they can do across it; a team grant can narrow or widen that on one resource."
     >
-      {/* A whole multi-field form nobody without member:invite could ever
-          submit is clutter, not information — unlike the org-name field
-          above, there is nothing here worth seeing disabled. Hidden rather
-          than shown-and-refused; the member LIST below still renders fully,
-          so nothing about visibility into the org is lost, only the ability
-          to change it. */}
       {capabilities.inviteMember && (
-        <AddPanel>
+        <div className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
+          <h4 className="text-xs font-semibold text-ink">Invite a member</h4>
           <form
-            className="flex flex-wrap gap-2 items-center"
+            className="mt-3 flex flex-wrap items-end gap-2.5 max-sm:flex-col max-sm:items-stretch"
             onSubmit={(event) => {
               event.preventDefault();
               if (email.trim() !== '') {
@@ -395,22 +408,21 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               }
             }}
           >
-            <div className="min-w-[16rem] flex-1">
-              <Field
-                label="Invite a member"
-                htmlFor="member-email"
-                hint={`We'll email an invitation link. Works whether or not they already have a ${productName} account.`}
-              >
-                <Input
-                  id="member-email"
-                  type="email"
-                  placeholder="colleague@example.com"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                  }}
-                />
-              </Field>
+            <div className="min-w-0 flex-1">
+              <Input
+                id="member-email"
+                type="email"
+                placeholder="colleague@example.com"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                }}
+                className="h-9 text-sm"
+              />
+              <p className="mt-1 text-[11px] text-ink-faint">
+                We'll email an invitation link. Works whether or not they already have a{' '}
+                {productName} account.
+              </p>
             </div>
 
             <select
@@ -419,7 +431,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               onChange={(event) => {
                 setRole(event.target.value as Role);
               }}
-              className="h-9 rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
+              className="h-9 rounded-lg border border-line/50 bg-surface px-2.5 text-xs font-medium text-ink"
             >
               {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
                 <option key={entry} value={entry}>
@@ -432,32 +444,35 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               type="submit"
               variant="primary"
               disabled={invite.isPending || email.trim() === ''}
+              className="h-9 max-sm:w-full"
             >
               {invite.isPending ? 'Sending…' : 'Invite'}
             </Button>
           </form>
 
           {invite.isError && <ErrorText error={invite.error} />}
-        </AddPanel>
+        </div>
       )}
 
       {capabilities.inviteMember &&
         invitations.data !== undefined &&
         invitations.data.length > 0 && (
-          <div className="rounded-xl border border-line/50 p-3">
-            <div className="mb-2 text-xs font-medium text-ink-muted">
-              Pending invitations ({invitations.data.length})
+          <div className="overflow-hidden rounded-xl border border-line/50 bg-surface-raised shadow-sm">
+            <div className="flex items-center justify-between border-b border-line/40 bg-surface-sunken/30 px-4 py-2.5">
+              <span className="text-xs font-semibold text-ink">Pending invitations</span>
+              <Badge className="text-[11px]">{invitations.data.length}</Badge>
             </div>
-            <ul className="divide-y divide-line/40">
+            <ul className="divide-y divide-line/30">
               {invitations.data.map((invitation) => (
                 <li
                   key={invitation.invitationId}
-                  className="flex items-center justify-between gap-2 py-2 text-sm"
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover/50"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-ink">{invitation.email}</div>
-                    <div className="text-xs text-ink-muted">
-                      Invited as {invitation.role} · expires {formatDate(invitation.expiresAt)}
+                    <div className="truncate text-sm font-medium text-ink">{invitation.email}</div>
+                    <div className="mt-0.5 text-[11px] text-ink-muted">
+                      Invited as <span className="font-medium text-ink">{invitation.role}</span>
+                      {' · '}expires {formatDate(invitation.expiresAt)}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -466,8 +481,12 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                       size="sm"
                       disabled={invite.isPending}
                       onClick={() => {
-                        invite.mutate({ email: invitation.email, role: invitation.role as Role });
+                        invite.mutate({
+                          email: invitation.email,
+                          role: invitation.role as Role,
+                        });
                       }}
+                      className="text-xs"
                     >
                       Resend
                     </Button>
@@ -475,7 +494,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                       variant="ghost"
                       size="sm"
                       disabled={revokeInvitation.isPending}
-                      className="text-ink-muted hover:text-danger"
+                      className="text-xs text-ink-muted hover:text-danger"
                       onClick={() => {
                         revokeInvitation.mutate(invitation.invitationId);
                       }}
@@ -490,16 +509,9 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
           </div>
         )}
 
-      {/* Ownership has exactly one holder, so this button is NEVER usable by
-          anyone but the current Owner — not "usually not," never. That is
-          different from every other control on this page (an Admin might
-          plausibly gain member:invite later; nobody gains "is the current
-          Owner" by having a role), so hiding it for non-Owners is complete,
-          not just today's approximation. The server is still what actually
-          enforces it (member:manage) — this only stops showing the action to
-          the (org.memberCount - 1) people who structurally cannot take it. */}
       {capabilities.manageMembers && (
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <div />
           <Button
             variant="ghost"
             size="sm"
@@ -510,7 +522,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                 : undefined
             }
             onClick={openTransfer}
-            className="text-ink-muted hover:text-ink"
+            className="text-xs text-ink-muted hover:text-ink"
           >
             Transfer ownership…
           </Button>
@@ -523,45 +535,45 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       {members.data !== undefined && (
         <>
           {members.data.length > 8 && (
-            <Input
+            <SearchInput
               aria-label="Search members"
               placeholder="Search by name or email…"
               value={memberSearch}
-              onChange={(event) => {
-                setMemberSearch(event.target.value);
-              }}
-              className="mb-2 h-9 max-w-xs text-sm"
+              onChange={setMemberSearch}
+              className="max-w-xs"
             />
           )}
 
           {visibleMembers.length === 0 ? (
             <Empty title="No members match your search" />
           ) : (
-            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
-              {visibleMembers.map((member) => (
-                <MemberRow
-                  key={member.userId}
-                  member={member}
-                  isSelf={member.userId === currentUserId}
-                  busy={changeRole.isPending || remove.isPending}
-                  canChangeRole={capabilities.manageMembers}
-                  canRemove={capabilities.removeMembers}
-                  offboardingBusy={startOffboarding.isPending}
-                  onRoleChange={(next) => {
-                    changeRole.mutate({ userId: member.userId as UserId, role: next });
-                  }}
-                  onRemove={() => {
-                    remove.mutate(member.userId as UserId);
-                  }}
-                  onStartOffboarding={() => {
-                    startOffboarding.mutate({
-                      userId: member.userId as UserId,
-                      email: member.email,
-                    });
-                  }}
-                />
-              ))}
-            </ul>
+            <div className="overflow-hidden rounded-xl border border-line/50 shadow-sm">
+              <ul className="divide-y divide-line/30">
+                {visibleMembers.map((member) => (
+                  <MemberRow
+                    key={member.userId}
+                    member={member}
+                    isSelf={member.userId === currentUserId}
+                    busy={changeRole.isPending || remove.isPending}
+                    canChangeRole={capabilities.manageMembers}
+                    canRemove={capabilities.removeMembers}
+                    offboardingBusy={startOffboarding.isPending}
+                    onRoleChange={(next) => {
+                      changeRole.mutate({ userId: member.userId as UserId, role: next });
+                    }}
+                    onRemove={() => {
+                      remove.mutate(member.userId as UserId);
+                    }}
+                    onStartOffboarding={() => {
+                      startOffboarding.mutate({
+                        userId: member.userId as UserId,
+                        email: member.email,
+                      });
+                    }}
+                  />
+                ))}
+              </ul>
+            </div>
           )}
         </>
       )}
@@ -956,9 +968,9 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       description="On top of a member's role, one specific ability can be given to (or taken from) one person — e.g. letting one guest place calls without promoting them to Member."
     >
       {capabilities.manageMembers && permissions.length > 0 && (
-        <AddPanel>
+        <div className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
           <form
-            className="flex flex-wrap items-start gap-2"
+            className="flex flex-wrap items-end gap-3 max-sm:flex-col max-sm:items-stretch"
             onSubmit={(event) => {
               event.preventDefault();
               if (submitCount === 0) return;
@@ -971,167 +983,178 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
               bulkGrant.mutate(pairs);
             }}
           >
-            <div className="min-w-[16rem] flex-1">
-              <Field label="Members" htmlFor="grant-member-search">
-                <PopoverRoot
-                  open={memberPickerOpen}
-                  onOpenChange={(open) => {
-                    setMemberPickerOpen(open);
-                    if (!open) setMemberQuery('');
-                  }}
-                >
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      id="grant-member-search"
-                      className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2 text-left text-sm text-ink"
-                    >
-                      {pickedUserIds.size === 0 ? (
-                        <span className="text-ink-faint">Search by name or email…</span>
-                      ) : (
-                        <span>
-                          {pickedUserIds.size} member{pickedUserIds.size === 1 ? '' : 's'} selected
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
-                    <Input
-                      aria-label="Search members"
-                      placeholder="Search by name or email…"
-                      value={memberQuery}
-                      onChange={(event) => {
-                        setMemberQuery(event.target.value);
-                      }}
-                      className="h-8 text-xs"
-                    />
-                    {matches.length === 0 ? (
-                      <p className="p-1 text-xs text-ink-faint">No matches.</p>
+            <div className="min-w-[14rem] flex-1">
+              <label
+                htmlFor="grant-member-search"
+                className="mb-1 block text-xs font-medium text-ink-muted"
+              >
+                Members
+              </label>
+              <PopoverRoot
+                open={memberPickerOpen}
+                onOpenChange={(open) => {
+                  setMemberPickerOpen(open);
+                  if (!open) setMemberQuery('');
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    id="grant-member-search"
+                    className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2.5 text-left text-sm text-ink transition-colors hover:border-line-strong"
+                  >
+                    {pickedUserIds.size === 0 ? (
+                      <span className="text-ink-faint">Search by name or email…</span>
                     ) : (
-                      <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-                        {matches.map((member) => (
-                          <li key={member.userId}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                toggleUser(member.userId);
-                              }}
-                              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-                            >
-                              <input
-                                type="checkbox"
-                                readOnly
-                                checked={pickedUserIds.has(member.userId)}
-                                className="pointer-events-none"
-                              />
-                              <Avatar userId={member.userId} label={labelOf(member)} size="xs" />
-                              <span className="truncate">{labelOf(member)}</span>
-                              <span className="ml-auto text-ink-faint">{member.role}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                      <span className="font-medium">
+                        {pickedUserIds.size} member{pickedUserIds.size === 1 ? '' : 's'} selected
+                      </span>
                     )}
-                  </PopoverContent>
-                </PopoverRoot>
-                {pickedUserIds.size > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {[...pickedUserIds].map((userId) => {
-                      const member = memberById.get(userId);
-                      const label = member ? labelOf(member) : userId;
-                      return (
-                        <span
-                          key={userId}
-                          className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink"
-                        >
-                          {label}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              toggleUser(userId);
-                            }}
-                            aria-label={`Remove ${label}`}
-                            className="text-ink-faint hover:text-ink"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </Field>
-            </div>
-
-            <div className="min-w-[12rem]">
-              <Field label="Permissions" htmlFor="grant-permission-picker">
-                <PopoverRoot open={permissionPickerOpen} onOpenChange={setPermissionPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      id="grant-permission-picker"
-                      className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2 text-left text-sm text-ink"
-                    >
-                      {pickedPermissions.size === 0 ? (
-                        <span className="text-ink-faint">Choose permissions…</span>
-                      ) : (
-                        <span>{pickedPermissions.size} selected</span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-56 space-y-0.5 p-2">
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-64 space-y-1 p-2">
+                  <Input
+                    aria-label="Search members"
+                    placeholder="Search by name or email…"
+                    value={memberQuery}
+                    onChange={(event) => {
+                      setMemberQuery(event.target.value);
+                    }}
+                    className="h-8 text-xs"
+                  />
+                  {matches.length === 0 ? (
+                    <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                  ) : (
                     <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-                      {permissions.map((entry) => (
-                        <li key={entry}>
+                      {matches.map((member) => (
+                        <li key={member.userId}>
                           <button
                             type="button"
                             onClick={() => {
-                              togglePermission(entry);
+                              toggleUser(member.userId);
                             }}
-                            className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                           >
                             <input
                               type="checkbox"
                               readOnly
-                              checked={pickedPermissions.has(entry)}
+                              checked={pickedUserIds.has(member.userId)}
                               className="pointer-events-none"
                             />
-                            <span className="truncate font-mono">{entry}</span>
+                            <Avatar userId={member.userId} label={labelOf(member)} size="xs" />
+                            <span className="truncate">{labelOf(member)}</span>
+                            <span className="ml-auto text-[11px] text-ink-faint">
+                              {member.role}
+                            </span>
                           </button>
                         </li>
                       ))}
                     </ul>
-                  </PopoverContent>
-                </PopoverRoot>
-                {pickedPermissions.size > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {[...pickedPermissions].map((entry) => (
+                  )}
+                </PopoverContent>
+              </PopoverRoot>
+              {pickedUserIds.size > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {[...pickedUserIds].map((userId) => {
+                    const member = memberById.get(userId);
+                    const label = member ? labelOf(member) : userId;
+                    return (
                       <span
-                        key={entry}
-                        className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 font-mono text-xs text-ink"
+                        key={userId}
+                        className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent"
                       >
-                        {entry}
+                        {label}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleUser(userId);
+                          }}
+                          aria-label={`Remove ${label}`}
+                          className="text-accent/60 hover:text-accent"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-[12rem]">
+              <label
+                htmlFor="grant-permission-picker"
+                className="mb-1 block text-xs font-medium text-ink-muted"
+              >
+                Permissions
+              </label>
+              <PopoverRoot open={permissionPickerOpen} onOpenChange={setPermissionPickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    id="grant-permission-picker"
+                    className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2.5 text-left text-sm text-ink transition-colors hover:border-line-strong"
+                  >
+                    {pickedPermissions.size === 0 ? (
+                      <span className="text-ink-faint">Choose permissions…</span>
+                    ) : (
+                      <span className="font-medium">{pickedPermissions.size} selected</span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-56 space-y-0.5 p-2">
+                  <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                    {permissions.map((entry) => (
+                      <li key={entry}>
                         <button
                           type="button"
                           onClick={() => {
                             togglePermission(entry);
                           }}
-                          aria-label={`Remove ${entry}`}
-                          className="text-ink-faint hover:text-ink"
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                         >
-                          ×
+                          <input
+                            type="checkbox"
+                            readOnly
+                            checked={pickedPermissions.has(entry)}
+                            className="pointer-events-none"
+                          />
+                          <span className="truncate font-mono text-[11px]">{entry}</span>
                         </button>
-                      </span>
+                      </li>
                     ))}
-                  </div>
-                )}
-              </Field>
+                  </ul>
+                </PopoverContent>
+              </PopoverRoot>
+              {pickedPermissions.size > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {[...pickedPermissions].map((entry) => (
+                    <span
+                      key={entry}
+                      className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 font-mono text-[11px] text-ink"
+                    >
+                      {entry}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          togglePermission(entry);
+                        }}
+                        aria-label={`Remove ${entry}`}
+                        className="text-ink-faint hover:text-ink"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <Button
               type="submit"
               variant="primary"
               disabled={bulkGrant.isPending || submitCount === 0}
+              className="max-sm:w-full"
             >
               {bulkGrant.isPending
                 ? 'Granting…'
@@ -1142,7 +1165,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
           </form>
 
           {bulkGrant.isError && <ErrorText error={bulkGrant.error} />}
-        </AddPanel>
+        </div>
       )}
 
       {grants.data.length === 0 ? (
@@ -1150,20 +1173,22 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       ) : (
         <>
           {grants.data.length > 8 && (
-            <Input
+            <SearchInput
               aria-label="Search grants"
               placeholder="Search by member or permission…"
               value={grantSearch}
-              onChange={(event) => {
-                setGrantSearch(event.target.value);
+              onChange={(value) => {
+                setGrantSearch(value);
               }}
-              className="mb-2 h-9 max-w-xs text-sm"
+              className="mb-1 h-9 max-w-xs text-sm"
             />
           )}
 
           {capabilities.manageMembers && selectedGrants.size > 0 && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border border-line/50 bg-surface-raised px-3 py-2">
-              <span className="text-xs text-ink-muted">{selectedGrants.size} selected</span>
+            <div className="flex items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-2.5">
+              <span className="text-sm font-medium text-accent">
+                {selectedGrants.size} selected
+              </span>
               <ConfirmButton
                 label={
                   bulkRevoke.isPending
@@ -1186,7 +1211,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
               />
               <button
                 type="button"
-                className="ml-auto text-xs text-ink-faint hover:text-ink"
+                className="ml-auto text-xs text-accent/70 hover:text-accent"
                 onClick={() => {
                   setSelectedGrants(new Set());
                 }}
@@ -1199,76 +1224,92 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
           {visibleGrants.length === 0 ? (
             <Empty title="No grants match your search" />
           ) : (
-            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
-              {groupedGrants.map((group) => {
-                const label = group.member ? labelOf(group.member) : group.userId;
-                const keysForPerson = group.items.map(
-                  (item) => `${group.userId}:${item.permission}`,
-                );
-                const allSelected = keysForPerson.every((key) => selectedGrants.has(key));
-                const someSelected = keysForPerson.some((key) => selectedGrants.has(key));
+            <div className="overflow-hidden rounded-xl border border-line/50 shadow-sm">
+              <ul className="divide-y divide-line/30">
+                {groupedGrants.map((group) => {
+                  const label = group.member ? labelOf(group.member) : group.userId;
+                  const keysForPerson = group.items.map(
+                    (item) => `${group.userId}:${item.permission}`,
+                  );
+                  const allSelected = keysForPerson.every((key) => selectedGrants.has(key));
+                  const someSelected = keysForPerson.some((key) => selectedGrants.has(key));
 
-                return (
-                  <li key={group.userId} className="flex items-start gap-3 px-3 py-3">
-                    {capabilities.manageMembers && (
-                      <input
-                        type="checkbox"
-                        aria-label={`Select all permissions for ${label}`}
-                        checked={allSelected}
-                        ref={(el) => {
-                          if (el) el.indeterminate = !allSelected && someSelected;
-                        }}
-                        onChange={() => {
-                          setSelectedGrants((prev) => {
-                            const next = new Set(prev);
-                            for (const key of keysForPerson) {
-                              if (allSelected) next.delete(key);
-                              else next.add(key);
-                            }
-                            return next;
-                          });
-                        }}
-                        className="mt-1"
-                      />
-                    )}
-                    <Avatar userId={group.userId} label={label} className="mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-ink">{label}</span>
-                        <span className="text-xs text-ink-faint">
-                          {group.member?.role ?? 'former member'}
-                        </span>
+                  const roleColor = isOwnerRole(group.member?.role ?? '')
+                    ? 'text-accent border-accent/30 bg-accent/10'
+                    : isAdminRole(group.member?.role ?? '')
+                      ? 'text-warning border-warning/30 bg-warning/10'
+                      : isGuestRole(group.member?.role ?? '')
+                        ? 'text-ink-muted border-line/30 bg-surface-hover/50'
+                        : '';
+
+                  return (
+                    <li
+                      key={group.userId}
+                      className="flex items-start gap-3 bg-surface-raised px-4 py-3 transition-colors hover:bg-surface-hover/30"
+                    >
+                      {capabilities.manageMembers && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select all permissions for ${label}`}
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = !allSelected && someSelected;
+                          }}
+                          onChange={() => {
+                            setSelectedGrants((prev) => {
+                              const next = new Set(prev);
+                              for (const key of keysForPerson) {
+                                if (allSelected) next.delete(key);
+                                else next.add(key);
+                              }
+                              return next;
+                            });
+                          }}
+                          className="mt-1"
+                        />
+                      )}
+                      <Avatar userId={group.userId} label={label} className="mt-0.5 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-ink">{label}</span>
+                          {group.member?.role && (
+                            <Badge className={cn('shrink-0', roleColor)}>{group.member.role}</Badge>
+                          )}
+                          <span className="shrink-0 text-[11px] text-ink-faint">
+                            {group.items.length} grant{group.items.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {group.items.map((item) => {
+                            const key = `${group.userId}:${item.permission}`;
+                            return (
+                              <PermissionGrantChip
+                                key={key}
+                                permission={item.permission}
+                                grantedAt={item.grantedAt}
+                                selectable={capabilities.manageMembers}
+                                selected={selectedGrants.has(key)}
+                                onToggleSelect={() => {
+                                  toggleGrantSelection(key);
+                                }}
+                                revocable={capabilities.manageMembers}
+                                revokePending={revoke.isPending}
+                                onRevoke={() => {
+                                  revoke.mutate({
+                                    userId: group.userId as UserId,
+                                    permission: item.permission,
+                                  });
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {group.items.map((item) => {
-                          const key = `${group.userId}:${item.permission}`;
-                          return (
-                            <PermissionGrantChip
-                              key={key}
-                              permission={item.permission}
-                              grantedAt={item.grantedAt}
-                              selectable={capabilities.manageMembers}
-                              selected={selectedGrants.has(key)}
-                              onToggleSelect={() => {
-                                toggleGrantSelection(key);
-                              }}
-                              revocable={capabilities.manageMembers}
-                              revokePending={revoke.isPending}
-                              onRevoke={() => {
-                                revoke.mutate({
-                                  userId: group.userId as UserId,
-                                  permission: item.permission,
-                                });
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </>
       )}
@@ -1463,10 +1504,13 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
       count={roleGrants.data.length}
       description="What a new Member or Guest gets automatically, if an automation rule on 'Someone joins the organization' uses it — this list configures the bundle, it does not grant anything by itself."
     >
-      <div className="flex flex-col gap-5">
+      <div className="space-y-3">
         {CONFIGURABLE_ROLES.map((role) => (
-          <div key={role} className="flex flex-col gap-2">
-            <p className="text-xs font-medium capitalize text-ink">{role}</p>
+          <div
+            key={role}
+            className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm"
+          >
+            <p className="mb-3 text-sm font-semibold capitalize text-ink">{role}</p>
             <div className="flex flex-wrap gap-1.5">
               {permissions.map((permission) => {
                 const checked = granted.has(`${role}:${permission}`);
@@ -1481,10 +1525,10 @@ function RoleDefaultGrantsSection({ orgId }: { readonly orgId: string }) {
                       else setGrant.mutate({ role, permission });
                     }}
                     className={cn(
-                      'rounded-full border px-2.5 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60',
+                      'rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                       checked
                         ? 'border-accent/40 bg-accent/10 text-accent'
-                        : 'border-line/50 bg-surface text-ink-muted hover:bg-surface-hover',
+                        : 'border-line/50 bg-surface text-ink-muted hover:border-line-strong hover:text-ink',
                     )}
                   >
                     {permission}
@@ -1507,6 +1551,7 @@ interface MemberRowProps {
   readonly member: {
     readonly userId: string;
     readonly email: string;
+    readonly displayName: string | null;
     readonly role: string;
     readonly status: string;
     readonly joinedAt: string;
@@ -1541,19 +1586,35 @@ function MemberRow({
   onRemove,
   onStartOffboarding,
 }: MemberRowProps) {
+  const roleColor = isOwnerRole(member.role)
+    ? 'text-accent border-accent/30 bg-accent/10'
+    : isAdminRole(member.role)
+      ? 'text-warning border-warning/30 bg-warning/10'
+      : isGuestRole(member.role)
+        ? 'text-ink-muted border-line/30 bg-surface-hover/50'
+        : '';
+
   return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
-      <Avatar userId={member.userId} label={member.email} />
+    <li className="group flex items-center gap-3.5 bg-surface-raised px-4 py-3 transition-colors hover:bg-surface-hover/50">
+      <Avatar userId={member.userId} label={member.email} className="shrink-0" />
 
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-sm text-ink">
-          {member.email}
-          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
-        </p>
-        <p className="text-[11px] text-ink-faint">
-          {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
-          joined {formatDate(member.joinedAt)}
-        </p>
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-ink">
+            {member.displayName ?? member.email}
+          </span>
+          {isSelf && (
+            <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+              you
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-ink-muted">
+          {member.displayName !== null && <span className="truncate">{member.email}</span>}
+          {member.status !== 'active' && (
+            <span className="shrink-0 font-medium text-warning">{member.status}</span>
+          )}
+        </div>
       </div>
 
       {/* member:read (every role) still shows the role — only the ABILITY to
@@ -1568,7 +1629,7 @@ function MemberRow({
           onChange={(event) => {
             onRoleChange(event.target.value as Role);
           }}
-          className="h-7 rounded-lg border border-line/50 bg-surface-sunken px-1.5 text-xs text-ink"
+          className="h-8 rounded-lg border border-line/50 bg-surface-sunken px-2.5 text-xs font-medium text-ink transition-colors hover:border-line-strong"
         >
           {/* The CURRENT role is always present as an option even when it is not
               directly assignable — an owner's row would otherwise render showing
@@ -1580,7 +1641,7 @@ function MemberRow({
           ))}
         </select>
       ) : (
-        <Badge>{member.role}</Badge>
+        <Badge className={cn('shrink-0', roleColor)}>{member.role}</Badge>
       )}
 
       {/* Revealed on hover, but always reachable by keyboard — `opacity-0` still
@@ -1600,9 +1661,9 @@ function MemberRow({
             size="sm"
             disabled={offboardingBusy}
             onClick={onStartOffboarding}
-            className="text-ink-muted opacity-0 hover:text-ink focus-visible:opacity-100 md:group-hover:opacity-100"
+            className="max-md:hidden text-ink-muted opacity-0 hover:text-ink focus-visible:opacity-100 md:group-hover:opacity-100"
           >
-            Start offboarding
+            Offboard
           </Button>
           <ConfirmButton
             label="Remove"
@@ -1669,45 +1730,45 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
           roster below stays fully visible either way — team:read is every
           role's own. */}
       {canManageTeams && (
-        <AddPanel>
+        <div className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
           <form
-            className="flex items-center gap-2"
+            className="flex items-end gap-2 max-sm:flex-col max-sm:items-stretch"
             onSubmit={(event) => {
               event.preventDefault();
               if (name.trim() !== '') create.mutate(name.trim());
             }}
           >
-            <div className="flex-1">
-              <Field
-                label="New team"
-                htmlFor="team-name"
-                hint={
-                  name.trim() === ''
-                    ? 'The address is derived from the name and must be unique.'
-                    : `Address: ${slugify(name)}`
-                }
-              >
-                <Input
-                  id="team-name"
-                  placeholder="Engineering"
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                  }}
-                />
-              </Field>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="team-name" className="mb-1 block text-xs font-medium text-ink-muted">
+                Team name
+              </label>
+              <Input
+                id="team-name"
+                placeholder="e.g. Engineering"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+                className="h-9"
+              />
+              <p className="mt-1 text-[11px] text-ink-faint">
+                {name.trim() === ''
+                  ? 'The address is derived from the name and must be unique.'
+                  : `Address: ${slugify(name)}`}
+              </p>
             </div>
             <Button
               type="submit"
               variant="primary"
               disabled={create.isPending || name.trim() === ''}
+              className="max-sm:w-full"
             >
               {create.isPending ? 'Creating…' : 'Create'}
             </Button>
           </form>
 
           {create.isError && <ErrorText error={create.error} />}
-        </AddPanel>
+        </div>
       )}
 
       {teams.isPending && <SkeletonRows rows={2} className="*:h-24" />}
@@ -1780,126 +1841,179 @@ interface TeamCardProps {
  */
 function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCardProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState('');
 
   const onTeam = new Set(team.members.map((member) => member.userId));
   const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
+  const filtered = addQuery.trim()
+    ? candidates.filter(
+        (m) =>
+          m.email.toLowerCase().includes(addQuery.toLowerCase()) ||
+          m.email.split('@')[0]?.toLowerCase().includes(addQuery.toLowerCase()),
+      )
+    : candidates;
+
+  const hue = hueOf(team.teamId);
 
   return (
-    <li className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-ink">{team.name}</span>
-        <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
-        <Badge className="ml-auto">
-          {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
-        </Badge>
-      </div>
+    <li className="group overflow-hidden rounded-xl border border-line/50 bg-surface-raised shadow-sm transition-colors hover:border-line-strong">
+      <div className="flex">
+        {/* Colored left accent bar */}
+        <div
+          className="w-1 shrink-0"
+          style={{ backgroundColor: `oklch(55% 0.12 ${String(hue)})` }}
+        />
 
-      {/* Add first, then the roster — the same order as every other section.
-          Hidden rather than a disabled dropdown of every org member, which
-          would be noisy on every one of potentially many team cards. */}
-      {canManage && (
-        <div className="mt-2.5">
-          {candidates.length === 0 ? (
-            <p className="text-[11px] text-ink-faint">
-              {orgMembers.length === 0
-                ? 'No org members to add.'
-                : 'Everyone in the organization is on this team.'}
-            </p>
-          ) : (
-            <select
-              aria-label={`Add someone to ${team.name}`}
-              value=""
-              disabled={busy}
-              onChange={(event) => {
-                const userId = event.target.value;
-                if (userId === '') return;
-                onAdd(userId as UserId);
-              }}
-              className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-xs text-ink"
-            >
-              <option value="">Add member…</option>
-              {candidates.map((member) => (
-                <option key={member.userId} value={member.userId}>
-                  {member.email}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      )}
+        <div className="min-w-0 flex-1 p-4">
+          {/* Header: name + slug + member count */}
+          <div className="flex items-center gap-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-ink">{team.name}</span>
+                <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
+              </div>
+            </div>
+            <Badge className="shrink-0">
+              {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
+            </Badge>
+          </div>
 
-      {team.members.length === 0 ? (
-        <p className="mt-2.5 text-xs text-ink-faint">
-          Nobody on this team yet. A grant naming it currently reaches no one.
-        </p>
-      ) : (
-        <ul className="mt-2.5 flex flex-wrap gap-1.5">
-          {team.members.map((member) => {
-            const isConfirming = confirming === member.userId;
-            return (
-              <li
-                key={member.userId}
-                className={cn(
-                  'group flex items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-1',
-                  isConfirming ? 'border-danger/40 bg-danger/10' : 'border-line bg-surface-sunken',
-                )}
-              >
-                <Avatar userId={member.userId} label={member.email} size="xs" />
-                <span className="text-xs text-ink">{member.email}</span>
-
-                {/* Chip-per-member removal, gated the same way the add picker
-                    above is: hidden rather than a disabled × on every chip of
-                    every team a viewer without team:manage can see. */}
-                {canManage &&
-                  (isConfirming ? (
-                    <>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          onRemove(member.userId as UserId);
-                          setConfirming(null);
-                        }}
-                        className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
-                      >
-                        Remove
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirming(null);
-                        }}
-                        className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    /* Two clicks, not a window.confirm: removing someone from a
-                       team is an authorization change that takes effect
-                       immediately, and a single stray click on a chip is too cheap
-                       for that. The confirm is inline so it cannot be dismissed by
-                       clicking the wrong thing. */
+          {/* Add first, then the roster */}
+          {canManage && (
+            <div className="mt-3">
+              {candidates.length === 0 ? (
+                <p className="text-xs text-ink-muted">
+                  {orgMembers.length === 0
+                    ? 'No org members to add.'
+                    : 'Everyone in the organization is on this team.'}
+                </p>
+              ) : (
+                <PopoverRoot
+                  open={addOpen}
+                  onOpenChange={(open) => {
+                    setAddOpen(open);
+                    if (!open) setAddQuery('');
+                  }}
+                >
+                  <PopoverTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`Remove ${member.email} from ${team.name}`}
-                      onClick={() => {
-                        setConfirming(member.userId);
-                      }}
-                      className={cn(
-                        'flex size-4 items-center justify-center rounded-full text-ink-faint',
-                        'hover:bg-danger/15 hover:text-danger',
-                        'focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100',
-                      )}
+                      disabled={busy}
+                      className="flex h-8 w-full items-center gap-1.5 rounded-lg border border-line/50 bg-surface-sunken px-2.5 text-left text-xs text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
                     >
-                      <span aria-hidden="true">&times;</span>
+                      <span className="text-ink-faint">+</span>
+                      <span>Add member…</span>
                     </button>
-                  ))}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-64 space-y-1 p-2">
+                    <Input
+                      aria-label="Search members"
+                      placeholder="Search by email…"
+                      value={addQuery}
+                      onChange={(event) => {
+                        setAddQuery(event.target.value);
+                      }}
+                      className="h-8 text-xs"
+                    />
+                    {filtered.length === 0 ? (
+                      <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                    ) : (
+                      <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                        {filtered.map((member) => (
+                          <li key={member.userId}>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                onAdd(member.userId as UserId);
+                                setAddOpen(false);
+                                setAddQuery('');
+                              }}
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                            >
+                              <Avatar userId={member.userId} label={member.email} size="xs" />
+                              <span className="truncate">{member.email}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </PopoverContent>
+                </PopoverRoot>
+              )}
+            </div>
+          )}
+
+          {/* Roster */}
+          {team.members.length === 0 ? (
+            <p className="mt-3 text-xs text-ink-muted">
+              Nobody on this team yet. A grant naming it currently reaches no one.
+            </p>
+          ) : (
+            <ul className="mt-3 flex flex-wrap gap-1.5">
+              {team.members.map((member) => {
+                const isConfirming = confirming === member.userId;
+                return (
+                  <li
+                    key={member.userId}
+                    className={cn(
+                      'group/chip flex items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-1 transition-colors',
+                      isConfirming
+                        ? 'border-danger/40 bg-danger/10'
+                        : 'border-line/50 bg-surface-sunken hover:border-line-strong',
+                    )}
+                  >
+                    <Avatar userId={member.userId} label={member.email} size="xs" />
+                    <span className="max-w-[10rem] truncate text-xs text-ink">{member.email}</span>
+
+                    {canManage &&
+                      (isConfirming ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              onRemove(member.userId as UserId);
+                              setConfirming(null);
+                            }}
+                            className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                          >
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirming(null);
+                            }}
+                            className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${member.email} from ${team.name}`}
+                          onClick={() => {
+                            setConfirming(member.userId);
+                          }}
+                          className={cn(
+                            'flex size-4 items-center justify-center rounded-full text-ink-muted transition-colors',
+                            'hover:bg-danger/15 hover:text-danger',
+                            'focus-visible:opacity-100 md:opacity-0 md:group-hover/chip:opacity-100',
+                          )}
+                        >
+                          <span aria-hidden="true">&times;</span>
+                        </button>
+                      ))}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </li>
   );
 }

@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#fff',
+    backgroundColor: colors.accentInk.hex,
   },
   toggleThumbOn: {
     transform: [{ translateX: 18 }],

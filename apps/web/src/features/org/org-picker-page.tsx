@@ -81,7 +81,7 @@ export function OrgPickerPage() {
   const isEmpty = orgs.data.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
       <div className="flex items-center gap-3">
         <BrandMark size={36} className="text-accent" />
         <div>

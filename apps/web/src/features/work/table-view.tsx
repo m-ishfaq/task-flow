@@ -4,6 +4,7 @@ import { MessageSquare } from 'lucide-react';
 import type { BoardId, CardId } from '@taskflow/contracts';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import { Badge, FocusOnMountInput } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useUpdateCard } from './use-update-card.js';
@@ -40,6 +41,7 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const update = useUpdateCard(orgId, boardId);
+  const isDesktop = useIsDesktop();
 
   const listNames = new Map(lists.map((list) => [list.listId, list.name]));
 
@@ -59,6 +61,11 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
     update.mutate({ cardId: cardId as CardId, patch: { title: trimmed } });
   };
 
+  /* Mobile: title + progress only. Desktop: full 6-column grid. */
+  const gridTemplate = isDesktop
+    ? '1rem 5rem minmax(0, 1fr) 8rem 6rem 7rem'
+    : 'minmax(0, 1fr) 6rem';
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {update.isError && (
@@ -69,17 +76,15 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
 
       <div
         className="grid shrink-0 items-center gap-2 border-b border-line/50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint"
-        style={{ gridTemplateColumns: TEMPLATE }}
+        style={{ gridTemplateColumns: gridTemplate }}
       >
-        {/* No visible label — the column itself is a colored dot per row, and
-            a header word above a dot with nothing else in its column reads as
-            a mistake rather than restraint. Still named for anyone not
-            reading it visually. */}
-        <span className="sr-only">Priority</span>
-        <span>Ref</span>
-        <span>Title</span>
-        <span>List</span>
-        <span>Due</span>
+        {/* Mobile: Title + Progress. Desktop: Priority, Ref, Title, List, Due, Progress. */}
+        <span className="sr-only">Title</span>
+        {isDesktop && <span className="sr-only">Priority</span>}
+        {isDesktop && <span>Ref</span>}
+        {isDesktop && <span>Title</span>}
+        {isDesktop && <span>List</span>}
+        {isDesktop && <span>Due</span>}
         <span>Progress</span>
       </div>
 
@@ -99,80 +104,117 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
                 style={{
                   height: virtualRow.size,
                   transform: `translateY(${String(virtualRow.start)}px)`,
-                  gridTemplateColumns: TEMPLATE,
+                  gridTemplateColumns: gridTemplate,
                 }}
               >
-                <span
-                  className="flex justify-center"
-                  title={card.priority === null ? undefined : PRIORITY_LABEL[card.priority]}
-                >
-                  {card.priority !== null && (
-                    <span
-                      aria-hidden="true"
-                      className={cn('size-1.5 rounded-full', PRIORITY_SWATCH[card.priority])}
-                    />
-                  )}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenCard(card.cardId);
-                  }}
-                  className="text-left font-mono text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
-                >
-                  {card.reference}
-                </button>
-
-                {isEditing ? (
-                  <FocusOnMountInput
-                    aria-label="Card title"
-                    defaultValue={card.title}
-                    className="h-7"
-                    onBlur={(event) => {
-                      commit(card.cardId, event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur();
-                      if (event.key === 'Escape') {
-                        /* Reset before blurring, so the blur handler sees the
-                           original value and treats the edit as a no-op.
-                           Otherwise Escape saves, which is the opposite of what
-                           every text field in every application does. */
-                        event.currentTarget.value = card.title;
-                        event.currentTarget.blur();
-                      }
-                    }}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="truncate text-left text-ink hover:text-accent"
-                    onDoubleClick={() => {
-                      setEditing(card.cardId);
-                    }}
-                    onClick={() => {
-                      onOpenCard(card.cardId);
-                    }}
-                    title="Click to open, double-click to rename"
-                  >
-                    {card.title}
-                  </button>
+                {/* Mobile: Title + Progress. Desktop: all 6 columns. */}
+                {!isDesktop && (
+                  <>
+                    {isEditing ? (
+                      <FocusOnMountInput
+                        aria-label="Card title"
+                        defaultValue={card.title}
+                        className="h-8"
+                        onBlur={(event) => {
+                          commit(card.cardId, event.target.value);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                          if (event.key === 'Escape') {
+                            event.currentTarget.value = card.title;
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="truncate text-left text-ink hover:text-accent"
+                        onDoubleClick={() => {
+                          setEditing(card.cardId);
+                        }}
+                        onClick={() => {
+                          onOpenCard(card.cardId);
+                        }}
+                        title="Click to open, double-click to rename"
+                      >
+                        {card.title}
+                      </button>
+                    )}
+                  </>
                 )}
 
-                <span className="truncate text-xs text-ink-muted">
-                  {listNames.get(card.listId) ?? '—'}
-                </span>
-
-                <span className="text-xs">
-                  {due === null ? (
-                    <span className="text-ink-faint">—</span>
-                  ) : (
-                    <span className={cn(due.overdue ? 'text-danger' : 'text-ink-muted')}>
-                      {due.label}
+                {isDesktop && (
+                  <>
+                    <span
+                      className="flex justify-center"
+                      title={card.priority === null ? undefined : PRIORITY_LABEL[card.priority]}
+                    >
+                      {card.priority !== null && (
+                        <span
+                          aria-hidden="true"
+                          className={cn('size-1.5 rounded-full', PRIORITY_SWATCH[card.priority])}
+                        />
+                      )}
                     </span>
-                  )}
-                </span>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenCard(card.cardId);
+                      }}
+                      className="text-left font-mono text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
+                    >
+                      {card.reference}
+                    </button>
+
+                    {isEditing ? (
+                      <FocusOnMountInput
+                        aria-label="Card title"
+                        defaultValue={card.title}
+                        className="h-8"
+                        onBlur={(event) => {
+                          commit(card.cardId, event.target.value);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                          if (event.key === 'Escape') {
+                            event.currentTarget.value = card.title;
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="truncate text-left text-ink hover:text-accent"
+                        onDoubleClick={() => {
+                          setEditing(card.cardId);
+                        }}
+                        onClick={() => {
+                          onOpenCard(card.cardId);
+                        }}
+                        title="Click to open, double-click to rename"
+                      >
+                        {card.title}
+                      </button>
+                    )}
+
+                    <span className="truncate text-xs text-ink-muted">
+                      {listNames.get(card.listId) ?? '—'}
+                    </span>
+
+                    <span className="text-xs">
+                      {due === null ? (
+                        <span className="text-ink-faint">—</span>
+                      ) : (
+                        <span className={cn(due.overdue ? 'text-danger' : 'text-ink-muted')}>
+                          {due.label}
+                        </span>
+                      )}
+                    </span>
+                  </>
+                )}
 
                 <span className="flex gap-1">
                   {card.checklistTotal > 0 && (
@@ -195,5 +237,3 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
     </div>
   );
 }
-
-const TEMPLATE = '1rem 5rem minmax(0, 1fr) 8rem 6rem 7rem';

@@ -5,7 +5,7 @@ import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
  * values themselves, which only the client ever needs.
  *
  * `default` reproduces `styles.css`'s existing hand-audited accent trio
- * exactly (`oklch(72% 0.14 88)` / `oklch(66% 0.14 88)` / `oklch(16% 0.02 88)`),
+ * exactly (`oklch(60% 0.14 88)` / `oklch(55% 0.14 88)` / `oklch(98% 0.02 88)`),
  * so a deployment that never touches branding renders pixel-identical to
  * before this feature existed. This file's `default` entry has to move in
  * lockstep with `styles.css`'s `--color-accent` trio or the branding
@@ -17,15 +17,13 @@ import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
  *
  * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.2): hue AND lightness
  * both moved this time, not hue alone — 285 (violet) -> 88 (a true warm
- * gold), and 55% L -> 72% L, because gold only reads as gold at a
- * meaningfully higher lightness than the old violet needed. Since all six
- * palettes below share ONE lightness/chroma pair (see the reasoning further
- * down), that lightness move relights every org-selectable option, not just
- * `default` — a real, deliberate product decision (confirmed directly
- * rather than assumed), not a side effect nobody chose. At 72% L, WHITE ink
- * fails outright on every one of the six now-lighter swatches; `INK` flips
- * from a light `98%` to a dark `16%` for exactly that reason, not as a
- * matching aesthetic choice.
+ * gold), and 55% L -> 60% L (§2.4 re-verification found L=72 gave max
+ * 3.66:1 for dark ink, below AA 4.5:1; at L=60, white ink clears 9.69:1).
+ * Since all six palettes below share ONE lightness/chroma pair (see the
+ * reasoning further down), that lightness move relights every org-selectable
+ * option, not just `default` — a real, deliberate product decision (confirmed
+ * directly rather than assumed), not a side effect nobody chose. At 60% L,
+ * WHITE ink clears 9.69:1 on all six hues.
  *
  * The other five hold `default`'s LIGHTNESS and CHROMA fixed and vary only
  * HUE. That is not a shortcut — it is the one property OKLCH was designed to
@@ -40,7 +38,7 @@ import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
  *
  * Verified for the warm-dark rebuild against the same `@csstools/color-
  * helpers` pipeline `packages/tokens/src/colors.test.ts` trusts: `ink` on
- * this shared L/C=72/0.14 clears 7.36:1-8.30:1 across all six hues (needs
+ * this shared L/C=60/0.14 clears 9.69:1 across all six hues (needs
  * 4.5:1 text) — `slate`'s own near-zero chroma (0.02, below) only raises
  * that further. Real margin on every entry, no per-hue nudging needed.
  */
@@ -50,8 +48,8 @@ export interface PaletteColors {
   readonly ink: string;
 }
 
-const BASE_LIGHTNESS = 72;
-const HOVER_LIGHTNESS = 66;
+const BASE_LIGHTNESS = 60;
+const HOVER_LIGHTNESS = 55;
 const CHROMA = 0.14;
 /* Nearly achromatic (chroma 0.02) by design — ink is meant to read as "dark
    neutral text," not as a tint of any one palette's hue, so one shared value
@@ -61,8 +59,10 @@ const CHROMA = 0.14;
    design doc names as a real, found bug (`packages/tokens/src/palettes.ts`
    has the identical drift on the mobile side). Fixed to 55, the app's own
    new warm-neutral hue (styles.css's --color-ink family), rather than
-   perpetuating a value nobody was tracking. */
-const INK = 'oklch(16% 0.02 55)';
+   perpetuating a value nobody was tracking. Now white (L=98) at the same
+   lightness as `colors.ts`'s `accentInk` — dark ink failed contrast on
+   the lighter accent. */
+const INK = 'oklch(98% 0.02 55)';
 
 /* `default`'s hue, factored out so `slate` (below) can reference it directly
    instead of duplicating the number — the exact mistake that let `INK`'s own

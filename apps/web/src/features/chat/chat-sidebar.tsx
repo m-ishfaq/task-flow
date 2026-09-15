@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Pin } from 'lucide-react';
+import { Bookmark, Lock, Pin } from 'lucide-react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -407,7 +407,7 @@ function SavedMessagesButton({
           className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
-            <span aria-hidden>🔖</span>
+            <Bookmark aria-hidden="true" className="size-3.5" strokeWidth={2} />
             Saved messages
           </span>
           {list.length > 0 && (

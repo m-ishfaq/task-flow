@@ -131,7 +131,7 @@ export function PlatformAdminPage() {
     (billing.data?.orgs.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-8">
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-7xl flex-col gap-6 p-8">
       <PageHeader
         title="Platform administration"
         description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."

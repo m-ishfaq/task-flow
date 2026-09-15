@@ -42,8 +42,9 @@ export function SprintsPage() {
   if (sprints.isError) return <ErrorText error={sprints.error} />;
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="mx-auto flex h-full max-w-5xl flex-col p-6">
+      {/* Pinned header — stays visible while sprints + planning scroll. */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-sm font-semibold text-ink">Sprints</h1>
           <p className="mt-0.5 truncate text-xs text-ink-faint">
@@ -87,65 +88,68 @@ export function SprintsPage() {
         />
       )}
 
-      <div className="mt-4">
-        {sprints.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : sprints.data.length === 0 ? (
-          <Empty
-            title="No sprints yet"
-            description="Create one to plan a block of work. Cards join a sprint from the board's Sprint picker or the card detail panel."
-          />
-        ) : (
-          <ul className="space-y-1.5">
-            {sprints.data.map((sprint) => {
-              const row = (
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors hover:border-accent">
-                  <div className="min-w-0 flex-1 basis-48">
-                    <p className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>
-                      <StatusChip status={sprint.status} />
-                    </p>
-                    <p className="truncate text-[11px] text-ink-faint">
-                      {sprint.startsOn} → {sprint.endsOn}
-                      {sprint.goal !== null && sprint.goal !== '' && ` · ${sprint.goal}`}
-                    </p>
+      {/* Scrollable area — sprint list + planning surface */}
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+        <div>
+          {sprints.isPending ? (
+            <SkeletonRows rows={3} />
+          ) : sprints.data.length === 0 ? (
+            <Empty
+              title="No sprints yet"
+              description="Create one to plan a block of work. Cards join a sprint from the board's Sprint picker or the card detail panel."
+            />
+          ) : (
+            <ul className="space-y-1.5">
+              {sprints.data.map((sprint) => {
+                const row = (
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-line bg-surface px-3 py-2 transition-colors hover:border-accent">
+                    <div className="min-w-0 flex-1 basis-48">
+                      <p className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-ink">{sprint.name}</span>
+                        <StatusChip status={sprint.status} />
+                      </p>
+                      <p className="truncate text-[11px] text-ink-faint">
+                        {sprint.startsOn} → {sprint.endsOn}
+                        {sprint.goal !== null && sprint.goal !== '' && ` · ${sprint.goal}`}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-ink-faint">
+                      {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-[11px] text-ink-faint">
-                    {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
-                  </span>
-                </div>
-              );
+                );
 
-              return (
-                <li key={sprint.sprintId}>
-                  {board === undefined ? (
-                    row
-                  ) : (
-                    <Link
-                      to="/boards/$boardId"
-                      params={{ boardId: board.boardId as BoardId }}
-                      /* `project` travels along for the same reason the
-                         sidebar's BoardLink sends it: the card detail panel
-                         needs it for the project-scoped label and custom-field
-                         vocabulary, and a board reached without it renders a
-                         panel missing both. */
-                      search={{ view: 'board', project: projectId, sprint: sprint.sprintId }}
-                      className="block"
-                    >
-                      {row}
-                    </Link>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                return (
+                  <li key={sprint.sprintId}>
+                    {board === undefined ? (
+                      row
+                    ) : (
+                      <Link
+                        to="/boards/$boardId"
+                        params={{ boardId: board.boardId as BoardId }}
+                        /* `project` travels along for the same reason the
+                           sidebar's BoardLink sends it: the card detail panel
+                           needs it for the project-scoped label and custom-field
+                           vocabulary, and a board reached without it renders a
+                           panel missing both. */
+                        search={{ view: 'board', project: projectId, sprint: sprint.sprintId }}
+                        className="block"
+                      >
+                        {row}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* The planning surface, below the list rather than on its own route:
+            choosing WHICH sprint to plan is the list's job, and splitting them
+            would mean navigating away from the thing you just decided on. */}
+        <SprintPlanning orgId={orgId} projectId={projectId} />
       </div>
-
-      {/* The planning surface, below the list rather than on its own route:
-          choosing WHICH sprint to plan is the list's job, and splitting them
-          would mean navigating away from the thing you just decided on. */}
-      <SprintPlanning orgId={orgId} projectId={projectId} />
     </div>
   );
 }

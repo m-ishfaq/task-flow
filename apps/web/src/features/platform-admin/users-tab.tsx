@@ -6,7 +6,7 @@ import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { Badge, Button, SkeletonRows } from '../../components/primitives.js';
+import { Badge, Button, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { DetailRow, Pagination, StepUpGate, TableSearch, downloadCsv } from './shared.js';
 
@@ -221,10 +221,11 @@ function UserDetailDialog({
               </h3>
 
               {data.memberships.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-line bg-surface-sunken/40 p-4 text-center text-xs text-ink-faint">
-                  This account belongs to no organization. They can sign in and will land on the org
-                  picker with nothing to choose.
-                </p>
+                <Empty
+                  icon={<Users size={20} />}
+                  title="No organizations"
+                  description="This account belongs to no organization. They can sign in and will land on the org picker with nothing to choose."
+                />
               ) : (
                 <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                   {data.memberships.map((membership) => (

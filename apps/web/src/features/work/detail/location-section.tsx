@@ -160,7 +160,7 @@ export function LocationSection({
       )}
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-ink-faint">List</span>
+        <span className="text-xs text-ink-faint">List</span>
         <select
           aria-label="List"
           /* Empty while showing another board's lists, so the control never
@@ -172,7 +172,7 @@ export function LocationSection({
             if (next === '') return;
             move.mutate(next as ListId);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+          className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         >
           {showingBoardId !== boardId && <option value="">Choose a list…</option>}
           {(lists.data ?? []).map((list) => (
@@ -212,7 +212,7 @@ function BoardSelect({
 
   return (
     <label className="block space-y-1">
-      <span className="text-[11px] text-ink-faint">Board</span>
+      <span className="text-xs text-ink-faint">Board</span>
       <select
         aria-label="Board"
         value={value}
@@ -220,7 +220,7 @@ function BoardSelect({
         onChange={(event) => {
           onChange(event.target.value as BoardId);
         }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+        className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
       >
         {(boards.data ?? []).map((board) => (
           <option key={board.boardId} value={board.boardId}>

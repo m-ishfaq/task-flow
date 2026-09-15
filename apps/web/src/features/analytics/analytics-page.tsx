@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useSession } from '../../lib/session.js';
-import { TabBar } from '../../components/primitives.js';
+import { PageHeader, TabBar } from '../../components/primitives.js';
 import { VelocityPanel } from './velocity-panel.js';
 import { BurndownPanel } from './burndown-panel.js';
 import { CfdPanel } from './cfd-panel.js';
@@ -27,6 +27,10 @@ import { StatusPanel } from './status-panel.js';
  * (a template-literal className instead of `cn()`, `text-ink/60` instead of
  * the shared `text-ink-muted`, no `shadow-sm ring-1 ring-accent/20` on the
  * active tab).
+ *
+ * Header uses `PageHeader` to match the consistent page-title pattern
+ * across People, Calls, and Analytics — large bold title, optional
+ * description, same spacing.
  */
 
 const TABS = [
@@ -52,13 +56,16 @@ export function AnalyticsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line/50 px-4 pt-4 pb-2">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Analytics</h1>
+      <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2">
+        <PageHeader
+          title="Analytics"
+          description="Velocity, burndown, flow metrics, and more — see how your projects are progressing."
+        />
         <TabBar
           ariaLabel="Analytics dashboards"
           value={tab}
           onChange={selectTab}
-          className="mt-2 flex overflow-x-auto"
+          className="mt-3 flex overflow-x-auto"
           items={TABS}
         />
       </header>

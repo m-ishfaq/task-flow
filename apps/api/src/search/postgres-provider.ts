@@ -161,6 +161,7 @@ function toHit(
     type: row.entityType as SearchHit['type'],
     entityId: row.entityId,
     title: row.title,
+    contextLabel: null,
     snippet: excerptOf(row.body, row.title, term),
     authorId: row.authorId,
     updatedAt: row.updatedAt.toISOString(),

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Key } from 'lucide-react';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { cn } from '../../lib/cn.js';
@@ -7,7 +8,7 @@ import { keys } from '../../lib/query.js';
 import { formatRelative, hasPassed } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import { Badge, Button, ConfirmButton, Field, SkeletonRows } from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText } from '../../components/error-view.js';
 import { apiTokensQuery, heldApiTokenScopesQuery } from './api.js';
@@ -57,13 +58,13 @@ export function ApiTokensSection({
   const tokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs text-ink-faint">
-          Long-lived credentials for the org's API — the same surface as webhooks, for scripts and
-          integrations. Each token is scoped to a subset of <em>your</em> current permissions, and
-          dies the moment you lose your membership.
-        </p>
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Key aria-hidden="true" className="size-4 text-ink-faint" />
+          <h2 className="text-sm font-semibold text-ink">API Tokens</h2>
+          {tokens.data !== undefined && <Badge>{tokens.data.length}</Badge>}
+        </div>
         {!creating && (
           <Button
             size="sm"
@@ -76,6 +77,12 @@ export function ApiTokensSection({
           </Button>
         )}
       </div>
+
+      <p className="mb-4 text-xs text-ink-faint">
+        Long-lived credentials for the org's API — the same surface as webhooks, for scripts and
+        integrations. Each token is scoped to a subset of <em>your</em> current permissions, and
+        dies the moment you lose your membership.
+      </p>
 
       {creating && (
         <TokenCreateForm
@@ -107,22 +114,25 @@ export function ApiTokensSection({
       ) : tokens.isError ? (
         <ErrorText error={tokens.error} />
       ) : tokens.data.length === 0 ? (
-        <Empty
-          title="No API tokens yet"
-          description="A script cannot call the API without a credential. Mint one, copy the token into your integration, and it will authenticate as you — narrowed to the scopes you grant it."
-          action={
-            !creating ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setCreating(true);
-                }}
-              >
-                New token
-              </Button>
-            ) : undefined
-          }
-        />
+        <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-6 text-center">
+          <Key aria-hidden="true" className="mx-auto mb-2 size-5 text-ink-faint" />
+          <p className="text-sm font-medium text-ink-muted">No API tokens yet</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            A script cannot call the API without a credential. Mint one, copy the token into your
+            integration, and it will authenticate as you — narrowed to the scopes you grant it.
+          </p>
+          {!creating && (
+            <Button
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                setCreating(true);
+              }}
+            >
+              New token
+            </Button>
+          )}
+        </div>
       ) : (
         <ul className="space-y-2">
           {tokens.data.map((token) => (
@@ -132,7 +142,7 @@ export function ApiTokensSection({
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }
 

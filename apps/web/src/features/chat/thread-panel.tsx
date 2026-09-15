@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
-import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Button, Skeleton } from '../../components/primitives.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
@@ -24,14 +23,12 @@ export function ThreadPanel({
   orgId,
   channelId,
   rootMessage,
-  viewerId,
   personOf,
   onClose,
 }: {
   readonly orgId: string;
   readonly channelId: ChannelId;
   readonly rootMessage: Message;
-  readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onClose: () => void;
 }) {
@@ -79,39 +76,21 @@ export function ThreadPanel({
   };
 
   const renderPlain = (message: Message) => {
-    const isOwn = message.authorId !== null && message.authorId === viewerId;
     const label = message.authorId === null ? 'Unknown' : personOf(message.authorId).label;
 
     if (message.deletedAt !== null) {
-      return <p className="px-1 text-xs text-ink-faint italic">This message was deleted.</p>;
+      return <p className="px-2 py-0.5 text-xs text-ink-faint italic">This message was deleted.</p>;
     }
 
     return (
-      <div className={cn('flex flex-col gap-1', isOwn && 'items-end')}>
-        <span className="px-1 text-xs font-medium text-ink-muted">{label}</span>
-        <div
-          className={cn(
-            /* text-sm: same 14px floor as the main channel's bubbles — a
-               thread is a chat surface, not a document surface. */
-            'max-w-full rounded-2xl px-3 py-1.5 text-sm shadow-sm',
-            isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
-            /* Same as the main channel's bubble — see the comment there. */
-            isOwn && 'rich-text-on-accent',
-          )}
-        >
+      <div className="group rounded-md px-2 py-1.5 hover:bg-surface-hover/40 transition-colors">
+        <div className="flex items-baseline gap-2">
+          <span className="shrink-0 text-[13px] font-semibold text-ink">{label}</span>
+          <span className="text-[11px] text-ink-faint leading-none">{formatTime(message.createdAt)}</span>
+          {message.editedAt !== null && <span className="text-[11px] text-ink-faint">· edited</span>}
+        </div>
+        <div className="text-[13px] leading-relaxed text-ink">
           <RichTextView value={message.body} bare />
-          {/* Same bottom-right timestamp as the main channel's bubbles — the
-              thread is the same WhatsApp-style surface, so the metadata sits
-              in the same corner rather than drifting to the left edge. */}
-          <div
-            className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
-              isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
-            )}
-          >
-            <span>{formatTime(message.createdAt)}</span>
-            {message.editedAt !== null && <span>edited</span>}
-          </div>
         </div>
       </div>
     );
@@ -124,13 +103,13 @@ export function ThreadPanel({
      the side-by-side layout above the breakpoint. */
   return (
     <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised md:static md:w-80">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-3">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
         <h3 className="text-sm font-medium text-ink">Thread</h3>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close thread"
-          className="rounded p-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex size-7 items-center justify-center rounded-md text-ink-muted hover:bg-surface-hover hover:text-ink transition-colors"
         >
           <X aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>

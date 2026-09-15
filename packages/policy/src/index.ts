@@ -36,6 +36,8 @@ export {
   isDirectlyAssignable,
   sameRole,
   isGuestRole,
+  isOwnerRole,
+  isAdminRole,
   DIRECTLY_ASSIGNABLE_ROLES,
 } from './assignment.js';
 

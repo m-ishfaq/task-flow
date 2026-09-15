@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -6,6 +6,19 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
+  ListTodo,
+  Quote,
+  Strikethrough,
+  Underline,
+} from 'lucide-react';
 import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
@@ -83,7 +96,7 @@ export function DocsEditor({
 
   if (provider === null) {
     return (
-      <div className="flex h-40 items-center justify-center rounded border border-dashed border-line/50">
+      <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-line/50">
         <p className="text-xs text-ink-faint">Connecting…</p>
       </div>
     );
@@ -193,12 +206,12 @@ function DocsEditorReady({
       }),
       CollaborationCaret.configure({
         provider,
-        user: { name: displayName, color },
+        user: { name: displayName, color, userId: userId ?? email ?? 'anonymous' },
       }),
     ],
     editorProps: {
       attributes: {
-        class: cn('rich-text focus:outline-none min-h-40 px-3 py-2'),
+        class: cn('rich-text rich-text-doc min-h-[60vh] px-1 py-6 focus:outline-none sm:px-2'),
         'data-placeholder': 'Write something…',
       },
     },
@@ -224,13 +237,10 @@ function DocsEditorReady({
   }, [editor, provider, onReady]);
 
   return (
-    <div className="overflow-hidden rounded border border-line bg-surface-sunken">
-      <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-1.5 pr-2">
+    <div>
+      <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-2 border-b border-line bg-surface/95 px-1 py-1.5 shadow-xs backdrop-blur sm:-mx-2 sm:px-2">
         <Toolbar editor={editor} />
-        <div className="flex shrink-0 items-center gap-3">
-          <Presence provider={provider} />
-          <ConnectionPill status={status} synced={synced} />
-        </div>
+        <ConnectionPill status={status} synced={synced} />
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -238,79 +248,82 @@ function DocsEditorReady({
 }
 
 function Toolbar({ editor }: { readonly editor: Editor }) {
-  const item = (label: string, active: boolean, run: () => void, title: string) => (
+  const item = (Icon: typeof Bold, active: boolean, run: () => void, title: string) => (
     <Button
-      key={label}
+      key={title}
       size="sm"
       variant="ghost"
       title={title}
+      aria-label={title}
       aria-pressed={active}
-      className={cn('h-6 px-1.5', active && 'bg-surface-hover text-ink')}
+      className={cn('h-7 w-7 px-0', active && 'bg-surface-hover text-ink')}
       onClick={run}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
     </Button>
   );
 
   return (
     <div className="flex flex-wrap items-center gap-0.5">
-      {item('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
+      {item(Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
       {item(
-        'I',
+        Italic,
         editor.isActive('italic'),
         () => editor.chain().focus().toggleItalic().run(),
         'Italic',
       )}
       {item(
-        'U',
+        Underline,
         editor.isActive('underline'),
         () => editor.chain().focus().toggleUnderline().run(),
         'Underline',
       )}
       {item(
-        'S',
+        Strikethrough,
         editor.isActive('strike'),
         () => editor.chain().focus().toggleStrike().run(),
         'Strikethrough',
       )}
       {item(
-        '</>',
+        Code2,
         editor.isActive('code'),
         () => editor.chain().focus().toggleCode().run(),
         'Inline code',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        'H1',
+        Heading1,
         editor.isActive('heading', { level: 1 }),
         () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
         'Heading 1',
       )}
       {item(
-        'H2',
+        Heading2,
         editor.isActive('heading', { level: 2 }),
         () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
         'Heading 2',
       )}
+      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
       {item(
-        '•',
+        List,
         editor.isActive('bulletList'),
         () => editor.chain().focus().toggleBulletList().run(),
         'Bullet list',
       )}
       {item(
-        '1.',
+        ListOrdered,
         editor.isActive('orderedList'),
         () => editor.chain().focus().toggleOrderedList().run(),
         'Numbered list',
       )}
       {item(
-        '☑',
+        ListTodo,
         editor.isActive('taskList'),
         () => editor.chain().focus().toggleTaskList().run(),
         'Task list',
       )}
       {item(
-        '❝',
+        Quote,
         editor.isActive('blockquote'),
         () => editor.chain().focus().toggleBlockquote().run(),
         'Quote',
@@ -361,50 +374,6 @@ function ConnectionPill({
     >
       <span className={cn('size-1.5 rounded-full', dot)} aria-hidden="true" />
       {label}
-    </span>
-  );
-}
-
-/**
- * "N others viewing" from the shared awareness map.
- *
- * CollaborationCaret publishes `{ name, color }` under each client's
- * awareness state, so everyone connected to the same page is visible here —
- * the same Yjs awareness channel the caret labels ride on. Cheap (an event
- * subscription, no polling), and it is the only presence surface this
- * feature needs for now; the avatars it could become are a styling change.
- */
-function Presence({ provider }: { readonly provider: HocuspocusProvider }) {
-  const [others, setOthers] = useState(0);
-
-  useEffect(() => {
-    const awareness = provider.awareness;
-    if (awareness === null) return;
-
-    const update = () => {
-      const local = awareness.clientID;
-      let count = 0;
-      for (const [clientId] of awareness.getStates()) {
-        if (clientId !== local) count += 1;
-      }
-      setOthers(count);
-    };
-
-    awareness.on('change', update);
-    update();
-    return () => {
-      awareness.off('change', update);
-    };
-  }, [provider]);
-
-  if (others === 0) return null;
-
-  return (
-    <span
-      className="text-[11px] text-ink-faint"
-      title={`${String(others)} other viewer${others === 1 ? '' : 's'}`}
-    >
-      {others === 1 ? '1 other viewing' : `${String(others)} others viewing`}
     </span>
   );
 }

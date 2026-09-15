@@ -47,13 +47,13 @@ export interface ColorToken {
 /**
  * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.7): every value below
  * mirrors `styles.css`'s own warm-dark update (§2.1-§2.3) — hue 262 -> 55 for
- * the neutral family, 285 -> 88 for accent (at a higher lightness, 55% ->
- * 72%, which is why `accentInk` flips from light to dark), `priorityMedium`
- * following accent's hue. Every `hex` here was re-derived through the exact
- * `@csstools/color-helpers` pipeline `colors.test.ts` already trusts (this
- * file's own header explains why that matters) — never hand-converted —
- * and the contrast numbers quoted in `styles.css`'s own updated comments
- * apply identically here, since these are the same oklch triples.
+ * the neutral family, 285 -> 88 for accent (L=60, richer warm gold — §2.4
+ * re-verification found L=72 gave max 3.66:1 for dark ink, below AA 4.5:1;
+ * at L=60, white accentInk clears 9.69:1). Every `hex` here was re-derived
+ * through the exact `@csstools/color-helpers` pipeline `colors.test.ts`
+ * already trusts — never hand-converted — and the contrast numbers quoted in
+ * `styles.css`'s own updated comments apply identically here, since these
+ * are the same oklch triples.
  */
 export const colors = {
   surface: { oklch: { l: 16, c: 0.014, h: 55 }, hex: '#120c08' },
@@ -62,17 +62,17 @@ export const colors = {
   surfaceHover: { oklch: { l: 23, c: 0.017, h: 55 }, hex: '#231b15' },
 
   ink: { oklch: { l: 93, c: 0.01, h: 55 }, hex: '#ede6e2' },
-  inkMuted: { oklch: { l: 66, c: 0.016, h: 55 }, hex: '#9a9089' },
+  inkMuted: { oklch: { l: 78, c: 0.016, h: 55 }, hex: '#c0b5ae' },
   inkFaint: { oklch: { l: 56, c: 0.015, h: 55 }, hex: '#7c726c' },
 
   line: { oklch: { l: 28, c: 0.013, h: 55 }, hex: '#2e2723' },
   lineStrong: { oklch: { l: 35, c: 0.015, h: 55 }, hex: '#413933' },
 
-  accent: { oklch: { l: 72, c: 0.14, h: 88 }, hex: '#c99e1e' },
-  accentInk: { oklch: { l: 16, c: 0.02, h: 88 }, hex: '#110d04' },
-  accentHover: { oklch: { l: 66, c: 0.14, h: 88 }, hex: '#b68c00' },
+  accent: { oklch: { l: 60, c: 0.14, h: 88 }, hex: '#a37900' },
+  accentInk: { oklch: { l: 98, c: 0.01, h: 88 }, hex: '#fbf8f1' },
+  accentHover: { oklch: { l: 55, c: 0.14, h: 88 }, hex: '#936a00' },
 
-  danger: { oklch: { l: 55, c: 0.19, h: 22 }, hex: '#c92e3b' },
+  danger: { oklch: { l: 68, c: 0.19, h: 22 }, hex: '#f75c61' },
   dangerInk: { oklch: { l: 98, c: 0.01, h: 22 }, hex: '#fff6f5' },
   warning: { oklch: { l: 76, c: 0.15, h: 75 }, hex: '#e8a127' },
   success: { oklch: { l: 70, c: 0.15, h: 155 }, hex: '#3bb974' },

@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  CircleDot,
+  FolderKanban,
+  LayoutGrid,
+  SlidersHorizontal,
+  Tag,
+} from 'lucide-react';
 import type {
   BoardId,
   CustomFieldId,
@@ -19,7 +26,6 @@ import {
   Empty,
   Field,
   Input,
-  Section,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
@@ -80,33 +86,43 @@ export function ProjectSettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
-      <div className="flex items-center gap-2">
+    <div className="mx-auto flex h-full max-w-5xl flex-col p-6">
+      {/* Pinned breadcrumb — stays visible while settings sections scroll. */}
+      <div className="flex shrink-0 items-center gap-3">
         <Link to="/projects" className="text-sm text-accent underline">
           Projects
         </Link>
         <span className="text-ink-faint">/</span>
-        <h1 className="text-lg font-semibold text-ink">{project.name}</h1>
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-ink-muted">
-          {project.key}
-        </span>
+        <div className="flex items-center gap-2.5">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+            {project.name}
+          </h1>
+          <span className="rounded-lg bg-accent/10 px-2 py-0.5 font-mono text-xs font-medium text-accent">
+            {project.key}
+          </span>
+        </div>
       </div>
 
-      <ProjectDetails orgId={orgId} project={project} />
-      <BoardSection
-        orgId={orgId}
-        projectId={projectId}
-        canCreateBoard={project.capabilities.update}
-      />
-      <LabelSettings orgId={orgId} projectId={projectId} />
-      <StatusSettings orgId={orgId} projectId={projectId} />
-      <FieldSettings orgId={orgId} projectId={projectId} />
-      {/* Hidden entirely rather than disabled — Phase 15 §1's "hide, don't
-          disable" rule: `work.guests.*` routes are `project:update`-gated the
-          same as everything else on this page, and a viewer who cannot
-          manage the project has no use for a control that would just be
-          refused. */}
-      {project.capabilities.update && <GuestAccessSection orgId={orgId} projectId={projectId} />}
+      {/* Scrollable settings sections */}
+      <div className="mt-8 min-h-0 flex-1 space-y-6 overflow-y-auto">
+        <ProjectDetails orgId={orgId} project={project} />
+        <BoardSection
+          orgId={orgId}
+          projectId={projectId}
+          canCreateBoard={project.capabilities.update}
+        />
+        <LabelSettings orgId={orgId} projectId={projectId} />
+        <StatusSettings orgId={orgId} projectId={projectId} />
+        <FieldSettings orgId={orgId} projectId={projectId} />
+        {/* Hidden entirely rather than disabled — Phase 15 §1's "hide, don't
+            disable" rule: `work.guests.*` routes are `project:update`-gated the
+            same as everything else on this page, and a viewer who cannot
+            manage the project has no use for a control that would just be
+            refused. */}
+        {project.capabilities.update && (
+          <GuestAccessSection orgId={orgId} projectId={projectId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -153,7 +169,11 @@ function ProjectDetails({
   });
 
   return (
-    <Section title="Project">
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <FolderKanban className="size-4 text-ink-faint" />
+        <h2 className="text-sm font-semibold text-ink">Project</h2>
+      </div>
       <form
         className="space-y-3"
         onSubmit={(event) => {
@@ -220,13 +240,13 @@ function ProjectDetails({
           every card reference ever issued (`WEB-142`), including ones already
           pasted into chat messages and commit titles. Changing it would silently
           orphan all of them. */}
-      <p className="text-xs text-ink-faint">
+      <p className="mt-3 text-xs text-ink-faint">
         The project key cannot be changed — it is part of every card number already issued.
       </p>
 
       {update.isError && <ErrorText error={update.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
-    </Section>
+    </div>
   );
 }
 
@@ -273,25 +293,35 @@ function BoardSection({
   const live = (boards.data ?? []).filter((board) => board.archivedAt === null);
 
   return (
-    <Section
-      title="Boards"
-      count={boards.data === undefined ? undefined : live.length}
-      /* Was "Boards are created from the projects list" — a settings page
-         whose own description sends you somewhere else to do half the job.
-         Creation lives here now too, so this page manages boards completely. */
-      description="Rename, create, or archive. Archiving hides a board without touching its cards."
-    >
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <LayoutGrid className="size-4 text-ink-faint" />
+        <h2 className="text-sm font-semibold text-ink">Boards</h2>
+        {boards.data !== undefined && (
+          <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">
+            {live.length}
+          </span>
+        )}
+      </div>
+      <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
+        Rename, create, or archive. Archiving hides a board without touching its cards.
+      </p>
+
       {boards.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
       {boards.data !== undefined && live.length === 0 ? (
-        <Empty
-          title="No boards in this project"
-          description="A project without a board has nowhere to put cards."
-        />
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line/50 py-8 text-center">
+          <LayoutGrid className="size-8 text-ink-faint/50" />
+          <p className="text-sm font-medium text-ink">No boards in this project</p>
+          <p className="text-xs text-ink-muted">A project without a board has nowhere to put cards.</p>
+        </div>
       ) : (
-        <ul className="divide-y divide-line/40 rounded border border-line/50">
+        <ul className="space-y-1">
           {live.map((board) => (
-            <li key={board.boardId} className="flex items-center gap-2 px-3 py-2">
+            <li
+              key={board.boardId}
+              className="group flex items-center gap-2 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-hover"
+            >
               {editing === board.boardId ? (
                 <form
                   className="flex flex-1 gap-2"
@@ -308,7 +338,7 @@ function BoardSection({
                     onChange={(event) => {
                       setName(event.target.value);
                     }}
-                    className="h-7 text-xs"
+                    className="h-8 text-xs"
                   />
                   <Button type="submit" size="sm" variant="primary" disabled={rename.isPending}>
                     Save
@@ -329,7 +359,7 @@ function BoardSection({
                     to="/boards/$boardId"
                     params={{ boardId: board.boardId as BoardId }}
                     search={{ view: 'board', project: projectId }}
-                    className="flex-1 truncate text-sm text-ink hover:text-accent"
+                    className="flex-1 truncate text-sm text-ink transition-colors group-hover:text-accent"
                   >
                     {board.name}
                   </Link>
@@ -340,6 +370,7 @@ function BoardSection({
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={() => {
                         setEditing(board.boardId);
                         setName(board.name);
@@ -356,6 +387,7 @@ function BoardSection({
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={() => {
                         archive.mutate(board.boardId as BoardId);
                       }}
@@ -376,7 +408,7 @@ function BoardSection({
           make one sends you elsewhere to finish a job you started here. */}
       {canCreateBoard && (
         <form
-          className="mt-2 flex items-center gap-2"
+          className="mt-3 flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (newName.trim() !== '') create.mutate(newName.trim());
@@ -389,7 +421,7 @@ function BoardSection({
             onChange={(event) => {
               setNewName(event.target.value);
             }}
-            className="h-7 max-w-xs text-xs"
+            className="h-8 max-w-xs text-xs"
           />
           <Button type="submit" size="sm" disabled={create.isPending || newName.trim() === ''}>
             {create.isPending ? 'Adding…' : 'Add board'}
@@ -400,7 +432,7 @@ function BoardSection({
       {rename.isError && <ErrorText error={rename.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
       {create.isError && <ErrorText error={create.error} />}
-    </Section>
+    </div>
   );
 }
 
@@ -433,11 +465,21 @@ function LabelSettings({
   });
 
   return (
-    <Section
-      title="Labels"
-      count={labels.data?.length}
-      description="Deleting a label removes it from every card carrying it, and cannot be undone — a label holds no content of its own, so there is nothing to archive."
-    >
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Tag className="size-4 text-ink-faint" />
+        <h2 className="text-sm font-semibold text-ink">Labels</h2>
+        {labels.data !== undefined && (
+          <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">
+            {labels.data.length}
+          </span>
+        )}
+      </div>
+      <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
+        Deleting a label removes it from every card carrying it, and cannot be undone — a label holds
+        no content of its own, so there is nothing to archive.
+      </p>
+
       {labels.isPending && <SkeletonRows rows={3} className="*:h-10" />}
 
       {/* No create form here, deliberately, and the empty state has to say so
@@ -446,14 +488,21 @@ function LabelSettings({
           label" box invites naming a vocabulary up front for cards nobody has
           written yet. This section EDITS the vocabulary that use produced. */}
       {labels.data?.length === 0 ? (
-        <Empty
-          title="No labels yet"
-          description="Labels are created from a card's detail panel, the first time one is needed. They can be renamed and recoloured here afterwards."
-        />
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line/50 py-8 text-center">
+          <Tag className="size-8 text-ink-faint/50" />
+          <p className="text-sm font-medium text-ink">No labels yet</p>
+          <p className="text-xs text-ink-muted">
+            Labels are created from a card's detail panel, the first time one is needed. They can be
+            renamed and recoloured here afterwards.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-line/40 rounded border border-line/50">
+        <ul className="space-y-1">
           {(labels.data ?? []).map((label) => (
-            <li key={label.labelId} className="flex items-center gap-2 px-3 py-2">
+            <li
+              key={label.labelId}
+              className="group flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-hover"
+            >
               {editing === label.labelId ? (
                 <form
                   className="flex flex-1 items-center gap-2"
@@ -475,7 +524,7 @@ function LabelSettings({
                     onChange={(event) => {
                       setDraft((current) => ({ ...current, color: event.target.value }));
                     }}
-                    className="h-7 w-10 rounded border border-line bg-surface-sunken"
+                    className="h-8 w-10 rounded-lg border border-line bg-surface-sunken"
                   />
                   <Input
                     aria-label="Label name"
@@ -483,7 +532,7 @@ function LabelSettings({
                     onChange={(event) => {
                       setDraft((current) => ({ ...current, name: event.target.value }));
                     }}
-                    className="h-7 text-xs"
+                    className="h-8 flex-1 text-xs"
                   />
                   <Button type="submit" size="sm" variant="primary" disabled={update.isPending}>
                     Save
@@ -501,17 +550,18 @@ function LabelSettings({
               ) : (
                 <>
                   <span
-                    className="size-3 shrink-0 rounded"
+                    className="size-3.5 shrink-0 rounded-md"
                     style={{ backgroundColor: label.color }}
                     aria-hidden="true"
                   />
                   <span className="flex-1 truncate text-sm text-ink">{label.name}</span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {label.cardCount} {label.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={() => {
                       setEditing(label.labelId);
                       setDraft({ name: label.name, color: label.color });
@@ -544,7 +594,7 @@ function LabelSettings({
 
       {update.isError && <ErrorText error={update.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
-    </Section>
+    </div>
   );
 }
 
@@ -616,11 +666,21 @@ function StatusSettings({
   });
 
   return (
-    <Section
-      title="Statuses"
-      count={statuses.data?.length}
-      description="What a board grouped by status shows as columns. The default is where a new card lands when nothing else was chosen."
-    >
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <CircleDot className="size-4 text-ink-faint" />
+        <h2 className="text-sm font-semibold text-ink">Statuses</h2>
+        {statuses.data !== undefined && (
+          <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">
+            {statuses.data.length}
+          </span>
+        )}
+      </div>
+      <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
+        What a board grouped by status shows as columns. The default is where a new card lands when
+        nothing else was chosen.
+      </p>
+
       {/* The create form, ABOVE the list.
           It used to sit underneath, which is the wrong end for the one section
           on this page that has a genuine create: a project accumulates statuses,
@@ -644,7 +704,7 @@ function StatusSettings({
               onChange={(event) => {
                 setDraft((current) => ({ ...current, color: event.target.value }));
               }}
-              className="h-8 w-10 rounded border border-line bg-surface"
+              className="h-8 w-10 rounded-lg border border-line bg-surface"
             />
             <Input
               aria-label="New status name"
@@ -664,7 +724,7 @@ function StatusSettings({
                   category: event.target.value as StatusCategory,
                 }));
               }}
-              className="h-8 rounded border border-line bg-surface px-1.5 text-xs text-ink"
+              className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-ink"
             >
               {STATUS_CATEGORIES.map((category) => (
                 <option key={category} value={category}>
@@ -672,13 +732,14 @@ function StatusSettings({
                 </option>
               ))}
             </select>
-            <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
               <input
                 type="checkbox"
                 checked={draft.isDefault}
                 onChange={(event) => {
                   setDraft((current) => ({ ...current, isDefault: event.target.checked }));
                 }}
+                className="size-3.5 rounded border-line"
               />
               Default
             </label>
@@ -697,14 +758,20 @@ function StatusSettings({
       {statuses.isPending && <SkeletonRows rows={3} className="*:h-10" />}
 
       {statuses.data?.length === 0 ? (
-        <Empty
-          title="No statuses yet"
-          description="A board grouped by status needs these to exist before a card can be dragged into one."
-        />
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line/50 py-8 text-center">
+          <CircleDot className="size-8 text-ink-faint/50" />
+          <p className="text-sm font-medium text-ink">No statuses yet</p>
+          <p className="text-xs text-ink-muted">
+            A board grouped by status needs these to exist before a card can be dragged into one.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-line/40 rounded border border-line/50">
+        <ul className="space-y-1">
           {(statuses.data ?? []).map((status) => (
-            <li key={status.statusId} className="flex items-center gap-2 px-3 py-2">
+            <li
+              key={status.statusId}
+              className="group flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-hover"
+            >
               {editing === status.statusId ? (
                 <form
                   className="flex flex-1 flex-wrap items-center gap-2"
@@ -722,7 +789,7 @@ function StatusSettings({
                     onChange={(event) => {
                       setDraft((current) => ({ ...current, color: event.target.value }));
                     }}
-                    className="h-7 w-10 rounded border border-line bg-surface-sunken"
+                    className="h-8 w-10 rounded-lg border border-line bg-surface-sunken"
                   />
                   <Input
                     aria-label="Status name"
@@ -730,7 +797,7 @@ function StatusSettings({
                     onChange={(event) => {
                       setDraft((current) => ({ ...current, name: event.target.value }));
                     }}
-                    className="h-7 flex-1 text-xs"
+                    className="h-8 flex-1 text-xs"
                   />
                   <select
                     aria-label="Category"
@@ -741,7 +808,7 @@ function StatusSettings({
                         category: event.target.value as StatusCategory,
                       }));
                     }}
-                    className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+                    className="h-8 rounded-lg border border-line bg-surface-sunken px-2 text-xs text-ink"
                   >
                     {STATUS_CATEGORIES.map((category) => (
                       <option key={category} value={category}>
@@ -749,13 +816,14 @@ function StatusSettings({
                       </option>
                     ))}
                   </select>
-                  <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+                  <label className="flex items-center gap-1.5 text-xs text-ink-muted">
                     <input
                       type="checkbox"
                       checked={draft.isDefault}
                       onChange={(event) => {
                         setDraft((current) => ({ ...current, isDefault: event.target.checked }));
                       }}
+                      className="size-3.5 rounded border-line"
                     />
                     Default
                   </label>
@@ -775,25 +843,28 @@ function StatusSettings({
               ) : (
                 <>
                   <span
-                    className="size-3 shrink-0 rounded"
+                    className="size-3.5 shrink-0 rounded-md"
                     style={{ backgroundColor: status.color }}
                     aria-hidden="true"
                   />
                   <span className="flex-1 truncate text-sm text-ink">
                     {status.name}
                     {status.isDefault && (
-                      <span className="ml-2 text-[11px] text-ink-faint">default</span>
+                      <span className="ml-2 rounded bg-surface-sunken px-1.5 py-0.5 text-xs text-ink-muted">
+                        default
+                      </span>
                     )}
                   </span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">
                     {STATUS_CATEGORY_LABEL[status.category]}
                   </span>
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {status.cardCount} {status.cardCount === 1 ? 'card' : 'cards'}
                   </span>
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={() => {
                       setEditing(status.statusId);
                       setDraft({
@@ -832,7 +903,7 @@ function StatusSettings({
       {create.isError && <ErrorText error={create.error} />}
       {update.isError && <ErrorText error={update.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
-    </Section>
+    </div>
   );
 }
 
@@ -873,22 +944,40 @@ function FieldSettings({
   });
 
   return (
-    <Section
-      title="Custom fields"
-      count={fields.data?.length}
-      description="A field's TYPE is fixed once created — there is no honest migration from a choice list to a number, and every option would silently rewrite data someone entered. Archiving hides a field without discarding the values on existing cards."
-    >
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <SlidersHorizontal className="size-4 text-ink-faint" />
+        <h2 className="text-sm font-semibold text-ink">Custom fields</h2>
+        {fields.data !== undefined && (
+          <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">
+            {fields.data.length}
+          </span>
+        )}
+      </div>
+      <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
+        A field's TYPE is fixed once created — there is no honest migration from a choice list to a
+        number, and every option would silently rewrite data someone entered. Archiving hides a field
+        without discarding the values on existing cards.
+      </p>
+
       {fields.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
       {fields.data?.length === 0 ? (
-        <Empty
-          title="No custom fields yet"
-          description="Fields are created from a card's detail panel. Archived ones stay listed here, which is the only place they can be restored."
-        />
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line/50 py-8 text-center">
+          <SlidersHorizontal className="size-8 text-ink-faint/50" />
+          <p className="text-sm font-medium text-ink">No custom fields yet</p>
+          <p className="text-xs text-ink-muted">
+            Fields are created from a card's detail panel. Archived ones stay listed here, which is the
+            only place they can be restored.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-line/40 rounded border border-line/50">
+        <ul className="space-y-1">
           {(fields.data ?? []).map((field) => (
-            <li key={field.fieldId} className="flex items-center gap-2 px-3 py-2">
+            <li
+              key={field.fieldId}
+              className="group flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-hover"
+            >
               {editing === field.fieldId ? (
                 <form
                   className="flex flex-1 gap-2"
@@ -905,7 +994,7 @@ function FieldSettings({
                     onChange={(event) => {
                       setName(event.target.value);
                     }}
-                    className="h-7 text-xs"
+                    className="h-8 flex-1 text-xs"
                   />
                   <Button type="submit" size="sm" variant="primary" disabled={rename.isPending}>
                     Save
@@ -925,13 +1014,18 @@ function FieldSettings({
                   <span className="flex-1 truncate text-sm text-ink">
                     {field.name}
                     {field.archivedAt !== null && (
-                      <span className="ml-2 text-[11px] text-ink-faint">archived</span>
+                      <span className="ml-2 rounded bg-surface-sunken px-1.5 py-0.5 text-xs text-ink-muted">
+                        archived
+                      </span>
                     )}
                   </span>
-                  <span className="font-mono text-[11px] text-ink-faint">{field.type}</span>
+                  <span className="rounded-full bg-surface-sunken px-2 py-0.5 font-mono text-xs text-ink-muted">
+                    {field.type}
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={() => {
                       setEditing(field.fieldId);
                       setName(field.name);
@@ -942,6 +1036,7 @@ function FieldSettings({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={() => {
                       setArchived.mutate({
                         fieldId: field.fieldId as CustomFieldId,
@@ -960,6 +1055,6 @@ function FieldSettings({
 
       {rename.isError && <ErrorText error={rename.error} />}
       {setArchived.isError && <ErrorText error={setArchived.error} />}
-    </Section>
+    </div>
   );
 }

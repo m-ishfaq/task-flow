@@ -123,7 +123,7 @@ export function FlagsTab({
                     <span
                       aria-hidden="true"
                       className={cn(
-                        'absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-sm transition-transform duration-200',
+                        'absolute top-0.5 left-0.5 size-5 rounded-full bg-accent-ink shadow-sm transition-transform duration-200',
                         flag.value ? 'translate-x-5' : 'translate-x-0',
                       )}
                     />

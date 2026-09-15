@@ -144,6 +144,7 @@ export function createSearchRouter(provider: SearchProvider) {
               type: z.enum(['card', 'message', 'page', 'comment', 'transcript']),
               entityId: z.string(),
               title: z.string().nullable(),
+              contextLabel: z.string().nullable(),
               snippet: z.string().nullable(),
               authorId: z.string().nullable(),
               updatedAt: z.string(),

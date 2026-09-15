@@ -420,7 +420,7 @@ function TitleAndDescription({
     return (
       <section className="space-y-2">
         <h2 className="text-base font-semibold text-ink">{card.title}</h2>
-        <RichTextView value={card.description} />
+        <RichTextView value={card.description} placeholder="No description." />
       </section>
     );
   }
@@ -457,12 +457,21 @@ function TitleAndDescription({
         >
           {update.isPending ? 'Saving…' : 'Save'}
         </Button>
-        {dirty && <span className="text-[11px] text-ink-faint">Unsaved changes</span>}
+        {dirty && <span className="text-xs text-ink-faint">Unsaved changes</span>}
       </div>
     </section>
   );
 }
 
+/* This section's two native date inputs, and every other compact
+   "h-8 ... rounded border border-line bg-surface-sunken" field across the
+   properties rail (status, priority, sprint, location) plus a handful of
+   other files (import/export, share, view-tabs, the platform-admin
+   directory filter) all independently carried the same bare `rounded`
+   (4px) — fifteen copies of one recipe, drifted to the pre-Button-fix
+   radius everything else in this panel has since moved off. Bumped to
+   `rounded-md` (6px) everywhere that literal string appeared, matching the
+   Input primitive's own scale rather than sitting a size below it. */
 function DatesSection({
   orgId,
   boardId,
@@ -501,7 +510,7 @@ function DatesSection({
           onChange={(event) => {
             set('startDate', event.target.value);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+          className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         />
       </label>
 
@@ -517,7 +526,7 @@ function DatesSection({
           onChange={(event) => {
             set('dueDate', event.target.value);
           }}
-          className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
+          className="h-8 w-full rounded-md border border-line bg-surface-sunken px-2 text-xs text-ink disabled:opacity-50"
         />
       </label>
     </section>

@@ -84,6 +84,14 @@ export interface SearchHit {
   /** The source row's id — the permalink's last segment. */
   readonly entityId: string;
   readonly title: string | null;
+  /**
+   * Resolved parent context — the channel name for messages, the card title
+   * for card comments, the page title for docs comments, or a summary for
+   * transcripts. Populated server-side after authorization; null when the
+   * parent could not be resolved or when `title` already carries the
+   * entity's own name (cards, pages).
+   */
+  readonly contextLabel: string | null;
   /** Matched-term excerpt; absent when the hit matched on title only. */
   readonly snippet: string | null;
   readonly authorId: string | null;

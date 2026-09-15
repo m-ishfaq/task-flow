@@ -136,7 +136,7 @@ export function ListView({
                           }}
                           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover/60"
                         >
-                          <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+                          <span className="shrink-0 rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
                             {card.reference}
                           </span>
                           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
@@ -144,27 +144,38 @@ export function ListView({
                           </span>
 
                           {card.priority !== null && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                                'bg-surface-hover text-ink-muted',
-                              )}
-                            >
+                            <>
+                              {/* Mobile: coloured dot only — saves ~40px per row. */}
                               <span
-                                aria-hidden="true"
+                                aria-label={PRIORITY_LABEL[card.priority]}
                                 className={cn(
-                                  'size-1.5 rounded-full',
+                                  'size-1.5 shrink-0 rounded-full md:hidden',
                                   PRIORITY_SWATCH[card.priority],
                                 )}
                               />
-                              {PRIORITY_LABEL[card.priority]}
-                            </span>
+                              {/* Desktop: full badge with label. */}
+                              <span
+                                className={cn(
+                                  'hidden items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium md:inline-flex',
+                                  'bg-surface-hover text-ink-muted',
+                                )}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'size-1.5 rounded-full',
+                                    PRIORITY_SWATCH[card.priority],
+                                  )}
+                                />
+                                {PRIORITY_LABEL[card.priority]}
+                              </span>
+                            </>
                           )}
 
                           {due !== null && (
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                'shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
                                 due.overdue
                                   ? 'bg-danger/15 text-danger'
                                   : 'bg-surface-hover text-ink-muted',
@@ -176,21 +187,14 @@ export function ListView({
                           )}
 
                           {card.checklistTotal > 0 && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                                card.checklistDone === card.checklistTotal
-                                  ? 'bg-success/10 text-success'
-                                  : 'bg-surface-hover text-ink-muted',
-                              )}
-                            >
+                            <span className="hidden items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium sm:inline-flex bg-surface-hover text-ink-muted">
                               <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
                               {card.checklistDone}/{card.checklistTotal}
                             </span>
                           )}
 
                           {card.commentCount > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+                            <span className="hidden items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted md:inline-flex">
                               <MessageSquare
                                 aria-hidden="true"
                                 className="size-3"
@@ -200,7 +204,7 @@ export function ListView({
                             </span>
                           )}
 
-                          <AvatarStack people={assignees} />
+                          <span className="hidden md:block"><AvatarStack people={assignees} /></span>
                         </button>
                       </li>
                     );

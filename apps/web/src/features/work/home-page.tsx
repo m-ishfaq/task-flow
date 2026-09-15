@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
-import { Skeleton } from '../../components/primitives.js';
+import { PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { activeSprintsQuery, myCardsQuery } from './api.js';
 import { ListView } from './list-view.js';
@@ -86,17 +86,16 @@ export function HomePage() {
           the far left and the rows ~170px in with nothing explaining the jump. */}
       <div className="mx-auto w-full max-w-7xl shrink-0 px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">My tasks</h1>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-              {visible.length} {visible.length === 1 ? 'card' : 'cards'}
-              {scope === 'all'
+          <PageHeader
+            title="My tasks"
+            description={`${String(visible.length)} ${visible.length === 1 ? 'card' : 'cards'}${
+              scope === 'all'
                 ? ' assigned to you, across every board.'
                 : scope === 'sprint'
                   ? ' assigned to you in a running sprint.'
-                  : ' assigned to you and not in any sprint.'}
-            </p>
-          </div>
+                  : ' assigned to you and not in any sprint.'
+            }`}
+          />
 
           {/* Offered only when a sprint is actually running. A team that does
               not use sprints would otherwise get two filters that both mean

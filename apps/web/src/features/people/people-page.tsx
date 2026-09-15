@@ -6,14 +6,7 @@ import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { displayName, oooStatus } from '../../lib/format.js';
 import { Users } from 'lucide-react';
-import {
-  Avatar,
-  Badge,
-  Button,
-  Empty,
-  PageHeader,
-  SkeletonRows,
-} from '../../components/primitives.js';
+import { Avatar, Badge, Button, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import type { DirectoryMember } from './api.js';
 
@@ -44,78 +37,85 @@ export function PeoplePage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-7 p-8">
-      <PageHeader
-        title="People"
-        description="Everyone in this organization, with their profile, role, and who they report to."
-      />
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b border-line/50 px-6 pt-6 pb-4">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-ink">People</h1>
+        <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">
+          Everyone in this organization, with their profile, role, and who they report to.
+        </p>
+      </header>
 
-      {directory.isPending && <SkeletonRows rows={6} />}
-      {directory.isError && (
-        <ErrorView error={directory.error} title="Could not load the directory" />
-      )}
+      <div className="flex-1 overflow-y-auto p-6">
+        {directory.isPending && <SkeletonRows rows={6} />}
+        {directory.isError && (
+          <ErrorView error={directory.error} title="Could not load the directory" />
+        )}
 
-      {directory.data !== undefined && (
-        <>
-          {directory.data.pages[0]?.members.length === 0 ? (
-            <Empty
-              icon={<Users aria-hidden="true" className="size-5" strokeWidth={1.75} />}
-              title="No one here yet"
-              description="Members appear here as soon as they join the organization."
-            />
-          ) : (
-            <DirectoryRows rows={directory.data.pages.flatMap((page) => page.members)} />
-          )}
+        {directory.data !== undefined && (
+          <>
+            {directory.data.pages[0]?.members.length === 0 ? (
+              <Empty
+                icon={<Users aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+                title="No one here yet"
+                description="Members appear here as soon as they join the organization."
+              />
+            ) : (
+              <DirectoryGrid rows={directory.data.pages.flatMap((page) => page.members)} />
+            )}
 
-          {directory.hasNextPage && (
-            <div className="flex justify-center">
-              <Button
-                size="sm"
-                disabled={directory.isFetchingNextPage}
-                onClick={() => {
-                  void directory.fetchNextPage();
-                }}
-              >
-                {directory.isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+            {directory.hasNextPage && (
+              <div className="flex justify-center pt-6">
+                <Button
+                  size="sm"
+                  disabled={directory.isFetchingNextPage}
+                  onClick={() => {
+                    void directory.fetchNextPage();
+                  }}
+                >
+                  {directory.isFetchingNextPage ? 'Loading…' : 'Load more'}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) {
+function DirectoryGrid({ rows }: { readonly rows: readonly DirectoryMember[] }) {
   return (
-    <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (
-          <li
+          <Link
             key={member.userId}
-            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/50"
+            to="/people/$userId"
+            params={{ userId: member.userId }}
+            className="group flex flex-col items-center gap-3 rounded-xl border border-line/50 bg-surface-raised/50 p-5 text-center transition-all duration-[var(--motion-fast)] hover:border-line hover:bg-surface-hover/50 hover:shadow-sm"
           >
-            <Avatar userId={member.userId} label={label} />
+            <Avatar userId={member.userId} label={label} className="size-12" />
 
-            <div className="min-w-0 flex-1">
-              <Link
-                to="/people/$userId"
-                params={{ userId: member.userId }}
-                className="block truncate text-[13px] font-medium text-ink hover:text-accent"
-              >
+            <div className="min-w-0 w-full">
+              <p className="truncate text-sm font-medium text-ink group-hover:text-accent">
                 {label}
-              </Link>
-              <p className="truncate text-[11px] text-ink-faint">{member.email}</p>
+              </p>
+              <p className="mt-0.5 truncate text-xs text-ink-faint">
+                {member.jobTitle !== null || member.department !== null
+                  ? [member.jobTitle, member.department].filter(Boolean).join(' · ')
+                  : member.email}
+              </p>
             </div>
 
-            <OooBadge member={member} />
-
-            <Badge className="text-[11px]">{member.role}</Badge>
-          </li>
+            <div className="flex items-center gap-1.5">
+              <OooBadge member={member} />
+              <Badge className="text-xs">{member.role}</Badge>
+            </div>
+          </Link>
         );
       })}
-    </ul>
+    </div>
   );
 }
 
