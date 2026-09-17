@@ -1,5 +1,7 @@
 import { schema, withGlobalScope } from '@taskflow/db';
-import { PALETTE_IDS } from '@taskflow/contracts';
+import { DEFAULT_PRODUCT_NAME, PALETTE_IDS } from '@taskflow/contracts';
+
+export { DEFAULT_PRODUCT_NAME } from '@taskflow/contracts';
 
 /**
  * The live branding snapshot (migration 0073), read the same way
@@ -27,16 +29,13 @@ export interface BrandingSnapshot {
   /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
   readonly paletteId: string;
   /** Migration 0096. NULL until an operator sets one. */
-  readonly salesEmail: string | null;
+  readonly   salesEmail: string | null;
 }
 
 const CACHE_TTL_MS = 30_000;
 
 let cached: { readonly at: number; readonly branding: BrandingSnapshot } | null = null;
 let loading: Promise<BrandingSnapshot> | null = null;
-
-/** Single source of truth for the default product name — change here only. */
-export const DEFAULT_PRODUCT_NAME = 'Rinavai';
 
 const DEFAULT_SNAPSHOT: BrandingSnapshot = {
   productName: DEFAULT_PRODUCT_NAME,

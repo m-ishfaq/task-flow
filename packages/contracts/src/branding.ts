@@ -17,6 +17,13 @@
  * nothing enforces the two stay in sync beyond this comment, the same as
  * every other cross-package vocabulary in this file.
  */
+/**
+ * The single source of truth for the default product name — change here only.
+ * Imported by `@taskflow/security` (webhook header fallback) and
+ * `@taskflow/api` (branding cache default).
+ */
+export const DEFAULT_PRODUCT_NAME = 'Rinavai';
+
 export const PALETTE_IDS = ['default', 'violet', 'green', 'amber', 'rose', 'slate'] as const;
 
 export type PaletteId = (typeof PALETTE_IDS)[number];

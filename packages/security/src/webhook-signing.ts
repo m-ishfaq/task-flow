@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { DEFAULT_PRODUCT_NAME } from '@taskflow/contracts';
 import { secureEqual } from './random.js';
 
 /**
@@ -41,7 +42,7 @@ import { secureEqual } from './random.js';
  * `x-${productName.toLowerCase()}-signature`. This constant is the default
  * fallback when the branding table has no row or the product name is NULL.
  */
-export const WEBHOOK_SIGNATURE_HEADER = `x-${'rinavai'}-signature`;
+export const WEBHOOK_SIGNATURE_HEADER = `x-${DEFAULT_PRODUCT_NAME.toLowerCase()}-signature`;
 
 /**
  * Builds the `<WEBHOOK_SIGNATURE_HEADER>` header value for a body.
