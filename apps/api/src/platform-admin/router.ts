@@ -407,10 +407,11 @@ const PlanRow = z
  * is 0–360. The preset check uses the closed `PALETTE_IDS` list; the custom
  * check uses a regex to prevent arbitrary strings from reaching the DB.
  */
-const PaletteIdSchema = z.string().refine(
-  (v) => (PALETTE_IDS as readonly string[]).includes(v) || /^custom:\d{1,3}$/.test(v),
-  { message: 'Must be a preset palette id or custom:<hue> (0–360).' },
-);
+const PaletteIdSchema = z
+  .string()
+  .refine((v) => (PALETTE_IDS as readonly string[]).includes(v) || /^custom:\d{1,3}$/.test(v), {
+    message: 'Must be a preset palette id or custom:<hue> (0–360).',
+  });
 
 const BrandingRow = z
   .object({
@@ -1382,7 +1383,9 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
                   failureCount: z.number().int().nonnegative(),
                   byKind: z
                     .array(
-                      z.object({ kind: z.string(), count: z.number().int().nonnegative() }).strict(),
+                      z
+                        .object({ kind: z.string(), count: z.number().int().nonnegative() })
+                        .strict(),
                     )
                     .readonly(),
                 })
@@ -1624,10 +1627,10 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
           z.object({
             settings: z
               .array(
-            z.object({
-                    key: z.string().min(1),
-                    value: z.any(),
-                  }),
+                z.object({
+                  key: z.string().min(1),
+                  value: z.any(),
+                }),
               )
               .min(1),
           }),

@@ -42,7 +42,12 @@ const PHASE_META: Record<number, { readonly label: string; readonly color: strin
 };
 
 function phaseMeta(phase: number) {
-  return PHASE_META[phase] ?? { label: `Phase ${String(phase)}`, color: 'text-ink-faint bg-surface-hover border-line' };
+  return (
+    PHASE_META[phase] ?? {
+      label: `Phase ${String(phase)}`,
+      color: 'text-ink-faint bg-surface-hover border-line',
+    }
+  );
 }
 
 interface FlagData {
@@ -57,9 +62,7 @@ interface FlagData {
 }
 
 /** Group flags by phase, sorted ascending. */
-function groupByPhase(
-  flags: readonly FlagData[],
-) {
+function groupByPhase(flags: readonly FlagData[]) {
   const map = new Map<number, FlagData[]>();
   for (const flag of flags) {
     const existing = map.get(flag.phase);
@@ -69,9 +72,7 @@ function groupByPhase(
       map.set(flag.phase, [flag]);
     }
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([phase, items]) => ({ phase, items }));
+  return [...map.entries()].sort(([a], [b]) => a - b).map(([phase, items]) => ({ phase, items }));
 }
 
 export function FlagsTab({
@@ -120,8 +121,7 @@ export function FlagsTab({
       ? allFlags
       : allFlags.filter(
           (f) =>
-            f.flagName.toLowerCase().includes(query) ||
-            f.description.toLowerCase().includes(query),
+            f.flagName.toLowerCase().includes(query) || f.description.toLowerCase().includes(query),
         );
 
   const groups = groupByPhase(filtered);
@@ -185,10 +185,7 @@ export function FlagsTab({
             className="flex items-center gap-1.5 text-xs font-medium text-ink-muted transition-colors hover:text-ink"
           >
             <ArrowDownAZ
-              className={cn(
-                'size-3.5 transition-transform',
-                allExpanded && 'rotate-180',
-              )}
+              className={cn('size-3.5 transition-transform', allExpanded && 'rotate-180')}
               strokeWidth={2}
             />
             {allExpanded ? 'Collapse all' : 'Expand all'}
@@ -234,19 +231,14 @@ export function FlagsTab({
                     )}
                   >
                     <span
-                      className={cn(
-                        'size-2 shrink-0 rounded-full',
-                        meta.color.split(' ')[0],
-                      )}
+                      className={cn('size-2 shrink-0 rounded-full', meta.color.split(' ')[0])}
                     />
                     <span className="text-xs font-semibold">{meta.label}</span>
                     <span className="text-[11px] opacity-60">
                       {group.items.length} flag{group.items.length === 1 ? '' : 's'}
                     </span>
                     {groupActive > 0 && groupActive < group.items.length && (
-                      <span className="ml-auto text-[11px] opacity-60">
-                        {groupActive} on
-                      </span>
+                      <span className="ml-auto text-[11px] opacity-60">{groupActive} on</span>
                     )}
                     {groupOverridden > 0 && (
                       <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">
@@ -259,11 +251,17 @@ export function FlagsTab({
                   {isExpanded && (
                     <div className="divide-y divide-line/50 rounded-b-xl border border-t-0 border-line">
                       {group.items.map((flag) => (
-                        <FlagRow key={flag.flagName} flag={flag} setPending={set.isPending} onToggle={(value) => {
-                          set.mutate({ flagName: flag.flagName, value });
-                        }} onReset={() => {
-                          set.mutate({ flagName: flag.flagName, value: null });
-                        }} />
+                        <FlagRow
+                          key={flag.flagName}
+                          flag={flag}
+                          setPending={set.isPending}
+                          onToggle={(value) => {
+                            set.mutate({ flagName: flag.flagName, value });
+                          }}
+                          onReset={() => {
+                            set.mutate({ flagName: flag.flagName, value: null });
+                          }}
+                        />
                       ))}
                     </div>
                   )}
@@ -320,13 +318,15 @@ function FlagRow({
         <p className="mt-0.5 text-[11px] text-ink-faint">
           {isOverridden ? (
             <>
-              default was <span className="font-medium text-ink-muted">{String(flag.defaultValue)}</span>
-              {flag.overrideSetAt !== null && (
-                <> · set {formatDate(flag.overrideSetAt)}</>
-              )}
+              default was{' '}
+              <span className="font-medium text-ink-muted">{String(flag.defaultValue)}</span>
+              {flag.overrideSetAt !== null && <> · set {formatDate(flag.overrideSetAt)}</>}
             </>
           ) : (
-            <>default: <span className="font-medium text-ink-muted">{String(flag.defaultValue)}</span></>
+            <>
+              default:{' '}
+              <span className="font-medium text-ink-muted">{String(flag.defaultValue)}</span>
+            </>
           )}
         </p>
       </div>

@@ -21,14 +21,7 @@ import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { money } from './shared.js';
-import {
-  Button,
-  Empty,
-  Field,
-  Input,
-  SkeletonRows,
-  Spinner,
-} from '../../components/primitives.js';
+import { Button, Empty, Field, Input, SkeletonRows, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { StepUpGate, StatCard } from './shared.js';
 
@@ -108,7 +101,12 @@ export function AiTab({
     <section aria-label="AI Models" className="flex flex-col gap-5">
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard icon={Bot} label="Providers" value={allProviders.length} accent={allProviders.length > 0} />
+        <StatCard
+          icon={Bot}
+          label="Providers"
+          value={allProviders.length}
+          accent={allProviders.length > 0}
+        />
         <StatCard
           icon={Sparkles}
           label="Default"
@@ -179,7 +177,8 @@ export function AiTab({
                       </div>
                       <p className="mt-1 text-[11px] text-ink-faint">
                         Added {formatDate(row.createdAt)}
-                        {row.updatedAt !== row.createdAt && ` · rotated ${formatDate(row.updatedAt)}`}
+                        {row.updatedAt !== row.createdAt &&
+                          ` · rotated ${formatDate(row.updatedAt)}`}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
@@ -256,9 +255,27 @@ export function AiTab({
  * -------------------------------------------------------------------------- */
 
 const PROVIDER_KINDS = [
-  { value: 'anthropic' as const, label: 'Anthropic', placeholder: 'claude-sonnet-4', color: 'border-amber-500/40 bg-amber-500/[0.06] text-amber-700', activeColor: 'border-amber-500 bg-amber-500/10 text-amber-700 ring-2 ring-amber-500/20' },
-  { value: 'openai' as const, label: 'OpenAI', placeholder: 'gpt-4o', color: 'border-emerald-500/40 bg-emerald-500/[0.06] text-emerald-700', activeColor: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 ring-2 ring-emerald-500/20' },
-  { value: 'gemini' as const, label: 'Gemini', placeholder: 'gemini-2.0-flash', color: 'border-sky-500/40 bg-sky-500/[0.06] text-sky-700', activeColor: 'border-sky-500 bg-sky-500/10 text-sky-700 ring-2 ring-sky-500/20' },
+  {
+    value: 'anthropic' as const,
+    label: 'Anthropic',
+    placeholder: 'claude-sonnet-4',
+    color: 'border-amber-500/40 bg-amber-500/[0.06] text-amber-700',
+    activeColor: 'border-amber-500 bg-amber-500/10 text-amber-700 ring-2 ring-amber-500/20',
+  },
+  {
+    value: 'openai' as const,
+    label: 'OpenAI',
+    placeholder: 'gpt-4o',
+    color: 'border-emerald-500/40 bg-emerald-500/[0.06] text-emerald-700',
+    activeColor: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 ring-2 ring-emerald-500/20',
+  },
+  {
+    value: 'gemini' as const,
+    label: 'Gemini',
+    placeholder: 'gemini-2.0-flash',
+    color: 'border-sky-500/40 bg-sky-500/[0.06] text-sky-700',
+    activeColor: 'border-sky-500 bg-sky-500/10 text-sky-700 ring-2 ring-sky-500/20',
+  },
 ] as const;
 
 function CreateProviderDialog({
@@ -349,11 +366,7 @@ function CreateProviderDialog({
               />
             </Field>
 
-            <Field
-              label="Label"
-              htmlFor="ai-provider-label"
-              hint="How this row reads in the list."
-            >
+            <Field label="Label" htmlFor="ai-provider-label" hint="How this row reads in the list.">
               <Input
                 id="ai-provider-label"
                 value={label}
@@ -471,11 +484,7 @@ function RotateKeyDialog({
         <div className="flex flex-col gap-4 px-5 py-4">
           {/* Warning banner */}
           <div className="flex items-start gap-3 rounded-xl bg-amber-500/[0.06] px-4 py-3">
-            <Lock
-              aria-hidden="true"
-              className="size-4 shrink-0 text-amber-600"
-              strokeWidth={2}
-            />
+            <Lock aria-hidden="true" className="size-4 shrink-0 text-amber-600" strokeWidth={2} />
             <p className="text-[11px] text-amber-700">
               The current key will be permanently replaced. Any service using it will fail until
               updated. This action cannot be undone.

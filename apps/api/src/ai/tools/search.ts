@@ -41,7 +41,10 @@ const DEFAULT_LIMIT = 8;
 
 const QUERY_EXAMPLE = 'type = page AND text contains "budget"';
 
-export function createSearchTool(provider: SearchProvider, productName = DEFAULT_PRODUCT_NAME): ToolDefinition {
+export function createSearchTool(
+  provider: SearchProvider,
+  productName = DEFAULT_PRODUCT_NAME,
+): ToolDefinition {
   const SearchToolInput = z
     .object({
       query: z

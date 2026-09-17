@@ -198,7 +198,9 @@ function PaletteSection({
                 className="size-8 rounded-full ring-2 ring-white/10 transition-transform group-hover:scale-110"
                 style={{ backgroundColor: colors.base }}
               />
-              <span className="text-[10px] font-medium text-ink-muted">{PALETTE_LABELS[paletteId]}</span>
+              <span className="text-[10px] font-medium text-ink-muted">
+                {PALETTE_LABELS[paletteId]}
+              </span>
               {isActive && (
                 <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-accent text-white">
                   <Check className="size-3" strokeWidth={3} />
@@ -284,12 +286,16 @@ function PaletteSection({
             <div>
               <span className="text-ink-faint">Selected:</span>
               <span className="ml-1.5 font-medium text-ink">
-                {isCustom ? `Custom (${String(customHue)}°)` : PALETTE_LABELS[selected as PaletteId]}
+                {isCustom
+                  ? `Custom (${String(customHue)}°)`
+                  : PALETTE_LABELS[selected as PaletteId]}
               </span>
             </div>
             <div>
               <span className="text-ink-faint">Base:</span>
-              <span className="ml-1.5 font-mono text-ink-muted">{paletteColorsOf(selected).base}</span>
+              <span className="ml-1.5 font-mono text-ink-muted">
+                {paletteColorsOf(selected).base}
+              </span>
             </div>
             <div>
               <span className="text-ink-faint">Contrast:</span>
@@ -365,7 +371,11 @@ function BrandingAssetUpload({
       <div className="flex items-center gap-4">
         <div className="flex size-16 shrink-0 items-center justify-center rounded-xl border border-line bg-surface-sunken">
           {currentUrl !== null ? (
-            <img src={currentUrl} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+            <img
+              src={currentUrl}
+              alt=""
+              className="max-h-full max-w-full rounded-lg object-contain"
+            />
           ) : (
             <Icon className="size-7 text-ink-faint" strokeWidth={1.5} />
           )}
@@ -443,9 +453,7 @@ function BrandingPreview({
     <div className="space-y-4">
       <div>
         <p className="text-sm font-medium text-ink">Live preview</p>
-        <p className="text-xs text-ink-faint">
-          How your branding appears across the application.
-        </p>
+        <p className="text-xs text-ink-faint">How your branding appears across the application.</p>
       </div>
 
       {/* Browser tab preview */}
@@ -453,7 +461,11 @@ function BrandingPreview({
         <div className="flex items-center gap-2 border-b border-line bg-surface-sunken/60 px-3 py-2">
           <div className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-1.5">
             {faviconUrl !== null ? (
-              <img src={faviconUrl} alt="" className="size-3.5 shrink-0 rounded-sm object-contain" />
+              <img
+                src={faviconUrl}
+                alt=""
+                className="size-3.5 shrink-0 rounded-sm object-contain"
+              />
             ) : (
               <TaskFlowLogo size={14} className="shrink-0 text-accent" />
             )}
@@ -544,8 +556,14 @@ function BrandingPreview({
           {/* Color swatches */}
           <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 py-2">
             <span className="text-[10px] text-ink-faint">Accent:</span>
-            <span className="size-4 rounded-full ring-2 ring-white/10" style={{ backgroundColor: colors.base }} />
-            <span className="size-4 rounded-full ring-2 ring-white/10" style={{ backgroundColor: colors.hover }} />
+            <span
+              className="size-4 rounded-full ring-2 ring-white/10"
+              style={{ backgroundColor: colors.base }}
+            />
+            <span
+              className="size-4 rounded-full ring-2 ring-white/10"
+              style={{ backgroundColor: colors.hover }}
+            />
             <span className="text-[10px] text-ink-faint">
               • {paletteId.startsWith('custom:') ? `Custom (${paletteId.slice(7)}°)` : paletteId}
             </span>
@@ -568,14 +586,9 @@ function BrandingPreview({
           <div className="w-48 space-y-2">
             <div className="h-8 rounded-lg border border-line bg-surface" />
             <div className="h-8 rounded-lg border border-line bg-surface" />
-            <div
-              className="h-8 rounded-lg"
-              style={{ backgroundColor: colors.base }}
-            />
+            <div className="h-8 rounded-lg" style={{ backgroundColor: colors.base }} />
           </div>
-          <p className="text-[10px] text-ink-faint">
-            Sign in to your workspace
-          </p>
+          <p className="text-[10px] text-ink-faint">Sign in to your workspace</p>
         </div>
       </div>
 
@@ -612,16 +625,15 @@ function BrandingPreview({
         </p>
         <div className="rounded-lg border border-line bg-surface-sunken/40 p-3 space-y-1.5">
           <p className="text-[11px] text-ink-muted">
-            <span className="text-ink-faint">title:</span>{' '}
-            {productName || 'Rinavai'} — Project Management
+            <span className="text-ink-faint">title:</span> {productName || 'Rinavai'} — Project
+            Management
           </p>
           <p className="text-[11px] text-ink-muted">
-            <span className="text-ink-faint">og:title:</span>{' '}
-            {productName || 'Rinavai'} — Project Management
+            <span className="text-ink-faint">og:title:</span> {productName || 'Rinavai'} — Project
+            Management
           </p>
           <p className="text-[11px] text-ink-muted">
-            <span className="text-ink-faint">og:site_name:</span>{' '}
-            {productName || 'Rinavai'}
+            <span className="text-ink-faint">og:site_name:</span> {productName || 'Rinavai'}
           </p>
           <p className="text-[11px] text-ink-muted">
             <span className="text-ink-faint">theme-color:</span>{' '}
@@ -659,11 +671,8 @@ export function BrandingTab({
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.platformBranding() });
 
   const setBranding = useMutation({
-    mutationFn: (input: {
-      productName?: string;
-      paletteId?: string;
-      salesEmail?: string | null;
-    }) => api.platformAdmin.branding.set.mutate(input),
+    mutationFn: (input: { productName?: string; paletteId?: string; salesEmail?: string | null }) =>
+      api.platformAdmin.branding.set.mutate(input),
     onSuccess: async () => {
       setNameDirty(false);
       setSalesEmailDirty(false);
@@ -706,14 +715,15 @@ export function BrandingTab({
 
   const paletteLabel = selectedPalette.startsWith('custom:')
     ? `Custom (${selectedPalette.slice(7)}°)`
-    : PALETTE_LABELS[selectedPalette as PaletteId] ?? 'Custom';
+    : (PALETTE_LABELS[selectedPalette as PaletteId] ?? 'Custom');
 
-  const configuredCount = data !== undefined
-    ? ((data.productName !== '' ? 1 : 0) +
-       (data.logoKey !== null ? 1 : 0) +
-       (data.faviconKey !== null ? 1 : 0) +
-       (data.salesEmail !== null ? 1 : 0))
-    : 0;
+  const configuredCount =
+    data !== undefined
+      ? (data.productName !== '' ? 1 : 0) +
+        (data.logoKey !== null ? 1 : 0) +
+        (data.faviconKey !== null ? 1 : 0) +
+        (data.salesEmail !== null ? 1 : 0)
+      : 0;
 
   return (
     <section aria-label="Branding" className="flex flex-col gap-5">
@@ -729,12 +739,12 @@ export function BrandingTab({
       {data !== undefined && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <StatCard icon={PaletteIcon} label="Accent palette" value={paletteLabel} />
-          <StatCard icon={Image} label="Assets configured" value={`${String(configuredCount)} of 3`} />
           <StatCard
-            icon={Globe}
-            label="Product name"
-            value={data.productName || 'Rinavai'}
+            icon={Image}
+            label="Assets configured"
+            value={`${String(configuredCount)} of 3`}
           />
+          <StatCard icon={Globe} label="Product name" value={data.productName || 'Rinavai'} />
           <StatCard
             icon={Mail}
             label="Contact email"

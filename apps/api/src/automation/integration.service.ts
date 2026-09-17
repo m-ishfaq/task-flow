@@ -880,7 +880,10 @@ async function exchangeSlackCode(
 }
 
 function githubHeaders(productName?: string) {
-  return { accept: 'application/vnd.github+json', 'user-agent': productName ?? DEFAULT_PRODUCT_NAME };
+  return {
+    accept: 'application/vnd.github+json',
+    'user-agent': productName ?? DEFAULT_PRODUCT_NAME,
+  };
 }
 
 async function exchangeGithubCode(

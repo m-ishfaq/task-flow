@@ -20,35 +20,43 @@ function contrastRatio(l1: number, l2: number): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function check(label: string, fg: {l:number;c:number;h:number}, bg: {l:number;c:number;h:number}, minRatio: number, type: 'text' | 'non-text') {
+function check(
+  label: string,
+  fg: { l: number; c: number; h: number },
+  bg: { l: number; c: number; h: number },
+  minRatio: number,
+  type: 'text' | 'non-text',
+) {
   const l1 = relativeLuminance(toLinear(fg.l, fg.c, fg.h));
   const l2 = relativeLuminance(toLinear(bg.l, bg.c, bg.h));
   const ratio = contrastRatio(l1, l2);
   const pass = ratio >= minRatio;
-  console.log(`  ${pass ? '✅' : '❌'} ${label}: ${ratio.toFixed(2)}:1 (needs ${minRatio}:1 ${type})`);
+  console.log(
+    `  ${pass ? '✅' : '❌'} ${label}: ${ratio.toFixed(2)}:1 (needs ${minRatio}:1 ${type})`,
+  );
   return pass;
 }
 
 // Exact values from styles.css @theme block — these are the source of truth
 const surfaces = {
-  surface:       { l: 16, c: 0.014, h: 55 },
+  surface: { l: 16, c: 0.014, h: 55 },
   surfaceRaised: { l: 20, c: 0.017, h: 55 },
   surfaceSunken: { l: 12, c: 0.012, h: 55 },
 };
 
 const inks = {
-  ink:      { l: 93, c: 0.01, h: 55 },
+  ink: { l: 93, c: 0.01, h: 55 },
   inkMuted: { l: 78, c: 0.016, h: 55 },
   inkFaint: { l: 56, c: 0.015, h: 55 },
 };
 
-const accent     = { l: 60, c: 0.14, h: 88 };
-const accentInk  = { l: 98, c: 0.01, h: 88 };
+const accent = { l: 60, c: 0.14, h: 88 };
+const accentInk = { l: 98, c: 0.01, h: 88 };
 const accentHover = { l: 55, c: 0.14, h: 88 };
 
-const urgent  = { l: 60, c: 0.19, h: 22 };
-const medium  = { l: 60, c: 0.16, h: 88 };
-const danger  = { l: 68, c: 0.19, h: 22 };
+const urgent = { l: 60, c: 0.19, h: 22 };
+const medium = { l: 60, c: 0.16, h: 88 };
+const danger = { l: 68, c: 0.19, h: 22 };
 
 let fails = 0;
 

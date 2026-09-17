@@ -86,18 +86,14 @@ export function OrgsTab({
      fetched so the column is never stale. */
   const aiSpend = useQuery({
     queryKey: ['platform', 'ai-spend', 30],
-    queryFn: async () =>
-      wire(await api.platformAdmin.ai.spendReport.query({ sinceDays: 30 })),
+    queryFn: async () => wire(await api.platformAdmin.ai.spendReport.query({ sinceDays: 30 })),
   });
 
   /** Map of orgId -> total cents for O(1) lookup during render. */
   const aiSpendByOrg = new Map<string, number>();
   if (aiSpend.data !== undefined) {
     for (const row of aiSpend.data) {
-      aiSpendByOrg.set(
-        row.orgId,
-        (aiSpendByOrg.get(row.orgId) ?? 0) + row.totalCents,
-      );
+      aiSpendByOrg.set(row.orgId, (aiSpendByOrg.get(row.orgId) ?? 0) + row.totalCents);
     }
   }
 
@@ -267,7 +263,9 @@ export function OrgsTab({
                   <tr
                     key={org.orgId}
                     className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/40"
-                    onClick={() => { setDetailOrgId(org.orgId); }}
+                    onClick={() => {
+                      setDetailOrgId(org.orgId);
+                    }}
                   >
                     {/* Organization */}
                     <td className="px-4 py-3">
@@ -338,7 +336,8 @@ export function OrgsTab({
                               org.lastInvoice.status === 'paid' ? 'text-success' : 'text-danger'
                             }
                           >
-                            {org.lastInvoice.status === 'paid' && org.lastInvoice.amountDueCents === 0
+                            {org.lastInvoice.status === 'paid' &&
+                            org.lastInvoice.amountDueCents === 0
                               ? 'free'
                               : `${org.lastInvoice.status} ${money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}`}
                           </p>
@@ -431,7 +430,11 @@ export function OrgsTab({
                               disabled={remove.isPending}
                               onSelect={() => {
                                 setConfirmSlug('');
-                                setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
+                                setDeleteTarget({
+                                  orgId: org.orgId,
+                                  name: org.name,
+                                  slug: org.slug,
+                                });
                               }}
                             >
                               <span className="flex items-center gap-2">

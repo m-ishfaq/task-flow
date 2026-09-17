@@ -105,7 +105,7 @@ function wrapFetchForMaintenanceDetection(): void {
       if (!BYPASS_PATTERN.test(url)) {
         try {
           const clone = response.clone();
-          const body = await clone.json() as Record<string, unknown>;
+          const body = (await clone.json()) as Record<string, unknown>;
           if (body['status'] === 'maintenance') {
             const msg =
               typeof body['message'] === 'string'
@@ -515,8 +515,7 @@ export const keys = {
   platformOperations: (cursor: string | null, kind: string | null) =>
     ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
   /** Error health aggregation for a given time range. */
-  platformErrorHealth: (timeRange: string) =>
-    ['platform', 'error-health', timeRange] as const,
+  platformErrorHealth: (timeRange: string) => ['platform', 'error-health', timeRange] as const,
   /** The org lookup a broadcast's composer resolves before showing the form. */
   platformOrgLookup: (orgId: string) => ['platform', 'org-lookup', orgId] as const,
   /**

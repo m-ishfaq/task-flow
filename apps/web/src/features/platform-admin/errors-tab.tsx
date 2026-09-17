@@ -69,9 +69,7 @@ const DETAIL_KEY_LABELS: Record<string, string> = {
 function DetailBlock({ detail }: { readonly detail: unknown }) {
   if (detail === null || detail === undefined) return null;
   if (typeof detail === 'string') {
-    return (
-      <p className="mt-1.5 text-[11px] text-ink-muted">{detail}</p>
-    );
+    return <p className="mt-1.5 text-[11px] text-ink-muted">{detail}</p>;
   }
   if (typeof detail === 'object') {
     const entries = Object.entries(detail as Record<string, unknown>);
@@ -150,7 +148,9 @@ function OrgErrorCard({
   return (
     <button
       type="button"
-      onClick={() => { onOpenOrg(org.orgId); }}
+      onClick={() => {
+        onOpenOrg(org.orgId);
+      }}
       className="group w-full rounded-xl border border-line bg-surface p-4 text-left transition-shadow hover:shadow-md"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -189,9 +189,7 @@ function OrgErrorCard({
         </div>
       )}
 
-      {!hasErrors && (
-        <p className="text-xs text-ink-faint">No failures in this period</p>
-      )}
+      {!hasErrors && <p className="text-xs text-ink-faint">No failures in this period</p>}
 
       <div className="mt-2 flex items-center gap-3 text-[11px] text-ink-faint">
         <span>7d avg: {org.avgDaily7d.toFixed(1)}/day</span>
@@ -223,22 +221,20 @@ function OperationalErrorRow({
     <div className="rounded-lg border border-line bg-surface">
       <button
         type="button"
-        onClick={() => { setExpanded(!expanded); }}
+        onClick={() => {
+          setExpanded(!expanded);
+        }}
         className="flex w-full items-center justify-between p-3 text-left transition-colors hover:bg-canvas-subtle"
       >
         <div className="flex items-center gap-2.5">
           <Icon className={`size-4 ${meta?.color ?? 'text-ink-muted'}`} strokeWidth={2} />
           <span className="text-sm font-medium text-ink">{meta?.label ?? row.kind}</span>
           <Badge className="bg-secondary">{row.count}</Badge>
-          {meta?.note && (
-            <span className="text-[11px] text-ink-faint">— {meta.note}</span>
-          )}
+          {meta?.note && <span className="text-[11px] text-ink-faint">— {meta.note}</span>}
         </div>
         <div className="flex items-center gap-2">
           {matching.length > 0 && (
-            <span className="text-[11px] text-ink-faint">
-              {matching.length} recent
-            </span>
+            <span className="text-[11px] text-ink-faint">{matching.length} recent</span>
           )}
           <ChevronDown
             className={`size-4 text-ink-faint transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
@@ -320,10 +316,7 @@ function RecentErrorsSection({
           </div>
           <div className="max-h-[360px] overflow-y-auto space-y-2">
             {recentAutomation.map((run) => (
-              <div
-                key={run.id}
-                className="rounded-lg border border-line bg-canvas-subtle p-2.5"
-              >
+              <div key={run.id} className="rounded-lg border border-line bg-canvas-subtle p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-medium text-ink">{run.orgName}</span>
                   <span className="shrink-0 font-mono text-[11px] text-ink-faint">
@@ -333,9 +326,7 @@ function RecentErrorsSection({
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted">
                   <span>Trigger: {run.triggerEvent}</span>
                   {run.durationMs !== null && (
-                    <span className="text-ink-faint">
-                      ({(run.durationMs / 1000).toFixed(1)}s)
-                    </span>
+                    <span className="text-ink-faint">({(run.durationMs / 1000).toFixed(1)}s)</span>
                   )}
                 </div>
                 {run.reason !== null && (
@@ -357,10 +348,7 @@ function RecentErrorsSection({
           </div>
           <div className="max-h-[360px] overflow-y-auto space-y-2">
             {recentWebhooks.map((hook) => (
-              <div
-                key={hook.id}
-                className="rounded-lg border border-line bg-canvas-subtle p-2.5"
-              >
+              <div key={hook.id} className="rounded-lg border border-line bg-canvas-subtle p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-medium text-ink">{hook.orgName}</span>
                   <span className="shrink-0 font-mono text-[11px] text-ink-faint">
@@ -422,7 +410,9 @@ export function ErrorsTab({
               key={tr.value}
               variant={timeRange === tr.value ? 'primary' : 'ghost'}
               size="sm"
-              onClick={() => { setTimeRange(tr.value); }}
+              onClick={() => {
+                setTimeRange(tr.value);
+              }}
             >
               {tr.label}
             </Button>
@@ -487,21 +477,14 @@ export function ErrorsTab({
           <h3 className="mb-3 text-sm font-semibold text-ink">Global Operational Errors</h3>
           <div className="space-y-2">
             {operationalErrors.map((row) => (
-              <OperationalErrorRow
-                key={row.kind}
-                row={row}
-                recent={recentOperational}
-              />
+              <OperationalErrorRow key={row.kind} row={row} recent={recentOperational} />
             ))}
           </div>
         </div>
       )}
 
       {/* Recent failures (automation + webhooks) */}
-      <RecentErrorsSection
-        recentAutomation={recentAutomation}
-        recentWebhooks={recentWebhooks}
-      />
+      <RecentErrorsSection recentAutomation={recentAutomation} recentWebhooks={recentWebhooks} />
 
       {/* Per-org error cards */}
       <div>
@@ -524,7 +507,9 @@ export function ErrorsTab({
             <OrgErrorCard
               key={org.orgId}
               org={org}
-              onOpenOrg={(id) => { onOpenOrg?.(id); }}
+              onOpenOrg={(id) => {
+                onOpenOrg?.(id);
+              }}
             />
           ))}
         </div>

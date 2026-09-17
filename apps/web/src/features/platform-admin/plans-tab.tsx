@@ -1,15 +1,7 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import {
-  Layers,
-  Package,
-  Search,
-  ShieldAlert,
-  TrendingUp,
-  Users,
-  XCircle,
-} from 'lucide-react';
+import { Layers, Package, Search, ShieldAlert, TrendingUp, Users, XCircle } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -33,23 +25,83 @@ import { StepUpGate, StatCard, TableSearch, ceiling, money } from './shared.js';
  * The palette is fixed — adding a new plan tier never requires a code change;
  * `tierAccent` picks from here deterministically based on a hash of the plan id.
  */
-const PALETTE: readonly ({
+const PALETTE: readonly {
   readonly bar: string;
   readonly price: string;
   readonly dot: string;
   readonly chipBg: string;
   readonly chipText: string;
-})[] = [
-  /* sky     */ { bar: 'bg-sky-500/60',     price: 'text-sky-400',     dot: 'bg-sky-400',     chipBg: 'bg-sky-500/10',     chipText: 'text-sky-400' },
-  /* teal    */ { bar: 'bg-teal-500/60',    price: 'text-teal-400',    dot: 'bg-teal-400',    chipBg: 'bg-teal-500/10',    chipText: 'text-teal-400' },
-  /* accent  */ { bar: 'bg-accent/60',      price: 'text-accent',      dot: 'bg-accent',      chipBg: 'bg-accent/10',      chipText: 'text-accent' },
-  /* amber   */ { bar: 'bg-amber-500/60',   price: 'text-amber-400',   dot: 'bg-amber-400',   chipBg: 'bg-amber-500/10',   chipText: 'text-amber-400' },
-  /* violet  */ { bar: 'bg-violet-500/60',  price: 'text-violet-400',  dot: 'bg-violet-400',  chipBg: 'bg-violet-500/10',  chipText: 'text-violet-400' },
-  /* rose    */ { bar: 'bg-rose-500/60',    price: 'text-rose-400',    dot: 'bg-rose-400',    chipBg: 'bg-rose-500/10',    chipText: 'text-rose-400' },
-  /* emerald */ { bar: 'bg-emerald-500/60', price: 'text-emerald-400', dot: 'bg-emerald-400', chipBg: 'bg-emerald-500/10', chipText: 'text-emerald-400' },
-  /* orange  */ { bar: 'bg-orange-500/60',  price: 'text-orange-400',  dot: 'bg-orange-400',  chipBg: 'bg-orange-500/10',  chipText: 'text-orange-400' },
-  /* fuchsia */ { bar: 'bg-fuchsia-500/60', price: 'text-fuchsia-400', dot: 'bg-fuchsia-400', chipBg: 'bg-fuchsia-500/10', chipText: 'text-fuchsia-400' },
-  /* cyan    */ { bar: 'bg-cyan-500/60',    price: 'text-cyan-400',    dot: 'bg-cyan-400',    chipBg: 'bg-cyan-500/10',    chipText: 'text-cyan-400' },
+}[] = [
+  /* sky     */ {
+    bar: 'bg-sky-500/60',
+    price: 'text-sky-400',
+    dot: 'bg-sky-400',
+    chipBg: 'bg-sky-500/10',
+    chipText: 'text-sky-400',
+  },
+  /* teal    */ {
+    bar: 'bg-teal-500/60',
+    price: 'text-teal-400',
+    dot: 'bg-teal-400',
+    chipBg: 'bg-teal-500/10',
+    chipText: 'text-teal-400',
+  },
+  /* accent  */ {
+    bar: 'bg-accent/60',
+    price: 'text-accent',
+    dot: 'bg-accent',
+    chipBg: 'bg-accent/10',
+    chipText: 'text-accent',
+  },
+  /* amber   */ {
+    bar: 'bg-amber-500/60',
+    price: 'text-amber-400',
+    dot: 'bg-amber-400',
+    chipBg: 'bg-amber-500/10',
+    chipText: 'text-amber-400',
+  },
+  /* violet  */ {
+    bar: 'bg-violet-500/60',
+    price: 'text-violet-400',
+    dot: 'bg-violet-400',
+    chipBg: 'bg-violet-500/10',
+    chipText: 'text-violet-400',
+  },
+  /* rose    */ {
+    bar: 'bg-rose-500/60',
+    price: 'text-rose-400',
+    dot: 'bg-rose-400',
+    chipBg: 'bg-rose-500/10',
+    chipText: 'text-rose-400',
+  },
+  /* emerald */ {
+    bar: 'bg-emerald-500/60',
+    price: 'text-emerald-400',
+    dot: 'bg-emerald-400',
+    chipBg: 'bg-emerald-500/10',
+    chipText: 'text-emerald-400',
+  },
+  /* orange  */ {
+    bar: 'bg-orange-500/60',
+    price: 'text-orange-400',
+    dot: 'bg-orange-400',
+    chipBg: 'bg-orange-500/10',
+    chipText: 'text-orange-400',
+  },
+  /* fuchsia */ {
+    bar: 'bg-fuchsia-500/60',
+    price: 'text-fuchsia-400',
+    dot: 'bg-fuchsia-400',
+    chipBg: 'bg-fuchsia-500/10',
+    chipText: 'text-fuchsia-400',
+  },
+  /* cyan    */ {
+    bar: 'bg-cyan-500/60',
+    price: 'text-cyan-400',
+    dot: 'bg-cyan-400',
+    chipBg: 'bg-cyan-500/10',
+    chipText: 'text-cyan-400',
+  },
 ];
 
 /** djb2 — simple string hash that distributes well over lowercase plan ids. */
@@ -71,7 +123,13 @@ function tierAccent(planId: string): (typeof PALETTE)[number] {
   const entry = PALETTE[idx];
   if (entry === undefined) {
     // PALETTE is non-empty and idx < length — this branch is unreachable.
-    return { bar: 'bg-accent/40', price: 'text-ink', dot: 'bg-accent', chipBg: 'bg-accent/10', chipText: 'text-accent' };
+    return {
+      bar: 'bg-accent/40',
+      price: 'text-ink',
+      dot: 'bg-accent',
+      chipBg: 'bg-accent/10',
+      chipText: 'text-accent',
+    };
   }
   return entry;
 }
@@ -330,7 +388,10 @@ export function PlansTab({
                         label="Automation"
                         value={ceiling(plan.automationRunsPerHour, 'runs/hr')}
                       />
-                      <LimitRow label="TURN" value={ceiling(plan.turnIssuancePerDay, 'creds/day')} />
+                      <LimitRow
+                        label="TURN"
+                        value={ceiling(plan.turnIssuancePerDay, 'creds/day')}
+                      />
                       <LimitRow
                         label="AI spend"
                         value={ceiling(plan.aiTokenBudgetMonthlyCents, '¢/mo')}
@@ -548,13 +609,7 @@ export function PlansTab({
  * -------------------------------------------------------------------------- */
 
 /** A single limit row — label + value, compact. */
-function LimitRow({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}) {
+function LimitRow({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="flex items-center justify-between gap-1">
       <span className="text-ink-faint">{label}</span>
@@ -1184,8 +1239,7 @@ function CreatePlanDialog({
   const limitsValid = !Object.values(limitsParsed).includes('invalid');
 
   const priceCents = Math.round(Number.parseFloat(priceAmount === '' ? 'NaN' : priceAmount) * 100);
-  const priceValid =
-    priceAmount.trim() === '' || (Number.isInteger(priceCents) && priceCents >= 0);
+  const priceValid = priceAmount.trim() === '' || (Number.isInteger(priceCents) && priceCents >= 0);
 
   const canSubmit =
     id.trim() !== '' &&
@@ -1299,7 +1353,10 @@ function CreatePlanDialog({
             {registry.data !== undefined && grantable.length > 0 && (
               <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
                 {grantable.map((flag) => (
-                  <li key={flag.flagName} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-hover">
+                  <li
+                    key={flag.flagName}
+                    className="flex items-start gap-2 px-3 py-2 hover:bg-surface-hover"
+                  >
                     <input
                       type="checkbox"
                       id={`create-feature-${flag.flagName}`}
@@ -1313,9 +1370,7 @@ function CreatePlanDialog({
                       htmlFor={`create-feature-${flag.flagName}`}
                       className="min-w-0 flex-1 cursor-pointer"
                     >
-                      <span className="block text-sm text-ink">
-                        {featureLabel(flag.flagName)}
-                      </span>
+                      <span className="block text-sm text-ink">{featureLabel(flag.flagName)}</span>
                       <span className="block text-[11px] text-ink-muted">
                         {featureDescription(flag.flagName) ?? flag.description}
                       </span>
@@ -1438,7 +1493,8 @@ function CreatePlanDialog({
                   turnIssuancePerDay: limitsParsed.turnIssuancePerDay as number | null,
                   telephonyIncludedCents: limitsParsed.telephonyIncludedCents as number,
                   telephonyMarkupPct: limitsParsed.telephonyMarkupPct as number,
-                  aiTokenBudgetMonthlyCents: limitsParsed.aiTokenBudgetMonthlyCents as number | null,
+                  aiTokenBudgetMonthlyCents: limitsParsed.aiTokenBudgetMonthlyCents as
+                    number | null,
                 });
               }}
             >

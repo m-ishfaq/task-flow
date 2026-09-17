@@ -29,10 +29,7 @@ import {
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
 import { useMembers } from '../org/use-members.js';
-import {
-  DocsEditor,
-  type DocsEditorHandle,
-} from './editor/docs-editor.js';
+import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
 import { useDocsPresence } from './editor/use-docs-presence.js';
 import { useCollabProvider } from './editor/use-collab-provider.js';
 import { PublishPanel } from './publish-panel.js';
@@ -409,9 +406,9 @@ function SpaceNode({
               onClick={() => {
                 restore.mutate();
               }}
-            className="shrink-0 px-1.5 py-1 text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
-          >
-            Restore
+              className="shrink-0 px-1.5 py-1 text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+            >
+              Restore
             </button>
           )
         ) : (
@@ -787,7 +784,8 @@ function PagePanel({
   const presenceUsers = useDocsPresence(liveProvider);
   const { personOf } = useMembers();
   const resolvedPresence = useMemo(() => {
-    if (presenceUsers.length === 0) return [] as { readonly userId: string; readonly label: string }[];
+    if (presenceUsers.length === 0)
+      return [] as { readonly userId: string; readonly label: string }[];
     return presenceUsers.map((user) => ({
       ...user,
       label: personOf(user.userId).label,

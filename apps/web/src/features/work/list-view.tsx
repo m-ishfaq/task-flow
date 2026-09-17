@@ -204,7 +204,9 @@ export function ListView({
                             </span>
                           )}
 
-                          <span className="hidden md:block"><AvatarStack people={assignees} /></span>
+                          <span className="hidden md:block">
+                            <AvatarStack people={assignees} />
+                          </span>
                         </button>
                       </li>
                     );

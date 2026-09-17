@@ -51,7 +51,8 @@ export async function listOperationalEvents(
 }> {
   const cursor = parseCreatedCursor(input.cursor);
 
-  const kindCondition = input.kind === null ? undefined : eq(schema.operationalEvents.kind, input.kind);
+  const kindCondition =
+    input.kind === null ? undefined : eq(schema.operationalEvents.kind, input.kind);
 
   const [rows, summaryRows] = await withPlatformAdminScope(async (tx) => {
     const paginatedQuery = tx
@@ -93,9 +94,7 @@ export async function listOperationalEvents(
       paginatedQuery.where(and(...paginatedConditions));
     }
 
-    const summaryConditions = [kindCondition].filter(
-      (condition) => condition !== undefined,
-    );
+    const summaryConditions = [kindCondition].filter((condition) => condition !== undefined);
 
     if (summaryConditions.length > 0) {
       summaryQuery.where(and(...summaryConditions));

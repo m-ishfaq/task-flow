@@ -1,12 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import {
-  Building2,
-  Globe,
-  Laptop,
-  Smartphone,
-} from 'lucide-react';
+import { Building2, Globe, Laptop, Smartphone } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys, resetCache } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -653,9 +648,7 @@ function SessionsSection() {
                     {group.primary.label ?? 'Unknown device'}
                     {group.primary.isCurrent && <Badge>This device</Badge>}
                     {group.totalCount > 1 && (
-                      <Badge className="text-ink-muted">
-                        {group.totalCount} sessions
-                      </Badge>
+                      <Badge className="text-ink-muted">{group.totalCount} sessions</Badge>
                     )}
                   </p>
                   <p className="truncate text-[11px] text-ink-muted">

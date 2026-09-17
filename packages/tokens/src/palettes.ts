@@ -171,7 +171,7 @@ function oklchToHex(l: number, c: number, h: number): string {
   const m2 = m1 * m1 * m1;
   const s2 = s1 * s1 * s1;
 
-  const x = 1.2270138511 * l2 - 0.5577999807 * m2 + 0.2812561490 * s2;
+  const x = 1.2270138511 * l2 - 0.5577999807 * m2 + 0.281256149 * s2;
   const y = -0.0405804252 * l2 + 1.1122568696 * m2 - 0.0716766788 * s2;
   const z = -0.0763812845 * l2 - 0.4214819784 * m2 + 1.5861632204 * s2;
 

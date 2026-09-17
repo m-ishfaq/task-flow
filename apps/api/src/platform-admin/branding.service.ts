@@ -5,7 +5,12 @@ import type { ScannerConfig } from '@taskflow/security';
 import { newStorageKey, orgOfKey } from '@taskflow/storage';
 import { verifyUpload } from '../attachments/verify.js';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
-import { asPaletteId, DEFAULT_PRODUCT_NAME, getResolvedBranding, type BrandingSnapshot } from './branding-cache.js';
+import {
+  asPaletteId,
+  DEFAULT_PRODUCT_NAME,
+  getResolvedBranding,
+  type BrandingSnapshot,
+} from './branding-cache.js';
 import { brandingUpdated } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import type { PlatformOperator } from './org-directory.service.js';

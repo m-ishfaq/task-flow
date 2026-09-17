@@ -74,7 +74,7 @@ export interface BuildIdentityDepsOptions {
   /**
    * Product name for the HIBP breach-check User-Agent header. Passed by the
    * caller from the branding cache so the breach check identifies itself as
-    * the self-hosted product, not "Rinavai".
+   * the self-hosted product, not "Rinavai".
    */
   readonly productName?: string | undefined;
 }
@@ -106,7 +106,9 @@ export function buildIdentityDeps(options: BuildIdentityDepsOptions): IdentityDe
 
     events: options.events ?? new InMemoryEventBus(),
     checkBreached: (password) =>
-      checkPasswordBreached(password, { ...(options.productName != null ? { productName: options.productName } : {}) }),
+      checkPasswordBreached(password, {
+        ...(options.productName != null ? { productName: options.productName } : {}),
+      }),
 
     deliver: options.deliver,
   };

@@ -78,8 +78,7 @@ export function OrgInspectorPanel({
 
   const aiSpend = useQuery({
     queryKey: ['platform', 'ai-spend', orgId, 30],
-    queryFn: async () =>
-      wire(await api.platformAdmin.ai.spendReport.query({ sinceDays: 30 })),
+    queryFn: async () => wire(await api.platformAdmin.ai.spendReport.query({ sinceDays: 30 })),
   });
 
   const data = detail.data;
@@ -87,9 +86,7 @@ export function OrgInspectorPanel({
   /** AI spend for this specific org, computed from the full report. */
   const orgAiSpendCents =
     aiSpend.data !== undefined
-      ? aiSpend.data
-          .filter((r) => r.orgId === orgId)
-          .reduce((sum, r) => sum + r.totalCents, 0)
+      ? aiSpend.data.filter((r) => r.orgId === orgId).reduce((sum, r) => sum + r.totalCents, 0)
       : undefined;
 
   return (
@@ -142,7 +139,13 @@ export function OrgInspectorPanel({
                 {data.status}
               </StatusPill>
               <StatusPill
-                tone={data.billingStatus === 'active' ? 'success' : data.billingStatus === 'trialing' ? 'neutral' : 'danger'}
+                tone={
+                  data.billingStatus === 'active'
+                    ? 'success'
+                    : data.billingStatus === 'trialing'
+                      ? 'neutral'
+                      : 'danger'
+                }
                 className="text-[10px]"
               >
                 {data.billingStatus}
@@ -211,14 +214,16 @@ export function OrgInspectorPanel({
                     }
                   />
                   <DetailRow label="Stripe customer" value={data.stripeCustomerId ?? '—'} mono />
-                  <DetailRow label="Stripe subscription" value={data.stripeSubscriptionId ?? '—'} mono />
+                  <DetailRow
+                    label="Stripe subscription"
+                    value={data.stripeSubscriptionId ?? '—'}
+                    mono
+                  />
                 </dl>
 
                 {data.override !== null && (
                   <div className="mt-3 rounded-lg bg-warning/[0.06] p-3">
-                    <p className="text-[12px] font-medium text-ink">
-                      Operator override active
-                    </p>
+                    <p className="text-[12px] font-medium text-ink">Operator override active</p>
                     <p className="mt-0.5 text-[11px] text-ink-muted">{data.override.reason}</p>
                     <p className="mt-0.5 text-[10px] text-ink-faint">
                       Set {formatDate(data.override.setAt)}
@@ -423,7 +428,9 @@ export function OrgInspectorPanel({
               onClick={() => {
                 void queryClient.invalidateQueries({ queryKey: keys.platformOrgDetail(orgId) });
                 void queryClient.invalidateQueries({ queryKey: keys.platformOrgHistory(orgId) });
-                void queryClient.invalidateQueries({ queryKey: ['platform', 'ai-spend', orgId, 30] });
+                void queryClient.invalidateQueries({
+                  queryKey: ['platform', 'ai-spend', orgId, 30],
+                });
               }}
             >
               Refresh

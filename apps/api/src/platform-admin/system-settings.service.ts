@@ -94,11 +94,9 @@ export async function updateSettings(
      expects the site to come back instantly. */
   invalidateSystemSettingsCache();
 
-  await recordOperatorAction(
-    operator.userId,
-    'config.settings.update',
-    { keys: effective.map((s) => s.key) },
-  );
+  await recordOperatorAction(operator.userId, 'config.settings.update', {
+    keys: effective.map((s) => s.key),
+  });
 
   await deps.events.publish([
     createEvent(

@@ -40,7 +40,11 @@ export interface BillingDeps {
   readonly webOrigin: string;
 }
 
-export function buildBillingDeps(env: Env, mailQueue?: MailQueue, productName?: string): BillingDeps {
+export function buildBillingDeps(
+  env: Env,
+  mailQueue?: MailQueue,
+  productName?: string,
+): BillingDeps {
   /* No price map here any more. Wave 4 moved the catalog into
      `billing.plans`/`billing.plan_prices`, so a price is a row an operator
      edits from the console rather than a value baked in at boot — and

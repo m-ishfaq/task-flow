@@ -75,7 +75,11 @@ export function AuditPage() {
       <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
           {verify.isError && (
-            <ErrorView error={verify.error} title="Could not verify the chain" className="shrink-0" />
+            <ErrorView
+              error={verify.error}
+              title="Could not verify the chain"
+              className="shrink-0"
+            />
           )}
 
           {verify.data !== undefined && (

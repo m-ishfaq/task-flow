@@ -56,9 +56,12 @@ interface CreateValues {
 /** Role badge colors — semantic, not decorative. */
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-accent/10 text-accent border-accent/20',
-  admin: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:bg-purple-400/10 dark:text-purple-400',
-  member: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-400',
-  guest: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-400/10 dark:text-amber-400',
+  admin:
+    'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:bg-purple-400/10 dark:text-purple-400',
+  member:
+    'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-400',
+  guest:
+    'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-400/10 dark:text-amber-400',
 };
 
 const MANAGEMENT_ROLES = new Set(['owner', 'admin']);
@@ -155,8 +158,8 @@ export function OrgPickerPage() {
                 Platform operator
               </h1>
               <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
-                Your work is cross-tenant. Open the platform console to manage
-                organizations, users, and plans.
+                Your work is cross-tenant. Open the platform console to manage organizations, users,
+                and plans.
               </p>
             </>
           ) : (
@@ -205,9 +208,7 @@ export function OrgPickerPage() {
         )}
 
         {/* ── Error ───────────────────────────────────────────────────── */}
-        {orgs.isError && (
-          <ErrorView error={orgs.error} title="Could not load your organizations" />
-        )}
+        {orgs.isError && <ErrorView error={orgs.error} title="Could not load your organizations" />}
 
         {/* ── Org list ────────────────────────────────────────────────── */}
         {!orgs.isPending && !orgs.isError && (
@@ -376,9 +377,7 @@ function SuspendedRow({ org }: { readonly org: OrgMembership }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-medium text-ink-muted">{org.name}</span>
         <span className="mt-0.5 block text-xs text-ink-faint">
-          {isOrgSuspended
-            ? 'This organization has been suspended'
-            : 'Your membership is suspended'}
+          {isOrgSuspended ? 'This organization has been suspended' : 'Your membership is suspended'}
         </span>
       </span>
       <Badge className="opacity-60">{isOrgSuspended ? 'Suspended' : 'Inactive'}</Badge>
@@ -547,7 +546,11 @@ function CreateOrgForm({
         htmlFor="org-slug"
         hint="Used in URLs. Derived from the name; edit it if you want something else."
       >
-        <Input id="org-slug" className="font-mono text-xs" {...register('slug', { required: true })} />
+        <Input
+          id="org-slug"
+          className="font-mono text-xs"
+          {...register('slug', { required: true })}
+        />
       </Field>
 
       {create.isError && <ErrorView error={create.error} />}

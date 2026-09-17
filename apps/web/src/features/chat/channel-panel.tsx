@@ -641,7 +641,9 @@ export function ChannelPanel({
               opens details rather than duplicating the back affordance. */}
           <button
             type="button"
-            onClick={() => { setDetailsOpen((o) => !o); }}
+            onClick={() => {
+              setDetailsOpen((o) => !o);
+            }}
             aria-label="Toggle channel details"
             className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-surface-hover md:cursor-pointer"
           >
@@ -679,10 +681,7 @@ export function ChannelPanel({
           {/* Overlapping-avatar preview for non-DM channels. */}
           {channel.data !== undefined && channel.data.type !== 'dm' && (
             <div className="hidden shrink-0 sm:flex">
-              <AvatarStack
-                people={peopleOf(channel.data.memberIds)}
-                max={3}
-              />
+              <AvatarStack people={peopleOf(channel.data.memberIds)} max={3} />
             </div>
           )}
           {/* Search — navigates to the app's real search. */}
@@ -750,11 +749,7 @@ export function ChannelPanel({
                 return item.kind === 'call' ? (
                   <Fragment key={item.key}>
                     {dayDivider}
-                    <CallTimelineCard
-                      entry={item.entry}
-                      viewerId={viewerId}
-                      personOf={personOf}
-                    />
+                    <CallTimelineCard entry={item.entry} viewerId={viewerId} personOf={personOf} />
                   </Fragment>
                 ) : (
                   <Fragment key={item.key}>

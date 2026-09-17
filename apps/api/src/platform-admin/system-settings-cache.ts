@@ -35,26 +35,40 @@ let loading: Promise<SystemSettingsSnapshot> | null = null;
  * column already serializes via the pg driver, so the stored value was
  * a JSON string like `"true"` instead of a JSON boolean `true`.
  */
-function readSetting<T>(map: Map<string, unknown>, key: string, fallback: T, coerce: (v: unknown) => T): T {
+function readSetting<T>(
+  map: Map<string, unknown>,
+  key: string,
+  fallback: T,
+  coerce: (v: unknown) => T,
+): T {
   const raw = map.get(key);
   if (raw === undefined || raw === null) return fallback;
   return coerce(raw);
 }
 
-function parseSettings(rows: readonly { readonly key: string; readonly value: unknown }[]): SystemSettingsSnapshot {
+function parseSettings(
+  rows: readonly { readonly key: string; readonly value: unknown }[],
+): SystemSettingsSnapshot {
   const map = new Map<string, unknown>();
   for (const row of rows) {
     map.set(row.key, row.value);
   }
   return {
-    maintenanceMode: readSetting(map, 'maintenance_mode', false, (v) =>
-      v === true || v === 'true',
+    maintenanceMode: readSetting(map, 'maintenance_mode', false, (v) => v === true || v === 'true'),
+    maintenanceMessage: readSetting(
+      map,
+      'maintenance_message',
+      'System is currently under maintenance. Please check back shortly.',
+      (v) =>
+        typeof v === 'string'
+          ? v.replace(/^"|"$/g, '')
+          : 'System is currently under maintenance. Please check back shortly.',
     ),
-    maintenanceMessage: readSetting(map, 'maintenance_message', 'System is currently under maintenance. Please check back shortly.', (v) =>
-      typeof v === 'string' ? v.replace(/^"|"$/g, '') : 'System is currently under maintenance. Please check back shortly.',
-    ),
-    registrationEnabled: readSetting(map, 'registration_enabled', true, (v) =>
-      v !== false && v !== 'false',
+    registrationEnabled: readSetting(
+      map,
+      'registration_enabled',
+      true,
+      (v) => v !== false && v !== 'false',
     ),
     stepUpMaxAgeMin: readSetting(map, 'step_up_max_age_min', 5, (v) =>
       typeof v === 'number' ? v : typeof v === 'string' ? Number.parseInt(v, 10) || 5 : 5,
@@ -70,7 +84,9 @@ function parseSettings(rows: readonly { readonly key: string; readonly value: un
 
 async function loadSettings(): Promise<SystemSettingsSnapshot> {
   const rows = await withPlatformAdminScope(async (tx) =>
-    tx.select({ key: schema.systemSettings.key, value: schema.systemSettings.value }).from(schema.systemSettings),
+    tx
+      .select({ key: schema.systemSettings.key, value: schema.systemSettings.value })
+      .from(schema.systemSettings),
   );
   return parseSettings(rows);
 }

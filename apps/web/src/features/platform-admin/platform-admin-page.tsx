@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Download,
-  Menu,
-} from 'lucide-react';
+import { Download, Menu } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -66,8 +63,6 @@ export function PlatformAdminPage() {
   const drawerRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
-
-
   /* Escape closes the drawer */
   useEffect(() => {
     if (!drawerOpen) return undefined;
@@ -75,7 +70,9 @@ export function PlatformAdminPage() {
       if (e.key === 'Escape') setDrawerOpen(false);
     }
     window.addEventListener('keydown', handleKeyDown);
-    return () => { window.removeEventListener('keydown', handleKeyDown); };
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [drawerOpen]);
 
   /* Focus management for drawer */
@@ -133,7 +130,9 @@ export function PlatformAdminPage() {
       {drawerOpen && (
         <div
           aria-hidden="true"
-          onClick={() => { setDrawerOpen(false); }}
+          onClick={() => {
+            setDrawerOpen(false);
+          }}
           className="fixed inset-0 z-30 bg-overlay md:hidden"
         />
       )}
@@ -151,9 +150,13 @@ export function PlatformAdminPage() {
       >
         <PlatformSidebar
           activeTab={tab}
-          onNavigate={(t) => { navigate(t as PlatformTab); }}
+          onNavigate={(t) => {
+            navigate(t as PlatformTab);
+          }}
           isMobileDrawer
-          onCloseMobile={() => { setDrawerOpen(false); }}
+          onCloseMobile={() => {
+            setDrawerOpen(false);
+          }}
         />
       </div>
 
@@ -161,9 +164,13 @@ export function PlatformAdminPage() {
       <div className="hidden md:block">
         <PlatformSidebar
           activeTab={tab}
-          onNavigate={(t) => { navigate(t as PlatformTab); }}
+          onNavigate={(t) => {
+            navigate(t as PlatformTab);
+          }}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => { setSidebarCollapsed((c) => !c); }}
+          onToggleCollapse={() => {
+            setSidebarCollapsed((c) => !c);
+          }}
         />
       </div>
 
@@ -174,7 +181,9 @@ export function PlatformAdminPage() {
           {/* Mobile hamburger */}
           <button
             type="button"
-            onClick={() => { setDrawerOpen(true); }}
+            onClick={() => {
+              setDrawerOpen(true);
+            }}
             aria-label="Open navigation"
             className="-ml-1 shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
           >
@@ -211,14 +220,29 @@ export function PlatformAdminPage() {
                 if (orgRows !== undefined && orgRows.length > 0) {
                   downloadCsv(`orgs-export-${date}.csv`, [
                     [
-                      'Organization', 'Slug', 'Owner name', 'Owner email',
-                      'Plan', 'Billing status', 'Trial ends', 'Grace ends',
-                      'Renews', 'Last invoice status', 'Last invoice amount',
-                      'Last invoice date', 'Status', 'Members', 'Created',
+                      'Organization',
+                      'Slug',
+                      'Owner name',
+                      'Owner email',
+                      'Plan',
+                      'Billing status',
+                      'Trial ends',
+                      'Grace ends',
+                      'Renews',
+                      'Last invoice status',
+                      'Last invoice amount',
+                      'Last invoice date',
+                      'Status',
+                      'Members',
+                      'Created',
                     ],
                     ...orgRows.map((org) => [
-                      org.name, org.slug, org.ownerName ?? '', org.ownerEmail ?? '',
-                      org.planId ?? '', org.billingStatus,
+                      org.name,
+                      org.slug,
+                      org.ownerName ?? '',
+                      org.ownerEmail ?? '',
+                      org.planId ?? '',
+                      org.billingStatus,
                       org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
                       org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
                       org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
@@ -227,7 +251,9 @@ export function PlatformAdminPage() {
                         ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
                         : '',
                       org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
-                      org.status, String(org.memberCount), formatDate(org.createdAt),
+                      org.status,
+                      String(org.memberCount),
+                      formatDate(org.createdAt),
                     ]),
                   ]);
                 }
@@ -236,9 +262,12 @@ export function PlatformAdminPage() {
                   downloadCsv(`users-export-${date}.csv`, [
                     ['User id', 'Name', 'Email', 'Email verified', 'Organizations', 'Created'],
                     ...userRows.map((user) => [
-                      user.userId, user.name ?? '', user.email,
+                      user.userId,
+                      user.name ?? '',
+                      user.email,
                       user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
-                      String(user.orgCount), formatDate(user.createdAt),
+                      String(user.orgCount),
+                      formatDate(user.createdAt),
                     ]),
                   ]);
                 }
@@ -246,13 +275,27 @@ export function PlatformAdminPage() {
                 if (billingRows !== undefined && billingRows.length > 0) {
                   downloadCsv(`billing-export-${date}.csv`, [
                     [
-                      'Organization', 'Slug', 'Billing status', 'Plan', 'Plan name',
-                      'Current price', 'Interval', 'Renews', 'Last invoice status',
-                      'Last invoice amount', 'Last invoice date', 'Trial ends',
-                      'Grace ends', 'Pending plan', 'Stripe customer',
+                      'Organization',
+                      'Slug',
+                      'Billing status',
+                      'Plan',
+                      'Plan name',
+                      'Current price',
+                      'Interval',
+                      'Renews',
+                      'Last invoice status',
+                      'Last invoice amount',
+                      'Last invoice date',
+                      'Trial ends',
+                      'Grace ends',
+                      'Pending plan',
+                      'Stripe customer',
                     ],
                     ...billingRows.map((org) => [
-                      org.name, org.slug, org.billingStatus, org.planId ?? '',
+                      org.name,
+                      org.slug,
+                      org.billingStatus,
+                      org.planId ?? '',
                       org.planName ?? '',
                       org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
                       org.currentPriceInterval ?? '',
@@ -264,7 +307,8 @@ export function PlatformAdminPage() {
                       org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
                       org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
                       org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
-                      org.pendingPlanId ?? '', org.stripeCustomerId ?? '',
+                      org.pendingPlanId ?? '',
+                      org.stripeCustomerId ?? '',
                     ]),
                   ]);
                 }
@@ -282,7 +326,8 @@ export function PlatformAdminPage() {
             {/* Tab subtitle */}
             <p className="text-[13px] text-ink-muted">
               {tab === 'dashboard' && 'Platform health at a glance.'}
-              {tab === 'orgs' && 'Every organization in the platform. Click an org to inspect its health and activity.'}
+              {tab === 'orgs' &&
+                'Every organization in the platform. Click an org to inspect its health and activity.'}
               {tab === 'users' && 'All registered users across every organization.'}
               {tab === 'plans' && 'The plan catalog and per-org entitlement overrides.'}
               {tab === 'billing' && 'Revenue, subscriptions, and invoices.'}
@@ -293,51 +338,111 @@ export function PlatformAdminPage() {
               {tab === 'audit' && 'The accountability record of every operator action.'}
               {tab === 'operations' && 'System-action outcomes across every process.'}
               {tab === 'errors' && 'Per-org error rates, trends, and velocity tracking.'}
-              {tab === 'config' && 'Platform identity, infrastructure status, and feature flag overview.'}
+              {tab === 'config' &&
+                'Platform identity, infrastructure status, and feature flag overview.'}
             </p>
 
             {/* Tab content */}
             {tab === 'dashboard' && (
               <DashboardTab
-                onNavigate={(t) => { navigate(t as PlatformTab); }}
-                onStepUp={() => { setGateOpen(true); }}
+                onNavigate={(t) => {
+                  navigate(t as PlatformTab);
+                }}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
               />
             )}
             {tab === 'orgs' && (
-              <OrgsTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <OrgsTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'users' && (
-              <UsersTab onStepUp={() => { setGateOpen(true); }} />
+              <UsersTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'plans' && (
-              <PlansTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <PlansTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'billing' && (
-              <BillingTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <BillingTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'ai' && (
-              <AiTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <AiTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'flags' && (
-              <FlagsTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <FlagsTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'branding' && (
-              <BrandingTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <BrandingTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'broadcast' && (
-              <BroadcastTab guard={guard} onStepUp={() => { setGateOpen(true); }} />
+              <BroadcastTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'audit' && (
-              <AuditTab onStepUp={() => { setGateOpen(true); }} />
+              <AuditTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'operations' && (
-              <OperationsTab onStepUp={() => { setGateOpen(true); }} />
+              <OperationsTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'errors' && (
-              <ErrorsTab onStepUp={() => { setGateOpen(true); }} />
+              <ErrorsTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
             {tab === 'config' && (
-              <ConfigTab onStepUp={() => { setGateOpen(true); }} />
+              <ConfigTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
 
             {/* Step-up dialogs */}
@@ -345,7 +450,9 @@ export function PlatformAdminPage() {
             {gateOpen && (
               <StepUpDialog
                 open
-                onClose={() => { setGateOpen(false); }}
+                onClose={() => {
+                  setGateOpen(false);
+                }}
                 onConfirmed={onProof}
               />
             )}

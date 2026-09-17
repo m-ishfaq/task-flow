@@ -86,8 +86,12 @@ export function ThreadPanel({
       <div className="group rounded-md px-2 py-1.5 hover:bg-surface-hover/40 transition-colors">
         <div className="flex items-baseline gap-2">
           <span className="shrink-0 text-[13px] font-semibold text-ink">{label}</span>
-          <span className="text-[11px] text-ink-faint leading-none">{formatTime(message.createdAt)}</span>
-          {message.editedAt !== null && <span className="text-[11px] text-ink-faint">· edited</span>}
+          <span className="text-[11px] text-ink-faint leading-none">
+            {formatTime(message.createdAt)}
+          </span>
+          {message.editedAt !== null && (
+            <span className="text-[11px] text-ink-faint">· edited</span>
+          )}
         </div>
         <div className="text-[13px] leading-relaxed text-ink">
           <RichTextView value={message.body} bare />

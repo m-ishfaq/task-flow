@@ -299,7 +299,10 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         ) : (
           <ul className="space-y-1.5" role="listbox" aria-label="Search results">
             {results.data.map((hit, index) => (
-              <li key={`${hit.type}-${hit.entityId}`} style={{ animationDelay: `${String(index * 30)}ms` }}>
+              <li
+                key={`${hit.type}-${hit.entityId}`}
+                style={{ animationDelay: `${String(index * 30)}ms` }}
+              >
                 <button
                   type="button"
                   role="option"

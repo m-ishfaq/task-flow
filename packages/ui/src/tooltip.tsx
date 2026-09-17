@@ -18,11 +18,7 @@ export interface TooltipContentProps extends Omit<
   readonly className?: string;
 }
 
-export function TooltipContent({
-  sideOffset = 4,
-  className,
-  ...props
-}: TooltipContentProps) {
+export function TooltipContent({ sideOffset = 4, className, ...props }: TooltipContentProps) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content

@@ -1,13 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CircleDot,
-  FolderKanban,
-  LayoutGrid,
-  SlidersHorizontal,
-  Tag,
-} from 'lucide-react';
+import { CircleDot, FolderKanban, LayoutGrid, SlidersHorizontal, Tag } from 'lucide-react';
 import type {
   BoardId,
   CustomFieldId,
@@ -119,9 +113,7 @@ export function ProjectSettingsPage() {
             same as everything else on this page, and a viewer who cannot
             manage the project has no use for a control that would just be
             refused. */}
-        {project.capabilities.update && (
-          <GuestAccessSection orgId={orgId} projectId={projectId} />
-        )}
+        {project.capabilities.update && <GuestAccessSection orgId={orgId} projectId={projectId} />}
       </div>
     </div>
   );
@@ -313,7 +305,9 @@ function BoardSection({
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line/50 py-8 text-center">
           <LayoutGrid className="size-8 text-ink-faint/50" />
           <p className="text-sm font-medium text-ink">No boards in this project</p>
-          <p className="text-xs text-ink-muted">A project without a board has nowhere to put cards.</p>
+          <p className="text-xs text-ink-muted">
+            A project without a board has nowhere to put cards.
+          </p>
         </div>
       ) : (
         <ul className="space-y-1">
@@ -476,8 +470,8 @@ function LabelSettings({
         )}
       </div>
       <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
-        Deleting a label removes it from every card carrying it, and cannot be undone — a label holds
-        no content of its own, so there is nothing to archive.
+        Deleting a label removes it from every card carrying it, and cannot be undone — a label
+        holds no content of its own, so there is nothing to archive.
       </p>
 
       {labels.isPending && <SkeletonRows rows={3} className="*:h-10" />}
@@ -956,8 +950,8 @@ function FieldSettings({
       </div>
       <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
         A field's TYPE is fixed once created — there is no honest migration from a choice list to a
-        number, and every option would silently rewrite data someone entered. Archiving hides a field
-        without discarding the values on existing cards.
+        number, and every option would silently rewrite data someone entered. Archiving hides a
+        field without discarding the values on existing cards.
       </p>
 
       {fields.isPending && <SkeletonRows rows={2} className="*:h-10" />}
@@ -967,8 +961,8 @@ function FieldSettings({
           <SlidersHorizontal className="size-8 text-ink-faint/50" />
           <p className="text-sm font-medium text-ink">No custom fields yet</p>
           <p className="text-xs text-ink-muted">
-            Fields are created from a card's detail panel. Archived ones stay listed here, which is the
-            only place they can be restored.
+            Fields are created from a card's detail panel. Archived ones stay listed here, which is
+            the only place they can be restored.
           </p>
         </div>
       ) : (

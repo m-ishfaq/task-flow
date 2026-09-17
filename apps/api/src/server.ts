@@ -289,10 +289,11 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        batch URL (/trpc). The URL may be exactly "/trpc" (no trailing slash) or
        "/trpc/..." depending on the request. We must check for both. */
     if (url === '/trpc' || url.startsWith('/trpc/')) {
-      const AUTH_PATTERN = /\.(login|register|refresh|logout|verifyEmail|resendVerification|requestPasswordReset|resetPassword|callback|finishAuthentication|verifyLogin|start|providers)/;
+      const AUTH_PATTERN =
+        /\.(login|register|refresh|logout|verifyEmail|resendVerification|requestPasswordReset|resetPassword|callback|finishAuthentication|verifyLogin|start|providers)/;
       if (AUTH_PATTERN.test(url)) return;
 
-      if (url.startsWith("/trpc/platformAdmin.")) return;
+      if (url.startsWith('/trpc/platformAdmin.')) return;
     }
 
     /* Operator requests with a bearer token also bypass maintenance —

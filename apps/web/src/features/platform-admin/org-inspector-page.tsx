@@ -39,8 +39,7 @@ export function OrgInspectorPage({ orgId }: { readonly orgId: string }) {
 
   const history = useQuery({
     queryKey: keys.platformOrgHistory(orgId),
-    queryFn: async () =>
-      wire(await api.platformAdmin.orgs.history.query({ orgId, limit: 50 })),
+    queryFn: async () => wire(await api.platformAdmin.orgs.history.query({ orgId, limit: 50 })),
   });
 
   const data = detail.data;
@@ -132,16 +131,11 @@ export function OrgInspectorPage({ orgId }: { readonly orgId: string }) {
                   <DetailRow
                     label="Grace ends"
                     value={
-                      data.billingGraceEndsAt === null
-                        ? '—'
-                        : formatDate(data.billingGraceEndsAt)
+                      data.billingGraceEndsAt === null ? '—' : formatDate(data.billingGraceEndsAt)
                     }
                   />
                   <DetailRow label="Stripe customer" value={data.stripeCustomerId ?? '—'} />
-                  <DetailRow
-                    label="Stripe subscription"
-                    value={data.stripeSubscriptionId ?? '—'}
-                  />
+                  <DetailRow label="Stripe subscription" value={data.stripeSubscriptionId ?? '—'} />
                 </dl>
 
                 {data.override !== null && (

@@ -535,12 +535,7 @@ export async function getUserDetail(
             lastUsedAt: schema.apiTokens.lastUsedAt,
           })
           .from(schema.apiTokens)
-          .where(
-            and(
-              eq(schema.apiTokens.createdBy, userId),
-              isNull(schema.apiTokens.revokedAt),
-            ),
-          )
+          .where(and(eq(schema.apiTokens.createdBy, userId), isNull(schema.apiTokens.revokedAt)))
           .orderBy(desc(schema.apiTokens.createdAt))
           .limit(20),
       ]);

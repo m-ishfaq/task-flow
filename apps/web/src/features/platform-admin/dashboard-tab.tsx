@@ -36,7 +36,10 @@ function HeroStat({
   subtext,
   accent = false,
 }: {
-  readonly icon: React.ComponentType<{ readonly className?: string; readonly strokeWidth?: number }>;
+  readonly icon: React.ComponentType<{
+    readonly className?: string;
+    readonly strokeWidth?: number;
+  }>;
   readonly label: string;
   readonly value: string | number;
   readonly subtext?: string;
@@ -62,9 +65,7 @@ function HeroStat({
       <div className="min-w-0">
         <p className="text-[11px] font-medium uppercase tracking-widest text-ink-faint">{label}</p>
         <p className="mt-0.5 text-3xl font-bold tracking-tight text-ink tabular-nums">{value}</p>
-        {subtext !== undefined && (
-          <p className="mt-1 text-[11px] text-ink-faint">{subtext}</p>
-        )}
+        {subtext !== undefined && <p className="mt-1 text-[11px] text-ink-faint">{subtext}</p>}
       </div>
     </div>
   );
@@ -115,7 +116,9 @@ function ErrorBar({
           style={{ width: `${String(pct)}%` }}
         />
       </div>
-      <span className="w-8 text-right text-xs font-semibold tabular-nums text-ink-faint">{count}</span>
+      <span className="w-8 text-right text-xs font-semibold tabular-nums text-ink-faint">
+        {count}
+      </span>
     </div>
   );
 }
@@ -136,7 +139,9 @@ function SectionHeader({
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <button
         type="button"
-        onClick={() => { onNavigate(target); }}
+        onClick={() => {
+          onNavigate(target);
+        }}
         className="flex items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-accent/80"
       >
         View all <ArrowRight className="size-3" aria-hidden="true" />
@@ -156,11 +161,13 @@ export function DashboardTab({
 }) {
   const orgs = useQuery({
     queryKey: keys.platformOrgs(null),
-    queryFn: async () => wire(await api.platformAdmin.orgs.list.query({ cursor: null, limit: 100 })),
+    queryFn: async () =>
+      wire(await api.platformAdmin.orgs.list.query({ cursor: null, limit: 100 })),
   });
   const users = useQuery({
     queryKey: keys.platformUsers(null),
-    queryFn: async () => wire(await api.platformAdmin.users.list.query({ cursor: null, limit: 100 })),
+    queryFn: async () =>
+      wire(await api.platformAdmin.users.list.query({ cursor: null, limit: 100 })),
   });
   const billing = useQuery({
     queryKey: keys.platformBilling(null),
@@ -208,7 +215,8 @@ export function DashboardTab({
   const totalUsers = userRows.length;
   const trials = billingRows.filter((o) => o.billingStatus === 'trialing').length;
   const mrr = billingRows.reduce((sum, o) => {
-    if (o.currentPriceCents !== null && o.billingStatus === 'active') return sum + o.currentPriceCents;
+    if (o.currentPriceCents !== null && o.billingStatus === 'active')
+      return sum + o.currentPriceCents;
     return sum;
   }, 0);
 
@@ -217,14 +225,23 @@ export function DashboardTab({
   const opsEvents = recentOps.data?.events ?? [];
   const totalFailures = errorData?.summary.totalFailures ?? 0;
 
-  const errorSources = errorData !== undefined
-    ? ([
-        { label: 'Mail', count: errorData.summary.bySource.mail, color: 'bg-info' },
-        { label: 'Automation', count: errorData.summary.bySource.automation, color: 'bg-warning' },
-        { label: 'Notifications', count: errorData.summary.bySource.notifications, color: 'bg-danger' },
-        { label: 'Webhooks', count: errorData.summary.bySource.webhooks, color: 'bg-accent' },
-      ] as const)
-    : [];
+  const errorSources =
+    errorData !== undefined
+      ? ([
+          { label: 'Mail', count: errorData.summary.bySource.mail, color: 'bg-info' },
+          {
+            label: 'Automation',
+            count: errorData.summary.bySource.automation,
+            color: 'bg-warning',
+          },
+          {
+            label: 'Notifications',
+            count: errorData.summary.bySource.notifications,
+            color: 'bg-danger',
+          },
+          { label: 'Webhooks', count: errorData.summary.bySource.webhooks, color: 'bg-accent' },
+        ] as const)
+      : [];
   const maxError = Math.max(...errorSources.map((s) => s.count), 1);
 
   return (
@@ -291,7 +308,9 @@ export function DashboardTab({
                         <span className="truncate text-ink">{org.orgName}</span>
                         <div className="flex items-center gap-2">
                           <span className="tabular-nums text-ink-muted">
-                            {org.automationFailures + org.notificationFailures + org.webhookFailures}
+                            {org.automationFailures +
+                              org.notificationFailures +
+                              org.webhookFailures}
                           </span>
                           <VelocityBadge velocity={org.velocity} />
                         </div>
@@ -398,18 +417,22 @@ export function DashboardTab({
       <div className="rounded-2xl bg-surface-raised p-5">
         <h3 className="mb-4 text-sm font-semibold text-ink">Quick Actions</h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {([
-            { tab: 'orgs', label: 'Organizations', icon: Building2 },
-            { tab: 'users', label: 'Users', icon: Users },
-            { tab: 'errors', label: 'Error Health', icon: Activity },
-            { tab: 'audit', label: 'Audit Log', icon: Shield },
-            { tab: 'broadcast', label: 'Broadcast', icon: Zap },
-            { tab: 'plans', label: 'Plans', icon: CreditCard },
-          ] as const).map(({ tab, label, icon: Icon }) => (
+          {(
+            [
+              { tab: 'orgs', label: 'Organizations', icon: Building2 },
+              { tab: 'users', label: 'Users', icon: Users },
+              { tab: 'errors', label: 'Error Health', icon: Activity },
+              { tab: 'audit', label: 'Audit Log', icon: Shield },
+              { tab: 'broadcast', label: 'Broadcast', icon: Zap },
+              { tab: 'plans', label: 'Plans', icon: CreditCard },
+            ] as const
+          ).map(({ tab, label, icon: Icon }) => (
             <button
               key={tab}
               type="button"
-              onClick={() => { onNavigate(tab); }}
+              onClick={() => {
+                onNavigate(tab);
+              }}
               className="group flex flex-col items-center gap-2 rounded-xl bg-surface-sunken px-4 py-4 text-center text-ink-muted transition-all duration-200 hover:bg-surface-hover hover:text-ink hover:shadow-[0_2px_16px_-4px_rgba(0,0,0,0.4)]"
             >
               <Icon

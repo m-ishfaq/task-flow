@@ -123,8 +123,8 @@ export async function queryErrorHealth(
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
 
   return withPlatformAdminScope(async (tx) => {
-    const [automationByOrg, notificationByOrg, webhookByOrg, operationalByKind] =
-      await Promise.all([
+    const [automationByOrg, notificationByOrg, webhookByOrg, operationalByKind] = await Promise.all(
+      [
         // Automation run failures per org (status = 'failed')
         tx
           .select({
@@ -184,72 +184,72 @@ export async function queryErrorHealth(
             ),
           )
           .groupBy(schema.operationalEvents.kind),
-      ]);
+      ],
+    );
 
     // Recent individual failure records (last 20 each) for the detail log
-    const [recentOperationalRows, recentAutomationRows, recentWebhookRows] =
-      await Promise.all([
-        // Recent operational event failures
-        tx
-          .select({
-            id: schema.operationalEvents.id,
-            kind: schema.operationalEvents.kind,
-            target: schema.operationalEvents.target,
-            detail: schema.operationalEvents.detail,
-            occurredAt: schema.operationalEvents.occurredAt,
-          })
-          .from(schema.operationalEvents)
-          .where(
-            and(
-              eq(schema.operationalEvents.outcome, 'failure'),
-              gte(schema.operationalEvents.occurredAt, cutoff),
-            ),
-          )
-          .orderBy(desc(schema.operationalEvents.occurredAt))
-          .limit(20),
+    const [recentOperationalRows, recentAutomationRows, recentWebhookRows] = await Promise.all([
+      // Recent operational event failures
+      tx
+        .select({
+          id: schema.operationalEvents.id,
+          kind: schema.operationalEvents.kind,
+          target: schema.operationalEvents.target,
+          detail: schema.operationalEvents.detail,
+          occurredAt: schema.operationalEvents.occurredAt,
+        })
+        .from(schema.operationalEvents)
+        .where(
+          and(
+            eq(schema.operationalEvents.outcome, 'failure'),
+            gte(schema.operationalEvents.occurredAt, cutoff),
+          ),
+        )
+        .orderBy(desc(schema.operationalEvents.occurredAt))
+        .limit(20),
 
-        // Recent failed automation runs
-        tx
-          .select({
-            id: schema.automationRuns.id,
-            orgId: schema.automationRuns.orgId,
-            triggerEvent: schema.automationRuns.triggerEvent,
-            reason: schema.automationRuns.reason,
-            actionResults: schema.automationRuns.actionResults,
-            durationMs: schema.automationRuns.durationMs,
-            createdAt: schema.automationRuns.createdAt,
-          })
-          .from(schema.automationRuns)
-          .where(
-            and(
-              eq(schema.automationRuns.status, 'failed'),
-              gte(schema.automationRuns.createdAt, cutoff),
-            ),
-          )
-          .orderBy(desc(schema.automationRuns.createdAt))
-          .limit(20),
+      // Recent failed automation runs
+      tx
+        .select({
+          id: schema.automationRuns.id,
+          orgId: schema.automationRuns.orgId,
+          triggerEvent: schema.automationRuns.triggerEvent,
+          reason: schema.automationRuns.reason,
+          actionResults: schema.automationRuns.actionResults,
+          durationMs: schema.automationRuns.durationMs,
+          createdAt: schema.automationRuns.createdAt,
+        })
+        .from(schema.automationRuns)
+        .where(
+          and(
+            eq(schema.automationRuns.status, 'failed'),
+            gte(schema.automationRuns.createdAt, cutoff),
+          ),
+        )
+        .orderBy(desc(schema.automationRuns.createdAt))
+        .limit(20),
 
-        // Recent dead webhook deliveries
-        tx
-          .select({
-            id: schema.webhookDeliveries.id,
-            orgId: schema.webhookDeliveries.orgId,
-            eventName: schema.webhookDeliveries.eventName,
-            lastStatusCode: schema.webhookDeliveries.lastStatusCode,
-            lastError: schema.webhookDeliveries.lastError,
-            attempts: schema.webhookDeliveries.attempts,
-            createdAt: schema.webhookDeliveries.createdAt,
-          })
-          .from(schema.webhookDeliveries)
-          .where(
-            and(
-              eq(schema.webhookDeliveries.status, 'dead'),
-              gte(schema.webhookDeliveries.createdAt, cutoff),
-            ),
-          )
-          .orderBy(desc(schema.webhookDeliveries.createdAt))
-          .limit(20),
-      ]);
+      // Recent dead webhook deliveries
+      tx
+        .select({
+          id: schema.webhookDeliveries.id,
+          orgId: schema.webhookDeliveries.orgId,
+          eventName: schema.webhookDeliveries.eventName,
+          lastStatusCode: schema.webhookDeliveries.lastStatusCode,
+          lastError: schema.webhookDeliveries.lastError,
+          attempts: schema.webhookDeliveries.attempts,
+          createdAt: schema.webhookDeliveries.createdAt,
+        })
+        .from(schema.webhookDeliveries)
+        .where(
+          and(
+            eq(schema.webhookDeliveries.status, 'dead'),
+            gte(schema.webhookDeliveries.createdAt, cutoff),
+          ),
+        )
+        .orderBy(desc(schema.webhookDeliveries.createdAt))
+        .limit(20),
+    ]);
 
     // 7-day baseline for velocity calculation (always queried regardless of selected window)
     const [automationBaseline, notificationBaseline, webhookBaseline] = await Promise.all([
@@ -262,10 +262,7 @@ export async function queryErrorHealth(
         .where(
           and(
             eq(schema.automationRuns.status, 'failed'),
-            gte(
-              schema.automationRuns.createdAt,
-              new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-            ),
+            gte(schema.automationRuns.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
           ),
         )
         .groupBy(schema.automationRuns.orgId),
@@ -296,10 +293,7 @@ export async function queryErrorHealth(
         .where(
           and(
             eq(schema.webhookDeliveries.status, 'dead'),
-            gte(
-              schema.webhookDeliveries.createdAt,
-              new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-            ),
+            gte(schema.webhookDeliveries.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
           ),
         )
         .groupBy(schema.webhookDeliveries.orgId),
@@ -377,7 +371,7 @@ export async function queryErrorHealth(
       const data = orgMap.get(id);
       return (
         data !== undefined &&
-        (data.automationFailures + data.notificationFailures + data.webhookFailures) > 0
+        data.automationFailures + data.notificationFailures + data.webhookFailures > 0
       );
     });
 
@@ -408,8 +402,7 @@ export async function queryErrorHealth(
           velocity: 0,
         };
       }
-      const total =
-        data.automationFailures + data.notificationFailures + data.webhookFailures;
+      const total = data.automationFailures + data.notificationFailures + data.webhookFailures;
       const orgNames = orgNameMap.get(orgId);
       const avgDaily7d = data.baseline7d / 7;
       const currentRate = hours > 0 ? (total / hours) * 24 : 0;

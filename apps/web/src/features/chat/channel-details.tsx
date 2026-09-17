@@ -4,14 +4,7 @@ import { Hash, Lock, Pencil, Users, X } from 'lucide-react';
 import type { ChannelId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
-import {
-  Avatar,
-  Button,
-  ConfirmButton,
-  Empty,
-  Field,
-  Input,
-} from '../../components/primitives.js';
+import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../components/primitives.js';
 import { useMembers, type Person } from '../org/use-members.js';
 import { CallButton } from '../telephony/call-button.js';
 import { directoryMemberQuery } from '../people/api.js';
@@ -318,7 +311,12 @@ function IdentityHeader({
     return (
       <div className="flex flex-col items-center gap-1 border-b border-line px-4 pt-5 pb-5 text-center">
         <span className="relative inline-flex">
-          <Avatar userId={person.userId} label={person.label} size="sm" className="size-12 text-base" />
+          <Avatar
+            userId={person.userId}
+            label={person.label}
+            size="sm"
+            className="size-12 text-base"
+          />
           {onlineUserIds.has(only) && (
             <span
               aria-hidden="true"
@@ -438,9 +436,7 @@ function MemberRoster({
         <Users className="size-3.5 text-ink-faint" />
         <h3 className="text-xs font-semibold text-ink-muted">
           Members · {memberIds.length}
-          {onlineCount > 0 && (
-            <span className="text-success"> · {onlineCount} online</span>
-          )}
+          {onlineCount > 0 && <span className="text-success"> · {onlineCount} online</span>}
         </h3>
       </div>
 

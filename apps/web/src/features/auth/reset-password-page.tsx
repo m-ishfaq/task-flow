@@ -43,8 +43,8 @@ export function ResetPasswordPage() {
               Reset your password
             </h1>
             <p className="text-sm text-ink-muted">
-              This link is missing its token. Copy the whole URL from the email, including everything
-              after the question mark.
+              This link is missing its token. Copy the whole URL from the email, including
+              everything after the question mark.
             </p>
             <Link to="/forgot-password" className="text-sm text-accent underline">
               Request a new link

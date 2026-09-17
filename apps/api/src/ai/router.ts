@@ -273,7 +273,9 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'to use a different repo. Never guess which connected repo to use. To act on a ' +
                 'pull request, use `pr_post_comment`/`pr_comment_on_file`/`pr_request_changes`/' +
                 '`pr_approve`/`pr_merge`/`pr_close` — never `card_add_comment` or any Work/Chat ' +
-                'tool, which act on a ' + branding.productName + ' card or channel, not a GitHub pull request. ' +
+                'tool, which act on a ' +
+                branding.productName +
+                ' card or channel, not a GitHub pull request. ' +
                 "`pr_post_comment` posts to the PR's general conversation thread; use " +
                 '`pr_comment_on_file` instead whenever the feedback is about one specific file ' +
                 '(get the exact `path` from `get_pr_files`) — only pass `line` if the user wants ' +

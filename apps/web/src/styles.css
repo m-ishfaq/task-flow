@@ -544,7 +544,8 @@
 }
 
 @keyframes thinking-sparkle {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     filter: drop-shadow(0 0 2px var(--accent));
   }

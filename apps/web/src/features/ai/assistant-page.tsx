@@ -61,10 +61,7 @@ import { renderToolResult, toolResultsById } from './tool-results.js';
  * for the model to read. In the assistant's reply, these appear as bare UUIDs
  * that should resolve to the person's display name for readability.
  */
-function resolveMentionNames(
-  content: string,
-  members: readonly Member[],
-): string {
+function resolveMentionNames(content: string, members: readonly Member[]): string {
   const byId = new Map(members.map((m) => [m.userId, m]));
   return content.replace(/@([0-9a-f-]{36})/gi, (match, id: string) => {
     const person = byId.get(id);
@@ -123,10 +120,22 @@ function ToolCallIcon({ name, className }: { readonly name: string; readonly cla
 
 /** Tools whose results are large enough to start collapsed. */
 const COLLAPSIBLE_TOOLS = new Set([
-  'search', 'my_cards', 'list_projects', 'list_boards', 'list_labels',
-  'list_members', 'list_sprints', 'list_statuses', 'list_channels',
-  'list_prs', 'list_card_prs', 'get_pr_diff', 'get_pr_files',
-  'get_pr_file_content', 'get_pr_file_diff', 'get_pr_comments',
+  'search',
+  'my_cards',
+  'list_projects',
+  'list_boards',
+  'list_labels',
+  'list_members',
+  'list_sprints',
+  'list_statuses',
+  'list_channels',
+  'list_prs',
+  'list_card_prs',
+  'get_pr_diff',
+  'get_pr_files',
+  'get_pr_file_content',
+  'get_pr_file_diff',
+  'get_pr_comments',
 ]);
 
 function ToolResultSection({

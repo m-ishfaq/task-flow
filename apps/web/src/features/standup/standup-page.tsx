@@ -253,35 +253,28 @@ export function StandupPage() {
           )}
 
           {/* ---- Urgent sprint cards ---- */}
-          {data !== undefined &&
-            data.sprint !== null &&
-            data.urgentSprintCards.length > 0 && (
-              <section className="rounded-2xl border border-line/40 bg-surface-raised p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <AlertTriangle
-                    aria-hidden="true"
-                    className="size-4 text-priority-urgent"
+          {data !== undefined && data.sprint !== null && data.urgentSprintCards.length > 0 && (
+            <section className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <AlertTriangle aria-hidden="true" className="size-4 text-priority-urgent" />
+                <h2 className="text-sm font-semibold text-ink">{data.sprint.name}</h2>
+                <span className="rounded-full bg-priority-urgent/15 px-2 py-0.5 text-[11px] font-medium text-priority-urgent">
+                  {data.urgentSprintCards.length} urgent
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {data.urgentSprintCards.map((card) => (
+                  <StandupCardRow
+                    key={card.cardId}
+                    card={card}
+                    onManage={() => {
+                      setOpenCardId(card.cardId as CardId);
+                    }}
                   />
-                  <h2 className="text-sm font-semibold text-ink">
-                    {data.sprint.name}
-                  </h2>
-                  <span className="rounded-full bg-priority-urgent/15 px-2 py-0.5 text-[11px] font-medium text-priority-urgent">
-                    {data.urgentSprintCards.length} urgent
-                  </span>
-                </div>
-                <ul className="space-y-1.5">
-                  {data.urgentSprintCards.map((card) => (
-                    <StandupCardRow
-                      key={card.cardId}
-                      card={card}
-                      onManage={() => {
-                        setOpenCardId(card.cardId as CardId);
-                      }}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* ---- Member list ---- */}
           {data !== undefined &&
@@ -294,9 +287,7 @@ export function StandupPage() {
               <section className="rounded-2xl border border-line/40 bg-surface-raised">
                 <div className="flex items-center justify-between border-b border-line/40 px-5 py-3">
                   <h2 className="text-sm font-semibold text-ink">Member progress</h2>
-                  <span className="text-[11px] text-ink-faint">
-                    Last {String(sinceHours)}h
-                  </span>
+                  <span className="text-[11px] text-ink-faint">Last {String(sinceHours)}h</span>
                 </div>
                 <div className="divide-y divide-line/60">
                   {data.members.map((member) => (
@@ -407,9 +398,7 @@ function MemberRow({
         aria-expanded={expanded}
         className={cn(
           'flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors',
-          expanded
-            ? 'bg-surface-sunken/40'
-            : 'hover:bg-surface-hover/40',
+          expanded ? 'bg-surface-sunken/40' : 'hover:bg-surface-hover/40',
         )}
       >
         {expanded ? (
@@ -628,7 +617,7 @@ function StandupCardRow({
             </span>
           )}
         </span>
-        <span className="break-words text-ink">{card.title}</span>
+        <span className="wrap-break-word text-ink">{card.title}</span>
       </button>
     </li>
   );

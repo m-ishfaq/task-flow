@@ -288,8 +288,8 @@ describe('delivering', () => {
     expect(body['eventId']).toBe(eventId);
     expect(body['eventName']).toBe('card.status_changed');
     expect(body['payload']).toEqual({ cardId: 'c1' });
-    const signatureHeader = Object.keys(request.headers).find((h) =>
-      h.startsWith('x-') && h.endsWith('-signature'),
+    const signatureHeader = Object.keys(request.headers).find(
+      (h) => h.startsWith('x-') && h.endsWith('-signature'),
     );
     expect(signatureHeader).toBeDefined();
     expect(
