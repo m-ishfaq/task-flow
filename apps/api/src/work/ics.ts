@@ -1,4 +1,5 @@
 import type { FeedCard } from './calendar-feed.service.js';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 
 /**
  * Rendering a personal calendar feed as ICS text (RFC 5545) — the pure half
@@ -37,7 +38,11 @@ function dateOf(isoDate: string): string {
   return isoDate.replaceAll('-', '');
 }
 
-export function formatIcsFeed(cards: readonly FeedCard[], now: Date = new Date()): string {
+export function formatIcsFeed(
+  cards: readonly FeedCard[],
+  now: Date = new Date(),
+  productName = DEFAULT_PRODUCT_NAME,
+): string {
   const stamp = stampOf(now);
 
   const events = cards.map((card) =>
@@ -55,7 +60,7 @@ export function formatIcsFeed(cards: readonly FeedCard[], now: Date = new Date()
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//TaskFlow//Calendar Feed//EN',
+    `PRODID:-//${productName}//Calendar Feed//EN`,
     'CALSCALE:GREGORIAN',
     ...events,
     'END:VCALENDAR',

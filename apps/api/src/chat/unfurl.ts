@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isAllowedUrl, isBlockedAddress, isIpAddress } from '@taskflow/security';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 
 /**
  * Fetching a link preview without becoming an SSRF proxy (PLAN.md §8.7).
@@ -74,7 +75,7 @@ export type UnfurlOutcome =
  * outcome recorded against the message, and an exception would make "this link
  * is not previewable" and "the process is broken" the same control flow.
  */
-export async function fetchUnfurl(raw: string): Promise<UnfurlOutcome> {
+export async function fetchUnfurl(raw: string, productName?: string): Promise<UnfurlOutcome> {
   const shape = isAllowedUrl(raw);
   if (!shape.allowed) return { ok: false, reason: shape.reason ?? 'refused' };
 
@@ -116,7 +117,7 @@ export async function fetchUnfurl(raw: string): Promise<UnfurlOutcome> {
       referrerPolicy: 'no-referrer',
       headers: {
         accept: 'text/html,application/xhtml+xml',
-        'user-agent': 'TaskFlow-LinkPreview/1.0',
+        'user-agent': `${productName ?? DEFAULT_PRODUCT_NAME}-LinkPreview/1.0`,
       },
     });
 

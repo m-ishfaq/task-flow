@@ -189,7 +189,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Hi' }],
       },
     );
@@ -230,7 +230,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Any open cards?' }],
       },
     );
@@ -284,7 +284,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Delete everything.' }],
       },
     );
@@ -322,7 +322,7 @@ describe('runAssistantTurn', () => {
           feature: 'assistant.chat',
           providerName: 'fake',
           model: 'claude-sonnet-4',
-          systemPrompt: 'You are TaskFlow Assistant.',
+          systemPrompt: 'You are Rinavai Assistant.',
           messages: [{ role: 'user', content: 'Keep going.' }],
         },
       ),
@@ -356,7 +356,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
       },
     );
@@ -416,7 +416,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
       },
     );
@@ -430,7 +430,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: malformed,
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -469,7 +469,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
       },
     );
@@ -485,7 +485,7 @@ describe('runAssistantTurn', () => {
       feature: 'assistant.chat',
       providerName: 'fake',
       model: 'claude-sonnet-4',
-      systemPrompt: 'You are TaskFlow Assistant.',
+      systemPrompt: 'You are Rinavai Assistant.',
       messages: deferred.messages,
       confirmedToolCallIds: ['toolu_1'],
     });
@@ -527,7 +527,7 @@ describe('runAssistantTurn', () => {
         feature: 'assistant.chat',
         providerName: 'fake',
         model: 'claude-sonnet-4',
-        systemPrompt: 'You are TaskFlow Assistant.',
+        systemPrompt: 'You are Rinavai Assistant.',
         messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
       },
     );
@@ -545,7 +545,7 @@ describe('runAssistantTurn', () => {
       feature: 'assistant.chat',
       providerName: 'fake',
       model: 'claude-sonnet-4',
-      systemPrompt: 'You are TaskFlow Assistant.',
+      systemPrompt: 'You are Rinavai Assistant.',
       messages: deferred.messages,
     });
 

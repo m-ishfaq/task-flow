@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "TaskFlow Node (server apps + packages)",
+  "display": "Rinavai Node (server apps + packages)",
   "extends": "./base.json",
   "compilerOptions": {
     "lib": ["ES2023"],

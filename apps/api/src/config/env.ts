@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TrustProxy } from './trust-proxy.js';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 
 /**
  * Validated environment — guardrail 7 (PLAN.md §2.1, §8.7).
@@ -619,7 +620,7 @@ export const EnvSchema = z
 export type Env = z.infer<typeof EnvSchema>;
 
 /**
- * Every TaskFlow environment variable, across ALL services — not just the ones
+ * Every Rinavai environment variable, across ALL services — not just the ones
  * this app reads.
  *
  * Kept in sync with .env.example. The API does not consume the storage or mail
@@ -742,7 +743,7 @@ const KNOWN_VARIABLES = new Set([
      be listed or it is rejected. */
   'WEB_ALLOWED_HOSTS',
   /* apps/realtime (Phase 4). Same reasoning as DATABASE_REALTIME_URL above —
-     this set is every TaskFlow variable across ALL services, not the ones this
+     this set is every Rinavai variable across ALL services, not the ones this
      app reads, so that a typo is caught wherever it is made. */
   'REALTIME_PORT',
   'REALTIME_HOST',
@@ -825,7 +826,7 @@ function assertNoMisspelledVariables(source: Record<string, string | undefined>)
 
   if (suspects.length > 0) {
     throw new Error(
-      `Unrecognized TaskFlow environment variable(s): ${suspects.join(', ')}.\n` +
+      `Unrecognized ${DEFAULT_PRODUCT_NAME} environment variable(s): ${suspects.join(', ')}.\n` +
         'Check the spelling against .env.example — a near-miss name means the real\n' +
         'variable is unset and something is running on a default it should not be.',
     );

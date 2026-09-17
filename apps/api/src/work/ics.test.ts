@@ -23,7 +23,7 @@ describe('formatIcsFeed', () => {
       [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//TaskFlow//Calendar Feed//EN',
+        'PRODID:-//Rinavai//Calendar Feed//EN',
         'CALSCALE:GREGORIAN',
         'END:VCALENDAR',
       ].join('\r\n'),

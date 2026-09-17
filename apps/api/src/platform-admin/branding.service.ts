@@ -1,11 +1,11 @@
 import { eq, schema, withPlatformAdminScope } from '@taskflow/db';
-import { errors, type PaletteId, type StorageProvider } from '@taskflow/contracts';
+import { errors, type StorageProvider } from '@taskflow/contracts';
 import { createEvent, type EventBus } from '@taskflow/events';
 import type { ScannerConfig } from '@taskflow/security';
 import { newStorageKey, orgOfKey } from '@taskflow/storage';
 import { verifyUpload } from '../attachments/verify.js';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
-import { asPaletteId, getResolvedBranding, type BrandingSnapshot } from './branding-cache.js';
+import { asPaletteId, DEFAULT_PRODUCT_NAME, getResolvedBranding, type BrandingSnapshot } from './branding-cache.js';
 import { brandingUpdated } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import type { PlatformOperator } from './org-directory.service.js';
@@ -48,7 +48,8 @@ export interface BrandingRow {
   readonly productName: string;
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
-  readonly paletteId: PaletteId;
+  /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
+  readonly paletteId: string;
   /** Migration 0096. NULL until an operator sets one. */
   readonly salesEmail: string | null;
   readonly updatedBy: string | null;
@@ -86,7 +87,7 @@ async function loadRow(): Promise<BrandingRow> {
        no operator to report an error to). */
     if (!row) throw errors.notFound('Branding is not configured.');
     return {
-      productName: row.productName,
+      productName: row.productName ?? DEFAULT_PRODUCT_NAME,
       logoKey: row.logoKey,
       faviconKey: row.faviconKey,
       paletteId: asPaletteId(row.paletteId),
@@ -137,7 +138,7 @@ export async function setBranding(
   operator: PlatformOperator,
   input: {
     readonly productName?: string | undefined;
-    readonly paletteId?: PaletteId | undefined;
+    readonly paletteId?: string | undefined;
     /** `undefined` leaves it alone; `null` clears it — the route's own
      * `.email().nullable().optional()` is what makes the distinction
      * arrive intact from a browser, and this function trusts it rather
@@ -340,7 +341,8 @@ export interface PublicBranding {
   readonly productName: string;
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
-  readonly paletteId: PaletteId;
+  /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
+  readonly paletteId: string;
   /** Migration 0096. NULL until an operator sets one — the Enterprise
    * "contact us" tile on the billing page renders nothing rather than a
    * dead mailto link when this is null. */

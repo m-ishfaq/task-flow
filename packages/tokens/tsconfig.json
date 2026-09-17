@@ -1,5 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "TaskFlow design tokens (packages/tokens)",
+  "display": "Rinavai design tokens (packages/tokens)",
   "extends": "@taskflow/config/tsconfig/node.json"
 }

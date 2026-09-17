@@ -130,14 +130,14 @@ describe('renderNotificationDigest', () => {
 
   it('names the count in the subject', () => {
     expect(renderNotificationDigest({ webOrigin: 'http://localhost:5173', items }).subject).toBe(
-      '2 updates for you on TaskFlow',
+      '2 updates for you on Rinavai',
     );
     expect(
       renderNotificationDigest({
         webOrigin: 'http://localhost:5173',
         items: [items[0]!],
       }).subject,
-    ).toBe('1 update for you on TaskFlow');
+    ).toBe('1 update for you on Rinavai');
   });
 
   it('includes every item with its own link, in text and HTML', () => {
@@ -147,7 +147,7 @@ describe('renderNotificationDigest', () => {
     expect(mail.text).toContain('http://localhost:5173/chat?channel=0195ee05');
     expect(mail.text).toContain('2. Card due soon: Ship the launch page');
     expect(mail.html).toContain('Mentioned in #general');
-    expect(mail.html).toContain('Open in TaskFlow');
+    expect(mail.html).toContain('Open in Rinavai');
   });
 
   it('escapes item content the same way the single email does', () => {
@@ -259,7 +259,7 @@ describe('renderPasswordChanged', () => {
 describe('renderTotpEnabled', () => {
   it('tells someone who did not enable it what to do', () => {
     const mail = renderTotpEnabled();
-    expect(mail.text).toMatch(/go to TaskFlow.*change\s*\n?\s*your password/);
+    expect(mail.text).toMatch(/go to Rinavai.*change\s*\n?\s*your password/);
   });
 
   it('carries no link', () => {
@@ -301,20 +301,19 @@ describe('renderDuplicateRegistration', () => {
   });
 });
 
-describe('the branded footer', () => {
+describe('branding', () => {
   /* Every render function threads `productName` through to the shared
-     `textDocument`/`htmlDocument` footer — this exercises the three
-     distinct signature shapes the render functions actually have
-     (a `LinkContext`-based context, an inline object context, and no
-     context at all) rather than re-testing the same two helper functions
-     eleven times over. Only the FOOTER is branded in v1 (templates.ts's
-     own header on `textDocument`); subject lines and body copy keep
-     "TaskFlow" regardless of what's asserted here. */
+     `textDocument`/`htmlDocument` helpers and into subject lines and body
+     copy — this exercises the three distinct signature shapes the render
+     functions actually have (a `LinkContext`-based context, an inline object
+     context, and no context at all) rather than re-testing the same two
+     helper functions eleven times over. "Rinavai" is the fallback when no
+     productName is provided. */
 
-  it('defaults the footer to TaskFlow when no productName is given', () => {
-    expect(renderVerifyEmail({ ...CONTEXT, expiresInHours: 24 }).text).toMatch(/\n—\nTaskFlow\n/);
-    expect(renderPasswordChanged().text).toMatch(/\n—\nTaskFlow\n/);
-    expect(renderOrgSuspended({ orgName: 'Acme' }).text).toMatch(/\n—\nTaskFlow\n/);
+  it('defaults the footer to Rinavai when no productName is given', () => {
+    expect(renderVerifyEmail({ ...CONTEXT, expiresInHours: 24 }).text).toMatch(/\n—\nRinavai\n/);
+    expect(renderPasswordChanged().text).toMatch(/\n—\nRinavai\n/);
+    expect(renderOrgSuspended({ orgName: 'Acme' }).text).toMatch(/\n—\nRinavai\n/);
   });
 
   it('uses the given productName in the text footer, for all three context shapes', () => {
@@ -341,10 +340,10 @@ describe('the branded footer', () => {
     expect(mail.html).not.toContain('<script>alert');
   });
 
-  it('never touches the subject line or body copy — v1 scope is the footer only', () => {
+  it('uses productName in subject lines and body copy, not just the footer', () => {
     const mail = renderVerifyEmail({ ...CONTEXT, expiresInHours: 24, productName: 'Acme Flow' });
-    expect(mail.subject).toBe('Confirm your TaskFlow email address');
-    expect(mail.text).toMatch(/finish setting up your TaskFlow account/);
+    expect(mail.subject).toBe('Confirm your Acme Flow email address');
+    expect(mail.text).toMatch(/finish setting up your Acme Flow account/);
   });
 
   it('includes the flow-mark logo SVG in the HTML header', () => {

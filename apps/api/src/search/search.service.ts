@@ -297,9 +297,7 @@ async function resolveContextLabels(
             ),
           );
 
-        const names = members
-          .map((m) => m.displayName ?? 'Someone')
-          .filter(Boolean);
+        const names = members.map((m) => m.displayName ?? 'Someone').filter(Boolean);
         if (names.length > 0) dmMemberMap.set(dmId, names);
       }
     }

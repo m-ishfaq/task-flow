@@ -172,7 +172,7 @@ function OrgSettingsScreenContent() {
    * Email invitations (migration 0107) — the door `members.add` was never
    * built to cover, the identical swap `settings-page.tsx`'s own
    * `MemberSection` makes on web. Always sends mail, whether or not the
-   * address already has a TaskFlow account. No pending-invitations list or
+   * address already has a Rinavai account. No pending-invitations list or
    * resend/revoke here yet — a real, narrower scope than web's for this
    * pass, not a parity gap this screen was built to ignore.
    */

@@ -35,83 +35,97 @@ export function ResetPasswordPage() {
 
   if (token === undefined) {
     return (
-      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <BrandMark size={36} className="text-accent" />
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Reset your password
-        </h1>
-        <p className="text-sm text-ink-muted">
-          This link is missing its token. Copy the whole URL from the email, including everything
-          after the question mark.
-        </p>
-        <Link to="/forgot-password" className="text-sm text-accent underline">
-          Request a new link
-        </Link>
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+          <div className="auth-card flex flex-col gap-4 p-8">
+            <BrandMark size={56} className="mx-auto text-accent" />
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+              Reset your password
+            </h1>
+            <p className="text-sm text-ink-muted">
+              This link is missing its token. Copy the whole URL from the email, including everything
+              after the question mark.
+            </p>
+            <Link to="/forgot-password" className="text-sm text-accent underline">
+              Request a new link
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (reset.isSuccess) {
     return (
-      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <BrandMark size={36} className="text-accent" />
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Password changed
-        </h1>
-        <p className="text-sm text-ink-muted">
-          Every other session was signed out. Sign in with your new password.
-        </p>
-        <Link to="/login">
-          <Button variant="primary">Go to sign in</Button>
-        </Link>
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+          <div className="auth-card flex flex-col gap-4 p-8">
+            <BrandMark size={56} className="mx-auto text-accent" />
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+              Password changed
+            </h1>
+            <p className="text-sm text-ink-muted">
+              Every other session was signed out. Sign in with your new password.
+            </p>
+            <Link to="/login">
+              <Button variant="primary">Go to sign in</Button>
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-      <BrandMark size={36} className="text-accent" />
-      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-        Choose a new password
-      </h1>
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+        <div className="auth-card flex flex-col gap-6 p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <BrandMark size={56} className="text-accent" />
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+              Choose a new password
+            </h1>
+          </div>
 
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          void handleSubmit((values) => {
-            reset.mutate(values);
-          })(event);
-        }}
-      >
-        <Field
-          label="New password"
-          htmlFor="password"
-          hint="At least 12 characters. Checked against known breach corpora."
-          error={fieldError(reset.error, 'password')}
-        >
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            {...register('password', { required: true })}
-          />
-        </Field>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              void handleSubmit((values) => {
+                reset.mutate(values);
+              })(event);
+            }}
+          >
+            <Field
+              label="New password"
+              htmlFor="password"
+              hint="At least 12 characters. Checked against known breach corpora."
+              error={fieldError(reset.error, 'password')}
+            >
+              <Input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                {...register('password', { required: true })}
+              />
+            </Field>
 
-        {reset.isError && fieldErrors(reset.error).length === 0 && (
-          <ErrorView error={reset.error} title="Could not reset your password" />
-        )}
+            {reset.isError && fieldErrors(reset.error).length === 0 && (
+              <ErrorView error={reset.error} title="Could not reset your password" />
+            )}
 
-        <Button type="submit" variant="primary" className="w-full" disabled={reset.isPending}>
-          {reset.isPending ? 'Saving…' : 'Set new password'}
-        </Button>
-      </form>
+            <Button type="submit" variant="primary" className="w-full" disabled={reset.isPending}>
+              {reset.isPending ? 'Saving…' : 'Set new password'}
+            </Button>
+          </form>
 
-      <p className="text-sm text-ink-muted">
-        Link expired?{' '}
-        <Link to="/forgot-password" className="text-accent underline">
-          Request a new one
-        </Link>
-      </p>
+          <p className="text-sm text-ink-muted">
+            Link expired?{' '}
+            <Link to="/forgot-password" className="text-accent underline">
+              Request a new one
+            </Link>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

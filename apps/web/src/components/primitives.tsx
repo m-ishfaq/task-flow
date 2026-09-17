@@ -47,12 +47,12 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      control. On the accent fill it is nearly invisible, which is the point:
      it is a boundary, not a decoration. */
   primary:
-    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.14_88/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.14_88/40%)]',
+    'bg-accent text-accent-ink shadow-[0_2px_8px_color-mix(in_oklab,var(--color-accent)_30%,transparent)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]',
   secondary:
     'bg-surface-raised text-ink border border-line/60 shadow-sm hover:bg-surface-hover hover:border-line-strong',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
   danger:
-    'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_oklch(55%_0.19_22/30%)]',
+    'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_color-mix(in_oklab,var(--color-danger)_30%,transparent)]',
 };
 
 const BUTTON_SIZES: Readonly<Record<ButtonSize, string>> = {
@@ -135,15 +135,7 @@ export function Input({ className, ...props }: InputProps) {
     <input
       className={cn(
         'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all shadow-[inset_0_1px_2px_oklch(0%_0_0/6%)]',
-        /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
-           — is the "considered" touch here: a field that visibly comes
-           forward when it takes focus. A soft `ring-2` at 25% accent is the
-           same glow the focused select gets, so every form control in the
-           app announces focus the same way; it sits OUTSIDE the border where
-           the global `:focus-visible` outline lives, so the two do not
-           collide — and `:focus-visible` never fires for a mouse click
-           anyway, which is the case this ring is for. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none',
         'disabled:opacity-50',
         className,
       )}
@@ -180,7 +172,7 @@ export function SearchInput({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken py-2 pr-3 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+        className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken py-2 pr-3 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none"
       />
     </div>
   );
@@ -214,8 +206,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
     <textarea
       className={cn(
         'w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink transition-all',
-        /* Same reasoning as Input's `focus:bg-surface` above. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none',
         className,
       )}
       {...props}
@@ -736,7 +727,7 @@ export function TabBar<T extends string | null>({
       role="tablist"
       aria-label={ariaLabel}
       className={cn(
-        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
+        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1 overflow-x-auto',
         className,
       )}
     >

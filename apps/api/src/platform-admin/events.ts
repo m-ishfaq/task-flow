@@ -328,3 +328,21 @@ export const operatorBroadcastSent = defineEvent(
     })
     .strict(),
 );
+
+/**
+ * Platform system settings were updated by an operator.
+ *
+ * Published through the EventBus, not the outbox (§4, decision 2 option (c)):
+ * the operator role holds no grant on the outbox. The audit log already records
+ * the action via `recordOperatorAction` — this event satisfies guardrail 11
+ * without duplicating that record.
+ */
+export const systemSettingsUpdated = defineEvent(
+  'platform.system_settings_updated',
+  z
+    .object({
+      keys: z.array(z.string()),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);

@@ -9,10 +9,11 @@ import {
   StatusPill,
 } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
-import { Building2, Search, ShieldAlert } from 'lucide-react';
+import { Building2, Search, ShieldAlert, Users } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
+import { cn } from '../../lib/cn.js';
 import { formatDate } from '../../lib/format.js';
 import {
   Badge,
@@ -25,8 +26,6 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import {
-  MemberBar,
-  OrgDetailDialog,
   Pagination,
   RowActionsMenu,
   StepUpGate,
@@ -35,6 +34,8 @@ import {
   money,
   relativeTime,
 } from './shared.js';
+import { OrgInspectorPanel } from './org-inspector-panel.js';
+import { UserDetailPanel } from './user-detail-panel.js';
 
 /* -------------------------------------------------------------------------- *
  * Organizations
@@ -80,6 +81,26 @@ export function OrgsTab({
     },
   });
 
+  /* AI spend for the current month — fetched once per page, merged into rows
+     by orgId. Only meaningful when at least one org has spend, but always
+     fetched so the column is never stale. */
+  const aiSpend = useQuery({
+    queryKey: ['platform', 'ai-spend', 30],
+    queryFn: async () =>
+      wire(await api.platformAdmin.ai.spendReport.query({ sinceDays: 30 })),
+  });
+
+  /** Map of orgId -> total cents for O(1) lookup during render. */
+  const aiSpendByOrg = new Map<string, number>();
+  if (aiSpend.data !== undefined) {
+    for (const row of aiSpend.data) {
+      aiSpendByOrg.set(
+        row.orgId,
+        (aiSpendByOrg.get(row.orgId) ?? 0) + row.totalCents,
+      );
+    }
+  }
+
   /* §3.5 (Phase 12 Wave 2) — org deletion, the one action with no undo. The
      row's Delete button only opens the modal for a SUSPENDED org (the server
      enforces the gate too); the modal's confirm button stays disabled until
@@ -103,6 +124,8 @@ export function OrgsTab({
 
   /** The drill-down panel's subject, or null when it is closed. */
   const [detailOrgId, setDetailOrgId] = useState<string | null>(null);
+  /** User inspector panel, opened from owner name click. */
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
 
   const remove = useMutation({
     mutationFn: (input: { orgId: OrgId; confirmSlug: string }) =>
@@ -160,6 +183,7 @@ export function OrgsTab({
                 'Last invoice date',
                 'Status',
                 'Members',
+                'AI spend',
                 'Created',
               ];
               const rows = [
@@ -181,6 +205,7 @@ export function OrgsTab({
                   org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
                   org.status,
                   String(org.memberCount),
+                  money(aiSpendByOrg.get(org.orgId) ?? 0, 'usd'),
                   formatDate(org.createdAt),
                 ]),
               ];
@@ -196,176 +221,234 @@ export function OrgsTab({
       {orgs.isError && <ErrorView error={orgs.error} title="Could not load organizations" />}
 
       {orgs.data !== undefined && (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+        <div className="mt-3 overflow-x-auto rounded-xl bg-surface-raised shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              <tr className="border-b border-line/50">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Organization
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Owner
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-                  Plan
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+                  Billing
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-                  Renews
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+                  Invoice
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-                  Last invoice
-                </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Status
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Members
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+                  AI spend
+                </th>
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Created
                 </th>
-                <th className="px-3 py-2.5" />
+                <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-line/50">
-              {(filteredOrgs ?? []).map((org) => (
-                <tr
-                  key={org.orgId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
-                  onClick={() => {
-                    setDetailOrgId(org.orgId);
-                  }}
-                >
-                  <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
-                      {org.name}
-                    </p>
-                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {org.ownerEmail === null ? (
-                      <span className="text-ink-faint">—</span>
-                    ) : (
-                      <>
-                        {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
-                        <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <p className="text-ink">
-                      {org.planId ?? <span className="text-ink-faint">no plan</span>}
-                    </p>
-                    <p className="text-[11px] text-ink-faint">
-                      {org.billingStatus}
-                      {org.billingStatus === 'trialing' &&
-                        org.trialEndsAt !== null &&
-                        ` — ends ${formatDate(org.trialEndsAt)}`}
-                      {org.billingStatus === 'past_due' &&
-                        org.billingGraceEndsAt !== null &&
-                        ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
-                    </p>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
-                    {org.currentPeriodEnd === null ? (
-                      <span className="text-ink-faint">—</span>
-                    ) : (
-                      <span>
-                        {formatDate(org.currentPeriodEnd)}
-                        <span className="ml-1.5 text-[10px] text-ink-faint">
-                          {relativeTime(new Date(org.currentPeriodEnd))}
+            <tbody className="divide-y divide-line/30">
+              {(filteredOrgs ?? []).map((org) => {
+                /* Urgency date: trial or renewal, whichever is sooner and non-null. */
+                const urgencyDate =
+                  org.billingStatus === 'trialing' && org.trialEndsAt !== null
+                    ? new Date(org.trialEndsAt)
+                    : org.currentPeriodEnd !== null
+                      ? new Date(org.currentPeriodEnd)
+                      : new Date();
+                const aiSpendCents = aiSpendByOrg.get(org.orgId) ?? 0;
+
+                return (
+                  <tr
+                    key={org.orgId}
+                    className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/40"
+                    onClick={() => { setDetailOrgId(org.orgId); }}
+                  >
+                    {/* Organization */}
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-ink transition-colors group-hover:text-accent">
+                        {org.name}
+                      </p>
+                      <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
+                    </td>
+
+                    {/* Owner — click opens user inspector panel, stops row click */}
+                    <td className="px-4 py-3">
+                      {org.ownerEmail === null ? (
+                        <span className="text-ink-faint">—</span>
+                      ) : (
+                        <>
+                          {org.ownerName !== null && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (org.ownerUserId !== null) {
+                                  setDetailUserId(org.ownerUserId);
+                                }
+                              }}
+                              className="font-medium text-ink transition-colors hover:text-accent"
+                            >
+                              {org.ownerName}
+                            </button>
+                          )}
+                          <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
+                        </>
+                      )}
+                    </td>
+
+                    {/* Billing — compacted plan + status + renewal date with urgency */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-ink">
+                          {org.planId ?? <span className="text-ink-faint">none</span>}
                         </span>
+                        <BillingPill status={org.billingStatus} />
+                      </div>
+                      <p className={cn('mt-0.5 text-[11px]', urgencyColor(urgencyDate))}>
+                        {org.billingStatus === 'trialing' &&
+                          org.trialEndsAt !== null &&
+                          `Trial ends ${formatDate(org.trialEndsAt)} ${relativeTime(new Date(org.trialEndsAt))}`}
+                        {org.billingStatus === 'past_due' &&
+                          org.billingGraceEndsAt !== null &&
+                          `Grace ends ${formatDate(org.billingGraceEndsAt)} ${relativeTime(new Date(org.billingGraceEndsAt))}`}
+                        {org.billingStatus === 'active' &&
+                          org.currentPeriodEnd !== null &&
+                          `Renews ${formatDate(org.currentPeriodEnd)} ${relativeTime(new Date(org.currentPeriodEnd))}`}
+                        {org.billingStatus === 'active' &&
+                          org.currentPeriodEnd === null &&
+                          'No renewal date'}
+                        {org.billingStatus === 'canceled' && 'Canceled'}
+                      </p>
+                    </td>
+
+                    {/* Invoice */}
+                    <td className="px-4 py-3">
+                      {org.lastInvoice === null ? (
+                        <span className="text-ink-faint">—</span>
+                      ) : (
+                        <>
+                          <p
+                            className={
+                              org.lastInvoice.status === 'paid' ? 'text-success' : 'text-danger'
+                            }
+                          >
+                            {org.lastInvoice.status === 'paid' && org.lastInvoice.amountDueCents === 0
+                              ? 'free'
+                              : `${org.lastInvoice.status} ${money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}`}
+                          </p>
+                          <p className="text-[11px] text-ink-faint">
+                            {formatDate(org.lastInvoice.issuedAt)}
+                          </p>
+                        </>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <StatusBadge status={org.status} />
+                    </td>
+
+                    {/* Members — count with icon, right-aligned */}
+                    <td className="px-4 py-3 text-right">
+                      <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-muted">
+                        <Users className="size-3.5 text-ink-faint" />
+                        {org.memberCount}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {org.lastInvoice === null ? (
-                      <span className="text-ink-faint">—</span>
-                    ) : (
-                      <>
-                        <p
-                          className={
-                            org.lastInvoice.status === 'paid' ? 'text-success' : 'text-danger'
-                          }
-                        >
-                          {org.lastInvoice.status}{' '}
-                          {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
-                        </p>
-                        <p className="text-[11px] text-ink-faint">
-                          {formatDate(org.lastInvoice.issuedAt)}
-                        </p>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <StatusBadge status={org.status} />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <MemberBar count={org.memberCount} />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
-                    {formatDate(org.createdAt)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setPlanTarget({
-                            orgId: org.orgId,
-                            name: org.name,
-                            planId: org.planId,
-                          });
+                    </td>
+
+                    {/* AI Spend */}
+                    <td className="px-4 py-3 text-right">
+                      {aiSpendCents > 0 ? (
+                        <span className="tabular-nums text-ink-muted">
+                          {money(aiSpendCents, 'usd')}
+                        </span>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </td>
+
+                    {/* Created */}
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-muted">
+                      {formatDate(org.createdAt)}
+                    </td>
+
+                    {/* Actions — stop row click */}
+                    <td className="px-4 py-3 text-right">
+                      <div
+                        className="flex justify-end gap-1.5"
+                        role="none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
                         }}
                       >
-                        Plan
-                      </Button>
-                      {org.status === 'suspended' ? (
                         <Button
                           size="sm"
-                          variant="secondary"
-                          disabled={reactivate.isPending}
                           onClick={() => {
-                            reactivate.mutate(org.orgId as OrgId);
+                            setPlanTarget({
+                              orgId: org.orgId,
+                              name: org.name,
+                              planId: org.planId,
+                            });
                           }}
                         >
-                          Reactivate
+                          Plan
                         </Button>
-                      ) : (
-                        <ConfirmButton
-                          size="sm"
-                          label="Suspend"
-                          confirmLabel={`Suspend ${org.name}?`}
-                          disabled={suspend.isPending}
-                          onConfirm={() => {
-                            suspend.mutate(org.orgId as OrgId);
-                          }}
-                        />
-                      )}
-                      {org.status === 'suspended' && (
-                        <RowActionsMenu>
-                          <DropdownMenuItem
-                            tone="danger"
-                            disabled={remove.isPending}
-                            onSelect={() => {
-                              setConfirmSlug('');
-                              setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
+                        {org.status === 'suspended' ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={reactivate.isPending}
+                            onClick={() => {
+                              reactivate.mutate(org.orgId as OrgId);
                             }}
                           >
-                            <span className="flex items-center gap-2">
-                              <ShieldAlert className="size-3" strokeWidth={2.5} />
-                              Delete org
-                            </span>
-                          </DropdownMenuItem>
-                        </RowActionsMenu>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                            Reactivate
+                          </Button>
+                        ) : (
+                          <ConfirmButton
+                            size="sm"
+                            label="Suspend"
+                            confirmLabel={`Suspend ${org.name}?`}
+                            disabled={suspend.isPending}
+                            onConfirm={() => {
+                              suspend.mutate(org.orgId as OrgId);
+                            }}
+                          />
+                        )}
+                        {org.status === 'suspended' && (
+                          <RowActionsMenu>
+                            <DropdownMenuItem
+                              tone="danger"
+                              disabled={remove.isPending}
+                              onSelect={() => {
+                                setConfirmSlug('');
+                                setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
+                              }}
+                            >
+                              <span className="flex items-center gap-2">
+                                <ShieldAlert className="size-3" strokeWidth={2.5} />
+                                Delete org
+                              </span>
+                            </DropdownMenuItem>
+                          </RowActionsMenu>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {(filteredOrgs ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-12 text-center">
+                  <td colSpan={9} className="px-4 py-16 text-center">
                     {search.trim() !== '' ? (
                       <div className="flex flex-col items-center gap-2">
                         <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
@@ -402,11 +485,20 @@ export function OrgsTab({
       )}
 
       {detailOrgId !== null && (
-        <OrgDetailDialog
+        <OrgInspectorPanel
           orgId={detailOrgId}
           guard={guard}
           onClose={() => {
             setDetailOrgId(null);
+          }}
+        />
+      )}
+
+      {detailUserId !== null && (
+        <UserDetailPanel
+          userId={detailUserId}
+          onClose={() => {
+            setDetailUserId(null);
           }}
         />
       )}
@@ -514,6 +606,42 @@ export function OrgsTab({
         />
       </div>
     </section>
+  );
+}
+
+/** Urgency colour for a renewal/trial date — overdue = red, within 3 days = amber. */
+function urgencyColor(date: Date): string {
+  const now = Date.now();
+  const diff = date.getTime() - now;
+  if (diff < 0) return 'text-danger';
+  if (diff < 3 * 24 * 60 * 60 * 1000) return 'text-warning';
+  return 'text-ink-faint';
+}
+
+/** Billing status pill — uses the same tones as StatusBadge but for billing. */
+function BillingPill({ status }: { readonly status: string }) {
+  if (status === 'past_due')
+    return (
+      <StatusPill tone="danger" className="min-w-[72px] justify-center">
+        past due
+      </StatusPill>
+    );
+  if (status === 'trialing')
+    return (
+      <StatusPill tone="neutral" className="min-w-[72px] justify-center">
+        trial
+      </StatusPill>
+    );
+  if (status === 'canceled')
+    return (
+      <StatusPill tone="neutral" className="min-w-[72px] justify-center">
+        canceled
+      </StatusPill>
+    );
+  return (
+    <StatusPill tone="success" className="min-w-[72px] justify-center">
+      active
+    </StatusPill>
   );
 }
 

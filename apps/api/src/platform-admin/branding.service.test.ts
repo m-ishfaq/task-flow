@@ -174,7 +174,7 @@ beforeEach(async () => {
   await admin.setOrg(null);
   await admin.query(
     `UPDATE platform.branding
-     SET product_name = 'TaskFlow', logo_key = NULL, favicon_key = NULL,
+     SET product_name = 'Rinavai', logo_key = NULL, favicon_key = NULL,
          palette_id = 'default', sales_email = NULL, updated_by = NULL, updated_at = now()
      WHERE id = true`,
   );
@@ -193,7 +193,7 @@ afterAll(async () => {
   await admin.query(`DELETE FROM platform.operator_audit_log`);
   await admin.query(
     `UPDATE platform.branding
-     SET product_name = 'TaskFlow', logo_key = NULL, favicon_key = NULL,
+     SET product_name = 'Rinavai', logo_key = NULL, favicon_key = NULL,
          palette_id = 'default', sales_email = NULL, updated_by = NULL, updated_at = now()
      WHERE id = true`,
   );
@@ -208,7 +208,7 @@ describe('the branding singleton', () => {
   it('exists from the moment the migration runs, with the seeded defaults', async () => {
     const row = await branding.getBranding(operator);
     expect(row).toEqual({
-      productName: 'TaskFlow',
+      productName: 'Rinavai',
       logoKey: null,
       faviconKey: null,
       paletteId: 'default',

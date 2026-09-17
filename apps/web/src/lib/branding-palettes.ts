@@ -68,7 +68,7 @@ const INK = 'oklch(98% 0.02 55)';
    instead of duplicating the number — the exact mistake that let `INK`'s own
    hue silently go stale for one entire hue change already. A future hue
    change updates this one constant and both entries move together. */
-const DEFAULT_HUE = 88;
+const DEFAULT_HUE = 177;
 
 /** Hue angle for each palette, degrees on the OKLCH hue wheel. */
 const HUES: Record<PaletteId, number> = {
@@ -110,6 +110,27 @@ export const PALETTES: Record<PaletteId, PaletteColors> = Object.fromEntries(
   }),
 ) as Record<PaletteId, PaletteColors>;
 
+const CUSTOM_PALETTE_RE = /^custom:(\d{1,3})$/;
+
+/**
+ * Compute an accent palette from an arbitrary hue angle (0–360), using the
+ * same shared L/C constants as the preset palettes. Returns null for an
+ * unrecognized string.
+ */
+export function computeCustomPalette(hue: number): PaletteColors {
+  return {
+    base: `oklch(${String(BASE_LIGHTNESS)}% ${String(CHROMA)} ${String(hue)})`,
+    hover: `oklch(${String(HOVER_LIGHTNESS)}% ${String(CHROMA)} ${String(hue)})`,
+    ink: INK,
+  };
+}
+
 export function paletteColorsOf(paletteId: string): PaletteColors {
-  return PALETTES[(paletteId in PALETTES ? paletteId : 'default') as PaletteId];
+  if (paletteId in PALETTES) return PALETTES[paletteId as PaletteId];
+  const match = CUSTOM_PALETTE_RE.exec(paletteId);
+  if (match !== null) {
+    const hue = Number(match[1]);
+    if (hue >= 0 && hue <= 360) return computeCustomPalette(hue);
+  }
+  return PALETTES.default;
 }

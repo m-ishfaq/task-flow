@@ -12,7 +12,7 @@ import { PageIdSchema, type PageId } from '@taskflow/contracts';
  *
  * The org id travels separately, as a `requestParameters` query value — see
  * `auth.ts`. It is client-supplied and that is fine for the identical reason
- * the `x-taskflow-org` header and Phase 4's join-request board id are: it is
+ * the `x-rinavai-org` header and Phase 4's join-request board id are: it is
  * a lookup key into an authorization check, never a value trusted on its own.
  */
 

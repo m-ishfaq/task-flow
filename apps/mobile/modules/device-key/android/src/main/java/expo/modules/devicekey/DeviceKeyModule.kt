@@ -71,7 +71,7 @@ class DeviceKeyModule : Module() {
      * per-application on Android), so a literal string is enough; this app
      * has exactly one device key, ever.
      */
-    private const val KEY_ALIAS = "com.taskflow.app.devicekey"
+    private const val KEY_ALIAS = "com.rinavai.app.devicekey"
     private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
 
     private fun keyStore(): KeyStore {

@@ -19,7 +19,7 @@ import { TEST_ENV } from '../testing/fixtures.js';
  * whoever the request names, and that a user cannot delete their last way in.
  */
 
-const RP = relyingPartyFrom(TEST_ENV.WEB_ORIGIN, 'TaskFlow');
+const RP = relyingPartyFrom(TEST_ENV.WEB_ORIGIN, 'Rinavai');
 const PASSWORD = 'correct horse battery staple 42';
 
 let app: FastifyInstance;

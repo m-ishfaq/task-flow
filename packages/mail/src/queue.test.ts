@@ -13,7 +13,7 @@ import { MemoryMailer, type OutboundMessage } from './transport.js';
 
 const MESSAGE: OutboundMessage = {
   to: 'user@example.test',
-  subject: 'Confirm your TaskFlow email address',
+  subject: 'Confirm your Rinavai email address',
   text: 'link',
   html: '<p>link</p>',
 };

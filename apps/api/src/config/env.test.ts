@@ -33,7 +33,7 @@ const valid = {
   JWT_PUBLIC_KEY: PEM_KEY_B,
   JWT_STATE_SECRET: KEY_B,
   MAIL_HOST: 'localhost',
-  MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
+  MAIL_FROM: 'Rinavai <no-reply@rinavai.test>',
   WEB_ORIGIN: 'http://localhost:5173',
 
   /* Object storage (§8.4). Required rather than optional for the same reason
@@ -135,7 +135,7 @@ describe('parseEnv', () => {
     );
   });
 
-  it('accepts variables belonging to other TaskFlow services', () => {
+  it('accepts variables belonging to other Rinavai services', () => {
     // A developer's environment legitimately holds the migration URL and the
     // storage settings, which this app does not read.
     expect(() =>

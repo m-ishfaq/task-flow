@@ -51,6 +51,7 @@ export { defineTool, toAiToolDefinition } from './registry.js';
 export interface ToolRegistryDeps {
   readonly searchProvider: SearchProvider;
   readonly prReadDeps: PrReadDeps;
+  readonly productName?: string;
 }
 
 /**
@@ -144,7 +145,7 @@ export interface ToolRegistryDeps {
  * only ever add.
  *
  * `list_prs`/`get_pr_diff`/`get_pr_comments` (`pr.ts`, Phase 15 §7 Wave 1) are
- * this registry's first tools reaching outside TaskFlow entirely — to the
+ * this registry's first tools reaching outside Rinavai entirely — to the
  * org's connected GitHub repository. Read-only, gated on the new `pr:view`
  * permission (checked inside `pr-read.service.ts`, since these tools have no
  * tRPC route of their own to gate them).
@@ -212,7 +213,7 @@ export interface ToolRegistryDeps {
  */
 export function buildToolRegistry(deps: ToolRegistryDeps): readonly ToolDefinition[] {
   return [
-    createSearchTool(deps.searchProvider),
+    createSearchTool(deps.searchProvider, deps.productName),
     createMyCardsTool(),
     createListProjectsTool(),
     createListBoardsTool(),

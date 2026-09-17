@@ -75,7 +75,7 @@ import { DiffView, singleFileDiffText } from './diff-view.js';
  *
  * `list_prs`/`get_pr_diff`/`get_pr_comments` (Phase 15 §7 Wave 1) are this
  * file's first renderers reaching outside the app: a GitHub PR has no
- * TaskFlow route, so `renderListPrs` is the first plain external `<a>` here
+ * Rinavai route, so `renderListPrs` is the first plain external `<a>` here
  * rather than a `<Link>`, and `renderGetPrDiff` is the first renderer
  * showing preformatted text instead of a structured list.
  *
@@ -942,8 +942,8 @@ function renderDocsCreatePage(result: ToolResultMessage, call: ToolCallWire): Re
  * -------------------------------------------------------------------------- */
 
 /**
- * The first renderers in this file that link OUTSIDE TaskFlow. A GitHub pull
- * request has no TaskFlow route — every other renderer here uses a TanStack
+ * The first renderers in this file that link OUTSIDE Rinavai. A GitHub pull
+ * request has no Rinavai route — every other renderer here uses a TanStack
  * `<Link>` into a real `apps/web` page, but there is no page for a PR to open
  * into, so this is a plain `<a target="_blank" rel="noopener noreferrer">` to
  * the PR's own `html_url` instead.
@@ -1492,7 +1492,7 @@ function renderGetPrComments(result: ToolResultMessage): ReactNode | null {
  * RESULT rather than `call.input`, because — unlike a `cardId` — the model
  * never sees `providerScope` anywhere; `pr-write.service.ts`'s own header
  * explains why it has to be returned at all. Links externally, like
- * `renderListPrs` above — a PR has no TaskFlow route to open.
+ * `renderListPrs` above — a PR has no Rinavai route to open.
  */
 function prWriteRenderer(verb: string) {
   return (result: ToolResultMessage, call: ToolCallWire): ReactNode | null => {

@@ -39,6 +39,7 @@
     "./events/api-tokens": "./src/automation/api-token-events.ts",
     "./billing/sweep": "./src/billing/sweep.service.ts",
     "./platform-admin/plan-catalog": "./src/platform-admin/plan-catalog.service.ts",
+    "./platform-admin/branding-cache": "./src/platform-admin/branding-cache.ts",
     "./billing/deps": "./src/billing/deps.ts",
     "./analytics/refresh": "./src/analytics/refresh.ts",
     "./billing/overage": "./src/billing/overage.service.ts",

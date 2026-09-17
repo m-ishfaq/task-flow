@@ -16,6 +16,7 @@ import type { IntegrationDeps } from '../automation/integration.service.js';
 import { resolveAiProvider } from './provider-resolver.js';
 import { buildToolRegistry } from './tools/index.js';
 import { runAssistantTurn } from './assistant.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 
 /**
  * The assistant chat route (ai/phase-15-ai-copilot-and-permissions.md §4,
@@ -143,6 +144,7 @@ export interface AiRouterDeps {
       to authenticate a refresh call, the same reasoning `PrReadDeps`'s own
       comment gives. */
   readonly providers: IntegrationDeps['providers'];
+  readonly productName?: string;
 }
 
 /**
@@ -179,6 +181,7 @@ export function createAiRouter(deps: AiRouterDeps) {
   const tools = buildToolRegistry({
     searchProvider: deps.searchProvider,
     prReadDeps: { keys: deps.keys, providers: deps.providers },
+    ...(deps.productName != null ? { productName: deps.productName } : {}),
   });
 
   return router({
@@ -193,9 +196,10 @@ export function createAiRouter(deps: AiRouterDeps) {
           const orgId = ctx.principal.org.orgId;
           const userId = ctx.principal.userId;
 
-          const [{ provider, providerName, model }, membershipId] = await Promise.all([
+          const [{ provider, providerName, model }, membershipId, branding] = await Promise.all([
             resolveAiProvider(orgId, deps.keys),
             loadMembershipId(orgId, userId),
+            getResolvedBranding(),
           ]);
 
           const result = await runAssistantTurn(
@@ -208,7 +212,7 @@ export function createAiRouter(deps: AiRouterDeps) {
               providerName,
               model,
               systemPrompt:
-                'You are the TaskFlow Assistant. You help the current user find and understand ' +
+                `You are the ${branding.productName} Assistant. You help the current user find and understand ` +
                 'their work using the tools available to you. You only ever act with the ' +
                 'permissions of the person you are talking to — you cannot see or do anything ' +
                 'they could not do themselves. Some actions require the person to confirm ' +
@@ -269,7 +273,7 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'to use a different repo. Never guess which connected repo to use. To act on a ' +
                 'pull request, use `pr_post_comment`/`pr_comment_on_file`/`pr_request_changes`/' +
                 '`pr_approve`/`pr_merge`/`pr_close` — never `card_add_comment` or any Work/Chat ' +
-                'tool, which act on a TaskFlow card or channel, not a GitHub pull request. ' +
+                'tool, which act on a ' + branding.productName + ' card or channel, not a GitHub pull request. ' +
                 "`pr_post_comment` posts to the PR's general conversation thread; use " +
                 '`pr_comment_on_file` instead whenever the feedback is about one specific file ' +
                 '(get the exact `path` from `get_pr_files`) — only pass `line` if the user wants ' +

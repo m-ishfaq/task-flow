@@ -1,5 +1,5 @@
 import { schema, withGlobalScope } from '@taskflow/db';
-import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
+import { PALETTE_IDS } from '@taskflow/contracts';
 
 /**
  * The live branding snapshot (migration 0073), read the same way
@@ -24,7 +24,8 @@ export interface BrandingSnapshot {
   readonly productName: string;
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
-  readonly paletteId: PaletteId;
+  /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
+  readonly paletteId: string;
   /** Migration 0096. NULL until an operator sets one. */
   readonly salesEmail: string | null;
 }
@@ -34,21 +35,32 @@ const CACHE_TTL_MS = 30_000;
 let cached: { readonly at: number; readonly branding: BrandingSnapshot } | null = null;
 let loading: Promise<BrandingSnapshot> | null = null;
 
+/** Single source of truth for the default product name — change here only. */
+export const DEFAULT_PRODUCT_NAME = 'Rinavai';
+
 const DEFAULT_SNAPSHOT: BrandingSnapshot = {
-  productName: 'TaskFlow',
+  productName: DEFAULT_PRODUCT_NAME,
   logoKey: null,
   faviconKey: null,
   paletteId: 'default',
   salesEmail: null,
 };
 
+const CUSTOM_PALETTE_RE = /^custom:(\d{1,3})$/;
+
 /**
- * Narrows the row's `text` `palette_id` to the closed `PaletteId` union,
- * falling back to `default`. Exported so `branding.service.ts` shares this
- * rather than keeping its own copy of the same narrowing.
+ * Narrows the row's `text` `palette_id` to a known value. Accepts any of
+ * the six preset palette ids, or `custom:<hue>` where hue is 0–360.
+ * Returns `'default'` for anything unrecognized.
  */
-export function asPaletteId(value: string): PaletteId {
-  return (PALETTE_IDS as readonly string[]).includes(value) ? (value as PaletteId) : 'default';
+export function asPaletteId(value: string): string {
+  if ((PALETTE_IDS as readonly string[]).includes(value)) return value;
+  const match = CUSTOM_PALETTE_RE.exec(value);
+  if (match !== null) {
+    const hue = Number(match[1]);
+    if (hue >= 0 && hue <= 360) return `custom:${String(hue)}`;
+  }
+  return 'default';
 }
 
 async function loadBranding(): Promise<BrandingSnapshot> {
@@ -64,7 +76,7 @@ async function loadBranding(): Promise<BrandingSnapshot> {
   if (!row) return DEFAULT_SNAPSHOT;
 
   return {
-    productName: row.productName,
+    productName: row.productName ?? DEFAULT_PRODUCT_NAME,
     logoKey: row.logoKey,
     faviconKey: row.faviconKey,
     paletteId: asPaletteId(row.paletteId),

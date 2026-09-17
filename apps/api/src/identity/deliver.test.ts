@@ -175,7 +175,7 @@ describe('password reset', () => {
     await settle();
 
     const reset = mailer.sent.filter((message) => message.to === email).at(-1);
-    expect(reset?.subject).toMatch(/Reset your TaskFlow password/);
+    expect(reset?.subject).toMatch(/Reset your Rinavai password/);
     expect(reset?.text).toMatch(/reset-password\?token=/);
   });
 });

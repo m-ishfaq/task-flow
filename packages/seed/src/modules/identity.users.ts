@@ -24,7 +24,7 @@ import { daysBefore } from '../support.js';
  */
 
 /** Every seeded TENANT account logs in with this. Printed by the CLI when the run finishes. */
-export const SEED_PASSWORD = 'TaskFlow!Demo1';
+export const SEED_PASSWORD = 'Rinavai!Demo1';
 
 /**
  * The address domain every seeded account uses.

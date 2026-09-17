@@ -85,34 +85,42 @@ export function SettingsPage() {
   const org = useQuery(orgDetailQuery(orgId));
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-5xl flex-col gap-9 p-8">
-      <PageHeader
-        title="Organization settings"
-        description="Members, teams, and who can reach what."
-        actions={
-          org.data?.capabilities.viewAuditLog === true ? (
-            <Link
-              to="/settings/audit"
-              className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            >
-              Audit log
-            </Link>
-          ) : undefined
-        }
-      />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 mx-auto w-full max-w-5xl px-8 pt-6 pb-4">
+        <PageHeader
+          title="Organization settings"
+          description="Members, teams, and who can reach what."
+          actions={
+            org.data?.capabilities.viewAuditLog === true ? (
+              <Link
+                to="/settings/audit"
+                className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+              >
+                Audit log
+              </Link>
+            ) : undefined
+          }
+        />
+      </div>
 
-      <OrgSection orgId={orgId} />
-      {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
-      {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
-          role except Guest. Before these fields existed, both sections
-          rendered unconditionally and fired their own roster queries
-          regardless of who was looking, so a Guest reaching `/settings` (the
-          top-bar "Settings" link has no gate of its own — every role can open
-          this page) hit a raw FORBIDDEN `ErrorView` for each. */}
-      {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
-      {org.data?.capabilities.manageMembers === true && <RoleDefaultGrantsSection orgId={orgId} />}
-      {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <OrgSection orgId={orgId} />
+          {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
+          {/* `viewDirectory`/`viewTeams` — `member:read`/`team:read`, held by every
+              role except Guest. Before these fields existed, both sections
+              rendered unconditionally and fired their own roster queries
+              regardless of who was looking, so a Guest reaching `/settings` (the
+              top-bar "Settings" link has no gate of its own — every role can open
+              this page) hit a raw FORBIDDEN `ErrorView` for each. */}
+          {org.data?.capabilities.viewDirectory === true && <MemberSection orgId={orgId} />}
+          {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
+          {org.data?.capabilities.manageMembers === true && (
+            <RoleDefaultGrantsSection orgId={orgId} />
+          )}
+          {org.data?.capabilities.viewTeams === true && <TeamSection orgId={orgId} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -254,7 +262,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   /**
    * Email invitations (migration 0107) — the door `members.add` was never
    * built to cover. Always sends mail, whether or not the address already
-   * has a TaskFlow account: `invitations.send` answers the same
+   * has a Rinavai account: `invitations.send` answers the same
    * `{ status: 'invited' }` either way, so there is nothing here for the UI
    * to branch on. `members.add`'s own instant-add route still exists and is
    * still tested, but this is now the ONE form on this page — offering both

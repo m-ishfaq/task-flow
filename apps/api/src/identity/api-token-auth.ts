@@ -25,7 +25,7 @@ import { bearerToken } from './authenticate.js';
  *      refuses revoked/unknown tokens by the lookup itself (the WHERE carries
  *      `revoked_at IS NULL`). A token either resolves or it does not — there is
  *      no courtesy window for a stale credential.
- *   3. **The org comes from the TOKEN, never from the `x-taskflow-org`
+ *   3. **The org comes from the TOKEN, never from the `x-rinavai-org`
  *      header.** That header is attacker-controlled, and a token minted for
  *      org A must not be steerable at org B by sending a header. A token
  *      request whose header DISAGREES with the token's org is REFUSED rather

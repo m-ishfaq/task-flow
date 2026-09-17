@@ -37,59 +37,71 @@ export function ForgotPasswordPage() {
 
   if (request.isSuccess) {
     return (
-      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <BrandMark size={36} className="text-accent" />
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Check your email
-        </h1>
-        <p className="text-sm text-ink-muted">
-          If that address has an account, a reset link is on its way. The link is single-use and
-          expires.
-        </p>
-        <Link to="/login" className="text-sm text-accent underline">
-          Back to sign in
-        </Link>
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+          <div className="auth-card flex flex-col gap-4 p-8">
+            <BrandMark size={56} className="mx-auto text-accent" />
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+              Check your email
+            </h1>
+            <p className="text-sm text-ink-muted">
+              If that address has an account, a reset link is on its way. The link is single-use and
+              expires.
+            </p>
+            <Link to="/login" className="text-sm text-accent underline">
+              Back to sign in
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-      <BrandMark size={36} className="text-accent" />
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Reset your password
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">We will email you a link to choose a new one.</p>
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+        <div className="auth-card flex flex-col gap-6 p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <BrandMark size={56} className="text-accent" />
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+                Reset your password
+              </h1>
+              <p className="mt-1 text-sm text-ink-muted">
+                We will email you a link to choose a new one.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              void handleSubmit((values) => {
+                request.mutate(values);
+              })(event);
+            }}
+          >
+            <Field label="Email" htmlFor="email">
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                {...register('email', { required: true })}
+              />
+            </Field>
+
+            {request.isError && <ErrorView error={request.error} />}
+
+            <Button type="submit" variant="primary" className="w-full" disabled={request.isPending}>
+              {request.isPending ? 'Sending…' : 'Send reset link'}
+            </Button>
+          </form>
+
+          <Link to="/login" className="text-sm text-accent underline">
+            Back to sign in
+          </Link>
+        </div>
       </div>
-
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          void handleSubmit((values) => {
-            request.mutate(values);
-          })(event);
-        }}
-      >
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            type="email"
-            autoComplete="username"
-            {...register('email', { required: true })}
-          />
-        </Field>
-
-        {request.isError && <ErrorView error={request.error} />}
-
-        <Button type="submit" variant="primary" className="w-full" disabled={request.isPending}>
-          {request.isPending ? 'Sending…' : 'Send reset link'}
-        </Button>
-      </form>
-
-      <Link to="/login" className="text-sm text-accent underline">
-        Back to sign in
-      </Link>
     </div>
   );
 }

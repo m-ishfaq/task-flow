@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   schema,
   sumWithFallback,
   withAuditScope,
@@ -359,6 +360,58 @@ export interface UserDetail {
   readonly status: string;
   readonly emailVerifiedAt: Date | null;
   readonly createdAt: Date;
+
+  /** Has the user set a password, and when was it last changed. */
+  readonly hasPassword: boolean;
+  readonly passwordUpdatedAt: Date | null;
+  /** Account lockout state — non-zero means failed attempts are being counted. */
+  readonly failedLoginCount: number;
+  readonly lockedUntil: Date | null;
+
+  /** Session inventory — an operator needs "is this account alive" at a glance. */
+  readonly sessions: readonly {
+    readonly id: string;
+    readonly channel: string;
+    readonly ip: string | null;
+    readonly country: string | null;
+    readonly userAgent: string | null;
+    readonly lastSeenAt: Date;
+    readonly authenticatedAt: Date;
+    readonly flagged: boolean;
+  }[];
+  readonly activeSessionCount: number;
+
+  /** Passkey inventory — each registered authenticator. */
+  readonly passkeys: readonly {
+    readonly id: string;
+    readonly name: string | null;
+    readonly deviceType: string;
+    readonly backedUp: boolean;
+    readonly lastUsedAt: Date | null;
+    readonly createdAt: Date;
+  }[];
+
+  /** TOTP status — enrolled and confirmed or not. */
+  readonly totpEnabled: boolean;
+
+  /** Linked OAuth providers. */
+  readonly oauthProviders: readonly {
+    readonly provider: string;
+    readonly email: string;
+    readonly linkedAt: Date;
+  }[];
+
+  /** API tokens this user created (across all orgs). */
+  readonly apiTokenCount: number;
+  readonly activeApiTokens: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly orgId: string;
+    readonly scopes: readonly string[];
+    readonly createdAt: Date;
+    readonly lastUsedAt: Date | null;
+  }[];
+
   readonly memberships: readonly {
     readonly orgId: string;
     readonly orgName: string;
@@ -381,14 +434,14 @@ export async function getUserDetail(
       .select({
         userId: schema.users.id,
         email: schema.users.email,
-        /* LEFT — a profile row is lazily created (see user-directory's own
-           note); an inner join would drop exactly the accounts that have
-           never been used, which is the population an operator most often
-           opens this panel for. */
         name: coalesceColumns(schema.profiles.displayName, schema.users.displayName),
         status: schema.users.status,
         emailVerifiedAt: schema.users.emailVerifiedAt,
         createdAt: schema.users.createdAt,
+        hasPassword: schema.users.passwordHash,
+        passwordUpdatedAt: schema.users.passwordUpdatedAt,
+        failedLoginCount: schema.users.failedLoginCount,
+        lockedUntil: schema.users.lockedUntil,
       })
       .from(schema.users)
       .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
@@ -398,28 +451,125 @@ export async function getUserDetail(
     const user = rows[0];
     if (!user) throw errors.notFound();
 
-    const memberships = await tx
-      .select({
-        orgId: schema.orgs.id,
-        orgName: schema.orgs.name,
-        orgSlug: schema.orgs.slug,
-        role: schema.memberships.role,
-        status: schema.memberships.status,
-        joinedAt: schema.memberships.createdAt,
-        orgStatus: schema.orgs.status,
-        orgBillingStatus: schema.orgs.billingStatus,
-      })
-      .from(schema.memberships)
-      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
-      .where(eq(schema.memberships.userId, userId))
-      .orderBy(schema.orgs.name);
+    const [memberships, sessionRows, passkeyRows, totpRows, oauthRows, apiTokenRows] =
+      await Promise.all([
+        tx
+          .select({
+            orgId: schema.orgs.id,
+            orgName: schema.orgs.name,
+            orgSlug: schema.orgs.slug,
+            role: schema.memberships.role,
+            status: schema.memberships.status,
+            joinedAt: schema.memberships.createdAt,
+            orgStatus: schema.orgs.status,
+            orgBillingStatus: schema.orgs.billingStatus,
+          })
+          .from(schema.memberships)
+          .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
+          .where(eq(schema.memberships.userId, userId))
+          .orderBy(schema.orgs.name),
 
-    return { ...user, memberships };
+        /* Active sessions — not revoked and not expired. */
+        tx
+          .select({
+            id: schema.sessions.id,
+            channel: schema.sessions.channel,
+            ip: schema.sessions.ip,
+            country: schema.sessions.country,
+            userAgent: schema.sessions.userAgent,
+            lastSeenAt: schema.sessions.lastSeenAt,
+            authenticatedAt: schema.sessions.authenticatedAt,
+            impossibleTravelAt: schema.sessions.impossibleTravelAt,
+          })
+          .from(schema.sessions)
+          .where(
+            and(
+              eq(schema.sessions.userId, userId),
+              isNull(schema.sessions.revokedAt),
+              gte(schema.sessions.expiresAt, new Date()),
+            ),
+          )
+          .orderBy(desc(schema.sessions.lastSeenAt))
+          .limit(20),
+
+        /* Passkeys. */
+        tx
+          .select({
+            id: schema.webauthnCredentials.id,
+            name: schema.webauthnCredentials.name,
+            deviceType: schema.webauthnCredentials.deviceType,
+            backedUp: schema.webauthnCredentials.backedUp,
+            lastUsedAt: schema.webauthnCredentials.lastUsedAt,
+            createdAt: schema.webauthnCredentials.createdAt,
+          })
+          .from(schema.webauthnCredentials)
+          .where(eq(schema.webauthnCredentials.userId, userId))
+          .orderBy(desc(schema.webauthnCredentials.createdAt)),
+
+        /* TOTP — just check if a confirmed row exists. */
+        tx
+          .select({ confirmedAt: schema.totpCredentials.confirmedAt })
+          .from(schema.totpCredentials)
+          .where(eq(schema.totpCredentials.userId, userId))
+          .limit(1),
+
+        /* OAuth providers. */
+        tx
+          .select({
+            provider: schema.oauthIdentities.provider,
+            email: schema.oauthIdentities.email,
+            linkedAt: schema.oauthIdentities.linkedAt,
+          })
+          .from(schema.oauthIdentities)
+          .where(eq(schema.oauthIdentities.userId, userId))
+          .orderBy(schema.oauthIdentities.provider),
+
+        /* API tokens — active ones only. */
+        tx
+          .select({
+            id: schema.apiTokens.id,
+            name: schema.apiTokens.name,
+            orgId: schema.apiTokens.orgId,
+            scopes: schema.apiTokens.scopes,
+            createdAt: schema.apiTokens.createdAt,
+            lastUsedAt: schema.apiTokens.lastUsedAt,
+          })
+          .from(schema.apiTokens)
+          .where(
+            and(
+              eq(schema.apiTokens.createdBy, userId),
+              isNull(schema.apiTokens.revokedAt),
+            ),
+          )
+          .orderBy(desc(schema.apiTokens.createdAt))
+          .limit(20),
+      ]);
+
+    return {
+      ...user,
+      memberships,
+      sessions: sessionRows.map(({ impossibleTravelAt, ...rest }) => ({
+        ...rest,
+        ip: rest.ip ?? null,
+        country: rest.country ?? null,
+        userAgent: rest.userAgent ?? null,
+        flagged: impossibleTravelAt !== null,
+      })),
+      passkeys: passkeyRows,
+      totpEnabled: totpRows[0]?.confirmedAt !== null && totpRows[0]?.confirmedAt !== undefined,
+      oauthProviders: oauthRows,
+      activeApiTokens: apiTokenRows,
+    };
   });
 
   await recordOperatorAction(operator.userId, 'users.detail', { userId });
 
-  return detail;
+  return {
+    ...detail,
+    hasPassword: detail.hasPassword !== null,
+    activeSessionCount: detail.sessions.length,
+    apiTokenCount: detail.activeApiTokens.length,
+  };
 }
 
 /**

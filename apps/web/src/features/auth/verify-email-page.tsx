@@ -146,12 +146,18 @@ export function VerifyEmailPage() {
 
 function Frame({ children }: { readonly children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-      <BrandMark size={36} className="text-accent" />
-      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-        Email verification
-      </h1>
-      {children}
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center p-6">
+        <div className="auth-card flex flex-col gap-4 p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <BrandMark size={56} className="text-accent" />
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+              Email verification
+            </h1>
+          </div>
+          {children}
+        </div>
+      </div>
     </div>
   );
 }

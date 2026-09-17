@@ -138,9 +138,9 @@
       accent-ink on accent 9.69:1, on accent-hover 11.84:1, accent against all
       surfaces 5.31:1-5.67:1 (needs 3:1 non-text). `branding-palettes.ts`'s
       ENTIRE palette set must stay in sync. */
-  --color-accent: oklch(60% 0.14 88);
-  --color-accent-ink: oklch(98% 0.01 88);
-  --color-accent-hover: oklch(55% 0.14 88);
+  --color-accent: oklch(60% 0.14 177);
+  --color-accent-ink: oklch(98% 0.01 177);
+  --color-accent-hover: oklch(55% 0.14 177);
 
   /* §2.4: danger (L=62 -> L=68): original L=55 measured 2.28:1 against
      surfaces via the oklch→sRGB pipeline — below 3:1 for non-text component
@@ -1287,6 +1287,31 @@
       color-mix(in oklab, var(--color-accent) 7%, transparent),
       transparent 70%
     );
+}
+
+/**
+ * Auth card — the raised surface all auth forms sit on.
+ * Uses the same design tokens as every card panel in the app:
+ * `surface-raised`, `line/60`, `shadow-md`, `radius-card`.
+ * The fade-in is subtle — just enough to feel intentional.
+ */
+.auth-card {
+  background: var(--color-surface-raised);
+  border: 1px solid color-mix(in oklab, var(--color-line) 60%, transparent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-md);
+  animation: auth-fade-in 0.4s var(--motion-ease) both;
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* -------------------------------------------------------------------------- *

@@ -17,6 +17,7 @@ export {
   isPermission,
   isReadOnly,
   isGrantable,
+  isOrgLevel,
   resourceOf,
   type Permission,
   type ResourceType,

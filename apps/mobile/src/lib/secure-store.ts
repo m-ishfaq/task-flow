@@ -30,7 +30,7 @@ export interface SecureStore {
 }
 
 /** The key the rotating refresh token is stored under. */
-export const REFRESH_TOKEN_KEY = 'taskflow.refreshToken';
+export const REFRESH_TOKEN_KEY = 'rinavai.refreshToken';
 
 /**
  * An in-memory SecureStore, for tests ONLY.

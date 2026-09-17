@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "TaskFlow client (packages/client)",
+  "display": "Rinavai client (packages/client)",
   "extends": "@taskflow/config/tsconfig/node.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],

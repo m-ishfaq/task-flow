@@ -1,5 +1,5 @@
 /**
- * The TaskFlow abstract flow-mark — three connected nodes representing
+ * The Rinavai abstract flow-mark — three connected nodes representing
  * tasks flowing through a pipeline.
  *
  * Uses `currentColor` so it inherits whatever text color the parent sets,

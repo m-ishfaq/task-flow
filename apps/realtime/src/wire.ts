@@ -50,7 +50,7 @@ import {
  * for boards it can see.
  *
  * `orgId` is a SCOPE SELECTOR, and it is the socket's equivalent of the
- * `x-taskflow-org` header — which CLAUDE.md's Phase 2 notes describe as
+ * `x-rinavai-org` header — which CLAUDE.md's Phase 2 notes describe as
  * attacker-controlled and treated as such. It is used identically here: never
  * written to `app.org_id`, never turned into a role, only a WHERE filter inside
  * `withUserScope(verifiedUserId)`. Naming an org you are not in matches zero

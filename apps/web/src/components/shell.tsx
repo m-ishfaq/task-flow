@@ -29,7 +29,7 @@ import { disconnectRtcSocket } from '../lib/rtc-socket.js';
 import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
-import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
+import { orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 import { hueOf } from './avatar-color.js';
@@ -39,6 +39,8 @@ import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
 import { CallSurface } from '../features/rtc/call-surface.js';
 import { NewOrgSetupDialog } from '../features/ai/setup-dialog.js';
+import { MaintenanceBanner, MaintenanceScreen } from './maintenance-banner.js';
+import { useMaintenanceStore } from '../lib/maintenance-store.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -82,6 +84,14 @@ export function Shell() {
   const mobileNavOpen = useUi((state) => state.mobileNavOpen);
   const closeMobileNav = useUi((state) => state.closeMobileNav);
   const isDesktop = useIsDesktop();
+
+  /* Read maintenance state early — before the bare/hasOrg layout decisions.
+     A prior session may have stored `active: true` in localStorage; reading
+     it here prevents a flash of the normal shell on a page reload while
+     maintenance is on. The fetch wrapper (query.ts) catches fresh 503s
+     before any query fires, but this handles the localStorage-rehydrated
+     case synchronously on first render. */
+  const maintenanceActive = useMaintenanceStore((s) => s.active);
 
   const bare =
     ANONYMOUS_PATHS.has(pathname) ||
@@ -169,9 +179,30 @@ export function Shell() {
       /* `h-dvh` for the same reason as the framed branch below — the login and
          mail-link pages centre themselves against this height. */
       <div className="flex h-dvh flex-col">
+        <MaintenanceBanner />
         <main className="min-h-0 flex-1">
           <Outlet />
         </main>
+      </div>
+    );
+  }
+
+  /* Maintenance mode: show the full-page maintenance screen instead of the
+     normal app shell. The banner-only path above handles the login page;
+     authenticated users see this full screen with the admin's message and,
+     for platform operators, a link to the admin console. maintenanceActive
+     is declared above (before the bare check) to keep hooks in a fixed
+     position and to catch the localStorage-rehydrated case on first render.
+
+     Platform admin routes are always accessible during maintenance — the
+     server bypasses them, and the admin needs the console to TOGGLE
+     maintenance mode off. Without this guard, the admin gets locked out
+     of the very console that controls the setting. */
+  const isPlatformAdminRoute = pathname.startsWith('/platform-admin');
+  if (maintenanceActive && !isPlatformAdminRoute) {
+    return (
+      <div className="flex h-dvh flex-col">
+        <MaintenanceScreen />
       </div>
     );
   }
@@ -197,13 +228,8 @@ export function Shell() {
 
            `dvh` is viewport-relative, so it resolves unconditionally. */
         'flex h-dvh overflow-hidden',
-        /* The pre-org state has no drawer, so its switcher is an ordinary flex
-           child with a fixed width — which below `md` left the org picker about
-           180px to render "Choose an organization" in, header and all. Stacking
-           is the fix rather than a narrower column: at this width there is no
-           room for two, and the switcher is the one thing on this screen that
-           is not the choice being made. */
-        !hasOrg && 'flex-col md:flex-row',
+        /* The pre-org state renders no sidebar, header, or footer — the org
+           picker is a standalone full-screen experience with its own chrome. */
       )}
     >
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
@@ -242,22 +268,17 @@ export function Shell() {
           /* Below `md`: an off-canvas drawer, fixed to the viewport and
              slid in/out with `translate-x`. At `md` and above: back to being
              an ordinary flex child with no fixed positioning at all — the
-             desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
+             desktop layout `Sidebar`'s own `open ? w-12 : w-60` already
              handles is untouched by anything here. */
           hasOrg &&
             cn(
               'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
             ),
-          /* Stacked (pre-org, below `md`) it belongs UNDER the choice, not
-             above it: source order puts it first because at `md`+ it is the
-             left column, and `order-last` restores the reading order the
-             layout implies without moving it in the DOM. */
-          !hasOrg && 'order-last md:order-0',
         )}
       >
         {hasOrg && <Sidebar />}
-        <SidebarFooter standalone={!hasOrg} />
+        {hasOrg && <SidebarFooter />}
       </div>
 
       {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
@@ -281,7 +302,12 @@ export function Shell() {
       {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header showMenuButton={hasOrg} />
+        {/* The header is hidden when no org is selected — the org picker is a
+            standalone full-screen experience with its own branding and chrome. */}
+        {hasOrg && <Header showMenuButton />}
+        {/* The maintenance banner sits between the header and the page content.
+            Only visible when the API returns a 503 maintenance response. */}
+        {hasOrg && <MaintenanceBanner />}
         {/* `relative` establishes a containing block, and it is load-bearing.
             An `position: absolute` descendant with no positioned ancestor
             resolves against the INITIAL containing block instead — which means
@@ -311,7 +337,7 @@ export function Shell() {
  * records: an empty org list used to hide the switcher entirely, leaving sign-out
  * as the only way out.
  */
-function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
+function SidebarFooter() {
   const sidebarOpen = useUi((state) => state.sidebarOpen);
   const isDesktop = useIsDesktop();
   const collapsed = !sidebarOpen && isDesktop;
@@ -321,13 +347,7 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
       className={cn(
         'mt-auto flex shrink-0 items-center gap-1 border-t border-line/60 bg-surface-raised',
         collapsed ? 'flex-col justify-center p-2' : 'flex-row p-2',
-        /* With no tree above it there is nothing to inherit a width from, and a
-           switcher sized to the word "Select organization" is not a layout. The
-           fixed width is `md`+ ONLY: below that the pre-org shell stacks, and a
-           240px column there consumed more than half a phone's width, leaving
-           the org picker to wrap "Choose an organization" over three lines and
-           truncating the header to "Orga…" and "Settir". */
-        standalone ? 'w-full border-r-0 md:w-60 md:border-r' : 'border-r',
+        'border-r',
       )}
     >
       <OrgSwitcher collapsed={collapsed} />
@@ -347,17 +367,6 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
 function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
-  const orgId = useSession((state) => state.orgId);
-  /* Gates the "Permissions" link below — `audit:read`, the same capability
-     `/settings/audit` already reads (Phase 15 §1's sweep: this link used to
-     render for every role and let `/admin/permissions` answer FORBIDDEN,
-     worse than most of that sweep's other findings because the page it
-     points at inspects a COLLEAGUE's access, not the caller's own). */
-  const canDebugPermissions = useQuery({
-    ...orgDetailQuery(orgId ?? ''),
-    enabled: orgId !== null,
-  }).data?.capabilities.viewAuditLog;
-
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
@@ -419,9 +428,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
         {/* Settings group */}
         <div className="flex items-center gap-0.5">
           <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
-          {canDebugPermissions === true && (
-            <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
-          )}
+          <NavLink to="/permissions" label="Permissions" icon={ShieldCheck} />
         </div>
       </nav>
     </header>
@@ -465,7 +472,7 @@ function Breadcrumbs() {
                       ? 'Audit log'
                       : pathname.startsWith('/settings')
                         ? 'Settings'
-                        : pathname.startsWith('/admin/permissions')
+                        : pathname.startsWith('/permissions')
                           ? 'Permissions'
                           : pathname.startsWith('/platform-admin')
                             ? 'Platform admin'
@@ -503,7 +510,7 @@ function NavLink({
   label,
   icon: Icon,
 }: {
-  readonly to: '/projects' | '/settings' | '/admin/permissions';
+  readonly to: '/projects' | '/settings' | '/permissions';
   readonly label: string;
   readonly icon: NavIcon;
 }) {

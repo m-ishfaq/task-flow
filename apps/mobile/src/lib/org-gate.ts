@@ -18,7 +18,7 @@ import type { OrgId } from '@taskflow/contracts';
  * and routes to the org picker when it returns null.
  *
  * The org id itself is not a credential and confers nothing: it becomes the
- * attacker-controllable `x-taskflow-org` header, which is a WHERE filter against
+ * attacker-controllable `x-rinavai-org` header, which is a WHERE filter against
  * the caller's own memberships and is never written to `app.org_id`. So it is
  * safe to persist in ordinary (non-secure) storage — the same reasoning
  * apps/web records for `localStorage`.

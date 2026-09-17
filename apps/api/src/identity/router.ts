@@ -20,6 +20,7 @@ import type { OAuthDeps } from './oauth.service.js';
 import * as sessions from './sessions.service.js';
 import * as calendarFeed from './calendar-feed.service.js';
 import * as people from '../people/profile.service.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 
 const OAuthProviderSchema = z.enum(['google', 'github']);
 
@@ -648,10 +649,14 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
       })
         .output(z.object({ secret: z.string(), otpauthUrl: z.string() }))
         .mutation(async ({ ctx }) => {
-          const profile = await people.getProfile(ctx.principal.userId);
+          const [profile, branding] = await Promise.all([
+            people.getProfile(ctx.principal.userId),
+            getResolvedBranding(),
+          ]);
           return totp.startEnrollment(totpDeps, {
             userId: ctx.principal.userId,
             email: profile.email,
+            issuer: branding.productName,
           });
         }),
 

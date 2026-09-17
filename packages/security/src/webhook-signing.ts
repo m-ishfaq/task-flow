@@ -17,7 +17,7 @@ import { secureEqual } from './random.js';
  *
  * ## The scheme
  *
- *     X-TaskFlow-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "t.<body>")>
+ *     X-Rinavai-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "t.<body>")>
  *
  *   - The timestamp is in the payload, so a receiver can reject stale
  *     signatures without a shared clock beyond seconds — the same reason
@@ -35,7 +35,16 @@ import { secureEqual } from './random.js';
  */
 
 /**
- * Builds the `X-TaskFlow-Signature` header value for a body.
+ * Outbound webhook signature header name.
+ *
+ * The delivery worker resolves this dynamically from `platform.branding`:
+ * `x-${productName.toLowerCase()}-signature`. This constant is the default
+ * fallback when the branding table has no row or the product name is NULL.
+ */
+export const WEBHOOK_SIGNATURE_HEADER = `x-${'rinavai'}-signature`;
+
+/**
+ * Builds the `<WEBHOOK_SIGNATURE_HEADER>` header value for a body.
  *
  * `body` is the exact UTF-8 string that will be sent. Callers must pass the
  * literal bytes — if the fetch layer re-serializes, the signature is over a
@@ -54,7 +63,7 @@ export function buildWebhookSignature(
 }
 
 /**
- * Verifies an `X-TaskFlow-Signature` header — the check the RECEIVER performs.
+ * Verifies a `<WEBHOOK_SIGNATURE_HEADER>` header — the check the RECEIVER performs.
  *
  * Exported so the suite can prove the round trip with the real primitive
  * rather than stubbing it: a signing test whose verify side is mocked asserts

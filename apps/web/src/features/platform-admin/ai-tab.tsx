@@ -1,15 +1,27 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  CircleDollarSign,
+  KeyRound,
+  Layers,
+  Lock,
+  Settings2,
+  Sparkles,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
 import { money } from './shared.js';
 import {
-  Badge,
   Button,
   Empty,
   Field,
@@ -18,7 +30,29 @@ import {
   Spinner,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { StepUpGate } from './shared.js';
+import { StepUpGate, StatCard } from './shared.js';
+
+/* -------------------------------------------------------------------------- *
+ * AI Models — premium operator view
+ *
+ * Provider catalog with kind-colored badges, summary stat cards,
+ * enhanced modals, and a polished spend report.
+ * -------------------------------------------------------------------------- */
+
+const PROVIDER_META: Record<string, { readonly label: string; readonly color: string }> = {
+  anthropic: { label: 'Anthropic', color: 'text-amber-700 bg-amber-500/10 border-amber-500/20' },
+  openai: { label: 'OpenAI', color: 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20' },
+  gemini: { label: 'Gemini', color: 'text-sky-700 bg-sky-500/10 border-sky-500/20' },
+};
+
+function providerMeta(kind: string) {
+  return (
+    PROVIDER_META[kind] ?? {
+      label: kind,
+      color: 'text-ink-faint bg-surface-hover border-line',
+    }
+  );
+}
 
 /**
  * The AI provider catalog and its per-org overrides (Phase 15 §2.3, §3.3).
@@ -66,15 +100,32 @@ export function AiTab({
   if (errorCodeOf(providers.error) === 'STEP_UP_REQUIRED')
     return <StepUpGate onStepUp={onStepUp} />;
 
+  const allProviders = providers.data ?? [];
+  const defaultCount = allProviders.filter((p) => p.isDefault).length;
+  const kindCount = new Set(allProviders.map((p) => p.provider)).size;
+
   return (
-    <section aria-label="AI Models" className="space-y-6">
+    <section aria-label="AI Models" className="flex flex-col gap-5">
+      {/* Summary stat cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard icon={Bot} label="Providers" value={allProviders.length} accent={allProviders.length > 0} />
+        <StatCard
+          icon={Sparkles}
+          label="Default"
+          value={defaultCount}
+          accent={defaultCount === 1}
+        />
+        <StatCard icon={Layers} label="Models" value={allProviders.length} />
+        <StatCard icon={Settings2} label="Kinds" value={kindCount} />
+      </div>
+
+      {/* Provider catalog */}
       <div>
         <div className="flex items-start justify-between gap-3">
           <p className="max-w-2xl text-xs text-ink-muted">
             The model catalog every org's assistant, standup narration, and other AI features
             resolve against. One row here is one API key plus a model — an org with no override uses
-            whichever row is marked default. Adding a real provider is the only way any of those
-            features can actually run.
+            whichever row is marked default.
           </p>
           <Button
             variant="primary"
@@ -99,47 +150,65 @@ export function AiTab({
             />
           ) : (
             <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
-              {providers.data.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
-                      {row.label}
-                      {row.isDefault && (
-                        <Badge className="border-accent/30 text-accent">default</Badge>
+              {providers.data.map((row) => {
+                const meta = providerMeta(row.provider);
+                return (
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-hover/30"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-ink">{row.label}</p>
+                        <span
+                          className={cn(
+                            'rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                            meta.color,
+                          )}
+                        >
+                          {meta.label}
+                        </span>
+                        <span className="rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-[11px] text-ink-muted">
+                          {row.model}
+                        </span>
+                        {row.isDefault && (
+                          <span className="rounded-md bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
+                            DEFAULT
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-ink-faint">
+                        Added {formatDate(row.createdAt)}
+                        {row.updatedAt !== row.createdAt && ` · rotated ${formatDate(row.updatedAt)}`}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {!row.isDefault && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={setDefault.isPending}
+                          onClick={() => {
+                            setDefault.mutate({ id: row.id });
+                          }}
+                        >
+                          Set default
+                        </Button>
                       )}
-                    </p>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {row.provider} · <span className="font-mono">{row.model}</span>
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-ink-faint">
-                      Added {formatDate(row.createdAt)}
-                      {row.updatedAt !== row.createdAt && ` · rotated ${formatDate(row.updatedAt)}`}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {!row.isDefault && (
                       <Button
-                        disabled={setDefault.isPending}
+                        size="sm"
+                        variant="secondary"
                         onClick={() => {
-                          setDefault.mutate({ id: row.id });
+                          setRotating({ id: row.id, label: row.label });
                         }}
                       >
-                        Set default
+                        <KeyRound className="size-3" strokeWidth={2} />
+                        Rotate
                       </Button>
-                    )}
-                    <Button
-                      onClick={() => {
-                        setRotating({ id: row.id, label: row.label });
-                      }}
-                    >
-                      Rotate key
-                    </Button>
-                  </div>
-                </li>
-              ))}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ))}
 
@@ -148,7 +217,7 @@ export function AiTab({
         )}
       </div>
 
-      <OrgOverridePanel guard={guard} providers={providers.data ?? []} onStepUp={onStepUp} />
+      <OrgOverridePanel guard={guard} providers={allProviders} onStepUp={onStepUp} />
 
       <SpendReportPanel onStepUp={onStepUp} />
 
@@ -181,6 +250,16 @@ export function AiTab({
     </section>
   );
 }
+
+/* -------------------------------------------------------------------------- *
+ * CreateProviderDialog — enhanced modal with visual kind selector
+ * -------------------------------------------------------------------------- */
+
+const PROVIDER_KINDS = [
+  { value: 'anthropic' as const, label: 'Anthropic', placeholder: 'claude-sonnet-4', color: 'border-amber-500/40 bg-amber-500/[0.06] text-amber-700', activeColor: 'border-amber-500 bg-amber-500/10 text-amber-700 ring-2 ring-amber-500/20' },
+  { value: 'openai' as const, label: 'OpenAI', placeholder: 'gpt-4o', color: 'border-emerald-500/40 bg-emerald-500/[0.06] text-emerald-700', activeColor: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 ring-2 ring-emerald-500/20' },
+  { value: 'gemini' as const, label: 'Gemini', placeholder: 'gemini-2.0-flash', color: 'border-sky-500/40 bg-sky-500/[0.06] text-sky-700', activeColor: 'border-sky-500 bg-sky-500/10 text-sky-700 ring-2 ring-sky-500/20' },
+] as const;
 
 function CreateProviderDialog({
   guard,
@@ -217,89 +296,116 @@ function CreateProviderDialog({
 
   return (
     <ModalRoot open onOpenChange={onClose}>
-      <ModalContent className="p-4">
-        <ModalTitle>New provider</ModalTitle>
-        <ModalDescription>
-          The key is encrypted at rest under its own data key and never sent back to this console
-          once saved — rotating it is the only way to change it later.
-        </ModalDescription>
+      <ModalContent className="max-h-[85vh] overflow-y-auto p-0">
+        <div className="px-5 pt-5">
+          <ModalTitle>New provider</ModalTitle>
+          <ModalDescription>
+            The key is encrypted at rest under its own data key and never sent back to this console
+            once saved — rotating it is the only way to change it later.
+          </ModalDescription>
+        </div>
 
-        <div className="mt-3 flex flex-col gap-3">
-          <Field label="Provider" htmlFor="ai-provider-kind">
-            <select
-              id="ai-provider-kind"
-              value={provider}
-              onChange={(event) => {
-                setProvider(event.target.value as 'anthropic' | 'openai' | 'gemini');
-              }}
-              className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink"
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {/* Visual kind selector */}
+          <div>
+            <p className="mb-2 text-xs font-medium text-ink-faint">Provider</p>
+            <div className="grid grid-cols-3 gap-2">
+              {PROVIDER_KINDS.map((kind) => {
+                const active = provider === kind.value;
+                return (
+                  <button
+                    key={kind.value}
+                    type="button"
+                    onClick={() => {
+                      setProvider(kind.value);
+                    }}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-xs font-medium transition-all',
+                      active ? kind.activeColor : cn(kind.color, 'hover:border-ink-faint/30'),
+                    )}
+                  >
+                    <Bot className="size-5" strokeWidth={1.5} />
+                    {kind.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Model + Label side by side */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Model"
+              htmlFor="ai-provider-model"
+              hint="The exact model id the provider expects."
             >
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Gemini</option>
-            </select>
-          </Field>
+              <Input
+                id="ai-provider-model"
+                value={model}
+                placeholder={PROVIDER_KINDS.find((k) => k.value === provider)?.placeholder ?? ''}
+                onChange={(event) => {
+                  setModel(event.target.value);
+                }}
+              />
+            </Field>
 
-          <Field
-            label="Model"
-            htmlFor="ai-provider-model"
-            hint="The exact model id the provider expects."
-          >
-            <Input
-              id="ai-provider-model"
-              value={model}
-              placeholder="claude-sonnet-4"
-              onChange={(event) => {
-                setModel(event.target.value);
-              }}
-            />
-          </Field>
+            <Field
+              label="Label"
+              htmlFor="ai-provider-label"
+              hint="How this row reads in the list."
+            >
+              <Input
+                id="ai-provider-label"
+                value={label}
+                placeholder="Default Sonnet"
+                onChange={(event) => {
+                  setLabel(event.target.value);
+                }}
+              />
+            </Field>
+          </div>
 
-          <Field
-            label="Label"
-            htmlFor="ai-provider-label"
-            hint="How this row reads in the list — pick something that survives a key rotation."
-          >
-            <Input
-              id="ai-provider-label"
-              value={label}
-              placeholder="Default Sonnet"
-              onChange={(event) => {
-                setLabel(event.target.value);
-              }}
-            />
-          </Field>
-
+          {/* API Key */}
           <Field label="API key" htmlFor="ai-provider-key">
-            <Input
-              id="ai-provider-key"
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              placeholder="sk-..."
-              onChange={(event) => {
-                setApiKey(event.target.value);
-              }}
-            />
+            <div className="relative">
+              <KeyRound
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+                strokeWidth={2}
+              />
+              <Input
+                id="ai-provider-key"
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                placeholder="sk-..."
+                className="pl-9"
+                onChange={(event) => {
+                  setApiKey(event.target.value);
+                }}
+              />
+            </div>
           </Field>
 
-          <label className="flex items-start gap-2 text-xs text-ink-muted">
+          {/* Default toggle */}
+          <label className="flex items-start gap-3 rounded-xl border border-line bg-surface-sunken/50 px-4 py-3">
             <input
               type="checkbox"
               checked={isDefault}
               onChange={(event) => {
                 setIsDefault(event.target.checked);
               }}
+              className="mt-0.5"
             />
-            <span>
-              Make this the default — every org with no override resolves to it. Clears the previous
-              default; only one row may hold it.
+            <span className="text-xs text-ink-muted">
+              <span className="font-medium text-ink">Make this the default</span> — every org with
+              no override resolves to it. Clears the previous default; only one row may hold it.
             </span>
           </label>
 
           {create.isError && <ErrorView error={create.error} title="Could not add the provider" />}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
             <Button onClick={onClose}>Cancel</Button>
             <Button
               variant="primary"
@@ -322,6 +428,10 @@ function CreateProviderDialog({
     </ModalRoot>
   );
 }
+
+/* -------------------------------------------------------------------------- *
+ * RotateKeyDialog — enhanced with warning banner
+ * -------------------------------------------------------------------------- */
 
 function RotateKeyDialog({
   guard,
@@ -349,30 +459,53 @@ function RotateKeyDialog({
 
   return (
     <ModalRoot open onOpenChange={onClose}>
-      <ModalContent className="p-4">
-        <ModalTitle>Rotate key — {target.label}</ModalTitle>
-        <ModalDescription>
-          Replaces the stored key immediately. Every completion this row serves after this saves
-          uses the new key; there is no grace period.
-        </ModalDescription>
+      <ModalContent className="p-0">
+        <div className="px-5 pt-5">
+          <ModalTitle>Rotate key — {target.label}</ModalTitle>
+          <ModalDescription>
+            Replaces the stored key immediately. Every completion this row serves after this saves
+            uses the new key; there is no grace period.
+          </ModalDescription>
+        </div>
 
-        <div className="mt-3 flex flex-col gap-3">
-          <Field label="New API key" htmlFor="ai-provider-rotate-key">
-            <Input
-              id="ai-provider-rotate-key"
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              placeholder="sk-..."
-              onChange={(event) => {
-                setApiKey(event.target.value);
-              }}
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {/* Warning banner */}
+          <div className="flex items-start gap-3 rounded-xl bg-amber-500/[0.06] px-4 py-3">
+            <Lock
+              aria-hidden="true"
+              className="size-4 shrink-0 text-amber-600"
+              strokeWidth={2}
             />
+            <p className="text-[11px] text-amber-700">
+              The current key will be permanently replaced. Any service using it will fail until
+              updated. This action cannot be undone.
+            </p>
+          </div>
+
+          <Field label="New API key" htmlFor="ai-provider-rotate-key">
+            <div className="relative">
+              <KeyRound
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+                strokeWidth={2}
+              />
+              <Input
+                id="ai-provider-rotate-key"
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                placeholder="sk-..."
+                className="pl-9"
+                onChange={(event) => {
+                  setApiKey(event.target.value);
+                }}
+              />
+            </div>
           </Field>
 
           {rotate.isError && <ErrorView error={rotate.error} title="Could not rotate the key" />}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
             <Button onClick={onClose}>Cancel</Button>
             <Button
               variant="primary"
@@ -381,7 +514,7 @@ function RotateKeyDialog({
                 rotate.mutate({ id: target.id, apiKey: apiKey.trim() });
               }}
             >
-              {rotate.isPending ? <Spinner /> : 'Rotate'}
+              {rotate.isPending ? <Spinner /> : 'Rotate key'}
             </Button>
           </div>
         </div>
@@ -389,6 +522,10 @@ function RotateKeyDialog({
     </ModalRoot>
   );
 }
+
+/* -------------------------------------------------------------------------- *
+ * OrgOverridePanel — enhanced org search and override card
+ * -------------------------------------------------------------------------- */
 
 /**
  * One org's override — set, cleared, or read back, none of which the
@@ -494,14 +631,22 @@ function OrgOverridePanel({
         <Field label="Organization" htmlFor="ai-override-org-search" hint="Search by name or slug.">
           {selectedOrg === null ? (
             <>
-              <Input
-                id="ai-override-org-search"
-                value={orgQuery}
-                placeholder="Search organizations…"
-                onChange={(event) => {
-                  setOrgQuery(event.target.value);
-                }}
-              />
+              <div className="relative">
+                <Users
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+                  strokeWidth={2}
+                />
+                <Input
+                  id="ai-override-org-search"
+                  value={orgQuery}
+                  placeholder="Search organizations…"
+                  className="pl-9"
+                  onChange={(event) => {
+                    setOrgQuery(event.target.value);
+                  }}
+                />
+              </div>
               {orgQuery.trim() !== '' && orgsList.data !== undefined && orgMatches.length === 0 && (
                 <p className="mt-1.5 text-xs text-ink-faint">
                   No organization matches &ldquo;{orgQuery.trim()}&rdquo;.
@@ -554,16 +699,26 @@ function OrgOverridePanel({
       </div>
 
       {selectedOrg !== null && (
-        <div className="mt-3 max-w-md space-y-3 rounded-xl border border-line bg-surface p-3">
+        <div className="mt-3 max-w-md space-y-3 rounded-xl border border-line bg-surface p-4">
           {override.isPending ? (
             <SkeletonRows rows={1} className="*:h-8" />
           ) : override.isError ? (
             <ErrorView error={override.error} title="Could not load this org's override" />
           ) : (
             <>
-              <p className="text-xs text-ink-muted">
-                Currently: <span className="font-medium text-ink">{currentLabel}</span>
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ink-muted">Currently:</span>
+                <span
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-[11px] font-medium',
+                    overriddenId !== null
+                      ? 'bg-accent/10 text-accent'
+                      : 'bg-surface-sunken text-ink-muted',
+                  )}
+                >
+                  {currentLabel}
+                </span>
+              </div>
 
               <div className="flex items-center gap-2">
                 <select
@@ -596,11 +751,14 @@ function OrgOverridePanel({
 
               {overriddenId !== null && (
                 <Button
+                  variant="ghost"
+                  size="sm"
                   disabled={clearOverride.isPending}
                   onClick={() => {
                     clearOverride.mutate({ orgId: selectedOrg.orgId });
                   }}
                 >
+                  <Trash2 className="size-3" strokeWidth={2} />
                   Clear override
                 </Button>
               )}
@@ -618,6 +776,10 @@ function OrgOverridePanel({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- *
+ * SpendReportPanel — enhanced with summary stats and polished expandable rows
+ * -------------------------------------------------------------------------- */
 
 type SpendRow = Awaited<ReturnType<typeof api.platformAdmin.ai.spendReport.query>>[number];
 
@@ -648,6 +810,12 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(spend.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const rows = spend.data ?? [];
+  const totalSpend = rows.reduce((sum, r) => sum + r.totalCents, 0);
+  const totalCalls = rows.reduce((sum, r) => sum + r.calls, 0);
+  const uniqueOrgs = new Set(rows.map((r) => r.orgId)).size;
+  const uniqueModels = new Set(rows.map((r) => r.model)).size;
+
   return (
     <div>
       <h3 className="text-sm font-semibold text-ink">Spend, last {sinceDays} days</h3>
@@ -655,6 +823,21 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
         Grouped by org and model. Expand a row for the token counts and rate the cost was computed
         from — never the prompt or response text itself, which this deployment does not store.
       </p>
+
+      {/* Spend summary stats */}
+      {!spend.isPending && !spend.isError && rows.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            icon={CircleDollarSign}
+            label="Total spend"
+            value={money(totalSpend, 'usd')}
+            accent
+          />
+          <StatCard icon={Layers} label="Total calls" value={totalCalls} />
+          <StatCard icon={Users} label="Orgs" value={uniqueOrgs} />
+          <StatCard icon={Bot} label="Models" value={uniqueModels} />
+        </div>
+      )}
 
       {spend.isPending && <SkeletonRows rows={3} className="mt-3 *:h-10" />}
       {spend.isError && <ErrorView error={spend.error} title="Could not load the spend report" />}
@@ -667,6 +850,15 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
             {spend.data.map((row) => {
               const rowKey = `${row.orgId}-${row.model}`;
               const open = expanded === rowKey;
+              const meta = providerMeta(
+                row.model.startsWith('claude')
+                  ? 'anthropic'
+                  : row.model.startsWith('gpt')
+                    ? 'openai'
+                    : row.model.startsWith('gemini')
+                      ? 'gemini'
+                      : '',
+              );
               return (
                 <div key={rowKey}>
                   <button
@@ -675,7 +867,7 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
                       setExpanded(open ? null : rowKey);
                     }}
                     aria-expanded={open}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-surface-hover/40"
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-xs transition-colors hover:bg-surface-hover/40"
                   >
                     {open ? (
                       <ChevronDown
@@ -692,11 +884,18 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
                       <span className="font-medium text-ink">{row.orgName}</span>
                       <span className="ml-1 text-ink-faint">({row.orgSlug})</span>
                     </span>
-                    <span className="shrink-0 text-ink-muted">{row.model}</span>
-                    <span className="shrink-0 tabular-nums text-ink-faint">
-                      {row.calls} {row.calls === 1 ? 'call' : 'calls'}
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                        meta.color,
+                      )}
+                    >
+                      {row.model}
                     </span>
-                    <span className="w-16 shrink-0 text-right tabular-nums text-ink">
+                    <span className="shrink-0 text-ink-muted">
+                      {String(row.calls)} {row.calls === 1 ? 'call' : 'calls'}
+                    </span>
+                    <span className="w-16 shrink-0 text-right font-medium tabular-nums text-ink">
                       {money(row.totalCents, 'usd')}
                     </span>
                   </button>
@@ -713,7 +912,7 @@ function SpendReportPanel({ onStepUp }: { readonly onStepUp: () => void }) {
 
 function SpendRowDetail({ row }: { readonly row: SpendRow }) {
   return (
-    <div className="border-t border-line/60 bg-surface-sunken/30 px-3 py-2.5 pl-9 text-[11px] text-ink-muted">
+    <div className="border-t border-line/60 bg-surface-sunken/30 px-4 py-3 pl-9 text-[11px] text-ink-muted">
       <p>
         <span className="tabular-nums text-ink">{row.totalInputTokens.toLocaleString()}</span> input
         tokens

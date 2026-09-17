@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "TaskFlow Base",
+  "display": "Rinavai Base",
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],

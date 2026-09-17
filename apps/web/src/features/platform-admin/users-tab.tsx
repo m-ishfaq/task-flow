@@ -1,21 +1,20 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { Search, Users } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { Badge, Button, Empty, SkeletonRows } from '../../components/primitives.js';
+import { Button, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { DetailRow, Pagination, StepUpGate, TableSearch, downloadCsv } from './shared.js';
+import { Pagination, StepUpGate, TableSearch, downloadCsv } from './shared.js';
+import { UserDetailPanel } from './user-detail-panel.js';
 
 /* -------------------------------------------------------------------------- *
  * Users
  * -------------------------------------------------------------------------- */
 
 export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
-  /** The drill-down panel's subject, or null when closed. */
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -50,6 +49,7 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                 'User id',
                 'Name',
                 'Email',
+                'Status',
                 'Email verified',
                 'Organizations',
                 'Created',
@@ -60,6 +60,7 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   user.userId,
                   user.name ?? '',
                   user.email,
+                  user.status,
                   user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
                   String(user.orgCount),
                   formatDate(user.createdAt),
@@ -77,58 +78,76 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
       {users.isError && <ErrorView error={users.error} title="Could not load users" />}
 
       {users.data !== undefined && (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+        <div className="mt-3 overflow-x-auto rounded-xl bg-surface-raised shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              <tr className="border-b border-line/50">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   User
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Email verified
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-right text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Orgs
                 </th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-ink-faint">
                   Created
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line/50">
+            <tbody className="divide-y divide-line/30">
               {(filteredUsers ?? []).map((user) => (
                 <tr
                   key={user.userId}
-                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/40"
                   onClick={() => {
                     setDetailUserId(user.userId);
                   }}
                 >
-                  <td className="px-3 py-2.5">
-                    <p className="max-w-full truncate font-medium text-ink transition-colors group-hover:text-accent">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
                       {user.name ?? user.email}
                     </p>
-                    {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
+                    {user.name !== null && (
+                      <p className="text-[11px] text-ink-muted">{user.email}</p>
+                    )}
                     <p className="font-mono text-[11px] text-ink-faint">
                       {user.userId.slice(0, 8)}
                     </p>
                   </td>
-                  <td className="px-3 py-2.5 text-ink-muted">
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        user.status === 'active'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : user.status === 'suspended'
+                            ? 'bg-red-500/10 text-red-400'
+                            : 'bg-zinc-500/10 text-zinc-400'
+                      }`}
+                    >
+                      {user.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {user.emailVerifiedAt === null ? (
                       <span className="text-ink-faint">no</span>
                     ) : (
                       <span className="text-success">{formatDate(user.emailVerifiedAt)}</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-muted">{user.orgCount}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
+                  <td className="px-4 py-3 text-right text-ink-muted">{user.orgCount}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-ink-muted">
                     {formatDate(user.createdAt)}
                   </td>
                 </tr>
               ))}
               {(filteredUsers ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-12 text-center">
+                  <td colSpan={5} className="px-4 py-16 text-center">
                     {search.trim() !== '' ? (
                       <div className="flex flex-col items-center gap-2">
                         <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
@@ -168,7 +187,7 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
       </div>
 
       {detailUserId !== null && (
-        <UserDetailDialog
+        <UserDetailPanel
           userId={detailUserId}
           onClose={() => {
             setDetailUserId(null);
@@ -176,88 +195,5 @@ export function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
         />
       )}
     </section>
-  );
-}
-
-function UserDetailDialog({
-  userId,
-  onClose,
-}: {
-  readonly userId: string;
-  readonly onClose: () => void;
-}) {
-  const detail = useQuery({
-    queryKey: keys.platformUserDetail(userId),
-    queryFn: async () => wire(await api.platformAdmin.users.detail.query({ userId })),
-  });
-
-  const data = detail.data;
-
-  return (
-    <ModalRoot open onOpenChange={onClose}>
-      <ModalContent className="max-h-[85vh] overflow-y-auto p-5">
-        <ModalTitle>{data?.name ?? data?.email ?? 'Account'}</ModalTitle>
-        <ModalDescription>
-          {data === undefined ? 'Loading…' : `${data.email} · joined ${formatDate(data.createdAt)}`}
-        </ModalDescription>
-
-        {detail.isPending && <SkeletonRows rows={4} className="mt-4 *:h-10" />}
-        {detail.isError && <ErrorView error={detail.error} title="Could not load this account" />}
-
-        {data !== undefined && (
-          <div className="mt-4 flex flex-col gap-5">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <DetailRow label="Account status" value={data.status} />
-              <DetailRow
-                label="Email verified"
-                value={data.emailVerifiedAt === null ? 'no' : formatDate(data.emailVerifiedAt)}
-              />
-              <DetailRow label="User id" value={data.userId} mono />
-            </dl>
-
-            <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">
-                Organizations ({data.memberships.length})
-              </h3>
-
-              {data.memberships.length === 0 ? (
-                <Empty
-                  icon={<Users size={20} />}
-                  title="No organizations"
-                  description="This account belongs to no organization. They can sign in and will land on the org picker with nothing to choose."
-                />
-              ) : (
-                <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-                  {data.memberships.map((membership) => (
-                    <li
-                      key={membership.orgId}
-                      className="px-3 py-2.5 text-xs transition-colors hover:bg-surface-hover/30"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate font-medium text-ink">
-                          {membership.orgName}
-                        </span>
-                        <Badge>{membership.role}</Badge>
-                        {membership.status !== 'active' && (
-                          <span className="text-[11px] text-ink-faint">{membership.status}</span>
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-[11px] text-ink-faint">
-                        {membership.orgSlug} · org {membership.orgStatus} ·{' '}
-                        {membership.orgBillingStatus} · since {formatDate(membership.joinedAt)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <div className="flex justify-end">
-              <Button onClick={onClose}>Close</Button>
-            </div>
-          </div>
-        )}
-      </ModalContent>
-    </ModalRoot>
   );
 }

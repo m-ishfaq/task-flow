@@ -85,8 +85,8 @@ export const PALETTE_TOKENS: Record<
   }
 > = {
   default: {
-    base: { oklch: { l: 60, c: 0.14, h: 88 }, hex: '#a37900' },
-    hover: { oklch: { l: 55, c: 0.14, h: 88 }, hex: '#936a00' },
+    base: { oklch: { l: 60, c: 0.14, h: 177 }, hex: '#009a7f' },
+    hover: { oklch: { l: 55, c: 0.14, h: 177 }, hex: '#008b70' },
     ink: INK,
   },
   violet: {
@@ -115,8 +115,8 @@ export const PALETTE_TOKENS: Record<
   },
   /** The one deliberate exception to "same L/C, different H" — low chroma, not a hue shift. */
   slate: {
-    base: { oklch: { l: 60, c: 0.02, h: 88 }, hex: '#858073' },
-    hover: { oklch: { l: 55, c: 0.02, h: 88 }, hex: '#767165' },
+    base: { oklch: { l: 60, c: 0.02, h: 177 }, hex: '#748480' },
+    hover: { oklch: { l: 55, c: 0.02, h: 177 }, hex: '#667671' },
     ink: INK,
   },
 };
@@ -130,7 +130,68 @@ export const PALETTES: Record<PaletteId, PaletteColors> = Object.fromEntries(
 
 /** Same fallback shape as `branding-palettes.ts`'s own `paletteColorsOf`: an unrecognized id resolves to `default`. */
 export function paletteColorsOf(paletteId: string): PaletteColors {
-  return PALETTES[(paletteId in PALETTES ? paletteId : 'default') as PaletteId];
+  if (paletteId in PALETTES) return PALETTES[paletteId as PaletteId];
+  const match = /^custom:(\d{1,3})$/.exec(paletteId);
+  if (match !== null) {
+    const hue = Number(match[1]);
+    if (hue >= 0 && hue <= 360) return computeCustomPalette(hue);
+  }
+  return PALETTES.default;
+}
+
+/**
+ * Compute an accent palette from an arbitrary hue angle (0–360), using the
+ * same shared L/C constants as the preset palettes. Returns hex values
+ * for React Native's `StyleSheet.create()`.
+ */
+export function computeCustomPalette(hue: number): PaletteColors {
+  const base = oklchToHex(60, 0.14, hue);
+  const hover = oklchToHex(55, 0.14, hue);
+  return { base, hover, ink: INK.hex };
+}
+
+/**
+ * Pure JS OKLCH → sRGB hex conversion. The math follows the CSS Color 4
+ * spec pipeline: OKLCH → OKLab → XYZ D65 → linear sRGB → gamma-corrected
+ * sRGB → hex. No DOM, no OffscreenCanvas, no external dependencies —
+ * works in React Native, SSR, and Node alike.
+ */
+function oklchToHex(l: number, c: number, h: number): string {
+  const hueRad = (h * Math.PI) / 180;
+  const a = c * Math.cos(hueRad);
+  const b = c * Math.sin(hueRad);
+
+  /* OKLab → XYZ D65 (D65 white point) */
+  const l_ = l / 100;
+  const l1 = l_ + 0.3963377774 * a + 0.2158037573 * b;
+  const m1 = l_ - 0.1055613458 * a - 0.0638541728 * b;
+  const s1 = l_ - 0.0894841775 * a - 1.291485548 * b;
+
+  const l2 = l1 * l1 * l1;
+  const m2 = m1 * m1 * m1;
+  const s2 = s1 * s1 * s1;
+
+  const x = 1.2270138511 * l2 - 0.5577999807 * m2 + 0.2812561490 * s2;
+  const y = -0.0405804252 * l2 + 1.1122568696 * m2 - 0.0716766788 * s2;
+  const z = -0.0763812845 * l2 - 0.4214819784 * m2 + 1.5861632204 * s2;
+
+  /* XYZ → linear sRGB (D65) */
+  const linR = 3.2409699419 * x - 1.5373831776 * y - 0.4986107603 * z;
+  const linG = -0.9692436363 * x + 1.8759675015 * y + 0.0415550574 * z;
+  const linB = 0.0556300797 * x - 0.2039769606 * y + 1.0569715142 * z;
+
+  /* Gamma correction (sRGB transfer function) */
+  const gamma = (v: number): number => {
+    const abs = Math.abs(v);
+    return abs > 0.0031308 ? Math.sign(v) * (1.055 * abs ** (1 / 2.4) - 0.055) : 12.92 * v;
+  };
+
+  const toHex = (v: number): string => {
+    const clamped = Math.max(0, Math.min(255, Math.round(gamma(v) * 255)));
+    return clamped.toString(16).padStart(2, '0');
+  };
+
+  return `#${toHex(linR)}${toHex(linG)}${toHex(linB)}`;
 }
 
 export { PALETTE_IDS, type PaletteId };

@@ -25,7 +25,7 @@ import type {
  *
  *   - **`expectedOrigin`** — the anti-phishing property. The browser puts the
  *     origin it was on into the signed client data, so a credential registered
- *     for `taskflow.io` cannot be asserted to `taskf1ow.io`. Take the expected
+ *     for `rinavai.io` cannot be asserted to `r1navai.io`. Take the expected
  *     origin from the request and that property is gone; it must come from
  *     configuration, which is why `RelyingParty` is built once at boot.
  *   - **`expectedRPID`** — same idea, one level down. Without it a credential

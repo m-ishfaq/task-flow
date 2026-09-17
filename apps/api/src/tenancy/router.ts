@@ -254,7 +254,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
 
     /**
      * Email invitations (migration 0107) — the door `members.add` was never
-     * built to cover: an address with no TaskFlow account yet. See
+     * built to cover: an address with no Rinavai account yet. See
      * `invitation.service.ts`'s own header for why this is a second flow
      * rather than a change to `add`'s existing, instant, known-account-only
      * contract.

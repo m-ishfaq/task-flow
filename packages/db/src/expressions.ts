@@ -136,6 +136,15 @@ export function minText(column: Column): SQL<string | null> {
 }
 
 /**
+ * `MIN()` over a UUID column — Postgres has no `min(uuid)`, so this casts to
+ * text first. Used where a deterministic pick from a joined group is needed
+ * (e.g. the owner's user id from a LEFT JOIN restricted to role = 'owner').
+ */
+export function minUuid(column: Column): SQL<string | null> {
+  return sql<string | null>`MIN(${column}::text)`;
+}
+
+/**
  * `COALESCE(preferred, fallback)` over two COLUMNS.
  *
  * Distinct from `coalesce` above, which takes a literal fallback for the

@@ -231,6 +231,7 @@ export {
   sumColumn,
   countRows,
   minText,
+  minUuid,
   coalesceColumns,
   minCoalesced,
   arrayLength,

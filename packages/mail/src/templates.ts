@@ -37,10 +37,8 @@ export interface LinkContext {
   readonly webOrigin: string;
   readonly token: string;
   /**
-   * The deployment's branding (migration 0073). Optional and defaulted to
-   * `'TaskFlow'` in `textDocument`/`htmlDocument` — see those functions'
-   * own comments for why only the shared footer is branded in v1, not
-   * every subject line and body sentence in this file.
+   * The deployment's branding (migration 0073). Defaults to `'Rinavai'`
+   * when not provided.
    */
   readonly productName?: string;
 }
@@ -77,16 +75,12 @@ function link(context: LinkContext, path: string): string {
 /**
  * Wraps a body in the shared plain-text signature.
  *
- * `productName` defaults to `'TaskFlow'` so every existing call site that
+ * `productName` defaults to `'Rinavai'` so every existing call site that
  * does not pass one renders byte-identical to before platform branding
- * existed. v1 scope is deliberately narrow: only this shared footer reads
- * branding. The 11 render functions below still hardcode "TaskFlow" in
- * their own subject lines and body copy — threading it through all of
- * those individually is real, bounded work with much lower value than the
- * line every single email carries regardless of which one it is, so it's
- * an explicit fast-follow rather than a silent partial-coverage ship.
+ * existed. Every subject line and body sentence below reads `productName`
+ * from the caller's context.
  */
-function textDocument(lines: readonly string[], productName = 'TaskFlow'): string {
+function textDocument(lines: readonly string[], productName = 'Rinavai'): string {
   return [
     ...lines,
     '',
@@ -125,7 +119,7 @@ const FLOW_MARK_SVG = `data:image/svg+xml,${encodeURIComponent(
     `</svg>`,
 )}`;
 
-function htmlDocument(bodyHtml: string, productName = 'TaskFlow'): string {
+function htmlDocument(bodyHtml: string, productName = 'Rinavai'): string {
   return [
     '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:520px">',
     /* Logo header — the flow-mark plus the product name, matching the
@@ -158,29 +152,29 @@ function button(href: string, label: string): string {
 export function renderVerifyEmail(context: LinkContext & { expiresInHours: number }): RenderedMail {
   const href = link(context, '/verify-email');
   const hours = String(context.expiresInHours);
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
-    subject: 'Confirm your TaskFlow email address',
+    subject: `Confirm your ${productName} email address`,
     text: textDocument(
       [
-        'Confirm your email address to finish setting up your TaskFlow account:',
+        `Confirm your email address to finish setting up your ${productName} account:`,
         '',
         href,
         '',
         `This link works once and expires in ${hours} hours.`,
         '',
-        'If you did not create a TaskFlow account, ignore this message — nothing',
+        `If you did not create a ${productName} account, ignore this message — nothing`,
         'will happen until the link is used.',
       ],
       productName,
     ),
     html: htmlDocument(
       [
-        '<p>Confirm your email address to finish setting up your TaskFlow account.</p>',
+        `<p>Confirm your email address to finish setting up your ${escapeHtml(productName)} account.</p>`,
         button(href, 'Confirm email address'),
         `<p style="font-size:13px;color:#666">This link works once and expires in ${hours} hours.</p>`,
-        '<p style="font-size:13px;color:#666">If you did not create a TaskFlow account, ignore this message — nothing will happen until the link is used.</p>',
+        `<p style="font-size:13px;color:#666">If you did not create a ${escapeHtml(productName)} account, ignore this message — nothing will happen until the link is used.</p>`,
       ].join('\n'),
       productName,
     ),
@@ -192,13 +186,13 @@ export function renderPasswordReset(
 ): RenderedMail {
   const href = link(context, '/reset-password');
   const minutes = String(context.expiresInMinutes);
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
-    subject: 'Reset your TaskFlow password',
+    subject: `Reset your ${productName} password`,
     text: textDocument(
       [
-        'Someone asked to reset the password for this TaskFlow account.',
+        `Someone asked to reset the password for this ${productName} account.`,
         '',
         href,
         '',
@@ -213,7 +207,7 @@ export function renderPasswordReset(
     ),
     html: htmlDocument(
       [
-        '<p>Someone asked to reset the password for this TaskFlow account.</p>',
+        `<p>Someone asked to reset the password for this ${escapeHtml(productName)} account.</p>`,
         button(href, 'Reset password'),
         `<p style="font-size:13px;color:#666">This link works once and expires in ${minutes} minutes. Using it will also sign you out everywhere.</p>`,
         '<p style="font-size:13px;color:#666">If this was not you, you do not need to do anything — your password has not changed. If it keeps happening, change your password.</p>',
@@ -270,7 +264,7 @@ export function renderNotificationEmail(
 ): RenderedMail {
   const origin = context.webOrigin.replace(/\/+$/, '');
   const href = `${origin}${context.path}`;
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
     subject: context.title,
@@ -292,7 +286,7 @@ export function renderNotificationEmail(
             ? ''
             : `<br><span style="color:#444">${escapeHtml(context.excerpt)}</span>`
         }</p>`,
-        button(href, 'Open in TaskFlow'),
+        button(href, `Open in ${productName}`),
         '<p style="font-size:13px;color:#666">Turn these off or change how you get them in Notification settings.</p>',
       ].join('\n'),
       productName,
@@ -327,9 +321,9 @@ export function renderNotificationDigest(
   },
 ): RenderedMail {
   const origin = context.webOrigin.replace(/\/+$/, '');
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
-  const textLines: string[] = ['You have activity waiting in TaskFlow:', ''];
+  const textLines: string[] = [`You have activity waiting in ${productName}:`, ''];
   context.items.forEach((item, index) => {
     textLines.push(`${String(index + 1)}. ${item.title}`);
     if (item.excerpt !== null) textLines.push(`   "${item.excerpt}"`);
@@ -345,7 +339,7 @@ export function renderNotificationDigest(
         (item.excerpt === null
           ? ''
           : `<br><span style="color:#444">${escapeHtml(item.excerpt)}</span>`) +
-        `<br><a href="${escapeHtml(`${origin}${item.path}`)}" style="color:#1a1a1a">Open in TaskFlow</a>` +
+        `<br><a href="${escapeHtml(`${origin}${item.path}`)}" style="color:#1a1a1a">Open in ${escapeHtml(productName)}</a>` +
         `</li>`,
     )
     .join('');
@@ -354,11 +348,11 @@ export function renderNotificationDigest(
     context.items.length === 1 ? '1 update' : `${String(context.items.length)} updates`;
 
   return {
-    subject: `${countLabel} for you on TaskFlow`,
+    subject: `${countLabel} for you on ${productName}`,
     text: textDocument(textLines, productName),
     html: htmlDocument(
       [
-        `<p><strong>${escapeHtml(countLabel)} for you on TaskFlow</strong></p>`,
+        `<p><strong>${escapeHtml(countLabel)} for you on ${escapeHtml(productName)}</strong></p>`,
         `<ol style="padding-left:20px;margin:12px 0">${itemsHtml}</ol>`,
         '<p style="font-size:13px;color:#666">Turn these off or change how you get them in Notification settings.</p>',
       ].join('\n'),
@@ -390,13 +384,13 @@ export function renderImpossibleTravel(context: {
 }): RenderedMail {
   const previous = escapeHtml(context.previousCountry);
   const next = escapeHtml(context.newCountry);
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
     subject: 'New sign-in from an unusual location',
     text: textDocument(
       [
-        `Your TaskFlow account was just signed in to from ${context.newCountry}, shortly`,
+        `Your ${productName} account was just signed in to from ${context.newCountry}, shortly`,
         `after a sign-in from ${context.previousCountry} — too soon for the same person to`,
         'have traveled between them.',
         '',
@@ -404,15 +398,15 @@ export function renderImpossibleTravel(context: {
         '',
         'If it was not you, change your password now and sign out your other',
         'sessions from Settings — do not use a link from this message, go to',
-        'TaskFlow the way you normally do.',
+        `${productName} the way you normally do.`,
       ],
       productName,
     ),
     html: htmlDocument(
       [
-        `<p>Your TaskFlow account was just signed in to from ${next}, shortly after a sign-in from ${previous} — too soon for the same person to have traveled between them.</p>`,
+        `<p>Your ${escapeHtml(productName)} account was just signed in to from ${next}, shortly after a sign-in from ${previous} — too soon for the same person to have traveled between them.</p>`,
         '<p>If this was you (a VPN, a trip, a new device), no action is needed.</p>',
-        '<p style="font-size:13px;color:#666">If it was not you, change your password now and sign out your other sessions from Settings — do not use a link from this message, go to TaskFlow the way you normally do.</p>',
+        `<p style="font-size:13px;color:#666">If it was not you, change your password now and sign out your other sessions from Settings — do not use a link from this message, go to ${escapeHtml(productName)} the way you normally do.</p>`,
       ].join('\n'),
       productName,
     ),
@@ -433,13 +427,13 @@ export function renderOrgSuspended(context: {
   readonly productName?: string;
 }): RenderedMail {
   const org = escapeHtml(context.orgName);
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
     subject: `${context.orgName} has been suspended`,
     text: textDocument(
       [
-        `${context.orgName} has been suspended by a TaskFlow platform operator.`,
+        `${context.orgName} has been suspended by a ${productName} platform operator.`,
         '',
         'Nobody can sign in to it or access its data while it is suspended. This',
         'does not delete anything — the organization can be reactivated.',
@@ -450,7 +444,7 @@ export function renderOrgSuspended(context: {
     ),
     html: htmlDocument(
       [
-        `<p>${org} has been suspended by a TaskFlow platform operator.</p>`,
+        `<p>${org} has been suspended by a ${escapeHtml(productName)} platform operator.</p>`,
         '<p>Nobody can sign in to it or access its data while it is suspended. This does not delete anything — the organization can be reactivated.</p>',
         '<p style="font-size:13px;color:#666">If you believe this is a mistake, contact support.</p>',
       ].join('\n'),
@@ -464,13 +458,13 @@ export function renderOrgDeleted(context: {
   readonly productName?: string;
 }): RenderedMail {
   const org = escapeHtml(context.orgName);
-  const productName = context.productName ?? 'TaskFlow';
+  const productName = context.productName ?? 'Rinavai';
 
   return {
     subject: `${context.orgName} has been deleted`,
     text: textDocument(
       [
-        `${context.orgName} has been permanently deleted by a TaskFlow platform`,
+        `${context.orgName} has been permanently deleted by a ${productName} platform`,
         'operator. Every project, message, document and file it contained is',
         'gone and cannot be recovered.',
         '',
@@ -480,7 +474,7 @@ export function renderOrgDeleted(context: {
     ),
     html: htmlDocument(
       [
-        `<p>${org} has been permanently deleted by a TaskFlow platform operator. Every project, message, document and file it contained is gone and cannot be recovered.</p>`,
+        `<p>${org} has been permanently deleted by a ${escapeHtml(productName)} platform operator. Every project, message, document and file it contained is gone and cannot be recovered.</p>`,
         '<p style="font-size:13px;color:#666">If you believe this is a mistake, contact support immediately.</p>',
       ].join('\n'),
       productName,
@@ -498,28 +492,28 @@ export function renderOrgDeleted(context: {
  * reach if it was an attacker rather than the real owner.
  */
 export function renderPasswordChanged(context?: { readonly productName?: string }): RenderedMail {
-  const productName = context?.productName ?? 'TaskFlow';
+  const productName = context?.productName ?? 'Rinavai';
 
   return {
-    subject: 'Your TaskFlow password was changed',
+    subject: `Your ${productName} password was changed`,
     text: textDocument(
       [
-        'Your TaskFlow password was just changed, and every other session was',
+        `Your ${productName} password was just changed, and every other session was`,
         'signed out.',
         '',
         'If this was you, no action is needed.',
         '',
         'If it was not you, someone else may have access to your account. Go to',
-        'TaskFlow the way you normally do and use "forgot password" again to',
+        `${productName} the way you normally do and use "forgot password" again to`,
         'regain control — do not use a link from this message.',
       ],
       productName,
     ),
     html: htmlDocument(
       [
-        '<p>Your TaskFlow password was just changed, and every other session was signed out.</p>',
+        `<p>Your ${escapeHtml(productName)} password was just changed, and every other session was signed out.</p>`,
         '<p>If this was you, no action is needed.</p>',
-        '<p style="font-size:13px;color:#666">If it was not you, someone else may have access to your account. Go to TaskFlow the way you normally do and use "forgot password" again to regain control — do not use a link from this message.</p>',
+        `<p style="font-size:13px;color:#666">If it was not you, someone else may have access to your account. Go to ${escapeHtml(productName)} the way you normally do and use "forgot password" again to regain control — do not use a link from this message.</p>`,
       ].join('\n'),
       productName,
     ),
@@ -528,27 +522,27 @@ export function renderPasswordChanged(context?: { readonly productName?: string 
 
 /** Sent when TOTP two-factor is enabled on an account. */
 export function renderTotpEnabled(context?: { readonly productName?: string }): RenderedMail {
-  const productName = context?.productName ?? 'TaskFlow';
+  const productName = context?.productName ?? 'Rinavai';
 
   return {
-    subject: 'Two-factor authentication was enabled on your TaskFlow account',
+    subject: `Two-factor authentication was enabled on your ${productName} account`,
     text: textDocument(
       [
         'Two-factor authentication (an authenticator app) was just enabled on',
-        'your TaskFlow account.',
+        `your ${productName} account.`,
         '',
         'If this was you, no action is needed.',
         '',
-        'If it was not you, go to TaskFlow the way you normally do and change',
+        `If it was not you, go to ${productName} the way you normally do and change`,
         'your password — do not use a link from this message.',
       ],
       productName,
     ),
     html: htmlDocument(
       [
-        '<p>Two-factor authentication (an authenticator app) was just enabled on your TaskFlow account.</p>',
+        `<p>Two-factor authentication (an authenticator app) was just enabled on your ${escapeHtml(productName)} account.</p>`,
         '<p>If this was you, no action is needed.</p>',
-        '<p style="font-size:13px;color:#666">If it was not you, go to TaskFlow the way you normally do and change your password — do not use a link from this message.</p>',
+        `<p style="font-size:13px;color:#666">If it was not you, go to ${escapeHtml(productName)} the way you normally do and change your password — do not use a link from this message.</p>`,
       ].join('\n'),
       productName,
     ),
@@ -557,17 +551,17 @@ export function renderTotpEnabled(context?: { readonly productName?: string }): 
 
 /** Sent when a new passkey is registered on an account. */
 export function renderPasskeyRegistered(context?: { readonly productName?: string }): RenderedMail {
-  const productName = context?.productName ?? 'TaskFlow';
+  const productName = context?.productName ?? 'Rinavai';
 
   return {
-    subject: 'A new passkey was added to your TaskFlow account',
+    subject: `A new passkey was added to your ${productName} account`,
     text: textDocument(
       [
-        'A new passkey was just registered on your TaskFlow account.',
+        `A new passkey was just registered on your ${productName} account.`,
         '',
         'If this was you, no action is needed.',
         '',
-        'If it was not you, go to TaskFlow the way you normally do, remove the',
+        `If it was not you, go to ${productName} the way you normally do, remove the`,
         'passkey you do not recognize, and change your password — do not use a',
         'link from this message.',
       ],
@@ -575,9 +569,9 @@ export function renderPasskeyRegistered(context?: { readonly productName?: strin
     ),
     html: htmlDocument(
       [
-        '<p>A new passkey was just registered on your TaskFlow account.</p>',
+        `<p>A new passkey was just registered on your ${escapeHtml(productName)} account.</p>`,
         '<p>If this was you, no action is needed.</p>',
-        '<p style="font-size:13px;color:#666">If it was not you, go to TaskFlow the way you normally do, remove the passkey you do not recognize, and change your password — do not use a link from this message.</p>',
+        `<p style="font-size:13px;color:#666">If it was not you, go to ${escapeHtml(productName)} the way you normally do, remove the passkey you do not recognize, and change your password — do not use a link from this message.</p>`,
       ].join('\n'),
       productName,
     ),
@@ -587,19 +581,19 @@ export function renderPasskeyRegistered(context?: { readonly productName?: strin
 export function renderDuplicateRegistration(context?: {
   readonly productName?: string;
 }): RenderedMail {
-  const productName = context?.productName ?? 'TaskFlow';
+  const productName = context?.productName ?? 'Rinavai';
 
   return {
     subject: 'Someone tried to sign up with your email address',
     text: textDocument(
       [
-        'Someone just tried to create a TaskFlow account with this email address,',
+        `Someone just tried to create a ${productName} account with this email address,`,
         'but an account already exists.',
         '',
         'No new account was created and nothing about yours has changed.',
         '',
         'If it was you, sign in as usual, or use "forgot password" if you cannot.',
-        'We have deliberately not put a link in this message — go to TaskFlow the',
+        `We have deliberately not put a link in this message — go to ${productName} the`,
         'way you normally do.',
         '',
         'If it was not you, no action is needed.',
@@ -608,9 +602,9 @@ export function renderDuplicateRegistration(context?: {
     ),
     html: htmlDocument(
       [
-        '<p>Someone just tried to create a TaskFlow account with this email address, but an account already exists.</p>',
+        `<p>Someone just tried to create a ${escapeHtml(productName)} account with this email address, but an account already exists.</p>`,
         '<p>No new account was created and nothing about yours has changed.</p>',
-        '<p>If it was you, sign in as usual, or use “forgot password” if you cannot. We have deliberately not put a link in this message — go to TaskFlow the way you normally do.</p>',
+        '<p>If it was you, sign in as usual, or use “forgot password” if you cannot. We have deliberately not put a link in this message — go to  the way you normally do.</p>',
         '<p style="font-size:13px;color:#666">If it was not you, no action is needed.</p>',
       ].join('\n'),
       productName,

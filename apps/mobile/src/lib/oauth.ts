@@ -27,8 +27,8 @@ export const OAUTH_PROVIDER_LABEL: Readonly<Record<OAuthProvider, string>> = {
   github: 'GitHub',
 };
 
-/** The custom-scheme redirect `app.config.ts` registers (`scheme: 'taskflow'`). */
-export const OAUTH_REDIRECT_URL = 'taskflow://oauth-callback';
+/** The custom-scheme redirect `app.config.ts` registers (`scheme: 'rinavai'`). */
+export const OAUTH_REDIRECT_URL = 'rinavai://oauth-callback';
 
 /**
  * Extracts `code`/`state` from the system-browser session's redirect URL.

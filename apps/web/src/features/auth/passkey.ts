@@ -53,7 +53,7 @@ export type PasskeyCeremonyReason = 'cancelled' | 'already_registered' | 'unsupp
  */
 export function passkeyCeremonyMessage(
   reason: PasskeyCeremonyReason,
-  productName = 'TaskFlow',
+  productName = 'Rinavai',
 ): string | null {
   switch (reason) {
     case 'cancelled':

@@ -68,9 +68,9 @@ export const colors = {
   line: { oklch: { l: 28, c: 0.013, h: 55 }, hex: '#2e2723' },
   lineStrong: { oklch: { l: 35, c: 0.015, h: 55 }, hex: '#413933' },
 
-  accent: { oklch: { l: 60, c: 0.14, h: 88 }, hex: '#a37900' },
-  accentInk: { oklch: { l: 98, c: 0.01, h: 88 }, hex: '#fbf8f1' },
-  accentHover: { oklch: { l: 55, c: 0.14, h: 88 }, hex: '#936a00' },
+  accent: { oklch: { l: 60, c: 0.14, h: 177 }, hex: '#009a7f' },
+  accentInk: { oklch: { l: 98, c: 0.01, h: 177 }, hex: '#f2fbf8' },
+  accentHover: { oklch: { l: 55, c: 0.14, h: 177 }, hex: '#008b70' },
 
   danger: { oklch: { l: 68, c: 0.19, h: 22 }, hex: '#f75c61' },
   dangerInk: { oklch: { l: 98, c: 0.01, h: 22 }, hex: '#fff6f5' },

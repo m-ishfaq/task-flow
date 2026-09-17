@@ -1,6 +1,7 @@
 import { and, eq, inArray, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import type { ChannelId, MessageId, OrgId, RequestId, UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 import { messageUnfurled } from './events.js';
 import { extractUrls, fetchUnfurl } from './unfurl.js';
 import { enforceOnChannel, loadChannel, orgOf, type ChatActor } from './shared.js';
@@ -70,7 +71,8 @@ export async function unfurlMessage(
      cannot open an unbounded number of outbound connections. `allSettled`
      rather than `all`: one refused link must not discard the previews that
      succeeded. */
-  const results = await Promise.allSettled(urls.map((url) => fetchUnfurl(url)));
+  const { productName } = await getResolvedBranding();
+  const results = await Promise.allSettled(urls.map((url) => fetchUnfurl(url, productName)));
 
   const rows = results.map((result, index) => {
     const url = urls[index] ?? '';

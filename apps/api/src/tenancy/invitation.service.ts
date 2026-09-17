@@ -25,7 +25,7 @@ import type { Actor } from './org.service.js';
 /**
  * Email invitations (migration 0107) — the slice `member.service.ts`'s
  * `addMember` doc comment named and deferred: inviting an address with no
- * TaskFlow account yet.
+ * Rinavai account yet.
  *
  * ## Why this is a SEPARATE flow from `addMember`, not a replacement for it
  *
@@ -277,7 +277,7 @@ export interface InvitationPreview {
  * required, the token itself is the proof, the identical trust model
  * `verifyEmail`/`resetPassword` already use for a mailed, single-use token.
  *
- * Exists for exactly one onboarding gap: someone with no TaskFlow account
+ * Exists for exactly one onboarding gap: someone with no Rinavai account
  * yet, landing on an invite link, used to be bounced straight to a bare
  * `/login` with nothing to go on — no org name, no hint about which address
  * to sign up with. `AcceptInvitePage`/`LoginPage`/`RegisterPage` call this to

@@ -78,7 +78,7 @@ import { orgOf, userOf, type WorkActor } from './shared.js';
  * things: add someone as a Guest-role member of the ORG first (via the
  * generic Members section — itself needing an existing account or a
  * separate mailed invitation), then come back HERE to grant project access.
- * Someone with no TaskFlow account at all had no path through this from the
+ * Someone with no Rinavai account at all had no path through this from the
  * project side. Found from a direct report, not assumed — the fix is one
  * email box: `inviteGuestByEmail` decides, server-side, which of the two
  * real cases applies —

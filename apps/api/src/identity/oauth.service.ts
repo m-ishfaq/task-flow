@@ -11,6 +11,7 @@ import {
   type OAuthStateClaims,
 } from '@taskflow/security';
 import type { SessionChannel } from '@taskflow/db';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 import * as repo from './repository.js';
 import { countCredentials } from './passkey.repository.js';
 import * as identityEvents from './events.js';
@@ -93,6 +94,8 @@ export interface OAuthDeps {
   readonly fetchImpl?: typeof fetch;
   /** Injectable so tests verify a real, locally-signed token instead of Google's real JWKS. */
   readonly verifyGoogleIdToken?: typeof verifyGoogleIdTokenReal;
+  /** Product name for the GitHub User-Agent header. Defaults to 'Rinavai'. */
+  readonly productName?: string | undefined;
 }
 
 const clock = (deps: OAuthDeps): Date => (deps.identity.now ?? (() => new Date()))();
@@ -341,7 +344,7 @@ async function resolveGoogleIdentity(
   return { subject, email };
 }
 
-const GITHUB_HEADERS = { accept: 'application/vnd.github+json', 'user-agent': 'TaskFlow' };
+const GITHUB_HEADERS = { accept: 'application/vnd.github+json' };
 
 async function resolveGithubIdentity(
   deps: OAuthDeps,
@@ -378,7 +381,11 @@ async function resolveGithubIdentity(
     throw errors.validation({ code: 'GitHub did not return an access token.' });
   }
 
-  const authHeaders = { ...GITHUB_HEADERS, authorization: `Bearer ${tokenBody.access_token}` };
+  const authHeaders = {
+    ...GITHUB_HEADERS,
+    authorization: `Bearer ${tokenBody.access_token}`,
+    'user-agent': deps.productName ?? DEFAULT_PRODUCT_NAME,
+  };
 
   const userResponse = await fetchFn('https://api.github.com/user', { headers: authHeaders });
   if (!userResponse.ok) {

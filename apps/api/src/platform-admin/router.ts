@@ -3,6 +3,8 @@ import type { EventBus } from '@taskflow/events';
 import { OrgIdSchema, PALETTE_IDS, UserIdSchema, UuidSchema } from '@taskflow/contracts';
 import { isPlatformOperator } from './operator.js';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
+import { isDatabaseHealthy } from '@taskflow/db';
+import { ACCESS_TOKEN_TTL_SECONDS } from '@taskflow/security';
 import { platformRoute, publicRoute, router, selfRoute } from '../trpc/builder.js';
 import type { SubaccountDeps } from '../telephony/subaccount.service.js';
 import type { BillingMailDeps } from '../billing/billing-mail.js';
@@ -18,9 +20,11 @@ import * as audience from './broadcast-audience.service.js';
 import * as broadcast from './broadcast.service.js';
 import type { PendingEmailSend } from '../platform/notification.projection.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
+import * as errorHealth from './error-health.js';
 import type { KeyProvider, PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import type { ScannerConfig } from '@taskflow/security';
 import * as aiProviders from '../ai/provider-config.service.js';
+import * as systemSettings from './system-settings.service.js';
 
 /**
  * Platform-admin routes (Phase 12 Wave 1, ai/phase-12-admin.md §3.6).
@@ -186,6 +190,7 @@ const OrgRow = z
       .nullable(),
     ownerEmail: z.string().nullable(),
     ownerName: z.string().nullable(),
+    ownerUserId: z.string().nullable(),
   })
   .strict();
 
@@ -397,14 +402,22 @@ const PlanRow = z
   })
   .strict();
 
-const PaletteIdSchema = z.enum(PALETTE_IDS);
+/**
+ * Accepts any of the six preset palette ids, or `custom:<hue>` where hue
+ * is 0–360. The preset check uses the closed `PALETTE_IDS` list; the custom
+ * check uses a regex to prevent arbitrary strings from reaching the DB.
+ */
+const PaletteIdSchema = z.string().refine(
+  (v) => (PALETTE_IDS as readonly string[]).includes(v) || /^custom:\d{1,3}$/.test(v),
+  { message: 'Must be a preset palette id or custom:<hue> (0–360).' },
+);
 
 const BrandingRow = z
   .object({
     productName: z.string(),
     logoKey: z.string().nullable(),
     faviconKey: z.string().nullable(),
-    paletteId: PaletteIdSchema,
+    paletteId: z.string(),
     salesEmail: z.string().nullable(),
     updatedBy: z.string().nullable(),
     updatedAt: z.date(),
@@ -489,6 +502,10 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     ...(deps.sendNotificationEmail === undefined
       ? {}
       : { sendNotificationEmail: deps.sendNotificationEmail }),
+  });
+
+  const settingsDeps = (): systemSettings.SystemSettingsDeps => ({
+    events: deps.events,
   });
 
   return router({
@@ -715,6 +732,68 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
               status: z.string(),
               emailVerifiedAt: z.date().nullable(),
               createdAt: z.date(),
+              hasPassword: z.boolean(),
+              passwordUpdatedAt: z.date().nullable(),
+              failedLoginCount: z.number().int(),
+              lockedUntil: z.date().nullable(),
+              sessions: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      channel: z.string(),
+                      ip: z.string().nullable(),
+                      country: z.string().nullable(),
+                      userAgent: z.string().nullable(),
+                      lastSeenAt: z.date(),
+                      authenticatedAt: z.date(),
+                      flagged: z.boolean(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              activeSessionCount: z.number().int().nonnegative(),
+              passkeys: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      name: z.string().nullable(),
+                      deviceType: z.string(),
+                      backedUp: z.boolean(),
+                      lastUsedAt: z.date().nullable(),
+                      createdAt: z.date(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              totpEnabled: z.boolean(),
+              oauthProviders: z
+                .array(
+                  z
+                    .object({
+                      provider: z.string(),
+                      email: z.string(),
+                      linkedAt: z.date(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              apiTokenCount: z.number().int().nonnegative(),
+              activeApiTokens: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      name: z.string(),
+                      orgId: z.string(),
+                      scopes: z.array(z.string()).readonly(),
+                      createdAt: z.date(),
+                      lastUsedAt: z.date().nullable(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
               memberships: z
                 .array(
                   z
@@ -1296,10 +1375,127 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             .object({
               events: z.array(OperationalEventRow).readonly(),
               nextCursor: z.string().nullable(),
+              summary: z
+                .object({
+                  totalEvents: z.number().int().nonnegative(),
+                  successCount: z.number().int().nonnegative(),
+                  failureCount: z.number().int().nonnegative(),
+                  byKind: z
+                    .array(
+                      z.object({ kind: z.string(), count: z.number().int().nonnegative() }).strict(),
+                    )
+                    .readonly(),
+                })
+                .strict(),
             })
             .strict(),
         )
         .query(({ input, ctx }) => operations.listOperationalEvents(operatorOf(ctx), input)),
+
+      errorHealth: platformRoute({
+        platformReason:
+          'Per-org error rates and trend velocity — aggregated across automation_runs, notification_deliveries, and webhook_deliveries, global by definition.',
+      })
+        .input(
+          z
+            .object({
+              timeRange: z.enum(['1h', '6h', '24h', '7d']).default('24h'),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .object({
+              summary: z
+                .object({
+                  totalFailures: z.number(),
+                  bySource: z
+                    .object({
+                      mail: z.number(),
+                      automation: z.number(),
+                      notifications: z.number(),
+                      webhooks: z.number(),
+                    })
+                    .strict(),
+                })
+                .strict(),
+              orgErrors: z
+                .array(
+                  z
+                    .object({
+                      orgId: z.string(),
+                      orgName: z.string(),
+                      orgSlug: z.string(),
+                      automationFailures: z.number(),
+                      notificationFailures: z.number(),
+                      webhookFailures: z.number(),
+                      avgDaily7d: z.number(),
+                      currentRate: z.number(),
+                      velocity: z.number(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              operationalErrors: z
+                .array(
+                  z
+                    .object({
+                      kind: z.string(),
+                      count: z.number(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              recentOperational: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      kind: z.string(),
+                      target: z.string().nullable(),
+                      detail: z.unknown(),
+                      occurredAt: z.date(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              recentAutomation: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      orgId: z.string(),
+                      orgName: z.string(),
+                      triggerEvent: z.string(),
+                      reason: z.string().nullable(),
+                      actionResults: z.unknown(),
+                      durationMs: z.number().nullable(),
+                      createdAt: z.date(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              recentWebhooks: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      orgId: z.string(),
+                      orgName: z.string(),
+                      eventName: z.string(),
+                      lastStatusCode: z.number().nullable(),
+                      lastError: z.string().nullable(),
+                      attempts: z.number(),
+                      createdAt: z.date(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              timeRange: z.string(),
+            })
+            .strict(),
+        )
+        .query(({ input, ctx }) => errorHealth.queryErrorHealth(operatorOf(ctx), input)),
     }),
 
     audit: router({
@@ -1343,6 +1539,103 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
              in the chain, including the one that reads it. */
           await recordOperatorAction(operator.userId, 'audit.list', null);
           return { entries };
+        }),
+    }),
+
+    /**
+     * Platform configuration overview — system health, runtime info,
+     * auth policy constants, infrastructure status, and editable settings
+     * from the system_settings table.
+     */
+    config: router({
+      overview: platformRoute({
+        platformReason:
+          'System configuration and health data is cross-tenant by definition — no org permission applies.',
+      })
+        .output(
+          z
+            .object({
+              runtime: z
+                .object({
+                  nodeVersion: z.string(),
+                  uptimeSeconds: z.number(),
+                  memoryUsageMb: z.number(),
+                })
+                .strict(),
+              auth: z
+                .object({
+                  accessTokenTtlSeconds: z.number().int(),
+                  refreshTokenTtlDays: z.number().int(),
+                  verificationTtlHours: z.number().int(),
+                  passwordResetTtlMinutes: z.number().int(),
+                  lockThreshold: z.number().int(),
+                  lockDurationMinutes: z.number().int(),
+                  stepUpMaxAgeMinutes: z.number().int(),
+                })
+                .strict(),
+              infrastructure: z
+                .object({
+                  database: z.boolean(),
+                  objectStorage: z.boolean(),
+                })
+                .strict(),
+              settings: z.record(z.string(), z.unknown()),
+            })
+            .strict(),
+        )
+        .query(async () => {
+          const mem = process.memoryUsage();
+          const [dbHealthy, settings] = await Promise.all([
+            isDatabaseHealthy(),
+            systemSettings.getAllSettings(),
+          ]);
+          return {
+            runtime: {
+              nodeVersion: process.version,
+              uptimeSeconds: Math.floor(process.uptime()),
+              memoryUsageMb: Math.round(mem.heapUsed / 1024 / 1024),
+            },
+            auth: {
+              accessTokenTtlSeconds: ACCESS_TOKEN_TTL_SECONDS,
+              refreshTokenTtlDays: 30,
+              verificationTtlHours: 24,
+              passwordResetTtlMinutes: 60,
+              lockThreshold: 5,
+              lockDurationMinutes: 15,
+              stepUpMaxAgeMinutes: 5,
+            },
+            infrastructure: {
+              database: dbHealthy,
+              objectStorage: true,
+            },
+            settings,
+          };
+        }),
+
+      /**
+       * Update one or more system settings. Each entry is an upsert —
+       * a key that does not yet exist is created, a key that does is updated.
+       */
+      update: platformRoute({
+        platformReason:
+          'Changing operational settings is cross-tenant by definition — no org permission applies.',
+      })
+        .input(
+          z.object({
+            settings: z
+              .array(
+            z.object({
+                    key: z.string().min(1),
+                    value: z.any(),
+                  }),
+              )
+              .min(1),
+          }),
+        )
+        .output(z.record(z.string(), z.unknown()))
+        .mutation(async ({ input, ctx }) => {
+          const operator = operatorOf(ctx);
+          return systemSettings.updateSettings(settingsDeps(), operator, input.settings);
         }),
     }),
   });

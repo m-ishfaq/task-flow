@@ -33,6 +33,8 @@ export interface BreachCheckOptions {
   readonly fetch?: typeof globalThis.fetch;
   /** Abort budget. A password form must not hang on a third party. */
   readonly timeoutMs?: number;
+  /** Product name for the User-Agent header. Defaults to 'Rinavai'. */
+  readonly productName?: string | undefined;
 }
 
 /**
@@ -51,6 +53,7 @@ export async function checkPasswordBreached(
 ): Promise<BreachResult> {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 3_000;
+  const productName = options.productName ?? 'Rinavai';
 
   const digest = createHash('sha1')
     .update(password.normalize('NFC'), 'utf8')
@@ -65,7 +68,7 @@ export async function checkPasswordBreached(
       // Pads the response with random decoy suffixes so an observer who can see
       // the response SIZE cannot infer which bucket was requested. Without it,
       // TLS length leakage partially undoes the k-anonymity.
-      headers: { 'Add-Padding': 'true', 'User-Agent': 'TaskFlow' },
+      headers: { 'Add-Padding': 'true', 'User-Agent': productName },
       signal: AbortSignal.timeout(timeoutMs),
     });
 

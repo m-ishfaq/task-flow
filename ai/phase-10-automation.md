@@ -139,7 +139,7 @@ browser** — the standing caveat, and the reason Wave 1 shipped with gaps a sin
    they exclude is the point — it never sees `payload`, nor `platform.webhooks` at all.
 2. **The signing primitive** (`packages/security/webhook-signing.ts`) — the mirror of
    `twilio-signature.ts`, computing what WE send rather than verifying what they send:
-   `X-TaskFlow-Signature: t=<seconds>,v1=<HMAC-SHA256>` over the EXACT body bytes, the
+   `X-Rinavai-Signature: t=<seconds>,v1=<HMAC-SHA256>` over the EXACT body bytes, the
    timestamp letting a receiver refuse stale signatures, and `secureEqual` on the verify side.
    The secret is a `tf_whs` token minted once, stored envelope-encrypted under a PER-WEBHOOK
    data key bound by AAD to (org, webhook) — the comms.subaccounts recipe — and never

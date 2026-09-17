@@ -5,6 +5,7 @@ import { wire } from '@taskflow/client';
 import { apiClient } from './app-session.js';
 import { useSession } from './use-session.js';
 import { useMembers } from './use-members.js';
+import { useBranding } from './branding-context.js';
 import { callStore, hangUp, joinCall, useCallStore } from './use-call.js';
 import { incomingCallsQueryKey, invalidateCalls, type IncomingCall } from './rtc.js';
 
@@ -142,24 +143,26 @@ async function loadCallKeep(): Promise<CallKeepModule | null> {
 }
 
 /** iOS foreground-service-free; Android needs the strings its one-time "register a phone account" system dialog shows, and the channel its self-managed foreground service runs under. */
-const SETUP_OPTIONS = {
-  ios: {
-    appName: 'TaskFlow',
-    supportsVideo: true,
-  },
-  android: {
-    alertTitle: 'Calls permission required',
-    alertDescription: 'TaskFlow needs permission to manage calls for incoming voice calls.',
-    cancelButton: 'Cancel',
-    okButton: 'OK',
-    selfManaged: true,
-    foregroundService: {
-      channelId: 'com.taskflow.app.calls',
-      channelName: 'TaskFlow calls',
-      notificationTitle: 'TaskFlow call in progress',
+function setupOptions(productName: string) {
+  return {
+    ios: {
+      appName: productName,
+      supportsVideo: true,
     },
-  },
-};
+    android: {
+      alertTitle: 'Calls permission required',
+      alertDescription: `${productName} needs permission to manage calls for incoming voice calls.`,
+      cancelButton: 'Cancel',
+      okButton: 'OK',
+      selfManaged: true,
+      foregroundService: {
+        channelId: 'com.rinavai.app.calls',
+        channelName: `${productName} calls`,
+        notificationTitle: `${productName} call in progress`,
+      },
+    },
+  } as const;
+}
 
 /* `END_CALL_REASONS.MISSED` is `6` on Android, `2` on iOS in the library's
    own `CONSTANTS` — restated as a literal rather than importing `CONSTANTS`
@@ -170,8 +173,8 @@ const MISSED_REASON = Platform.OS === 'ios' ? 2 : 6;
 let setupPromise: Promise<boolean> | null = null;
 
 /** Runs `RNCallKeep.setup` at most once per process — lazily, on the first real call, never at app launch (matching `push-notifications.ts`'s own "no ceremony before the person has done anything" rule, and avoiding Android's one-time permission dialog popping up unprompted). */
-async function ensureSetup(module: CallKeepModule): Promise<boolean> {
-  setupPromise ??= module.setup(SETUP_OPTIONS).catch(() => false);
+async function ensureSetup(module: CallKeepModule, productName: string): Promise<boolean> {
+  setupPromise ??= module.setup(setupOptions(productName)).catch(() => false);
   return setupPromise;
 }
 
@@ -181,6 +184,7 @@ async function ensureSetup(module: CallKeepModule): Promise<boolean> {
  * state to native calls and native events back to state.
  */
 export function useCallKeepBridge(): void {
+  const { productName } = useBranding();
   const orgId = useSession((state) => state.orgId);
   const selfId = useSession((state) => state.userId);
   const queryClient = useQueryClient();
@@ -218,7 +222,7 @@ export function useCallKeepBridge(): void {
       void (async () => {
         const module = await loadCallKeep();
         if (module === null) return;
-        const ok = await ensureSetup(module);
+        const ok = await ensureSetup(module, productName);
         if (!ok) return;
         module.displayIncomingCall(
           row.sessionId,

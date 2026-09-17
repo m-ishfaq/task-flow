@@ -13,6 +13,7 @@ import {
 import { unsafeAsId, type KeyProvider } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import type { Logger } from '@taskflow/observability';
+import { DEFAULT_PRODUCT_NAME } from '@taskflow/api/platform-admin/branding-cache';
 import {
   buildWebhookSignature,
   decryptString,
@@ -311,7 +312,18 @@ async function deliverOne(deps: DeliveryDeps, row: ClaimedRow): Promise<Delivery
        header. `JSON.stringify` of the same stored object is deterministic. */
     const body = JSON.stringify(delivery.payload);
 
-    return deliverWithPerHopGate(deps, webhook.url, body, secret);
+    /* Read the platform-wide product name from `platform.branding` — a global
+       singleton (no RLS, one row, SELECT only from migration 0073). The
+       signature header is derived from it: `x-<slug>-signature`. A missing
+       row or NULL product_name falls back to the default. */
+    const brandingRows = await tx
+      .select({ productName: schema.branding.productName })
+      .from(schema.branding)
+      .limit(1);
+    const productName = brandingRows[0]?.productName ?? DEFAULT_PRODUCT_NAME;
+    const signatureHeader = `x-${productName.toLowerCase()}-signature`;
+
+    return deliverWithPerHopGate(deps, webhook.url, body, secret, signatureHeader);
   });
 }
 
@@ -330,6 +342,7 @@ async function deliverWithPerHopGate(
   startUrl: string,
   body: string,
   secret: string,
+  signatureHeader: string,
 ): Promise<DeliveryOutcome> {
   let current = startUrl;
 
@@ -350,11 +363,11 @@ async function deliverWithPerHopGate(
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-taskflow-signature': signature,
+          [signatureHeader]: signature,
           /* No cookies, no auth, no referrer — this request must carry
              nothing that would let a third-party server act as, or learn
              about, our users. */
-          'user-agent': 'TaskFlow-Webhook/1.0',
+          'user-agent': 'Rinavai-Webhook/1.0',
         },
         body,
         redirect: 'manual',

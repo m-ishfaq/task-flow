@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Zap } from 'lucide-react';
+import { CheckCircle2, Clock, Layers, Search, XCircle, Zap } from 'lucide-react';
 import { StatusPill } from '@taskflow/ui';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
 import { SkeletonRows, TabBar } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { Pagination, StepUpGate, TableSearch } from './shared.js';
+import { Pagination, StepUpGate, StatCard, TableSearch } from './shared.js';
 
 /* -------------------------------------------------------------------------- *
  * Operations dashboard — "did a system action succeed or fail" (mail
@@ -18,6 +19,13 @@ import { Pagination, StepUpGate, TableSearch } from './shared.js';
  * -------------------------------------------------------------------------- */
 
 type OperationalEventKind = 'mail' | 'billing_webhook' | 'billing_sweep' | 'push';
+
+const KIND_META: Record<string, { readonly label: string; readonly color: string }> = {
+  mail: { label: 'Mail', color: 'text-sky-600 bg-sky-500/10' },
+  billing_webhook: { label: 'Billing webhook', color: 'text-amber-600 bg-amber-500/10' },
+  billing_sweep: { label: 'Billing sweep', color: 'text-violet-600 bg-violet-500/10' },
+  push: { label: 'Push', color: 'text-emerald-600 bg-emerald-500/10' },
+};
 
 const OPERATIONAL_EVENT_KINDS: readonly {
   readonly value: OperationalEventKind | null;
@@ -29,6 +37,61 @@ const OPERATIONAL_EVENT_KINDS: readonly {
   { value: 'billing_sweep', label: 'Billing sweep' },
   { value: 'push', label: 'Push' },
 ];
+
+/** Human-readable labels for detail object keys. */
+const DETAIL_KEY_LABELS: Record<string, string> = {
+  gracesExpired: 'Graces expired',
+  periodsClosed: 'Periods closed',
+  trialsExpired: 'Trials expired',
+  recipientCount: 'Recipients',
+  deliveryCount: 'Delivered',
+  failedCount: 'Failed',
+  skippedCount: 'Skipped',
+  reason: 'Reason',
+  error: 'Error',
+  pathway: 'Pathway',
+  statusCode: 'Status',
+};
+
+function DetailBlock({ detail }: { readonly detail: unknown }) {
+  if (detail === null || detail === undefined) return null;
+  if (typeof detail === 'string') {
+    return <p className="text-[11px] text-ink-muted">{detail}</p>;
+  }
+  if (typeof detail === 'object') {
+    const entries = Object.entries(detail as Record<string, unknown>);
+    if (entries.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {entries.map(([key, val]) => (
+          <span key={key} className="text-ink-muted">
+            <span className="font-medium text-ink-faint">{DETAIL_KEY_LABELS[key] ?? key}:</span>{' '}
+            {typeof val === 'string' ? val : JSON.stringify(val)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <pre className="max-h-20 overflow-auto rounded bg-canvas-subtle p-2 text-[11px] text-ink-muted">
+      {JSON.stringify(detail, null, 2)}
+    </pre>
+  );
+}
+
+function KindBadge({ kind }: { readonly kind: string }) {
+  const meta = KIND_META[kind];
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium',
+        meta?.color ?? 'bg-surface-hover text-ink',
+      )}
+    >
+      {meta?.label ?? kind}
+    </span>
+  );
+}
 
 export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
   const [cursor, setCursor] = useState<string | null>(null);
@@ -43,6 +106,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(events.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const summary = events.data?.summary;
   const filteredEvents = events.data?.events.filter((event) => {
     if (search.trim() === '') return true;
     const q = search.toLowerCase();
@@ -53,24 +117,61 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
     );
   });
 
-  return (
-    <section aria-label="Operations">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[13px] leading-relaxed text-ink-muted">
-          System-action outcomes across every process, newest first. For the raw container output —
-          every request, not only what this table records — see{' '}
-          <a
-            href="/logs"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-accent underline underline-offset-2"
-          >
-            live logs
-          </a>
-          , gated by its own infrastructure credential, separate from this console's.
-        </p>
-      </div>
+  /* Build kind counts for tab labels — use summary.byKind which covers
+     the full dataset (not just the current page). */
+  const kindCounts = new Map<string, number>();
+  if (summary !== undefined) {
+    for (const entry of summary.byKind) {
+      kindCounts.set(entry.kind, entry.count);
+    }
+  }
 
+  const kindTabItems = OPERATIONAL_EVENT_KINDS.map((item) => {
+    if (item.value === null) {
+      return { value: item.value, label: item.label };
+    }
+    const count = kindCounts.get(item.value) ?? 0;
+    return { value: item.value, label: `${item.label} (${String(count)})` };
+  });
+
+  return (
+    <section aria-label="Operations" className="flex flex-col gap-5">
+      {/* Summary stat cards */}
+      {summary !== undefined && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard icon={Layers} label="Total events" value={summary.totalEvents} />
+          <StatCard
+            icon={CheckCircle2}
+            label="Success rate"
+            value={
+              summary.totalEvents === 0
+                ? '—'
+                : `${String(Math.round((summary.successCount / summary.totalEvents) * 100))}%`
+            }
+            accent={summary.failureCount === 0 && summary.totalEvents > 0}
+          />
+          <StatCard
+            icon={XCircle}
+            label="Failures"
+            value={summary.failureCount}
+            accent={summary.failureCount > 0}
+          />
+          <StatCard icon={Clock} label="Kinds" value={summary.byKind.length} />
+        </div>
+      )}
+
+      {/* Failure banner */}
+      {summary !== undefined && summary.failureCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl bg-red-500/6 px-4 py-3">
+          <XCircle className="size-4 shrink-0 text-red-500" strokeWidth={2} />
+          <p className="text-[13px] text-red-600">
+            {summary.failureCount} failure{summary.failureCount === 1 ? '' : 's'} recorded across{' '}
+            {summary.totalEvents} event{summary.totalEvents === 1 ? '' : 's'}.
+          </p>
+        </div>
+      )}
+
+      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <TabBar
           ariaLabel="Filter by kind"
@@ -80,7 +181,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
             setKind(value);
             setCursor(null);
           }}
-          items={OPERATIONAL_EVENT_KINDS}
+          items={kindTabItems}
         />
         <TableSearch
           value={search}
@@ -105,7 +206,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
           </div>
         ) : (
           <>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+            <div className="overflow-x-auto rounded-xl border border-line">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/60">
@@ -130,26 +231,25 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   {(filteredEvents ?? []).map((event) => (
                     <tr
                       key={event.id}
-                      className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                      className={cn(
+                        'border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50',
+                        event.outcome !== 'success' && 'bg-red-500/3',
+                      )}
                     >
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink">
-                          {event.kind}
-                        </span>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <KindBadge kind={event.kind} />
                       </td>
                       <td className="px-3 py-2.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
+                      <td className="max-w-50 overflow-x-auto px-3 py-2.5 whitespace-nowrap font-mono text-[11px] text-ink-muted">
                         {event.target ?? '—'}
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
-                        {event.detail === null || event.detail === undefined
-                          ? '—'
-                          : JSON.stringify(event.detail)}
+                      <td className="max-w-50 overflow-x-auto px-3 py-2.5 whitespace-nowrap">
+                        <DetailBlock detail={event.detail} />
                       </td>
                     </tr>
                   ))}
@@ -170,7 +270,7 @@ export function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
               </table>
             </div>
 
-            <div className="mt-3">
+            <div>
               <Pagination
                 hasMore={cursor !== null || (events.data.nextCursor ?? null) !== null}
                 onNewest={() => {

@@ -3,7 +3,7 @@
  *
  * A phone has no browser to enforce anything about what it sends, so this
  * header is a HINT the server is free to read but must never trust as an
- * authorization input — the identical caveat `x-taskflow-org` carries for
+ * authorization input — the identical caveat `x-rinavai-org` carries for
  * tenant selection, generalized to "which kind of client is this". Nothing may
  * ever grant an ability a plain request would not otherwise have on the
  * strength of this header alone; the two legitimate uses are:
@@ -22,5 +22,5 @@
  * each hold their own copy of a value the other two must agree on byte for
  * byte.
  */
-export const CLIENT_HEADER = 'x-taskflow-client';
+export const CLIENT_HEADER = 'x-rinavai-client';
 export const MOBILE_CLIENT = 'mobile';

@@ -144,7 +144,7 @@ describe('the API-token round trip over HTTP', () => {
     const mint = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.create',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { name: 'Release CI', scopes: ['webhook:manage'] },
     });
     expect(mint.statusCode).toBe(200);
@@ -195,7 +195,7 @@ describe('the API-token round trip over HTTP', () => {
     const narrow = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.create',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { name: 'Narrow', scopes: ['card:read'] },
     });
     expect(narrow.statusCode).toBe(200);
@@ -216,7 +216,7 @@ describe('the API-token round trip over HTTP', () => {
     const steered = await app.inject({
       method: 'GET',
       url: '/trpc/automation.webhooks.list?input={}',
-      headers: { authorization: `Bearer ${token}`, 'x-taskflow-org': crypto.randomUUID() },
+      headers: { authorization: `Bearer ${token}`, 'x-rinavai-org': crypto.randomUUID() },
     });
     expect(steered.statusCode).toBe(401);
     expect(steered.json()).toMatchObject({ error: { data: { code: 'UNAUTHENTICATED' } } });
@@ -226,7 +226,7 @@ describe('the API-token round trip over HTTP', () => {
     const revoke = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.revoke',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { tokenId },
     });
     expect(revoke.statusCode).toBe(200);

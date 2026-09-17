@@ -28,9 +28,9 @@ import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
  */
 
 /**
- * Stat card shown in the summary overview at the top of the page.
- * An icon, a label, and a value — the same metric-widget shape every
- * SaaS admin console uses for at-a-glance numbers.
+ * Stat card shown in summary overviews.  Surface-difference depth
+ * (no visible border) with a subtle shadow — the same visual language the
+ * dashboard's HeroStat already uses, scaled down for inline placement.
  */
 export function StatCard({
   icon: Icon,
@@ -46,21 +46,25 @@ export function StatCard({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3',
-        accent ? 'border-accent/30 bg-accent/5' : 'border-line bg-surface-raised',
+        'flex items-center gap-3 rounded-xl px-4 py-3 transition-colors',
+        accent
+          ? 'bg-accent/6 shadow-[0_0_16px_-6px_color-mix(in_oklab,var(--color-accent)_15%,transparent)]'
+          : 'bg-surface-raised shadow-sm',
       )}
     >
       <span
         className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg',
+          'flex size-8 shrink-0 items-center justify-center rounded-lg',
           accent ? 'bg-accent/15 text-accent' : 'bg-surface-hover text-ink-muted',
         )}
       >
-        <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
+        <Icon aria-hidden="true" className="size-4" strokeWidth={1.8} />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
-        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
+        <p className="text-[11px] font-medium text-ink-faint">{label}</p>
+        <p className="truncate text-lg font-semibold tracking-tight text-ink tabular-nums">
+          {value}
+        </p>
       </div>
     </div>
   );
@@ -96,7 +100,7 @@ export function TableSearch({
           onChange(event.target.value);
         }}
         placeholder={placeholder}
-        className="h-8 w-full rounded-lg border border-line bg-surface-sunken pl-8 pr-3 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+        className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken pl-8 pr-3 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/20 focus:outline-none"
       />
     </div>
   );
@@ -161,7 +165,7 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
   return (
     <div className="flex items-center gap-2">
       <span className="tabular-nums text-ink-muted">{count}</span>
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
+      <div className="h-1 w-16 overflow-hidden rounded-full bg-surface-hover">
         <div
           className={cn(
             'h-full rounded-full transition-all',
@@ -198,12 +202,12 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
         <button
           type="button"
           aria-label="More actions"
-          className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
+          className="flex size-7 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <MoreHorizontal className="size-3.5" strokeWidth={2} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[140px]">
+      <DropdownMenuContent align="end" className="min-w-35">
         {children}
       </DropdownMenuContent>
     </DropdownMenuRoot>
@@ -218,8 +222,8 @@ export function RowActionsMenu({ children }: { readonly children: React.ReactNod
  */
 export function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning/5 p-5">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning">
+    <div className="flex flex-col gap-3 rounded-xl bg-warning/6 px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
         <ShieldAlert className="size-5" strokeWidth={2} />
       </span>
       <div className="min-w-0 flex-1">
@@ -229,7 +233,7 @@ export function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
           — not from when you opened this page.
         </p>
       </div>
-      <Button variant="primary" onClick={onStepUp}>
+      <Button variant="primary" onClick={onStepUp} className="self-start sm:self-auto">
         Re-authenticate
       </Button>
     </div>

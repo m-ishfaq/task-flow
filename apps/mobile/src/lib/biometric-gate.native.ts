@@ -49,7 +49,7 @@ async function getModule(): Promise<typeof LocalAuthenticationModule> {
   return modulePromise;
 }
 
-export function createBiometricGate(): BiometricGate {
+export function createBiometricGate(productName = 'Rinavai'): BiometricGate {
   return {
     isAvailable: async () => {
       try {
@@ -67,7 +67,7 @@ export function createBiometricGate(): BiometricGate {
       try {
         const LocalAuthentication = await getModule();
         const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: 'Unlock TaskFlow',
+          promptMessage: `Unlock ${productName}`,
         });
         return result.success;
       } catch {

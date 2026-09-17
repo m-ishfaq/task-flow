@@ -1,5 +1,6 @@
 import { escapeHtml } from '@taskflow/mail';
 import type { MailQueue } from '@taskflow/mail';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 
 /**
  * Invitation email — sent by `invitation.service.ts`, the same
@@ -32,6 +33,7 @@ import type { MailQueue } from '@taskflow/mail';
 export interface InvitationMailDeps {
   readonly queue: MailQueue;
   readonly webOrigin: string;
+  readonly productName?: string;
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -66,15 +68,16 @@ export function sendInvitationMail(
   const days = Math.max(1, Math.round((input.expiresAt.getTime() - Date.now()) / 86_400_000));
   const daysText = `${days.toString()} day${days === 1 ? '' : 's'}`;
 
-  const subject = `You're invited to join ${orgText} on TaskFlow`;
+  const product = deps.productName ?? DEFAULT_PRODUCT_NAME;
+  const subject = `You're invited to join ${orgText} on ${product}`;
   const text =
-    `You have been invited to join ${orgText} on TaskFlow as ${roleLabel}.\n\n` +
+    `You have been invited to join ${orgText} on ${product} as ${roleLabel}.\n\n` +
     `Accept the invitation: ${acceptUrl}\n\n` +
     `This link expires in ${daysText}. If you were not expecting ` +
     'this invitation, you can ignore this email.';
 
   const html =
-    `<p>You have been invited to join <strong>${org}</strong> on TaskFlow as ${roleLabel}.</p>` +
+    `<p>You have been invited to join <strong>${org}</strong> on ${escapeHtml(product)} as ${roleLabel}.</p>` +
     `<p><a href="${escapeHtml(acceptUrl)}">Accept the invitation</a></p>` +
     `<p>This link expires in ${daysText}. If you were not expecting ` +
     'this invitation, you can ignore this email.</p>';

@@ -29,13 +29,13 @@ export interface BrandingValue {
 /**
  * What every screen shows before the first `branding.public` response
  * arrives, and what an unreachable API leaves it showing forever. Matches
- * `app.config.ts`'s static `name: 'TaskFlow'` and `branding-cache.ts`'s own
+ * `app.config.ts`'s static `name: 'Rinavai'` and `branding-cache.ts`'s own
  * `DEFAULT_SNAPSHOT` on the server, so a deployment that never touches
  * branding — or one the network can't reach right now — renders exactly
  * what it always rendered before this feature existed.
  */
 export const DEFAULT_BRANDING: BrandingValue = {
-  productName: 'TaskFlow',
+  productName: 'Rinavai',
   logoUrl: null,
   paletteId: 'default',
   isPending: false,

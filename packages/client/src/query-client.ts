@@ -47,6 +47,7 @@ const TERMINAL_CODES = new Set([
   'PAYLOAD_TOO_LARGE',
   'UNSUPPORTED_MEDIA_TYPE',
   'QUOTA_EXCEEDED',
+  'SERVICE_UNAVAILABLE',
 ]);
 
 export function shouldRetry(

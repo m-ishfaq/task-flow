@@ -129,8 +129,7 @@ function PaletteDialog({
 
   const commands = useMemo<readonly Command[]>(() => {
     const go =
-      (to: '/home' | '/projects' | '/settings' | '/settings/audit' | '/admin/permissions') =>
-      () => {
+      (to: '/home' | '/projects' | '/settings' | '/settings/audit' | '/permissions') => () => {
         void navigate({ to });
       };
 
@@ -138,16 +137,9 @@ function PaletteDialog({
       { id: 'home', label: 'My tasks', hint: 'Go to', run: go('/home') },
       { id: 'projects', label: 'Projects', hint: 'Go to', run: go('/projects') },
       { id: 'settings', label: 'Settings', hint: 'Go to', run: go('/settings') },
+      { id: 'permissions', label: 'Permissions', hint: 'Go to', run: go('/permissions') },
       ...(capabilities?.viewAuditLog === true
-        ? [
-            { id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') },
-            {
-              id: 'permissions',
-              label: 'Permissions',
-              hint: 'Go to',
-              run: go('/admin/permissions'),
-            },
-          ]
+        ? [{ id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') }]
         : []),
       { id: 'toggle-sidebar', label: 'Toggle sidebar', hint: 'Action', run: toggleSidebar },
     ];

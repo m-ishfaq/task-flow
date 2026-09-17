@@ -45,133 +45,147 @@ export function AuditPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
-      <PageHeader
-        title="Audit log"
-        description="Append-only and hash-chained. Every state-changing action lands here."
-        actions={
-          <>
-            <Link to="/settings" className="text-sm text-accent underline">
-              Settings
-            </Link>
-            <Button
-              variant="secondary"
-              disabled={verify.isPending}
-              onClick={() => {
-                verify.mutate();
-              }}
-            >
-              {verify.isPending ? 'Verifying…' : 'Verify chain'}
-            </Button>
-          </>
-        }
-      />
-
-      {verify.isError && (
-        <ErrorView error={verify.error} title="Could not verify the chain" className="shrink-0" />
-      )}
-
-      {verify.data !== undefined && (
-        <div
-          className={cn(
-            'rounded border px-3 py-2 text-sm',
-            verify.data.intact
-              ? 'border-success/40 bg-success/10 text-ink'
-              : 'border-danger/40 bg-danger/10 text-ink',
-          )}
-        >
-          {verify.data.intact ? (
-            <p>
-              Chain intact — {verify.data.verified}{' '}
-              {verify.data.verified === 1 ? 'entry' : 'entries'} recomputed and every digest
-              matched.
-            </p>
-          ) : (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 mx-auto w-full max-w-5xl px-8 pt-6 pb-4">
+        <PageHeader
+          title="Audit log"
+          description="Append-only and hash-chained. Every state-changing action lands here."
+          actions={
             <>
-              <p className="font-medium">
-                Chain BROKEN across {verify.data.breaks.length}{' '}
-                {verify.data.breaks.length === 1 ? 'entry' : 'entries'}.
-              </p>
-              <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
-                {verify.data.breaks.map((entry) => (
-                  <li key={entry.id}>
-                    seq {entry.seq}: {entry.reason}
-                  </li>
-                ))}
-              </ul>
+              <Link
+                to="/settings"
+                className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+              >
+                Settings
+              </Link>
+              <Button
+                variant="secondary"
+                disabled={verify.isPending}
+                onClick={() => {
+                  verify.mutate();
+                }}
+              >
+                {verify.isPending ? 'Verifying…' : 'Verify chain'}
+              </Button>
             </>
+          }
+        />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          {verify.isError && (
+            <ErrorView error={verify.error} title="Could not verify the chain" className="shrink-0" />
           )}
+
+          {verify.data !== undefined && (
+            <div
+              className={cn(
+                'rounded-xl border px-4 py-3 text-sm shadow-sm',
+                verify.data.intact
+                  ? 'border-success/40 bg-success/10 text-ink'
+                  : 'border-danger/40 bg-danger/10 text-ink',
+              )}
+            >
+              {verify.data.intact ? (
+                <p>
+                  Chain intact — {verify.data.verified}{' '}
+                  {verify.data.verified === 1 ? 'entry' : 'entries'} recomputed and every digest
+                  matched.
+                </p>
+              ) : (
+                <>
+                  <p className="font-medium">
+                    Chain BROKEN across {verify.data.breaks.length}{' '}
+                    {verify.data.breaks.length === 1 ? 'entry' : 'entries'}.
+                  </p>
+                  <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
+                    {verify.data.breaks.map((entry) => (
+                      <li key={entry.id}>
+                        seq {entry.seq}: {entry.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+
+          {entries.isPending && <Spinner />}
+          {entries.isError && (
+            <ErrorView error={entries.error} title="Could not load the audit log" />
+          )}
+
+          {entries.data !== undefined &&
+            (entries.data.length === 0 ? (
+              <Empty title="Nothing recorded yet" />
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-line/50 bg-surface-raised shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Seq</th>
+                        <th>When</th>
+                        <th>Action</th>
+                        <th>Resource</th>
+                        <th>Actor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.data.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="font-mono text-ink-faint">{entry.seq}</td>
+                          <td className="whitespace-nowrap text-ink-muted">
+                            {formatDateTime(entry.occurredAt)}
+                          </td>
+                          <td className="font-medium text-ink">{entry.action}</td>
+                          <td className="text-ink-muted">
+                            {entry.resourceType ?? '—'}
+                            {entry.resourceId !== null && (
+                              <span className="ml-1 font-mono text-[11px] text-ink-faint">
+                                {entry.resourceId.slice(0, 8)}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Keyset pagination on `seq`, not an offset. The log only ever
+                    grows, and an OFFSET page would shift under the reader as new
+                    entries land — skipping rows silently, which is the one thing a
+                    compliance record must not do. */}
+                <div className="flex items-center gap-2 border-t border-line/40 px-4 py-3">
+                  <Button
+                    disabled={before === null}
+                    onClick={() => {
+                      setBefore(null);
+                    }}
+                  >
+                    Newest
+                  </Button>
+                  <Button
+                    disabled={entries.data.length < 50}
+                    onClick={() => {
+                      setBefore(entries.data[entries.data.length - 1]?.seq ?? null);
+                    }}
+                  >
+                    Older
+                  </Button>
+                  <span className="ml-auto text-xs text-ink-faint">
+                    Showing {entries.data.length} entries
+                  </span>
+                </div>
+              </div>
+            ))}
         </div>
-      )}
-
-      {entries.isPending && <Spinner />}
-      {entries.isError && <ErrorView error={entries.error} title="Could not load the audit log" />}
-
-      {entries.data !== undefined &&
-        (entries.data.length === 0 ? (
-          <Empty title="Nothing recorded yet" />
-        ) : (
-          <>
-            <div className="overflow-x-auto rounded border border-line/50">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Seq</th>
-                    <th>When</th>
-                    <th>Action</th>
-                    <th>Resource</th>
-                    <th>Actor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.data.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="whitespace-nowrap text-ink-muted">
-                        {formatDateTime(entry.occurredAt)}
-                      </td>
-                      <td className="font-medium text-ink">{entry.action}</td>
-                      <td className="text-ink-muted">
-                        {entry.resourceType ?? '—'}
-                        {entry.resourceId !== null && (
-                          <span className="ml-1 font-mono text-[11px] text-ink-faint">
-                            {entry.resourceId.slice(0, 8)}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Keyset pagination on `seq`, not an offset. The log only ever
-                grows, and an OFFSET page would shift under the reader as new
-                entries land — skipping rows silently, which is the one thing a
-                compliance record must not do. */}
-            <div className="flex gap-2">
-              <Button
-                disabled={before === null}
-                onClick={() => {
-                  setBefore(null);
-                }}
-              >
-                Newest
-              </Button>
-              <Button
-                disabled={entries.data.length < 50}
-                onClick={() => {
-                  setBefore(entries.data[entries.data.length - 1]?.seq ?? null);
-                }}
-              >
-                Older
-              </Button>
-            </div>
-          </>
-        ))}
+      </div>
     </div>
   );
 }
