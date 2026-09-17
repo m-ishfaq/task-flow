@@ -29,7 +29,7 @@ export interface BrandingSnapshot {
   /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
   readonly paletteId: string;
   /** Migration 0096. NULL until an operator sets one. */
-  readonly   salesEmail: string | null;
+  readonly salesEmail: string | null;
 }
 
 const CACHE_TTL_MS = 30_000;
