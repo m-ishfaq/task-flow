@@ -66,17 +66,17 @@ any of these numbers count as final. Every current value quoted below was read d
 
 ### 2.1 Neutral family (surfaces, ink, lines) — hue 262 → hue 55
 
-| Token | Current (cold, hue 262) | Proposed (warm, hue 55) |
-|---|---|---|
-| `--color-surface` | `oklch(16% 0.015 262)` | `oklch(16% 0.014 55)` |
-| `--color-surface-raised` | `oklch(20% 0.018 262)` | `oklch(20% 0.017 55)` |
-| `--color-surface-sunken` | `oklch(12% 0.013 262)` | `oklch(12% 0.012 55)` |
-| `--color-surface-hover` | `oklch(23% 0.018 262)` | `oklch(23% 0.017 55)` |
-| `--color-ink` | `oklch(93% 0.008 262)` | `oklch(93% 0.010 55)` |
-| `--color-ink-muted` | `oklch(66% 0.015 262)` | `oklch(66% 0.016 55)` |
-| `--color-ink-faint` | `oklch(56% 0.014 262)` | `oklch(56% 0.015 55)` |
-| `--color-line` | `oklch(28% 0.012 262)` | `oklch(28% 0.013 55)` |
-| `--color-line-strong` | `oklch(35% 0.014 262)` | `oklch(35% 0.015 55)` |
+| Token                    | Current (cold, hue 262) | Proposed (warm, hue 55) |
+| ------------------------ | ----------------------- | ----------------------- |
+| `--color-surface`        | `oklch(16% 0.015 262)`  | `oklch(16% 0.014 55)`   |
+| `--color-surface-raised` | `oklch(20% 0.018 262)`  | `oklch(20% 0.017 55)`   |
+| `--color-surface-sunken` | `oklch(12% 0.013 262)`  | `oklch(12% 0.012 55)`   |
+| `--color-surface-hover`  | `oklch(23% 0.018 262)`  | `oklch(23% 0.017 55)`   |
+| `--color-ink`            | `oklch(93% 0.008 262)`  | `oklch(93% 0.010 55)`   |
+| `--color-ink-muted`      | `oklch(66% 0.015 262)`  | `oklch(66% 0.016 55)`   |
+| `--color-ink-faint`      | `oklch(56% 0.014 262)`  | `oklch(56% 0.015 55)`   |
+| `--color-line`           | `oklch(28% 0.012 262)`  | `oklch(28% 0.013 55)`   |
+| `--color-line-strong`    | `oklch(35% 0.014 262)`  | `oklch(35% 0.015 55)`   |
 
 L and C are kept close to their current values (same lightness ladder, same rough saturation) —
 only the hue moves. This is deliberate: the existing L values already encode a real, working
@@ -91,10 +91,10 @@ merely "the same gray, renamed."
 
 ### 2.2 Accent — hue 285 (violet) → hue 88 (gold)
 
-| Token | Current | Proposed |
-|---|---|---|
-| `--color-accent` | `oklch(55% 0.17 285)` | `oklch(72% 0.14 88)` |
-| `--color-accent-ink` | `oklch(98% 0.01 285)` | `oklch(16% 0.02 88)` |
+| Token                  | Current               | Proposed             |
+| ---------------------- | --------------------- | -------------------- |
+| `--color-accent`       | `oklch(55% 0.17 285)` | `oklch(72% 0.14 88)` |
+| `--color-accent-ink`   | `oklch(98% 0.01 285)` | `oklch(16% 0.02 88)` |
 | `--color-accent-hover` | `oklch(50% 0.17 285)` | `oklch(66% 0.15 88)` |
 
 **This is the change every other token change is small next to.** The current violet sits at
@@ -144,6 +144,7 @@ sRGB hex from OKLCH via `@csstools/color-helpers` and asserts the two agree. The
 phase should write a small, throwaway script (not a permanent test) using that same library to
 compute real WCAG contrast ratios for every pairing `styles.css`'s own comments already treat as
 load-bearing:
+
 - `--color-accent-ink` on `--color-accent` (button label text — 4.5:1 text bar)
 - `--color-accent` against all four surfaces (non-text uses — border, ring, icon — 3:1 bar)
 - `--color-priority-medium`/`-urgent` against all four surfaces (3:1, per §2.3)
@@ -204,13 +205,13 @@ to a shared location. The foundation phase resolves each ONCE, before any screen
 so 184 screens don't each get their own copy of the new palette applied to 3 different button
 shapes.
 
-| Pattern | Current duplicates | Canonical home | Notes |
-|---|---|---|---|
-| Segmented/tab control | `primitives.tsx`'s `Segmented`, platform-admin's local `TabBar`, raw `role="tablist"` markup in 4+ files (docs-page, automations-page, telephony-page, import-export-dialog) | `primitives.tsx`'s `Segmented`, generalized to cover platform-admin's `TabBar` use case | Already generic-typed; the gap is adoption, not capability |
-| Dropdown/menu | `platform-admin/shared.tsx`'s `RowActionsMenu` (hand-rolled open/close, click-catcher, Escape handling), two in `work/list-column.tsx`, one each in `work/bulk-bar.tsx` and `chat/message-list.tsx` | `packages/ui`'s existing `DropdownMenu` (Modal/Popover's own sibling — already well-extracted and adopted in 27 files) | These bypass a component that already exists and already works; this is deletion of duplicate code, not new code |
-| Status pill / badge | `primitives.tsx`'s `Badge`, `platform-admin/shared.tsx`'s `StatusPill` (itself already consolidated from 4 real duplicates, but never reconciled upward) | One shape, promoted to `packages/ui` since both web-only consumers already exist and mobile will want an equivalent | First real candidate for `packages/ui` growing past its current 3 components |
-| Tooltip | None exists anywhere; the pattern recurs unstyled/ad hoc in 10+ files | New: `packages/ui` | The one genuinely NEW primitive this consolidation adds, not a resolution of duplicates |
-| Empty state | `primitives.tsx`'s well-adopted `Empty` (26 importers) vs. 7 files hand-rolling a `border-dashed` box instead | `Empty`, unchanged — just adopted at the 7 remaining sites | No design decision needed, pure cleanup |
+| Pattern               | Current duplicates                                                                                                                                                                                  | Canonical home                                                                                                         | Notes                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Segmented/tab control | `primitives.tsx`'s `Segmented`, platform-admin's local `TabBar`, raw `role="tablist"` markup in 4+ files (docs-page, automations-page, telephony-page, import-export-dialog)                        | `primitives.tsx`'s `Segmented`, generalized to cover platform-admin's `TabBar` use case                                | Already generic-typed; the gap is adoption, not capability                                                       |
+| Dropdown/menu         | `platform-admin/shared.tsx`'s `RowActionsMenu` (hand-rolled open/close, click-catcher, Escape handling), two in `work/list-column.tsx`, one each in `work/bulk-bar.tsx` and `chat/message-list.tsx` | `packages/ui`'s existing `DropdownMenu` (Modal/Popover's own sibling — already well-extracted and adopted in 27 files) | These bypass a component that already exists and already works; this is deletion of duplicate code, not new code |
+| Status pill / badge   | `primitives.tsx`'s `Badge`, `platform-admin/shared.tsx`'s `StatusPill` (itself already consolidated from 4 real duplicates, but never reconciled upward)                                            | One shape, promoted to `packages/ui` since both web-only consumers already exist and mobile will want an equivalent    | First real candidate for `packages/ui` growing past its current 3 components                                     |
+| Tooltip               | None exists anywhere; the pattern recurs unstyled/ad hoc in 10+ files                                                                                                                               | New: `packages/ui`                                                                                                     | The one genuinely NEW primitive this consolidation adds, not a resolution of duplicates                          |
+| Empty state           | `primitives.tsx`'s well-adopted `Empty` (26 importers) vs. 7 files hand-rolling a `border-dashed` box instead                                                                                       | `Empty`, unchanged — just adopted at the 7 remaining sites                                                             | No design decision needed, pure cleanup                                                                          |
 
 `packages/ui` growing from 3 components to 5–6 is itself a real decision worth stating plainly:
 the package's current thinness is not neglect (Modal/DropdownMenu/Popover are genuinely well
@@ -308,6 +309,7 @@ here — what belongs here is what's genuinely different about each module's tre
 ## 7. Batching and sequencing
 
 **Foundation first, in this order, each its own reviewable batch:**
+
 1. Token specification (§2) — `styles.css` + `packages/tokens`, together, with the §2.4 contrast
    check run and any failing pairing corrected before the batch is called done.
 2. Web component consolidation (§3) — one PR-sized batch per row of the table in §3, since each
@@ -332,6 +334,7 @@ work, rather than attempting a whole module (10+ screens) in one commit.
 ## 8. Explicit non-goals
 
 Presentation layer only. This rebuild, at every phase and every batch, does not touch:
+
 - `packages/policy` or `packages/db`, or any RLS/authorization decision.
 - What data any role can see or do — a visual change is never license to also "clean up" an
   authorization check found along the way; that's a separate, separately-reviewed change.
