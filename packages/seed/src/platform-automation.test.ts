@@ -47,7 +47,7 @@ function membership(index: number, role: SeededMembership['role']): SeededMember
         last: `Last${String(index)}`,
         full: `First${String(index)} Last${String(index)}`,
       },
-      email: `user${String(index)}@taskflow.seed.test`,
+      email: `user${String(index)}@rinavai.seed.test`,
     },
     role,
   };

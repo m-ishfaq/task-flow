@@ -139,7 +139,7 @@ const config: ExpoConfig = {
        the domain, the AASA file on the domain points back at this app, and
        passkeys only work once BOTH sides agree. See the README's "Passkeys"
        section for the full checklist. */
-    associatedDomains: ['webcredentials:rinavai-demo.duckdns.org'],
+    associatedDomains: ['webcredentials:rinavai.duckdns.org'],
     ...(existsSync(GOOGLE_SERVICE_INFO_PLIST)
       ? { googleServicesFile: './GoogleService-Info.plist' }
       : {}),

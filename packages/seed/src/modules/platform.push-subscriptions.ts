@@ -65,9 +65,9 @@ const USER_AGENTS = [
  * fixed. What it does stop is a developer's machine talking to Google.
  */
 const PUSH_SERVICES = [
-  'https://push.taskflow.seed.test/fcm',
-  'https://push.taskflow.seed.test/wpush',
-  'https://push.taskflow.seed.test/apns',
+  'https://push.rinavai.seed.test/fcm',
+  'https://push.rinavai.seed.test/wpush',
+  'https://push.rinavai.seed.test/apns',
 ] as const;
 
 /**

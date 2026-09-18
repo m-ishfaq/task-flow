@@ -53,7 +53,7 @@ describe('checkMailDomain', () => {
   });
 
   it('refuses a domain with no MX, A, or AAAA records', async () => {
-    // The taskflow.seed.test motivating case: a domain on a reserved,
+    // The rinavai.seed.test motivating case: a domain on a reserved,
     // never-resolving TLD (RFC 2606).
     const resolvers: DnsResolvers = {
       resolveMx: vi.fn().mockRejectedValue(dnsError('ENOTFOUND')),
@@ -61,10 +61,10 @@ describe('checkMailDomain', () => {
       resolve6: vi.fn().mockRejectedValue(dnsError('ENOTFOUND')),
     };
 
-    const result = await checkMailDomain('taskflow.seed.test', resolvers);
+    const result = await checkMailDomain('rinavai.seed.test', resolvers);
 
     expect(result.ok).toBe(false);
-    expect(result.reason).toContain('taskflow.seed.test');
+    expect(result.reason).toContain('rinavai.seed.test');
   });
 
   it('fails OPEN when the MX lookup itself is inconclusive rather than a definitive refusal', async () => {

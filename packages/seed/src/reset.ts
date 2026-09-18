@@ -12,7 +12,7 @@ import { resolveModules, tablesInTeardownOrder, type SeedModule } from './regist
  * single DELETE runs:
  *
  *   - Users: `email_normalized` ending in `SEED_EMAIL_DOMAIN`
- *     (`taskflow.seed.test`, RFC 2606-reserved — no seeded address can ever
+ *     (`rinavai.seed.test`, RFC 2606-reserved — no seeded address can ever
  *     be a real mailbox).
  *   - Orgs: every organization one of those users belongs to. Safe because
  *     `tenancy.orgs` only ever adds SEEDED users to a SEEDED org — a real

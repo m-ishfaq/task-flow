@@ -6,7 +6,7 @@ import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
  *
  * ## Why this exists
  *
- * `packages/seed`'s users all live on `taskflow.seed.test`
+ * `packages/seed`'s users all live on `rinavai.seed.test`
  * (`SEED_EMAIL_DOMAIN`) — a domain on the IANA-reserved `.test` TLD, which by
  * RFC 2606 will never resolve. Nothing stops a chat DM notification from
  * being generated for one of those users. Sent through Mailpit that is
@@ -124,7 +124,7 @@ interface CacheEntry {
  *
  * `MailQueue` checks a message's domain on every send attempt, and the same
  * handful of domains recur constantly — every seeded account shares
- * `taskflow.seed.test`, every real org's members cluster on a handful of
+ * `rinavai.seed.test`, every real org's members cluster on a handful of
  * corporate domains. Without this, a busy channel full of seeded users would
  * cost one DNS round trip per notification per retry.
  */

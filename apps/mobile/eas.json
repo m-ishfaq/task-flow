@@ -13,18 +13,18 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "MOBILE_API_BASE_URL": "https://taskflow-demo.duckdns.org",
-        "MOBILE_REALTIME_BASE_URL": "https://taskflow-demo.duckdns.org",
-        "MOBILE_COLLAB_BASE_URL": "https://taskflow-demo.duckdns.org"
+        "MOBILE_API_BASE_URL": "https://rinavai.duckdns.org",
+        "MOBILE_REALTIME_BASE_URL": "https://rinavai.duckdns.org",
+        "MOBILE_COLLAB_BASE_URL": "https://rinavai.duckdns.org"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "MOBILE_API_BASE_URL": "https://taskflow-demo.duckdns.org",
-        "MOBILE_REALTIME_BASE_URL": "https://taskflow-demo.duckdns.org",
-        "MOBILE_COLLAB_BASE_URL": "https://taskflow-demo.duckdns.org"
+        "MOBILE_API_BASE_URL": "https://rinavai.duckdns.org",
+        "MOBILE_REALTIME_BASE_URL": "https://rinavai.duckdns.org",
+        "MOBILE_COLLAB_BASE_URL": "https://rinavai.duckdns.org"
       }
     }
   },
