@@ -54,7 +54,11 @@ export interface Group {
 
 export interface GroupingContext {
   readonly lists: readonly { readonly listId: string; readonly name: string }[];
-  readonly statuses: readonly { readonly statusId: string; readonly name: string; readonly color: string | null }[];
+  readonly statuses: readonly {
+    readonly statusId: string;
+    readonly name: string;
+    readonly color: string | null;
+  }[];
   readonly people: readonly { readonly userId: string; readonly label: string }[];
   /** Injected rather than read from `Date.now()` inside the bucketer, so "today" is a test input. */
   readonly now?: Date;
