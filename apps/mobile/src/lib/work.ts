@@ -434,9 +434,9 @@ export function cardBranchesQueryKey(cardId: string): readonly ['work.branches.l
 }
 
 /** Connected GitHub repos — `work.githubRepos.list`. */
-export type ConnectedRepo = {
+export interface ConnectedRepo {
   readonly providerScope: string;
-};
+}
 
 export const GITHUB_REPOS_QUERY_KEY = ['work.githubRepos.list'] as const;
 
