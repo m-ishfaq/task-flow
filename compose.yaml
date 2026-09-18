@@ -77,7 +77,7 @@ services:
   # S3-compatible object storage, standing in for Cloudflare R2 (§5).
   # Console at http://localhost:9001
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: taskflow-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -97,7 +97,7 @@ services:
 
   # Creates the buckets on first run, then exits.
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: taskflow-minio-init
     depends_on:
       minio:
