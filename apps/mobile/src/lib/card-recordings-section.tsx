@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { View, Text, Pressable, TextInput, ActivityIndicator, FlatList } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors } from '@taskflow/tokens';
 import { wire } from '@taskflow/client';
 import { apiClient } from '../lib/app-session.js';
-import type { CardRecording, CallRecord, CallRecording } from '../lib/telephony.js';
+import type { CallRecord, CallRecording } from '../lib/telephony.js';
 import {
   cardRecordingsQueryKey,
   CALLS_QUERY_KEY,
@@ -23,10 +23,8 @@ import { styles as s } from './card-detail-styles.js';
  */
 
 export function RecordingSection({
-  orgId,
   cardId,
 }: {
-  readonly orgId: string;
   readonly cardId: string;
 }) {
   const queryClient = useQueryClient();
@@ -79,11 +77,11 @@ export function RecordingSection({
               <View style={{ flex: 1 }}>
                 <Text style={s.label}>
                   {recording.status}
-                  {recording.durationSeconds != null ? ` \u00B7 ${recording.durationSeconds}s` : ''}
+                  {recording.durationSeconds != null ? ` \u00B7 ${String(recording.durationSeconds)}s` : ''}
                 </Text>
               </View>
               <Pressable
-                onPress={() => detach.mutate(recording.recordingId)}
+                onPress={() => { detach.mutate(recording.recordingId); }}
                 disabled={detach.isPending}
                 hitSlop={8}
               >
@@ -96,13 +94,12 @@ export function RecordingSection({
 
       {picking ? (
         <RecordingPicker
-          orgId={orgId}
-          onAttach={(recordingId) => attach.mutate(recordingId)}
-          onCancel={() => setPicking(false)}
+          onAttach={(recordingId) => { attach.mutate(recordingId); }}
+          onCancel={() => { setPicking(false); }}
           pending={attach.isPending}
         />
       ) : (
-        <Pressable onPress={() => setPicking(true)} hitSlop={8} style={{ marginTop: 8 }}>
+        <Pressable onPress={() => { setPicking(true); }} hitSlop={8} style={{ marginTop: 8 }}>
           <Text style={[s.label, { color: colors.accent.hex }]}>Attach a recording</Text>
         </Pressable>
       )}
@@ -111,12 +108,10 @@ export function RecordingSection({
 }
 
 function RecordingPicker({
-  orgId,
   onAttach,
   onCancel,
   pending,
 }: {
-  readonly orgId: string;
   readonly onAttach: (recordingId: string) => void;
   readonly onCancel: () => void;
   readonly pending: boolean;
@@ -138,7 +133,7 @@ function RecordingPicker({
       ) : callId === null ? (
         <View style={{ gap: 4 }}>
           {recorded.map((call: CallRecord) => (
-            <Pressable key={call.callId} onPress={() => setCallId(call.callId)} style={s.devRow}>
+            <Pressable key={call.callId} onPress={() => { setCallId(call.callId); }} style={s.devRow}>
               <Text style={s.devRowLabel} numberOfLines={1}>
                 {String(call.counterparty)}
                 {' \u00B7 '}
@@ -151,7 +146,7 @@ function RecordingPicker({
         <RecordingsOfCall
           callId={callId}
           onAttach={onAttach}
-          onBack={() => setCallId(null)}
+          onBack={() => { setCallId(null); }}
           pending={pending}
         />
       )}
@@ -195,10 +190,10 @@ function RecordingsOfCall({
         stored.map((recording: CallRecording) => (
           <View key={recording.recordingId} style={s.devRow}>
             <Text style={[s.label, { flex: 1 }]}>
-              {recording.durationSeconds != null ? `${recording.durationSeconds}s` : '\u2014'}
+              {recording.durationSeconds != null ? `${String(recording.durationSeconds)}s` : '\u2014'}
             </Text>
             <Pressable
-              onPress={() => onAttach(recording.recordingId)}
+              onPress={() => { onAttach(recording.recordingId); }}
               disabled={pending}
               hitSlop={8}
             >

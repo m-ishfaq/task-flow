@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, Text, TextInput, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
@@ -9,9 +9,6 @@ import {
   cardBranchesQueryKey,
   cardPullRequestsQueryKey,
   githubReposQueryKey,
-  type BranchLink,
-  type ConnectedRepo,
-  type PullRequestLink,
 } from './work.js';
 import { Section } from './card-detail-shared.js';
 import { styles } from './card-detail-styles.js';
@@ -29,11 +26,9 @@ import { styles } from './card-detail-styles.js';
  * (`cards.get`'s `capabilities.update`) hides the Link/Unlink controls.
  */
 export function DevelopmentSection({
-  orgId,
   cardId,
   canEdit,
 }: {
-  readonly orgId: string;
   readonly cardId: string;
   readonly canEdit: boolean;
 }) {
@@ -49,12 +44,12 @@ export function DevelopmentSection({
     <Section label="Development">
       <View style={styles.devSubsection}>
         <Text style={styles.devSubsectionTitle}>Pull requests</Text>
-        <PrSubsection orgId={orgId} cardId={cardId} canEdit={canEdit} hasRepo={hasRepo} />
+        <PrSubsection cardId={cardId} canEdit={canEdit} hasRepo={hasRepo} />
       </View>
 
       <View style={styles.devSubsection}>
         <Text style={styles.devSubsectionTitle}>Branches</Text>
-        <BranchSubsection orgId={orgId} cardId={cardId} canEdit={canEdit} hasRepo={hasRepo} />
+        <BranchSubsection cardId={cardId} canEdit={canEdit} hasRepo={hasRepo} />
       </View>
 
       {canEdit && !hasRepo && repos.isSuccess && (
@@ -72,12 +67,10 @@ export function DevelopmentSection({
  * -------------------------------------------------------------------------- */
 
 function PrSubsection({
-  orgId,
   cardId,
   canEdit,
   hasRepo,
 }: {
-  readonly orgId: string;
   readonly cardId: string;
   readonly canEdit: boolean;
   readonly hasRepo: boolean;
@@ -127,11 +120,11 @@ function PrSubsection({
             <View key={`${pr.providerScope}#${String(pr.prNumber)}`} style={styles.devRow}>
               <Pressable
                 style={styles.devRowPressable}
-                onPress={() =>
+                onPress={() => {
                   void Linking.openURL(
                     `https://github.com/${pr.providerScope}/pull/${String(pr.prNumber)}`,
-                  )
-                }
+                  );
+                }}
               >
                 <Text style={styles.devRowIcon}>PR</Text>
                 <Text style={styles.devRowLabel} numberOfLines={1}>
@@ -141,9 +134,9 @@ function PrSubsection({
               {canEdit && (
                 <Pressable
                   disabled={unlink.isPending}
-                  onPress={() =>
-                    unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber })
-                  }
+                  onPress={() => {
+                    unlink.mutate({ providerScope: pr.providerScope, prNumber: pr.prNumber });
+                  }}
                 >
                   <Text style={styles.devUnlink}>Unlink</Text>
                 </Pressable>
@@ -200,12 +193,10 @@ function PrSubsection({
  * -------------------------------------------------------------------------- */
 
 function BranchSubsection({
-  orgId,
   cardId,
   canEdit,
   hasRepo,
 }: {
-  readonly orgId: string;
   readonly cardId: string;
   readonly canEdit: boolean;
   readonly hasRepo: boolean;
@@ -223,7 +214,7 @@ function BranchSubsection({
     mutationFn: async (input: { cardId: string; branchName?: string; repoScope?: string }) => {
       return wire(await apiClient.work.branches.create.mutate(input));
     },
-    onSuccess: async (result) => {
+    onSuccess: async () => {
       setFormOpen(false);
       setBranchName('');
       await queryClient.invalidateQueries({ queryKey: cardBranchesQueryKey(cardId) });
@@ -257,11 +248,11 @@ function BranchSubsection({
             <View key={`${branch.providerScope}-${branch.branchName}`} style={styles.devRow}>
               <Pressable
                 style={styles.devRowPressable}
-                onPress={() =>
+                onPress={() => {
                   void Linking.openURL(
                     `https://github.com/${branch.providerScope}/tree/${branch.branchName}`,
-                  )
-                }
+                  );
+                }}
               >
                 <Text style={styles.devRowIcon}>BR</Text>
                 <Text style={[styles.devRowLabel, styles.devBranchName]} numberOfLines={1}>
@@ -271,13 +262,13 @@ function BranchSubsection({
               {canEdit && (
                 <Pressable
                   disabled={unlink.isPending}
-                  onPress={() =>
+                  onPress={() => {
                     unlink.mutate({
                       providerScope: branch.providerScope,
                       branchName: branch.branchName,
                       cardId,
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Text style={styles.devUnlink}>Unlink</Text>
                 </Pressable>
@@ -294,7 +285,7 @@ function BranchSubsection({
       )}
 
       {canEdit && hasRepo && !formOpen && (
-        <Pressable style={styles.devButton} onPress={() => setFormOpen(true)}>
+        <Pressable style={styles.devButton} onPress={() => { setFormOpen(true); }}>
           <Text style={styles.devButtonText}>Create branch</Text>
         </Pressable>
       )}
@@ -321,7 +312,7 @@ function BranchSubsection({
             >
               <Text style={styles.devButtonText}>{create.isPending ? 'Creating…' : 'Create'}</Text>
             </Pressable>
-            <Pressable style={styles.devButtonCancel} onPress={() => setFormOpen(false)}>
+            <Pressable style={styles.devButtonCancel} onPress={() => { setFormOpen(false); }}>
               <Text style={styles.devButtonText}>Cancel</Text>
             </Pressable>
           </View>

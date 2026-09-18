@@ -193,7 +193,6 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
         />
 
         <DevelopmentSection
-          orgId={orgId ?? ''}
           cardId={cardId}
           canEdit={data.capabilities.update}
         />
@@ -249,7 +248,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
 
         <AttachmentSection cardId={cardId} />
 
-        <RecordingSection orgId={orgId ?? ''} cardId={cardId} />
+        <RecordingSection cardId={cardId} />
 
         <CommentsSection cardId={cardId} canModerate={data.capabilities.moderateComments} />
       </ScrollView>

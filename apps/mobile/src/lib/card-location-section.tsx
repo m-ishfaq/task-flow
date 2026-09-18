@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, ListId, ProjectId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
-import { colors } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
 import { apiErrorOf } from './trpc-client.js';
 import {
@@ -13,7 +12,6 @@ import {
   listsQueryKey,
   MY_TASKS_QUERY_KEY,
   type Board,
-  type ListSummary,
 } from './work.js';
 import { Section } from './card-detail-shared.js';
 import { styles } from './card-detail-styles.js';
