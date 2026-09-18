@@ -68,6 +68,10 @@
 ## at runtime regardless of the image digest — so pinning would add churn without
 ## protecting the thing that actually matters.
 ##
+## `minio/mc` and `minio/minio` use quay.io mirrors because the Docker Hub
+## repository for `mc` is archived and `minio` was rate-limited. All other
+## third-party images keep their Docker Hub digest pins.
+##
 ## Updating one is a one-line edit — take the digest from the Dependabot PR, or
 ##   docker buildx imagetools inspect minio/minio:latest
 
@@ -128,7 +132,7 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
