@@ -1,5 +1,4 @@
 import { createContext, useContext } from 'react';
-import type { PaletteId } from '@taskflow/contracts';
 import { paletteColorsOf, type PaletteColors } from '@taskflow/tokens';
 
 /**
@@ -21,7 +20,7 @@ import { paletteColorsOf, type PaletteColors } from '@taskflow/tokens';
 export interface BrandingValue {
   readonly productName: string;
   readonly logoUrl: string | null;
-  readonly paletteId: PaletteId;
+  readonly paletteId: string;
   /** True while the first branding fetch is in-flight — lets BrandMark suppress the fallback initial to avoid a flash. */
   readonly isPending: boolean;
 }
