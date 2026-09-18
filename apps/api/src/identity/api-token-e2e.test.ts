@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeApiTokenAuthDatabase,
+  initializeDatabase,
+  initializePlatformAdminDatabase,
+} from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { buildServer } from '../server.js';
 import type { DeliverableLink } from '../identity/identity.service.js';

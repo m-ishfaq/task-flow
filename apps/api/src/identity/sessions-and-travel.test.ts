@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase, sql, withGlobalScope } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeDatabase,
+  initializePlatformAdminDatabase,
+  sql,
+  withGlobalScope,
+} from '@taskflow/db';
 import { up } from '@taskflow/db/migrate';
 import { RecordingEventBus } from '@taskflow/events';
 import { verifyAccessToken } from '@taskflow/security';
