@@ -307,7 +307,7 @@ request ever reaches the container.
 Caddyfile addition (adjust the domain to match `web`'s existing block):
 
 ```
-taskflow-demo.duckdns.org {
+rinavai.duckdns.org {
 	# ... existing reverse_proxy for / -> localhost:8080 (web, per WEB_HOST_PORT above) stays as-is ...
 
 	handle /logs* {

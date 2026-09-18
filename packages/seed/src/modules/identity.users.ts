@@ -34,7 +34,7 @@ export const SEED_PASSWORD = 'Rinavai!Demo1';
  * by RFC 2606 and cannot be registered, so no seeded address can ever reach a
  * real mailbox even if a mail worker picked one up.
  */
-export const SEED_EMAIL_DOMAIN = 'taskflow.seed.test';
+export const SEED_EMAIL_DOMAIN = 'rinavai.seed.test';
 
 /**
  * The platform operator's own address and password come from

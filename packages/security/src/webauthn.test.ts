@@ -45,10 +45,10 @@ describe('relyingPartyFrom', () => {
     // A credential is scoped to a registrable domain. An rpID carrying a scheme
     // or a port matches nothing, and the failure surfaces as "no passkeys
     // available" rather than as an error anyone can debug.
-    const rp = relyingPartyFrom('https://app.rinavai.io', 'Rinavai');
+    const rp = relyingPartyFrom('https://rinavai.duckdns.org', 'Rinavai');
 
-    expect(rp.id).toBe('app.rinavai.io');
-    expect(rp.origin).toBe('https://app.rinavai.io');
+    expect(rp.id).toBe('rinavai.duckdns.org');
+    expect(rp.origin).toBe('https://rinavai.duckdns.org');
   });
 
   it('allows localhost over http', () => {
@@ -60,7 +60,7 @@ describe('relyingPartyFrom', () => {
   it('refuses plain http anywhere else', () => {
     // The browser will refuse every ceremony, so failing at boot with a clear
     // message beats a WebAuthn call that silently does nothing in staging.
-    expect(() => relyingPartyFrom('http://staging.rinavai.io', 'Rinavai')).toThrow(
+    expect(() => relyingPartyFrom('http://staging.rinavai.duckdns.org', 'Rinavai')).toThrow(
       /secure context/,
     );
   });

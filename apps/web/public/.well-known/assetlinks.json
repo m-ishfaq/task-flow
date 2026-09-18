@@ -3,7 +3,7 @@
     "relation": ["delegate_permission/common.get_login_creds"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.taskflow.app",
+      "package_name": "com.rinavai.app",
       "sha256_cert_fingerprints": [
         "EE:CA:12:05:7F:95:31:30:57:51:4D:07:A7:3C:AD:90:D8:43:B9:22:8F:29:64:A0:89:52:F4:81:9D:B5:27:42"
       ]

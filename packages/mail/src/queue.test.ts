@@ -235,7 +235,7 @@ describe('domain check', () => {
       onFailure: (failure) => failures.push(failure),
     });
 
-    queue.enqueue({ ...MESSAGE, to: 'user@taskflow.seed.test' });
+    queue.enqueue({ ...MESSAGE, to: 'user@rinavai.seed.test' });
     await queue.drain();
 
     expect(mailer.sent).toHaveLength(0);
@@ -244,7 +244,7 @@ describe('domain check', () => {
     // Never attempted, unlike a real SMTP failure — the reported attempts say so.
     expect(failures[0]?.attempts).toBe(0);
     expect(failures[0]?.reason).toContain('no MX, A, or AAAA records');
-    expect(checkDomain).toHaveBeenCalledWith('taskflow.seed.test');
+    expect(checkDomain).toHaveBeenCalledWith('rinavai.seed.test');
   });
 
   it('sends normally when the domain check accepts the recipient', async () => {
@@ -264,7 +264,7 @@ describe('domain check', () => {
     const mailer = new MemoryMailer();
     const queue = new MailQueue({ mailer, sleep: instant });
 
-    queue.enqueue({ ...MESSAGE, to: 'user@taskflow.seed.test' });
+    queue.enqueue({ ...MESSAGE, to: 'user@rinavai.seed.test' });
     await queue.drain();
 
     expect(mailer.sent).toHaveLength(1);

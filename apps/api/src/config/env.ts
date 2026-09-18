@@ -257,7 +257,7 @@ export const EnvSchema = z
      * string 'true' rather than with `z.coerce.boolean()`, the
      * RETENTION_SWEEP_ENABLED lesson. Mailpit does not care what the
      * recipient domain is, so leaving this off locally costs nothing; a real
-     * relay does, and `packages/seed`'s users all share `taskflow.seed.test`
+     * relay does, and `packages/seed`'s users all share `rinavai.seed.test`
      * — a domain on the reserved, never-resolving `.test` TLD — so turning
      * this on against a real relay is what stops every seeded account's
      * notification mail from burning a full SMTP retry budget for a
