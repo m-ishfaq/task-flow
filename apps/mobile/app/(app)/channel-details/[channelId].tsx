@@ -144,7 +144,7 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
       <View style={styles.navBar}>
         <Pressable
           style={styles.navBack}
-         
+
           onPress={() => {
             router.back();
           }}
@@ -222,7 +222,7 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
                 <Pressable
                   style={styles.dangerButton}
                   disabled={archive.isPending}
-                 
+
                   onPress={() => {
                     archive.mutate();
                   }}
@@ -438,7 +438,7 @@ function ChannelIdentity({
       {channel.capabilities.manage && (
         <Pressable
           style={styles.editTopicLink}
-         
+
           onPress={() => {
             setEditing(true);
           }}
@@ -503,7 +503,7 @@ function MemberRoster({
               {removable && (
                 <Pressable
                   disabled={pending}
-                 
+
                   onPress={() => {
                     onRemove(userId);
                   }}
@@ -564,16 +564,16 @@ function AddMemberControl({
           {needle === '' ? 'Everyone in the organization is already here.' : 'No match.'}
         </Text>
       ) : (
-          candidates.map((member) => (
-            <Pressable
-              key={member.userId}
-              style={styles.rosterRow}
-              disabled={add.isPending}
-             
-              onPress={() => {
-                add.mutate(member.userId);
-              }}
-            >
+        candidates.map((member) => (
+          <Pressable
+            key={member.userId}
+            style={styles.rosterRow}
+            disabled={add.isPending}
+
+            onPress={() => {
+              add.mutate(member.userId);
+            }}
+          >
             <PersonLine
               person={{
                 userId: member.userId,
@@ -803,7 +803,7 @@ function FilesSection({ channelId }: { readonly channelId: ChannelId }) {
             {file.status === 'clean' ? (
               <Pressable
                 disabled={download.isPending}
-               
+
                 onPress={() => {
                   download.mutate(file.attachmentId);
                 }}
@@ -901,7 +901,7 @@ function GuestAccessSection({ channelId }: { readonly channelId: ChannelId }) {
           />
           <Pressable
             disabled={revoke.isPending}
-           
+
             onPress={() => {
               revoke.mutate(row.userId);
             }}
@@ -928,7 +928,7 @@ function GuestAccessSection({ channelId }: { readonly channelId: ChannelId }) {
               key={member.userId}
               style={styles.rosterRow}
               disabled={invite.isPending}
-             
+
               onPress={() => {
                 invite.mutate(member.userId);
               }}
@@ -1049,7 +1049,7 @@ function ComplianceSection({
         </View>
         <Pressable
           disabled={hold.isPending}
-         
+
           onPress={() => {
             hold.mutate(!channel.retentionHold);
           }}
@@ -1062,7 +1062,7 @@ function ComplianceSection({
         <Text style={styles.fieldBold}>Export conversation</Text>
         <Pressable
           disabled={exportChannel.isPending}
-         
+
           onPress={() => {
             exportChannel.mutate();
           }}

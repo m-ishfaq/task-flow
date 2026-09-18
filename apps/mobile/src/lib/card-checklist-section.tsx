@@ -183,7 +183,11 @@ export function ChecklistSection({
             {checklist.items.map((item) => (
               <View key={item.itemId} style={styles.checklistItemRow}>
                 <Pressable
-                  style={[styles.checklistBox, item.done && styles.checklistBoxDone, !canEdit && styles.checklistBoxDisabled]}
+                  style={[
+                    styles.checklistBox,
+                    item.done && styles.checklistBoxDone,
+                    !canEdit && styles.checklistBoxDisabled,
+                  ]}
                   disabled={!canEdit}
                   onPress={() => {
                     toggleItem.mutate({ itemId: item.itemId, text: item.text, done: !item.done });
@@ -207,43 +211,44 @@ export function ChecklistSection({
               </View>
             ))}
 
-            {canEdit && (addingItemFor === checklist.checklistId ? (
-              <View style={styles.addCardRow}>
-                <TextInput
-                  style={styles.addCardInput}
-                  placeholder="Add an item"
-                  placeholderTextColor={colors.inkFaint.hex}
-                  value={newItemText}
-                  onChangeText={setNewItemText}
-                  autoFocus
-                  onSubmitEditing={() => {
-                    const value = newItemText.trim();
-                    if (value === '') return;
-                    addItem.mutate({ checklistId: checklist.checklistId, text: value });
-                  }}
-                />
+            {canEdit &&
+              (addingItemFor === checklist.checklistId ? (
+                <View style={styles.addCardRow}>
+                  <TextInput
+                    style={styles.addCardInput}
+                    placeholder="Add an item"
+                    placeholderTextColor={colors.inkFaint.hex}
+                    value={newItemText}
+                    onChangeText={setNewItemText}
+                    autoFocus
+                    onSubmitEditing={() => {
+                      const value = newItemText.trim();
+                      if (value === '') return;
+                      addItem.mutate({ checklistId: checklist.checklistId, text: value });
+                    }}
+                  />
+                  <Pressable
+                    style={styles.addCardButton}
+                    disabled={addItem.isPending}
+                    onPress={() => {
+                      const value = newItemText.trim();
+                      if (value === '') return;
+                      addItem.mutate({ checklistId: checklist.checklistId, text: value });
+                    }}
+                  >
+                    <Text style={styles.addCardButtonText}>Add</Text>
+                  </Pressable>
+                </View>
+              ) : (
                 <Pressable
-                  style={styles.addCardButton}
-                  disabled={addItem.isPending}
                   onPress={() => {
-                    const value = newItemText.trim();
-                    if (value === '') return;
-                    addItem.mutate({ checklistId: checklist.checklistId, text: value });
+                    setNewItemText('');
+                    setAddingItemFor(checklist.checklistId);
                   }}
                 >
-                  <Text style={styles.addCardButtonText}>Add</Text>
+                  <Text style={styles.checklistAddItemText}>+ Add an item</Text>
                 </Pressable>
-              </View>
-            ) : (
-              <Pressable
-                onPress={() => {
-                  setNewItemText('');
-                  setAddingItemFor(checklist.checklistId);
-                }}
-              >
-                <Text style={styles.checklistAddItemText}>+ Add an item</Text>
-              </Pressable>
-            ))}
+              ))}
           </View>
         );
       })}

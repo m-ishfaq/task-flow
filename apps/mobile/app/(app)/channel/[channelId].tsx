@@ -1707,7 +1707,7 @@ function MessageRow({
               <Pressable
                 key={attachment.attachmentId}
                 style={styles.attachmentChip}
-               
+
                 onPress={() => {
                   onDownloadAttachment(attachment.attachmentId, attachment.contentType);
                 }}
@@ -1857,7 +1857,7 @@ function LinkPreviewList({ previews }: { readonly previews: readonly UnfurlPrevi
         <Pressable
           key={preview.url}
           style={styles.previewCard}
-         
+
           onPress={() => {
             void Linking.openURL(preview.url);
           }}

@@ -293,16 +293,11 @@ export function EmptyState({
     <View style={emptyStateStyles.container}>
       {icon ? <Text style={emptyStateStyles.icon}>{icon}</Text> : null}
       <Text style={emptyStateStyles.title}>{title}</Text>
-      {description ? (
-        <Text style={emptyStateStyles.description}>{description}</Text>
-      ) : null}
+      {description ? <Text style={emptyStateStyles.description}>{description}</Text> : null}
       {actionLabel && onAction ? (
         <Pressable
           onPress={onAction}
-          style={({ pressed }) => [
-            emptyStateStyles.action,
-            pressed && { opacity: 0.7 },
-          ]}
+          style={({ pressed }) => [emptyStateStyles.action, pressed && { opacity: 0.7 }]}
         >
           <Text style={emptyStateStyles.actionText}>{actionLabel}</Text>
         </Pressable>
@@ -380,16 +375,11 @@ export function ErrorView({
     <View style={errorViewStyles.container}>
       <Text style={errorViewStyles.icon}>{'\u26A0\uFE0F'}</Text>
       <Text style={errorViewStyles.title}>{title}</Text>
-      {message ? (
-        <Text style={errorViewStyles.message}>{message}</Text>
-      ) : null}
+      {message ? <Text style={errorViewStyles.message}>{message}</Text> : null}
       {onRetry ? (
         <Pressable
           onPress={onRetry}
-          style={({ pressed }) => [
-            errorViewStyles.retry,
-            pressed && { opacity: 0.7 },
-          ]}
+          style={({ pressed }) => [errorViewStyles.retry, pressed && { opacity: 0.7 }]}
         >
           <Text style={errorViewStyles.retryText}>{retryLabel}</Text>
         </Pressable>

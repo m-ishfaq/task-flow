@@ -69,7 +69,8 @@ export function LocationSection({
   const [listPickerOpen, setListPickerOpen] = useState(false);
 
   const boards = useQuery({
-    queryKey: projectId !== null ? boardsQueryKey(projectId) : ['work.boards.list', 'none'] as const,
+    queryKey:
+      projectId !== null ? boardsQueryKey(projectId) : (['work.boards.list', 'none'] as const),
     queryFn: async () => {
       if (projectId === null) return [] as Board[];
       return wire(await apiClient.work.boards.list.query({ projectId }));
@@ -138,9 +139,7 @@ export function LocationSection({
         }}
       >
         <Text style={styles.priorityChipText} numberOfLines={1}>
-          {showingBoardId === boardId
-            ? (currentList?.name ?? 'Unknown list')
-            : 'Choose a list…'}
+          {showingBoardId === boardId ? (currentList?.name ?? 'Unknown list') : 'Choose a list…'}
         </Text>
       </Pressable>
 
@@ -180,9 +179,7 @@ export function LocationSection({
                   <Text style={styles.pickerRowText} numberOfLines={1}>
                     {board.name}
                   </Text>
-                  {board.boardId === showingBoardId && (
-                    <Text style={styles.pickerCheck}>✓</Text>
-                  )}
+                  {board.boardId === showingBoardId && <Text style={styles.pickerCheck}>✓</Text>}
                 </Pressable>
               ))}
             </ScrollView>

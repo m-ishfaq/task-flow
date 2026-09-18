@@ -184,7 +184,9 @@ export function CommentsSection({
               editPending={edit.isPending}
               onStartEdit={() => {
                 setEditingId(comment.commentId);
-                setEditDraft(serializeToText(comment.body as Parameters<typeof serializeToText>[0]));
+                setEditDraft(
+                  serializeToText(comment.body as Parameters<typeof serializeToText>[0]),
+                );
               }}
               onCancelEdit={() => {
                 setEditingId(null);
@@ -218,7 +220,9 @@ export function CommentsSection({
                 editPending={edit.isPending}
                 onStartEdit={() => {
                   setEditingId(reply.commentId);
-                  setEditDraft(serializeToText(reply.body as Parameters<typeof serializeToText>[0]));
+                  setEditDraft(
+                    serializeToText(reply.body as Parameters<typeof serializeToText>[0]),
+                  );
                 }}
                 onCancelEdit={() => {
                   setEditingId(null);

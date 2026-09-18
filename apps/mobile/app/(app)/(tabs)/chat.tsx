@@ -250,7 +250,7 @@ function ChannelRow({
   return (
     <Pressable
       style={styles.row}
-     
+
       onPress={() => {
         router.push(`/channel/${channel.channelId}`);
       }}

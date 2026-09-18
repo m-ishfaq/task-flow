@@ -34,12 +34,10 @@ export function RecordingSection({
 
   const attached = useQuery({
     queryKey: cardRecordingsQueryKey(cardId),
-    queryFn: async () =>
-      wire(await apiClient.telephony.cards.recordings.query({ cardId })),
+    queryFn: async () => wire(await apiClient.telephony.cards.recordings.query({ cardId })),
   });
 
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: cardRecordingsQueryKey(cardId) });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: cardRecordingsQueryKey(cardId) });
 
   const detach = useMutation({
     mutationFn: async (recordingId: string) => {
@@ -81,9 +79,7 @@ export function RecordingSection({
               <View style={{ flex: 1 }}>
                 <Text style={s.label}>
                   {recording.status}
-                  {recording.durationSeconds != null
-                    ? ` \u00B7 ${recording.durationSeconds}s`
-                    : ''}
+                  {recording.durationSeconds != null ? ` \u00B7 ${recording.durationSeconds}s` : ''}
                 </Text>
               </View>
               <Pressable
@@ -106,14 +102,8 @@ export function RecordingSection({
           pending={attach.isPending}
         />
       ) : (
-        <Pressable
-          onPress={() => setPicking(true)}
-          hitSlop={8}
-          style={{ marginTop: 8 }}
-        >
-          <Text style={[s.label, { color: colors.accent.hex }]}>
-            Attach a recording
-          </Text>
+        <Pressable onPress={() => setPicking(true)} hitSlop={8} style={{ marginTop: 8 }}>
+          <Text style={[s.label, { color: colors.accent.hex }]}>Attach a recording</Text>
         </Pressable>
       )}
     </Section>
@@ -148,13 +138,10 @@ function RecordingPicker({
       ) : callId === null ? (
         <View style={{ gap: 4 }}>
           {recorded.map((call: CallRecord) => (
-            <Pressable
-              key={call.callId}
-              onPress={() => setCallId(call.callId)}
-              style={s.devRow}
-            >
+            <Pressable key={call.callId} onPress={() => setCallId(call.callId)} style={s.devRow}>
               <Text style={s.devRowLabel} numberOfLines={1}>
-                {String(call.counterparty)}{' \u00B7 '}
+                {String(call.counterparty)}
+                {' \u00B7 '}
                 {call.direction}
               </Text>
             </Pressable>
@@ -188,22 +175,17 @@ function RecordingsOfCall({
 }) {
   const recordings = useQuery({
     queryKey: callRecordingsQueryKey(callId),
-    queryFn: async () =>
-      wire(await apiClient.telephony.recordings.list.query({ callId })),
+    queryFn: async () => wire(await apiClient.telephony.recordings.list.query({ callId })),
   });
 
   if (recordings.isPending) {
-    return (
-      <ActivityIndicator color={colors.accent.hex} style={{ height: 40 }} />
-    );
+    return <ActivityIndicator color={colors.accent.hex} style={{ height: 40 }} />;
   }
   if (recordings.isError) {
     return <EmptyHint>Could not load recordings.</EmptyHint>;
   }
 
-  const stored = recordings.data.filter(
-    (r: CallRecording) => r.status === 'stored',
-  );
+  const stored = recordings.data.filter((r: CallRecording) => r.status === 'stored');
 
   return (
     <View style={{ gap: 4 }}>
@@ -213,20 +195,14 @@ function RecordingsOfCall({
         stored.map((recording: CallRecording) => (
           <View key={recording.recordingId} style={s.devRow}>
             <Text style={[s.label, { flex: 1 }]}>
-              {recording.durationSeconds != null
-                ? `${recording.durationSeconds}s`
-                : '\u2014'}
+              {recording.durationSeconds != null ? `${recording.durationSeconds}s` : '\u2014'}
             </Text>
             <Pressable
               onPress={() => onAttach(recording.recordingId)}
               disabled={pending}
               hitSlop={8}
             >
-              <Text
-                style={[s.label, { color: colors.accent.hex }]}
-              >
-                Attach
-              </Text>
+              <Text style={[s.label, { color: colors.accent.hex }]}>Attach</Text>
             </Pressable>
           </View>
         ))

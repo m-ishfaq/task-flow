@@ -79,29 +79,44 @@ export function CardCalendarView({
 
   // Separate overdue from the rest
   const overdueDays = dayInfos.filter((d) => d.isOverdue);
-  const nonOverdueDays = dayInfos.filter(
-    (d) => !d.isOverdue && d.cards.length > 0,
-  );
+  const nonOverdueDays = dayInfos.filter((d) => !d.isOverdue && d.cards.length > 0);
 
   return (
     <View style={{ flex: 1 }}>
       {/* Month header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderBottomWidth: 1, borderBottomColor: colors.line.hex }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.line.hex,
+        }}
+      >
         <Pressable
-          onPress={() => { setMonth((c) => subMonths(c, 1)); }}
+          onPress={() => {
+            setMonth((c) => subMonths(c, 1));
+          }}
           hitSlop={8}
         >
           <Text style={{ fontSize: 18, color: colors.inkMuted.hex }}>{'\u276E'}</Text>
         </Pressable>
-        <Text style={{ fontWeight: '600', color: colors.ink.hex }}>{format(month, 'MMMM yyyy')}</Text>
+        <Text style={{ fontWeight: '600', color: colors.ink.hex }}>
+          {format(month, 'MMMM yyyy')}
+        </Text>
         <Pressable
-          onPress={() => { setMonth(new Date()); }}
+          onPress={() => {
+            setMonth(new Date());
+          }}
           hitSlop={8}
         >
           <Text style={{ color: colors.accent.hex, fontSize: 12, fontWeight: '500' }}>Today</Text>
         </Pressable>
         <Pressable
-          onPress={() => { setMonth((c) => addMonths(c, 1)); }}
+          onPress={() => {
+            setMonth((c) => addMonths(c, 1));
+          }}
           hitSlop={8}
         >
           <Text style={{ fontSize: 18, color: colors.inkMuted.hex }}>{'\u276F'}</Text>
@@ -109,9 +124,15 @@ export function CardCalendarView({
       </View>
 
       {unscheduledCount > 0 && (
-        <Text style={{ paddingHorizontal: 16, marginBottom: 4, color: colors.inkMuted.hex, fontSize: 12 }}>
-          {unscheduledCount} card{unscheduledCount !== 1 ? 's have' : ' has'} no
-          due date
+        <Text
+          style={{
+            paddingHorizontal: 16,
+            marginBottom: 4,
+            color: colors.inkMuted.hex,
+            fontSize: 12,
+          }}
+        >
+          {unscheduledCount} card{unscheduledCount !== 1 ? 's have' : ' has'} no due date
         </Text>
       )}
 
@@ -123,25 +144,26 @@ export function CardCalendarView({
           overdueDays.length > 0 ? (
             <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
               <Text
-                style={{ color: colors.danger.hex, fontWeight: '600', marginBottom: 6, fontSize: 12 }}
+                style={{
+                  color: colors.danger.hex,
+                  fontWeight: '600',
+                  marginBottom: 6,
+                  fontSize: 12,
+                }}
               >
                 Overdue
               </Text>
               {overdueDays.map((d) => (
-                <DaySection
-                  key={format(d.date, 'yyyy-MM-dd')}
-                  day={d}
-                  onOpenCard={onOpenCard}
-                />
+                <DaySection key={format(d.date, 'yyyy-MM-dd')} day={d} onOpenCard={onOpenCard} />
               ))}
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
-          <DaySection day={item} onOpenCard={onOpenCard} />
-        )}
+        renderItem={({ item }) => <DaySection day={item} onOpenCard={onOpenCard} />}
         ListEmptyComponent={
-          <Text style={{ padding: 16, textAlign: 'center', color: colors.inkMuted.hex, fontSize: 12 }}>
+          <Text
+            style={{ padding: 16, textAlign: 'center', color: colors.inkMuted.hex, fontSize: 12 }}
+          >
             No cards with due dates this month.
           </Text>
         }
@@ -180,7 +202,9 @@ function DaySection({
         <CardRow
           key={card.cardId}
           card={card}
-          onPress={() => { onOpenCard(card.cardId); }}
+          onPress={() => {
+            onOpenCard(card.cardId);
+          }}
         />
       ))}
     </View>

@@ -159,7 +159,11 @@ export default function Home() {
           {SORT_BY_OPTIONS.map((option) => (
             <Pressable
               key={option}
-              style={({ pressed }) => [styles.sortChip, sortBy === option && styles.sortChipActive, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.sortChip,
+                sortBy === option && styles.sortChipActive,
+                pressed && { opacity: 0.7 },
+              ]}
               onPress={() => {
                 setSortBy(option);
               }}

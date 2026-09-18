@@ -323,7 +323,11 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabStripFrame}>
         <View style={styles.tabStrip}>
           <Pressable
-            style={({ pressed }) => [styles.tab, activeSelection === 'backlog' && styles.tabActive, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.tab,
+              activeSelection === 'backlog' && styles.tabActive,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => {
               setSelection('backlog');
             }}
@@ -335,7 +339,11 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
           {sprints.data.map((sprint) => (
             <Pressable
               key={sprint.sprintId}
-              style={({ pressed }) => [styles.tab, activeSelection === sprint.sprintId && styles.tabActive, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.tab,
+                activeSelection === sprint.sprintId && styles.tabActive,
+                pressed && { opacity: 0.7 },
+              ]}
               onPress={() => {
                 setSelection(sprint.sprintId);
               }}
@@ -450,9 +458,11 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
             <EmptyState
               icon="📋"
               title={activeSelection === 'backlog' ? 'Backlog is empty' : 'No cards in this sprint'}
-              description={activeSelection === 'backlog'
-                ? 'Cards without a sprint appear here.'
-                : 'Assign cards to this sprint to see them here.'}
+              description={
+                activeSelection === 'backlog'
+                  ? 'Cards without a sprint appear here.'
+                  : 'Assign cards to this sprint to see them here.'
+              }
             />
           )
         }

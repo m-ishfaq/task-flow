@@ -258,7 +258,7 @@ export default function DocsSpaceScreen() {
               { paddingLeft: 12 + item.depth * 18 },
               item.page.archivedAt !== null && styles.rowArchived,
             ]}
-           
+
             onPress={() => {
               router.push({
                 pathname: '/docs-page/[pageId]',

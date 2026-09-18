@@ -242,7 +242,7 @@ function ProjectRow({ project }: { readonly project: Project }) {
   return (
     <Pressable
       style={[styles.row, shadows.sm]}
-     
+
       onPress={() => {
         router.push(`/project/${project.projectId}`);
       }}

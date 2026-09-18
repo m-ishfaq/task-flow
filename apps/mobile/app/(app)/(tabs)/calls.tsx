@@ -153,7 +153,11 @@ export default function CallsScreen() {
         {visibleTabs.map((entry) => (
           <Pressable
             key={entry.id}
-            style={({ pressed }) => [styles.tab, tab === entry.id && styles.tabActive, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.tab,
+              tab === entry.id && styles.tabActive,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => {
               setTab(entry.id);
             }}
@@ -316,7 +320,9 @@ function CallsPanel() {
           <ErrorView
             title="Could not load calls"
             message={apiErrorOf(calls.error)?.error.message}
-            onRetry={() => { void calls.refetch(); }}
+            onRetry={() => {
+              void calls.refetch();
+            }}
           />
         )}
         {calls.data?.length === 0 && (
@@ -421,7 +427,9 @@ function CallRecordings({ callId }: { readonly callId: string }) {
       <ErrorView
         title="Could not load recordings"
         message={apiErrorOf(recordings.error)?.error.message}
-        onRetry={() => { void recordings.refetch(); }}
+        onRetry={() => {
+          void recordings.refetch();
+        }}
       />
     );
   }
@@ -615,7 +623,9 @@ function NumbersPanel() {
           <ErrorView
             title="Could not load phone numbers"
             message={apiErrorOf(numbers.error)?.error.message}
-            onRetry={() => { void numbers.refetch(); }}
+            onRetry={() => {
+              void numbers.refetch();
+            }}
           />
         )}
         {numbers.data?.length === 0 && (
@@ -820,7 +830,9 @@ function MessagesPanel() {
         <ErrorView
           title="Could not load threads"
           message={apiErrorOf(threads.error)?.error.message}
-          onRetry={() => { void threads.refetch(); }}
+          onRetry={() => {
+            void threads.refetch();
+          }}
         />
       )}
       {threads.data?.length === 0 && (
@@ -833,7 +845,6 @@ function MessagesPanel() {
           onPress={() => {
             setThreadId(thread.threadId);
           }}
-         
         >
           <View style={styles.threadRowText}>
             <Text style={styles.rowMono} numberOfLines={1}>
@@ -1046,7 +1057,9 @@ function ThreadView({
           <ErrorView
             title="Could not load messages"
             message={apiErrorOf(messages.error)?.error.message}
-            onRetry={() => { void messages.refetch(); }}
+            onRetry={() => {
+              void messages.refetch();
+            }}
           />
         )}
         {messages.data?.length === 0 && (
@@ -1294,7 +1307,9 @@ function SpendPanel() {
             <ErrorView
               title="Could not load report"
               message={apiErrorOf(report.error)?.error.message}
-              onRetry={() => { void report.refetch(); }}
+              onRetry={() => {
+                void report.refetch();
+              }}
             />
           )}
           {report.data?.length === 0 && (

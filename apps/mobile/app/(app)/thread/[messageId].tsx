@@ -160,9 +160,7 @@ function ThreadContent({ messageId, channelId }: { messageId: MessageId; channel
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         ListEmptyComponent={
-          messages.isPending || replies.isPending ? (
-            <SkeletonList count={3} />
-          ) : null
+          messages.isPending || replies.isPending ? <SkeletonList count={3} /> : null
         }
       />
 
@@ -228,7 +226,6 @@ function ThreadMessageRow({
 function BackButton() {
   return (
     <Pressable
-     
       style={styles.backButton}
       onPress={() => {
         router.back();

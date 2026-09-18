@@ -206,7 +206,6 @@ function ProjectBoardsContent({
           Settings + New board on a phone. */}
       <View style={styles.titleActions}>
         <TouchableOpacity
-         
           style={styles.secondaryButton}
           onPress={() => {
             router.push(`/sprints/${projectId}`);
@@ -216,7 +215,6 @@ function ProjectBoardsContent({
         </TouchableOpacity>
         {isOrgAdmin && (
           <TouchableOpacity
-           
             style={styles.secondaryButton}
             onPress={() => {
               router.push('/insights');
@@ -226,7 +224,6 @@ function ProjectBoardsContent({
           </TouchableOpacity>
         )}
         <TouchableOpacity
-         
           style={styles.secondaryButton}
           onPress={() => {
             router.push(`/project-settings/${projectId}`);
@@ -239,7 +236,6 @@ function ProjectBoardsContent({
             unusable is clutter, not information. */}
         {canCreateBoard && (
           <TouchableOpacity
-           
             style={styles.newButton}
             onPress={() => {
               setCreating(true);
@@ -287,7 +283,6 @@ function ProjectBoardsContent({
           ) : (
             <View style={styles.row}>
               <TouchableOpacity
-               
                 style={styles.rowMain}
                 onPress={() => {
                   router.push(`/board/${item.boardId}`);
@@ -297,7 +292,6 @@ function ProjectBoardsContent({
               </TouchableOpacity>
               {item.capabilities.update && (
                 <TouchableOpacity
-                 
                   onPress={() => {
                     setEditingBoard(item.boardId);
                     setEditBoardName(item.name);
@@ -308,7 +302,6 @@ function ProjectBoardsContent({
               )}
               {item.capabilities.delete && (
                 <TouchableOpacity
-                 
                   disabled={archive.isPending}
                   onPress={() => {
                     archive.mutate(item.boardId);
@@ -398,7 +391,6 @@ function ProjectBoardsContent({
 function BackButton() {
   return (
     <TouchableOpacity
-     
       style={styles.backButton}
       onPress={() => {
         router.back();

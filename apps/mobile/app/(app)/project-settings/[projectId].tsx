@@ -149,7 +149,6 @@ function ProjectSettingsContent({
 function BackButton() {
   return (
     <Pressable
-     
       style={styles.backButton}
       onPress={() => {
         router.back();
@@ -298,7 +297,7 @@ function ColorSwatchRow({
       {LABEL_PALETTE.map((color) => (
         <Pressable
           key={color}
-         
+
           accessibilityLabel={`Colour ${color}`}
           style={[
             styles.swatch,
@@ -431,7 +430,6 @@ function LabelSettings({ projectId }: { readonly projectId: string }) {
                 {label.cardCount} {label.cardCount === 1 ? 'card' : 'cards'}
               </Text>
               <Pressable
-               
                 onPress={() => {
                   setEditing(label.labelId);
                   setDraft({ name: label.name, color: label.color });
@@ -440,7 +438,6 @@ function LabelSettings({ projectId }: { readonly projectId: string }) {
                 <Text style={styles.editText}>Edit</Text>
               </Pressable>
               <Pressable
-               
                 disabled={remove.isPending}
                 onPress={() => {
                   confirmDelete(label);
@@ -524,7 +521,7 @@ function StatusForm({
         {STATUS_CATEGORIES.map((category) => (
           <Pressable
             key={category}
-           
+
             style={[styles.roleChip, draft.category === category && styles.roleChipActive]}
             onPress={() => {
               setDraft({ ...draft, category });
@@ -688,7 +685,6 @@ function StatusSettings({ projectId }: { readonly projectId: string }) {
               </Text>
               <Text style={styles.rowCount}>{STATUS_CATEGORY_LABEL[status.category]}</Text>
               <Pressable
-               
                 onPress={() => {
                   setEditing(status.statusId);
                   setEditDraft({
@@ -702,7 +698,6 @@ function StatusSettings({ projectId }: { readonly projectId: string }) {
                 <Text style={styles.editText}>Edit</Text>
               </Pressable>
               <Pressable
-               
                 disabled={remove.isPending}
                 onPress={() => {
                   confirmDelete(status);
@@ -816,7 +811,6 @@ function FieldSettings({ projectId }: { readonly projectId: string }) {
               </Text>
               <Text style={styles.rowCount}>{field.type}</Text>
               <Pressable
-               
                 onPress={() => {
                   setEditing(field.fieldId);
                   setName(field.name);
@@ -825,7 +819,6 @@ function FieldSettings({ projectId }: { readonly projectId: string }) {
                 <Text style={styles.editText}>Rename</Text>
               </Pressable>
               <Pressable
-               
                 disabled={setArchived.isPending}
                 onPress={() => {
                   setArchived.mutate({

@@ -254,10 +254,7 @@ function BranchSubsection({
       ) : (
         <View style={styles.devList}>
           {linked.data.map((branch) => (
-            <View
-              key={`${branch.providerScope}-${branch.branchName}`}
-              style={styles.devRow}
-            >
+            <View key={`${branch.providerScope}-${branch.branchName}`} style={styles.devRow}>
               <Pressable
                 style={styles.devRowPressable}
                 onPress={() =>
@@ -322,9 +319,7 @@ function BranchSubsection({
                 create.mutate(trimmed === '' ? { cardId } : { cardId, branchName: trimmed });
               }}
             >
-              <Text style={styles.devButtonText}>
-                {create.isPending ? 'Creating…' : 'Create'}
-              </Text>
+              <Text style={styles.devButtonText}>{create.isPending ? 'Creating…' : 'Create'}</Text>
             </Pressable>
             <Pressable style={styles.devButtonCancel} onPress={() => setFormOpen(false)}>
               <Text style={styles.devButtonText}>Cancel</Text>

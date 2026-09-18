@@ -142,7 +142,6 @@ function PersonRow({ member }: { readonly member: DirectoryMember }) {
 
   return (
     <Pressable
-     
       style={[styles.row, shadows.sm]}
       onPress={() => {
         router.push(`/person/${member.userId}`);

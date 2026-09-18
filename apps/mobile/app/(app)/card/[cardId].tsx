@@ -1,12 +1,6 @@
 import { useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { shadows } from '../../../src/lib/premium.js';
 import { useQuery } from '@tanstack/react-query';
@@ -145,7 +139,10 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView style={[styles.container, shadows.sm]} contentContainerStyle={[styles.content, { paddingTop }]}>
+      <ScrollView
+        style={[styles.container, shadows.sm]}
+        contentContainerStyle={[styles.content, { paddingTop }]}
+      >
         <BackButton />
         <Text style={styles.reference}>{data.reference}</Text>
 
@@ -244,7 +241,11 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
-        <ChecklistSection cardId={cardId} boardId={data.boardId} canEdit={data.capabilities.update} />
+        <ChecklistSection
+          cardId={cardId}
+          boardId={data.boardId}
+          canEdit={data.capabilities.update}
+        />
 
         <AttachmentSection cardId={cardId} />
 

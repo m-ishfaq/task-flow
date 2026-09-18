@@ -122,7 +122,9 @@ export default function DocsScreen() {
         <ErrorView
           title="Could not load Docs"
           message={apiErrorOf(spaces.error)?.error.message}
-          onRetry={() => { void spaces.refetch(); }}
+          onRetry={() => {
+            void spaces.refetch();
+          }}
         />
       )}
       {spaces.isSuccess && spaces.data.length === 0 && (
@@ -153,7 +155,7 @@ export default function DocsScreen() {
         renderItem={({ item }) => (
           <Pressable
             style={[styles.row, shadows.sm, item.archivedAt !== null && styles.rowArchived]}
-           
+
             onPress={() => {
               router.push(`/docs-space/${item.spaceId}`);
             }}

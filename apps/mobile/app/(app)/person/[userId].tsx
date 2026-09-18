@@ -206,7 +206,7 @@ function ChartCard({
         people.map((person) => (
           <Pressable
             key={person.userId}
-           
+
             style={styles.chartCardRow}
             onPress={() => {
               router.push(`/person/${person.userId}`);
@@ -433,7 +433,6 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
 
       <Text style={[styles.fieldLabel, styles.managerLabel]}>Manager</Text>
       <Pressable
-       
         style={styles.input}
         onPress={() => {
           setPickerOpen(true);
@@ -481,7 +480,6 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
             <Text style={styles.modalTitle}>Manager</Text>
             <ScrollView style={styles.modalList}>
               <Pressable
-               
                 style={styles.modalRow}
                 onPress={() => {
                   setManagerId('');
@@ -494,7 +492,7 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
               {candidates.map((candidate) => (
                 <Pressable
                   key={candidate.userId}
-                 
+
                   style={styles.modalRow}
                   onPress={() => {
                     setManagerId(candidate.userId);
@@ -507,7 +505,6 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
               ))}
             </ScrollView>
             <Pressable
-             
               style={styles.modalCancel}
               onPress={() => {
                 setPickerOpen(false);

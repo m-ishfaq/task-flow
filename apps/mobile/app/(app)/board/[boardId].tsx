@@ -260,9 +260,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
         ? selectedListId
         : ALL_LISTS;
   const activeCards =
-    activeListId === ALL_LISTS
-      ? (cards.data ?? [])
-      : (cardsByList.get(activeListId) ?? []);
+    activeListId === ALL_LISTS ? (cards.data ?? []) : (cardsByList.get(activeListId) ?? []);
 
   const move = useMutation({
     mutationFn: (input: { cardId: CardId; targetListId: string }) =>
@@ -475,7 +473,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
         <ShareBoardButton boardId={boardId} />
         <Pressable
           style={styles.archivedButton}
-         
+
           onPress={() => {
             setArchivedOpen(true);
           }}
@@ -513,7 +511,9 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               setSortByPickerOpen(true);
             }}
           >
-            <Text style={sortBy !== 'manual' ? styles.viewControlTextActive : styles.viewControlText}>
+            <Text
+              style={sortBy !== 'manual' ? styles.viewControlTextActive : styles.viewControlText}
+            >
               {sortBy !== 'manual' ? `Sort: ${SORT_BY_LABEL[sortBy]}` : 'Sort'}
             </Text>
           </Pressable>
@@ -549,75 +549,81 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       )}
 
       {!calendarOpen && (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabStripFrame}
-        contentContainerStyle={styles.tabStrip}
-      >
-        <Pressable
-          style={({ pressed }) => [styles.tab, activeListId === ALL_LISTS && styles.tabActive, pressed && { opacity: 0.7 }]}
-          onPress={() => {
-            setSelectedListId(ALL_LISTS);
-          }}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabStripFrame}
+          contentContainerStyle={styles.tabStrip}
         >
-          <Text
-            style={[styles.tabText, activeListId === ALL_LISTS && styles.tabTextActive]}
-            numberOfLines={1}
+          <Pressable
+            style={({ pressed }) => [
+              styles.tab,
+              activeListId === ALL_LISTS && styles.tabActive,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => {
+              setSelectedListId(ALL_LISTS);
+            }}
           >
-            All
-          </Text>
-          <Text
-            style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}
-          >
-            {cards.data?.length ?? 0}
-          </Text>
-        </Pressable>
-        {lists.data.map((list) => {
-          const overLimit = list.wipLimit !== null && list.cardCount > list.wipLimit;
-          return (
-            <Pressable
-              key={list.listId}
-              style={({ pressed }) => [styles.tab, list.listId === activeListId && styles.tabActive, pressed && { opacity: 0.7 }]}
-              onPress={() => {
-                setSelectedListId(list.listId);
-              }}
-              onLongPress={() => {
-                setListOptionsFor(list);
-                setOptionsName(list.name);
-                setOptionsWip(list.wipLimit === null ? '' : String(list.wipLimit));
-                setOptionsError(null);
-              }}
+            <Text
+              style={[styles.tabText, activeListId === ALL_LISTS && styles.tabTextActive]}
+              numberOfLines={1}
             >
-              <Text
-                style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
-                numberOfLines={1}
-              >
-                {list.name}
-              </Text>
-              <Text
-                style={[
-                  styles.tabCount,
-                  list.listId === activeListId && styles.tabCountActive,
-                  overLimit && styles.tabCountWarning,
+              All
+            </Text>
+            <Text style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}>
+              {cards.data?.length ?? 0}
+            </Text>
+          </Pressable>
+          {lists.data.map((list) => {
+            const overLimit = list.wipLimit !== null && list.cardCount > list.wipLimit;
+            return (
+              <Pressable
+                key={list.listId}
+                style={({ pressed }) => [
+                  styles.tab,
+                  list.listId === activeListId && styles.tabActive,
+                  pressed && { opacity: 0.7 },
                 ]}
+                onPress={() => {
+                  setSelectedListId(list.listId);
+                }}
+                onLongPress={() => {
+                  setListOptionsFor(list);
+                  setOptionsName(list.name);
+                  setOptionsWip(list.wipLimit === null ? '' : String(list.wipLimit));
+                  setOptionsError(null);
+                }}
               >
-                {list.cardCount}
-                {list.wipLimit !== null && `/${String(list.wipLimit)}`}
-              </Text>
-            </Pressable>
-          );
-        })}
-        <Pressable
-          style={styles.addListTab}
-          onPress={() => {
-            setNewListName('');
-            setAddingList(true);
-          }}
-        >
-          <Text style={styles.addListTabText}>+ Add list</Text>
-        </Pressable>
-      </ScrollView>
+                <Text
+                  style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
+                  numberOfLines={1}
+                >
+                  {list.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.tabCount,
+                    list.listId === activeListId && styles.tabCountActive,
+                    overLimit && styles.tabCountWarning,
+                  ]}
+                >
+                  {list.cardCount}
+                  {list.wipLimit !== null && `/${String(list.wipLimit)}`}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={styles.addListTab}
+            onPress={() => {
+              setNewListName('');
+              setAddingList(true);
+            }}
+          >
+            <Text style={styles.addListTabText}>+ Add list</Text>
+          </Pressable>
+        </ScrollView>
       )}
 
       {/* Calendar view replaces all board content when open */}
@@ -684,7 +690,11 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             contentContainerStyle={styles.tabStrip}
           >
             <Pressable
-              style={({ pressed }) => [styles.tab, activeListId === ALL_LISTS && styles.tabActive, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.tab,
+                activeListId === ALL_LISTS && styles.tabActive,
+                pressed && { opacity: 0.7 },
+              ]}
               onPress={() => {
                 setSelectedListId(ALL_LISTS);
               }}
@@ -695,9 +705,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               >
                 All
               </Text>
-              <Text
-                style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}
-              >
+              <Text style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}>
                 {cards.data?.length ?? 0}
               </Text>
             </Pressable>
@@ -706,7 +714,11 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               return (
                 <Pressable
                   key={list.listId}
-                  style={({ pressed }) => [styles.tab, list.listId === activeListId && styles.tabActive, pressed && { opacity: 0.7 }]}
+                  style={({ pressed }) => [
+                    styles.tab,
+                    list.listId === activeListId && styles.tabActive,
+                    pressed && { opacity: 0.7 },
+                  ]}
                   onPress={() => {
                     setSelectedListId(list.listId);
                   }}
@@ -789,7 +801,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
-             
+
               onPress={() => {
                 setBulkPicker('status');
               }}
@@ -799,7 +811,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
-             
+
               onPress={() => {
                 setBulkPicker('priority');
               }}
@@ -809,7 +821,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
-             
+
               onPress={() => {
                 setBulkPicker('assignee');
               }}
@@ -819,7 +831,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
-             
+
               onPress={() => {
                 void runBulkAction('archived', (cardId) =>
                   apiClient.work.cards.archive.mutate({ cardId, archived: true }),
@@ -831,7 +843,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
-             
+
               onPress={() => {
                 setSelectedIds(new Set());
               }}
@@ -849,14 +861,17 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <View style={styles.addCardRow}>
               <TextInput
                 style={styles.addCardInput}
-                placeholder={activeListId === ALL_LISTS ? 'Add a card (to first list)' : 'Add a card'}
+                placeholder={
+                  activeListId === ALL_LISTS ? 'Add a card (to first list)' : 'Add a card'
+                }
                 placeholderTextColor={colors.inkFaint.hex}
                 value={newCardTitle}
                 onChangeText={setNewCardTitle}
                 onSubmitEditing={() => {
                   const value = newCardTitle.trim();
                   if (value === '') return;
-                  const targetListId = activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
+                  const targetListId =
+                    activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
                   if (!targetListId) return;
                   setNewCardTitle('');
                   createCard.mutate({ listId: targetListId, title: value });
@@ -867,7 +882,8 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 onPress={() => {
                   const value = newCardTitle.trim();
                   if (value === '') return;
-                  const targetListId = activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
+                  const targetListId =
+                    activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
                   if (!targetListId) return;
                   setNewCardTitle('');
                   createCard.mutate({ listId: targetListId, title: value });
@@ -915,7 +931,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <Pressable
                   key={list.listId}
                   style={styles.modalRow}
-                 
+
                   disabled={move.isPending}
                   onPress={() => {
                     if (moving)
@@ -964,7 +980,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
-                   
+
                     onPress={() => {
                       void runBulkAction('updated', (cardId) =>
                         apiClient.work.cards.setStatus.mutate({
@@ -980,7 +996,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={status.statusId}
                       style={styles.modalRow}
-                     
+
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           apiClient.work.cards.setStatus.mutate({
@@ -999,7 +1015,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
-                   
+
                     onPress={() => {
                       void runBulkAction('updated', (cardId) => bulkSetPriority(cardId, null));
                     }}
@@ -1010,7 +1026,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={priority}
                       style={styles.modalRow}
-                     
+
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           bulkSetPriority(cardId, priority),
@@ -1026,7 +1042,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
-                   
+
                     onPress={() => {
                       void runBulkAction('updated', (cardId) =>
                         apiClient.work.cards.assign.mutate({
@@ -1042,7 +1058,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={member.userId}
                       style={styles.modalRow}
-                     
+
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           apiClient.work.cards.assign.mutate({
@@ -1245,7 +1261,9 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     setGroupByPickerOpen(false);
                   }}
                 >
-                  <Text style={[styles.modalRowText, groupBy === option && styles.modalRowTextActive]}>
+                  <Text
+                    style={[styles.modalRowText, groupBy === option && styles.modalRowTextActive]}
+                  >
                     {GROUP_BY_LABEL[option]}
                   </Text>
                 </Pressable>
@@ -1289,7 +1307,9 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     setSortByPickerOpen(false);
                   }}
                 >
-                  <Text style={[styles.modalRowText, sortBy === option && styles.modalRowTextActive]}>
+                  <Text
+                    style={[styles.modalRowText, sortBy === option && styles.modalRowTextActive]}
+                  >
                     {SORT_BY_LABEL[option]}
                   </Text>
                 </Pressable>
@@ -1400,7 +1420,6 @@ function ArchivedCardsList({ boardId }: { readonly boardId: string }) {
             <Text style={styles.archivedRowSubtitle}>{card.reference}</Text>
           </View>
           <Pressable
-           
             disabled={restore.isPending && restore.variables === card.cardId}
             onPress={() => {
               restore.mutate(card.cardId);
@@ -1467,7 +1486,6 @@ function ArchivedListsList({ boardId }: { readonly boardId: string }) {
             </Text>
           </View>
           <Pressable
-           
             disabled={restore.isPending && restore.variables === list.listId}
             onPress={() => {
               restore.mutate(list.listId);
