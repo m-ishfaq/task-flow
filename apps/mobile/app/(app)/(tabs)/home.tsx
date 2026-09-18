@@ -5,10 +5,17 @@ import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { CardRow } from '../../../src/lib/card-row.js';
+import { EmptyState } from '../../../src/lib/premium.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { MY_TASKS_QUERY_KEY, groupCardsByDue, type CardSummary } from '../../../src/lib/work.js';
 import { ACTIVE_SPRINTS_QUERY_KEY } from '../../../src/lib/sprints.js';
+import {
+  sortCards,
+  SORT_BY_OPTIONS,
+  SORT_BY_LABEL,
+  type SortBy,
+} from '../../../src/lib/grouping.js';
 
 type Scope = 'all' | 'sprint' | 'backlog';
 
@@ -63,6 +70,7 @@ type Scope = 'all' | 'sprint' | 'backlog';
 export default function Home() {
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<Scope>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('due');
   const [refreshing, setRefreshing] = useState(false);
 
   const doRefresh = async () => {
@@ -99,7 +107,13 @@ export default function Home() {
     return all.filter((card) => card.sprintId !== null && runningSprintIds.has(card.sprintId));
   }, [cards.data, scope, runningSprintIds]);
 
-  const groups = useMemo(() => groupCardsByDue(visible), [visible]);
+  const groups = useMemo(() => {
+    const buckets = groupCardsByDue(visible);
+    return buckets.map((group) => ({
+      ...group,
+      cards: sortCards(group.cards, sortBy),
+    }));
+  }, [visible, sortBy]);
 
   return (
     <View style={[styles.container, { paddingTop }]}>
@@ -139,6 +153,25 @@ export default function Home() {
         </View>
       )}
 
+      <View style={styles.sortRow}>
+        <Text style={styles.sortLabel}>Sort:</Text>
+        <View style={styles.sortChips}>
+          {SORT_BY_OPTIONS.map((option) => (
+            <Pressable
+              key={option}
+              style={({ pressed }) => [styles.sortChip, sortBy === option && styles.sortChipActive, pressed && { opacity: 0.7 }]}
+              onPress={() => {
+                setSortBy(option);
+              }}
+            >
+              <Text style={[styles.sortChipText, sortBy === option && styles.sortChipTextActive]}>
+                {SORT_BY_LABEL[option]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
       <SectionList
         sections={groups.map((group) => ({ title: group.label, data: group.cards }))}
         keyExtractor={(card: CardSummary) => card.cardId}
@@ -162,7 +195,11 @@ export default function Home() {
           cards.isPending ? (
             <SkeletonList count={5} />
           ) : (
-            <Text style={styles.label}>Nothing assigned to you right now.</Text>
+            <EmptyState
+              icon={'\u2705'}
+              title="All caught up"
+              description="Nothing assigned to you right now."
+            />
           )
         }
       />
@@ -216,6 +253,41 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
   },
   scopeChipTextActive: {
+    color: colors.accentInk.hex,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sortLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  sortChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  sortChip: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: colors.surfaceRaised.hex,
+  },
+  sortChipActive: {
+    backgroundColor: colors.accent.hex,
+    borderColor: colors.accent.hex,
+  },
+  sortChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  sortChipTextActive: {
     color: colors.accentInk.hex,
   },
   listContainer: {

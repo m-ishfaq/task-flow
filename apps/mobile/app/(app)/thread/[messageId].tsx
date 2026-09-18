@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -10,6 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -160,7 +161,7 @@ function ThreadContent({ messageId, channelId }: { messageId: MessageId; channel
         style={styles.listContainer}
         ListEmptyComponent={
           messages.isPending || replies.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={3} />
           ) : null
         }
       />
@@ -227,6 +228,7 @@ function ThreadMessageRow({
 function BackButton() {
   return (
     <Pressable
+     
       style={styles.backButton}
       onPress={() => {
         router.back();
@@ -256,6 +258,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingBottom: 8,
+    ...shadows.sm,
   },
   backButton: {
     alignSelf: 'flex-start',

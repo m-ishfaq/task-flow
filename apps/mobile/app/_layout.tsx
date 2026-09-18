@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, Slot } from 'expo-router';
+import * as Updates from 'expo-updates';
 import {
   AppState,
   type AppStateStatus,
@@ -109,6 +110,26 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
+  }, []);
+
+  // OTA update check — runs once on cold start. `expo-updates` is wired
+  // (eas.json `runtimeVersion`, `updates.url`) but nothing previously checked
+  // for updates at runtime. This silently downloads and applies any pending
+  // update, then reloads the app to pick it up. On failure (no network,
+  // EAS down, dev mode), it fails silently — the user sees nothing.
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    void (async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+        // Network error, EAS unavailable, or dev mode — not actionable.
+      }
+    })();
   }, []);
 
   // The tapped-notification listener (push-notifications.ts's own header) —

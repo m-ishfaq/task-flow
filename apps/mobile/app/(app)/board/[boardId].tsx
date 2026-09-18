@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  SectionList,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BoardIdSchema, type CardId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
+import { shadows } from '../../../src/lib/premium.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
@@ -36,6 +39,17 @@ import {
   type BoardFilterSelection,
 } from '../../../src/lib/board-filter.js';
 import {
+  groupCards,
+  sortCards,
+  GROUP_BY_OPTIONS,
+  SORT_BY_OPTIONS,
+  GROUP_BY_LABEL,
+  SORT_BY_LABEL,
+  type GroupBy,
+  type SortBy,
+  type GroupingContext,
+} from '../../../src/lib/grouping.js';
+import {
   MY_TASKS_QUERY_KEY,
   PRIORITY_LABEL,
   archivedCardsQueryKey,
@@ -50,6 +64,7 @@ import {
   type ListSummary,
   type Priority,
 } from '../../../src/lib/work.js';
+import { CardCalendarView } from '../../../src/lib/card-calendar-view.js';
 
 /**
  * One board — Wave 2's remaining roadmap item, following My Tasks and card
@@ -186,7 +201,10 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   useBoardRoom(orgId, boardId);
   const [moving, setMoving] = useState<CardSummary | null>(null);
   const [moveError, setMoveError] = useState<unknown>(null);
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  // "__all__" means show cards from every list. Falls back to the first
+  // specific list only when the user explicitly selects one.
+  const ALL_LISTS = '__all__';
+  const [selectedListId, setSelectedListId] = useState<string>(ALL_LISTS);
   const [newCardTitle, setNewCardTitle] = useState('');
   const [addingList, setAddingList] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -197,6 +215,11 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const [bulkPicker, setBulkPicker] = useState<'status' | 'priority' | 'assignee' | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy>('manual');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [groupByPickerOpen, setGroupByPickerOpen] = useState(false);
+  const [sortByPickerOpen, setSortByPickerOpen] = useState(false);
   const { people, personOf } = useMembers();
   const [optionsError, setOptionsError] = useState<unknown>(null);
 
@@ -229,15 +252,17 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     return grouped;
   }, [cards.data]);
 
-  // Falls back to the first list whenever nothing is selected yet, or the
-  // selection no longer names a real list (the board's lists reloaded and
-  // that one was archived/removed mid-session) — never a blank tab strip
-  // with no list's cards showing.
+  // When "__all__" is selected, show every card across all lists.
   const activeListId =
-    selectedListId !== null && lists.data?.some((list) => list.listId === selectedListId)
-      ? selectedListId
-      : (lists.data?.[0]?.listId ?? null);
-  const activeCards = activeListId === null ? [] : (cardsByList.get(activeListId) ?? []);
+    selectedListId === ALL_LISTS
+      ? ALL_LISTS
+      : lists.data?.some((list) => list.listId === selectedListId)
+        ? selectedListId
+        : ALL_LISTS;
+  const activeCards =
+    activeListId === ALL_LISTS
+      ? (cards.data ?? [])
+      : (cardsByList.get(activeListId) ?? []);
 
   const move = useMutation({
     mutationFn: (input: { cardId: CardId; targetListId: string }) =>
@@ -304,8 +329,22 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     queryKey: statusesQueryKey(boardProjectId ?? ''),
     queryFn: async () =>
       wire(await apiClient.work.statuses.list.query({ projectId: boardProjectId ?? '' })),
-    enabled: bulkPicker === 'status' && boardProjectId !== null,
+    enabled: boardProjectId !== null && (bulkPicker === 'status' || groupBy === 'status'),
   });
+
+  // Group-by: only computed when groupBy is set. Builds the full
+  // GroupingContext from data the board already fetches.
+  const groupedData = useMemo(() => {
+    if (groupBy === null) return null;
+    const allCards = cards.data ?? [];
+    const sorted = sortCards(allCards, sortBy);
+    const ctx: GroupingContext = {
+      lists: lists.data ?? [],
+      statuses: bulkStatuses.data ?? [],
+      people: people.map((m) => ({ userId: m.userId, label: m.displayName ?? m.email })),
+    };
+    return groupCards(sorted, groupBy, ctx);
+  }, [groupBy, sortBy, cards.data, lists.data, bulkStatuses.data, people]);
 
   /**
    * One loop over the same per-card routes the single-card UI calls — see
@@ -387,7 +426,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     mutationFn: (listId: string) => apiClient.work.lists.archive.mutate({ listId, archived: true }),
     onSuccess: async () => {
       setListOptionsFor(null);
-      if (selectedListId === listOptionsFor?.listId) setSelectedListId(null);
+      if (selectedListId === listOptionsFor?.listId) setSelectedListId(ALL_LISTS);
       await refreshBoard();
     },
     onError: (error) => {
@@ -411,7 +450,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   if (lists.isPending || cards.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       </View>
     );
   }
@@ -436,6 +475,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
         <ShareBoardButton boardId={boardId} />
         <Pressable
           style={styles.archivedButton}
+         
           onPress={() => {
             setArchivedOpen(true);
           }}
@@ -443,19 +483,102 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           <Text style={styles.archivedButtonText}>Archived</Text>
         </Pressable>
       </View>
+      {/* Row 3: Group-by + Sort-by chips, only shown when cards exist. */}
+      {(cards.data?.length ?? 0) > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.viewControlsRow}
+          contentContainerStyle={styles.viewControls}
+        >
+          <Pressable
+            style={({ pressed }) => [
+              groupBy !== null ? styles.viewControlChipActive : styles.viewControlChip,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => {
+              setGroupByPickerOpen(true);
+            }}
+          >
+            <Text style={groupBy !== null ? styles.viewControlTextActive : styles.viewControlText}>
+              {groupBy !== null ? `Group: ${GROUP_BY_LABEL[groupBy]}` : 'Group'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              sortBy !== 'manual' ? styles.viewControlChipActive : styles.viewControlChip,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => {
+              setSortByPickerOpen(true);
+            }}
+          >
+            <Text style={sortBy !== 'manual' ? styles.viewControlTextActive : styles.viewControlText}>
+              {sortBy !== 'manual' ? `Sort: ${SORT_BY_LABEL[sortBy]}` : 'Sort'}
+            </Text>
+          </Pressable>
+          {groupBy !== null && (
+            <Pressable
+              style={({ pressed }) => [styles.viewControlChip, pressed && { opacity: 0.7 }]}
+              onPress={() => {
+                setGroupBy(null);
+                setSortBy('manual');
+              }}
+            >
+              <Text style={styles.viewControlText}>Clear</Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={({ pressed }) => [
+              calendarOpen ? styles.viewControlChipActive : styles.viewControlChip,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => {
+              setCalendarOpen((c) => !c);
+              if (!calendarOpen) {
+                setGroupBy(null);
+                setSortBy('manual');
+              }
+            }}
+          >
+            <Text style={calendarOpen ? styles.viewControlTextActive : styles.viewControlText}>
+              {calendarOpen ? 'Calendar \u2715' : 'Calendar'}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      )}
 
+      {!calendarOpen && (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabStripFrame}
         contentContainerStyle={styles.tabStrip}
       >
+        <Pressable
+          style={({ pressed }) => [styles.tab, activeListId === ALL_LISTS && styles.tabActive, pressed && { opacity: 0.7 }]}
+          onPress={() => {
+            setSelectedListId(ALL_LISTS);
+          }}
+        >
+          <Text
+            style={[styles.tabText, activeListId === ALL_LISTS && styles.tabTextActive]}
+            numberOfLines={1}
+          >
+            All
+          </Text>
+          <Text
+            style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}
+          >
+            {cards.data?.length ?? 0}
+          </Text>
+        </Pressable>
         {lists.data.map((list) => {
           const overLimit = list.wipLimit !== null && list.cardCount > list.wipLimit;
           return (
             <Pressable
               key={list.listId}
-              style={[styles.tab, list.listId === activeListId && styles.tabActive]}
+              style={({ pressed }) => [styles.tab, list.listId === activeListId && styles.tabActive, pressed && { opacity: 0.7 }]}
               onPress={() => {
                 setSelectedListId(list.listId);
               }}
@@ -495,13 +618,27 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           <Text style={styles.addListTabText}>+ Add list</Text>
         </Pressable>
       </ScrollView>
+      )}
 
-      {lists.data.length === 0 ? (
+      {/* Calendar view replaces all board content when open */}
+      {calendarOpen ? (
+        <CardCalendarView
+          cards={cards.data ?? []}
+          onOpenCard={(cardId) => {
+            router.push(`/card/${cardId}`);
+          }}
+        />
+      ) : lists.data.length === 0 ? (
         <Text style={styles.label}>This board has no lists yet — add one to get started.</Text>
-      ) : (
-        <FlatList<CardSummary>
-          key={activeListId}
-          data={activeCards}
+      ) : groupBy !== null && groupedData !== null ? (
+        /* Grouped mode: SectionList with group headers, no tab strip. */
+        <SectionList
+          sections={groupedData.map((group) => ({
+            title: group.label,
+            data: group.cards,
+            key: group.key,
+            color: group.color,
+          }))}
           keyExtractor={(card) => card.cardId}
           renderItem={({ item }) => (
             <CardRow
@@ -527,10 +664,122 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               }}
             />
           )}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.groupHeader}>
+              <Text style={styles.groupHeaderText}>{section.title}</Text>
+              <Text style={styles.groupHeaderCount}>{section.data.length}</Text>
+            </View>
+          )}
           contentContainerStyle={styles.cardList}
           style={styles.cardListContainer}
-          ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
+          stickySectionHeadersEnabled
         />
+      ) : (
+        /* Ungrouped mode: tab strip + FlatList per list. */
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tabStripFrame}
+            contentContainerStyle={styles.tabStrip}
+          >
+            <Pressable
+              style={({ pressed }) => [styles.tab, activeListId === ALL_LISTS && styles.tabActive, pressed && { opacity: 0.7 }]}
+              onPress={() => {
+                setSelectedListId(ALL_LISTS);
+              }}
+            >
+              <Text
+                style={[styles.tabText, activeListId === ALL_LISTS && styles.tabTextActive]}
+                numberOfLines={1}
+              >
+                All
+              </Text>
+              <Text
+                style={[styles.tabCount, activeListId === ALL_LISTS && styles.tabCountActive]}
+              >
+                {cards.data?.length ?? 0}
+              </Text>
+            </Pressable>
+            {lists.data.map((list) => {
+              const overLimit = list.wipLimit !== null && list.cardCount > list.wipLimit;
+              return (
+                <Pressable
+                  key={list.listId}
+                  style={({ pressed }) => [styles.tab, list.listId === activeListId && styles.tabActive, pressed && { opacity: 0.7 }]}
+                  onPress={() => {
+                    setSelectedListId(list.listId);
+                  }}
+                  onLongPress={() => {
+                    setListOptionsFor(list);
+                    setOptionsName(list.name);
+                    setOptionsWip(list.wipLimit === null ? '' : String(list.wipLimit));
+                    setOptionsError(null);
+                  }}
+                >
+                  <Text
+                    style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
+                    numberOfLines={1}
+                  >
+                    {list.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tabCount,
+                      list.listId === activeListId && styles.tabCountActive,
+                      overLimit && styles.tabCountWarning,
+                    ]}
+                  >
+                    {list.cardCount}
+                    {list.wipLimit !== null && `/${String(list.wipLimit)}`}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={styles.addListTab}
+              onPress={() => {
+                setNewListName('');
+                setAddingList(true);
+              }}
+            >
+              <Text style={styles.addListTabText}>+ Add list</Text>
+            </Pressable>
+          </ScrollView>
+
+          <FlatList<CardSummary>
+            key={activeListId}
+            data={activeCards}
+            keyExtractor={(card) => card.cardId}
+            renderItem={({ item }) => (
+              <CardRow
+                card={item}
+                onMove={
+                  selectionMode
+                    ? undefined
+                    : () => {
+                        setMoveError(null);
+                        setMoving(item);
+                      }
+                }
+                selected={selectionMode ? selectedIds.has(item.cardId) : undefined}
+                onPress={
+                  selectionMode
+                    ? () => {
+                        toggleSelect(item.cardId);
+                      }
+                    : undefined
+                }
+                onLongPress={() => {
+                  toggleSelect(item.cardId);
+                }}
+              />
+            )}
+            contentContainerStyle={styles.cardList}
+            style={styles.cardListContainer}
+            ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
+          />
+        </>
       )}
 
       {selectionMode ? (
@@ -540,6 +789,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
+             
               onPress={() => {
                 setBulkPicker('status');
               }}
@@ -549,6 +799,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
+             
               onPress={() => {
                 setBulkPicker('priority');
               }}
@@ -558,6 +809,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
+             
               onPress={() => {
                 setBulkPicker('assignee');
               }}
@@ -567,6 +819,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
+             
               onPress={() => {
                 void runBulkAction('archived', (cardId) =>
                   apiClient.work.cards.archive.mutate({ cardId, archived: true }),
@@ -578,6 +831,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <Pressable
               style={styles.bulkBarButton}
               disabled={bulkRunning}
+             
               onPress={() => {
                 setSelectedIds(new Set());
               }}
@@ -589,21 +843,23 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             <ActivityIndicator color={colors.accent.hex} style={styles.bulkBarSpinner} />
           )}
         </View>
-      ) : (
+      ) : groupBy === null ? (
         <>
           {activeListId !== null && (
             <View style={styles.addCardRow}>
               <TextInput
                 style={styles.addCardInput}
-                placeholder="Add a card"
+                placeholder={activeListId === ALL_LISTS ? 'Add a card (to first list)' : 'Add a card'}
                 placeholderTextColor={colors.inkFaint.hex}
                 value={newCardTitle}
                 onChangeText={setNewCardTitle}
                 onSubmitEditing={() => {
                   const value = newCardTitle.trim();
                   if (value === '') return;
+                  const targetListId = activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
+                  if (!targetListId) return;
                   setNewCardTitle('');
-                  createCard.mutate({ listId: activeListId, title: value });
+                  createCard.mutate({ listId: targetListId, title: value });
                 }}
               />
               <Pressable
@@ -611,8 +867,10 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 onPress={() => {
                   const value = newCardTitle.trim();
                   if (value === '') return;
+                  const targetListId = activeListId === ALL_LISTS ? (lists.data?.[0]?.listId ?? null) : activeListId;
+                  if (!targetListId) return;
                   setNewCardTitle('');
-                  createCard.mutate({ listId: activeListId, title: value });
+                  createCard.mutate({ listId: targetListId, title: value });
                 }}
               >
                 <Text style={styles.addCardButtonText}>Add</Text>
@@ -625,12 +883,12 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             </Text>
           )}
         </>
-      )}
+      ) : null}
 
       <Modal
         visible={moving !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setMoving(null);
         }}
@@ -657,6 +915,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <Pressable
                   key={list.listId}
                   style={styles.modalRow}
+                 
                   disabled={move.isPending}
                   onPress={() => {
                     if (moving)
@@ -681,7 +940,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       <Modal
         visible={bulkPicker !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setBulkPicker(null);
         }}
@@ -705,6 +964,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
+                   
                     onPress={() => {
                       void runBulkAction('updated', (cardId) =>
                         apiClient.work.cards.setStatus.mutate({
@@ -720,6 +980,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={status.statusId}
                       style={styles.modalRow}
+                     
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           apiClient.work.cards.setStatus.mutate({
@@ -738,6 +999,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
+                   
                     onPress={() => {
                       void runBulkAction('updated', (cardId) => bulkSetPriority(cardId, null));
                     }}
@@ -748,6 +1010,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={priority}
                       style={styles.modalRow}
+                     
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           bulkSetPriority(cardId, priority),
@@ -763,6 +1026,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 <>
                   <Pressable
                     style={styles.modalRow}
+                   
                     onPress={() => {
                       void runBulkAction('updated', (cardId) =>
                         apiClient.work.cards.assign.mutate({
@@ -778,6 +1042,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                     <Pressable
                       key={member.userId}
                       style={styles.modalRow}
+                     
                       onPress={() => {
                         void runBulkAction('updated', (cardId) =>
                           apiClient.work.cards.assign.mutate({
@@ -808,7 +1073,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       <Modal
         visible={addingList}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setAddingList(false);
         }}
@@ -865,7 +1130,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       <Modal
         visible={listOptionsFor !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setListOptionsFor(null);
         }}
@@ -944,6 +1209,105 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       </Modal>
 
       <Modal
+        visible={groupByPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setGroupByPickerOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setGroupByPickerOpen(false);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Group cards by</Text>
+            <ScrollView style={styles.bulkPickerList}>
+              <Pressable
+                style={styles.modalRow}
+                onPress={() => {
+                  setGroupBy(null);
+                  setGroupByPickerOpen(false);
+                }}
+              >
+                <Text style={[styles.modalRowText, groupBy === null && styles.modalRowTextActive]}>
+                  No grouping
+                </Text>
+              </Pressable>
+              {GROUP_BY_OPTIONS.map((option) => (
+                <Pressable
+                  key={option}
+                  style={styles.modalRow}
+                  onPress={() => {
+                    setGroupBy(option);
+                    setGroupByPickerOpen(false);
+                  }}
+                >
+                  <Text style={[styles.modalRowText, groupBy === option && styles.modalRowTextActive]}>
+                    {GROUP_BY_LABEL[option]}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => {
+                setGroupByPickerOpen(false);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={sortByPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setSortByPickerOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setSortByPickerOpen(false);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Sort cards by</Text>
+            <ScrollView style={styles.bulkPickerList}>
+              {SORT_BY_OPTIONS.map((option) => (
+                <Pressable
+                  key={option}
+                  style={styles.modalRow}
+                  onPress={() => {
+                    setSortBy(option);
+                    setSortByPickerOpen(false);
+                  }}
+                >
+                  <Text style={[styles.modalRowText, sortBy === option && styles.modalRowTextActive]}>
+                    {SORT_BY_LABEL[option]}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => {
+                setSortByPickerOpen(false);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={archivedOpen}
         transparent
         animationType="fade"
@@ -1018,7 +1382,7 @@ function ArchivedCardsList({ boardId }: { readonly boardId: string }) {
   return (
     <View style={styles.archivedSection}>
       <Text style={styles.archivedSectionTitle}>Cards</Text>
-      {archived.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {archived.isPending && <SkeletonList count={2} />}
       {archived.isError && (
         <Text style={styles.modalError} accessibilityRole="alert">
           {apiErrorOf(archived.error)?.error.message ?? 'Could not load archived cards.'}
@@ -1036,6 +1400,7 @@ function ArchivedCardsList({ boardId }: { readonly boardId: string }) {
             <Text style={styles.archivedRowSubtitle}>{card.reference}</Text>
           </View>
           <Pressable
+           
             disabled={restore.isPending && restore.variables === card.cardId}
             onPress={() => {
               restore.mutate(card.cardId);
@@ -1080,7 +1445,7 @@ function ArchivedListsList({ boardId }: { readonly boardId: string }) {
   return (
     <View style={styles.archivedSection}>
       <Text style={styles.archivedSectionTitle}>Lists</Text>
-      {archived.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {archived.isPending && <SkeletonList count={2} />}
       {archived.isError && (
         <Text style={styles.modalError} accessibilityRole="alert">
           {apiErrorOf(archived.error)?.error.message ?? 'Could not load archived lists.'}
@@ -1102,6 +1467,7 @@ function ArchivedListsList({ boardId }: { readonly boardId: string }) {
             </Text>
           </View>
           <Pressable
+           
             disabled={restore.isPending && restore.variables === list.listId}
             onPress={() => {
               restore.mutate(list.listId);
@@ -1164,9 +1530,77 @@ const styles = StyleSheet.create({
     borderColor: colors.line.hex + '80',
   },
   archivedButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.inkMuted.hex,
+  },
+  viewControlsRow: {
+    maxHeight: 36,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  viewControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  viewControlChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceSunken.hex,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 4,
+  },
+  viewControlChipActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent.hex + '18',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 4,
+  },
+  viewControlText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.inkMuted.hex,
+  },
+  viewControlTextActive: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
+    backgroundColor: colors.surface.hex,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  groupHeaderText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.inkMuted.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  groupHeaderCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkFaint.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    overflow: 'hidden',
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -1209,6 +1643,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: colors.surfaceRaised.hex,
     maxWidth: 200,
+    ...shadows.sm,
   },
   tabActive: {
     backgroundColor: colors.accent.hex,
@@ -1315,6 +1750,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent.hex + '40',
     backgroundColor: colors.surfaceRaised.hex,
+    ...shadows.sm,
   },
   bulkBarCount: {
     fontSize: 12,
@@ -1334,6 +1770,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     backgroundColor: colors.surfaceSunken.hex,
+    ...shadows.sm,
   },
   bulkBarButtonText: {
     fontSize: 12,
@@ -1360,6 +1797,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radiusCard + 6,
     padding: 20,
     gap: 4,
+    ...shadows.sm,
   },
   modalTitle: {
     fontSize: 16,
@@ -1379,6 +1817,7 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 4,
     height: '80%',
+    ...shadows.sm,
   },
   archivedHint: {
     fontSize: 12,
@@ -1438,6 +1877,11 @@ const styles = StyleSheet.create({
   modalRowText: {
     fontSize: 15,
     color: colors.ink.hex,
+  },
+  modalRowTextActive: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   modalCancel: {
     paddingVertical: 14,

@@ -52,9 +52,11 @@ import { styles } from './card-detail-styles.js';
 export function ChecklistSection({
   cardId,
   boardId,
+  canEdit,
 }: {
   readonly cardId: CardId;
   readonly boardId: string;
+  readonly canEdit: boolean;
 }) {
   const queryClient = useQueryClient();
   const [newChecklistName, setNewChecklistName] = useState('');
@@ -160,20 +162,29 @@ export function ChecklistSection({
               <Text style={styles.checklistCount}>
                 {done}/{checklist.items.length}
               </Text>
-              <Pressable
-                style={styles.checklistDeleteButton}
-                onPress={() => {
-                  deleteChecklist.mutate(checklist.checklistId);
-                }}
-              >
-                <Text style={styles.checklistDeleteText}>Delete</Text>
-              </Pressable>
+              {canEdit && (
+                <Pressable
+                  style={styles.checklistDeleteButton}
+                  onPress={() => {
+                    deleteChecklist.mutate(checklist.checklistId);
+                  }}
+                >
+                  <Text style={styles.checklistDeleteText}>Delete</Text>
+                </Pressable>
+              )}
             </View>
+
+            {checklist.items.length > 0 && (
+              <View style={styles.progressBarTrack}>
+                <ProgressBar percent={Math.round((done / checklist.items.length) * 100)} />
+              </View>
+            )}
 
             {checklist.items.map((item) => (
               <View key={item.itemId} style={styles.checklistItemRow}>
                 <Pressable
-                  style={[styles.checklistBox, item.done && styles.checklistBoxDone]}
+                  style={[styles.checklistBox, item.done && styles.checklistBoxDone, !canEdit && styles.checklistBoxDisabled]}
+                  disabled={!canEdit}
                   onPress={() => {
                     toggleItem.mutate({ itemId: item.itemId, text: item.text, done: !item.done });
                   }}
@@ -183,18 +194,20 @@ export function ChecklistSection({
                 <Text style={[styles.checklistItemText, item.done && styles.checklistItemTextDone]}>
                   {item.text}
                 </Text>
-                <Pressable
-                  onPress={() => {
-                    deleteItem.mutate(item.itemId);
-                  }}
-                  hitSlop={8}
-                >
-                  <Text style={styles.checklistItemRemove}>✕</Text>
-                </Pressable>
+                {canEdit && (
+                  <Pressable
+                    onPress={() => {
+                      deleteItem.mutate(item.itemId);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.checklistItemRemove}>✕</Text>
+                  </Pressable>
+                )}
               </View>
             ))}
 
-            {addingItemFor === checklist.checklistId ? (
+            {canEdit && (addingItemFor === checklist.checklistId ? (
               <View style={styles.addCardRow}>
                 <TextInput
                   style={styles.addCardInput}
@@ -230,34 +243,36 @@ export function ChecklistSection({
               >
                 <Text style={styles.checklistAddItemText}>+ Add an item</Text>
               </Pressable>
-            )}
+            ))}
           </View>
         );
       })}
 
-      <View style={styles.addCardRow}>
-        <TextInput
-          style={styles.addCardInput}
-          placeholder="New checklist"
-          placeholderTextColor={colors.inkFaint.hex}
-          value={newChecklistName}
-          onChangeText={setNewChecklistName}
-          onSubmitEditing={() => {
-            const value = newChecklistName.trim();
-            if (value !== '') createChecklist.mutate(value);
-          }}
-        />
-        <Pressable
-          style={styles.addCardButton}
-          disabled={createChecklist.isPending || newChecklistName.trim().length === 0}
-          onPress={() => {
-            const value = newChecklistName.trim();
-            if (value !== '') createChecklist.mutate(value);
-          }}
-        >
-          <Text style={styles.addCardButtonText}>Add</Text>
-        </Pressable>
-      </View>
+      {canEdit && (
+        <View style={styles.addCardRow}>
+          <TextInput
+            style={styles.addCardInput}
+            placeholder="New checklist"
+            placeholderTextColor={colors.inkFaint.hex}
+            value={newChecklistName}
+            onChangeText={setNewChecklistName}
+            onSubmitEditing={() => {
+              const value = newChecklistName.trim();
+              if (value !== '') createChecklist.mutate(value);
+            }}
+          />
+          <Pressable
+            style={styles.addCardButton}
+            disabled={createChecklist.isPending || newChecklistName.trim().length === 0}
+            onPress={() => {
+              const value = newChecklistName.trim();
+              if (value !== '') createChecklist.mutate(value);
+            }}
+          >
+            <Text style={styles.addCardButtonText}>Add</Text>
+          </Pressable>
+        </View>
+      )}
 
       {anyError !== null && (
         <Text style={styles.error} accessibilityRole="alert">
@@ -265,5 +280,15 @@ export function ChecklistSection({
         </Text>
       )}
     </Section>
+  );
+}
+
+function ProgressBar({ percent }: { readonly percent: number }) {
+  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+  const widthStyle = { width: `${percent}%` } as const;
+  return (
+    <View style={styles.progressBarTrack}>
+      <View style={[styles.progressBarFill, widthStyle]} />
+    </View>
   );
 }

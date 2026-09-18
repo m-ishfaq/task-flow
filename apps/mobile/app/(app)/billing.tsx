@@ -20,6 +20,7 @@ import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { HeaderSkeleton, CardSkeleton, shadows } from '../../src/lib/premium.js';
 import {
   BILLING_OVERVIEW_QUERY_KEY,
   BILLING_PLANS_QUERY_KEY,
@@ -232,7 +233,10 @@ function BillingScreenContent() {
       <Text style={styles.screenTitle}>Billing</Text>
 
       {overview.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <View style={styles.loadingSection}>
+          <HeaderSkeleton />
+          <CardSkeleton />
+        </View>
       ) : overview.isError ? (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {apiErrorOf(overview.error)?.error.message ?? 'Could not load billing.'}
@@ -425,7 +429,11 @@ function BillingScreenContent() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Plans</Text>
 
-            {plans.isPending && <ActivityIndicator color={colors.accent.hex} />}
+            {plans.isPending && (
+              <View style={styles.plansLoading}>
+                <CardSkeleton rows={4} />
+              </View>
+            )}
             {plans.isError && (
               <Text style={styles.sectionError} accessibilityRole="alert">
                 {apiErrorOf(plans.error)?.error.message ?? "Couldn't load plans."}
@@ -570,10 +578,11 @@ const styles = StyleSheet.create({
   card: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex + '80',
+    borderColor: colors.line.hex,
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 16,
+    ...shadows.sm,
   },
   cardTitle: {
     fontSize: 12,
@@ -617,7 +626,7 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex + '80',
+    borderColor: colors.line.hex,
     borderRadius: radiusCard + 2,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -716,5 +725,11 @@ const styles = StyleSheet.create({
   planPrice: {
     fontSize: 13,
     color: colors.ink.hex,
+  },
+  loadingSection: {
+    gap: 16,
+  },
+  plansLoading: {
+    paddingVertical: 8,
   },
 });

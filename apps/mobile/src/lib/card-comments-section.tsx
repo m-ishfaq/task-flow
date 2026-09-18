@@ -10,7 +10,7 @@ import { apiClient } from './app-session.js';
 import { apiErrorOf } from './trpc-client.js';
 import { useSession } from './use-session.js';
 import { RichTextView } from './rich-text-view.js';
-import { liveFormatParser, parseFormattedText } from './rich-text-compose.js';
+import { liveFormatParser, parseFormattedText, serializeToText } from './rich-text-compose.js';
 import { activeMentionQuery, insertMention, type PendingMention } from './message-compose.js';
 import { Avatar } from './avatar.js';
 import { useMembers, type Member } from './use-members.js';
@@ -40,12 +40,12 @@ import { styles } from './card-detail-styles.js';
  * viewerId`, the same check `updateComment` makes inline on the server,
  * not `can()`. There is no legitimate way for anyone else's Edit to
  * succeed, so the control is hidden rather than shown-and-refused.
- * `onStartEdit` seeds the box from `comment.bodyText` — the server's own
- * FLATTENED plain-text projection, not markdown source — so an edit still
- * loses any formatting the comment already had, exactly as it did before
- * `parseFormattedText` existed; what changed is that new `**`/`[]()`/list
- * syntax typed during THAT edit now composes correctly, same as a fresh
- * comment.
+ * `onStartEdit` seeds the box from `serializeToText(comment.body)` — the
+ * TipTap-JSON round-trip, not `comment.bodyText` (the server's plain-text
+ * projection) — so formatting like **bold** and [links](url) survive into
+ * the edit. `parseFormattedText` on save converts the markdown back to
+ * TipTap JSON, preserving whatever was already there plus any new syntax
+ * the editor composes during the edit.
  * **Delete is shown to the author, or a caller who `canModerate`** —
  * `comment:delete` is Admin-and-Owner only by role
  * (`packages/policy/src/roles.ts`), so this used to render for every
@@ -184,7 +184,7 @@ export function CommentsSection({
               editPending={edit.isPending}
               onStartEdit={() => {
                 setEditingId(comment.commentId);
-                setEditDraft(comment.bodyText);
+                setEditDraft(serializeToText(comment.body as Parameters<typeof serializeToText>[0]));
               }}
               onCancelEdit={() => {
                 setEditingId(null);
@@ -218,7 +218,7 @@ export function CommentsSection({
                 editPending={edit.isPending}
                 onStartEdit={() => {
                   setEditingId(reply.commentId);
-                  setEditDraft(reply.bodyText);
+                  setEditDraft(serializeToText(reply.body as Parameters<typeof serializeToText>[0]));
                 }}
                 onCancelEdit={() => {
                   setEditingId(null);

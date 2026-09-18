@@ -136,7 +136,16 @@ export default function AppLayout() {
 
   return (
     <View style={styles.stackWrapper}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 280,
+          contentStyle: { backgroundColor: colors.surface.hex },
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+        }}
+      />
       {/* Mounted once, above every screen under `(app)/` — a ringing call
           has to be answerable from wherever somebody happens to be, and a
           call in progress has to survive navigating away from the

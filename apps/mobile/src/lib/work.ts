@@ -408,3 +408,38 @@ export type Comment = Wire<
 export function commentsQueryKey(cardId: string): readonly ['work.comments.list', string] {
   return ['work.comments.list', cardId];
 }
+
+// ---------------------------------------------------------------------------
+// Pull requests, branches, repos
+// ---------------------------------------------------------------------------
+
+/** A linked pull request — `work.pullRequests.list`. */
+export type PullRequestLink = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['pullRequests']['list']['query']>>
+>[number];
+
+export function cardPullRequestsQueryKey(
+  cardId: string,
+): readonly ['work.pullRequests.list', string] {
+  return ['work.pullRequests.list', cardId];
+}
+
+/** A linked branch — `work.branches.list`. */
+export type BranchLink = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['branches']['list']['query']>>
+>[number];
+
+export function cardBranchesQueryKey(cardId: string): readonly ['work.branches.list', string] {
+  return ['work.branches.list', cardId];
+}
+
+/** Connected GitHub repos — `work.githubRepos.list`. */
+export type ConnectedRepo = {
+  readonly providerScope: string;
+};
+
+export const GITHUB_REPOS_QUERY_KEY = ['work.githubRepos.list'] as const;
+
+export function githubReposQueryKey(): typeof GITHUB_REPOS_QUERY_KEY {
+  return GITHUB_REPOS_QUERY_KEY;
+}

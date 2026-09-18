@@ -91,7 +91,11 @@ export function CallButton({
 
   return (
     <Pressable
-      style={[styles.button, live == null ? styles.buttonGhost : styles.buttonPrimary]}
+      style={({ pressed }) => [
+        styles.button,
+        live == null ? styles.buttonGhost : styles.buttonPrimary,
+        pressed && { opacity: 0.7 },
+      ]}
       disabled={start.isPending || selfId === null}
       onPress={() => {
         start.mutate();

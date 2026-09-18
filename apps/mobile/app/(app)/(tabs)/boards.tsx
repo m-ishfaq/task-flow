@@ -18,10 +18,12 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { EmptyState } from '../../../src/lib/premium.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { PROJECTS_QUERY_KEY, type Project } from '../../../src/lib/work.js';
 import { Fab } from '../../../src/lib/fab.js';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 /**
@@ -146,7 +148,11 @@ export default function Boards() {
           projects.isPending ? (
             <SkeletonList count={4} />
           ) : (
-            <Text style={styles.label}>No projects yet.</Text>
+            <EmptyState
+              icon={'\uD83D\uDCCB'}
+              title="No projects yet"
+              description="Create your first project to start organizing work."
+            />
           )
         }
       />
@@ -235,7 +241,8 @@ export default function Boards() {
 function ProjectRow({ project }: { readonly project: Project }) {
   return (
     <Pressable
-      style={styles.row}
+      style={[styles.row, shadows.sm]}
+     
       onPress={() => {
         router.push(`/project/${project.projectId}`);
       }}

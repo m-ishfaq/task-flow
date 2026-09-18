@@ -36,6 +36,7 @@ import {
 } from '../../../src/lib/chat.js';
 import { FabMenu } from '../../../src/lib/fab.js';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 const TOPBAR_ICON_CLEARANCE = 120;
@@ -249,6 +250,7 @@ function ChannelRow({
   return (
     <Pressable
       style={styles.row}
+     
       onPress={() => {
         router.push(`/channel/${channel.channelId}`);
       }}
@@ -297,7 +299,7 @@ function NewConversationModal({
   };
 
   return (
-    <Modal visible={mode !== 'closed'} transparent animationType="fade" onRequestClose={close}>
+    <Modal visible={mode !== 'closed'} transparent animationType="slide" onRequestClose={close}>
       {/* The name/DM-search TextInput below autofocuses the moment either
           form mounts, and this bottom sheet has no keyboard handling of its
           own — found broken on a real device (the box the user is typing
@@ -735,6 +737,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   row: {
+    ...shadows.sm,
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
@@ -788,6 +791,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
+    ...shadows.sm,
     backgroundColor: colors.surfaceRaised.hex,
     borderTopLeftRadius: radiusCard + 6,
     borderTopRightRadius: radiusCard + 6,

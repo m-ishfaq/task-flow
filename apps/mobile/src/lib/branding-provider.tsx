@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { publicBrandingQuery } from './branding.js';
-import { BrandingContext, DEFAULT_BRANDING } from './branding-context.js';
+import { BrandingContext, DEFAULT_BRANDING, type BrandingValue } from './branding-context.js';
 
 /**
  * Resolves the deployment's branding (migration 0073) and makes it
@@ -32,7 +32,7 @@ import { BrandingContext, DEFAULT_BRANDING } from './branding-context.js';
  */
 export function BrandingProvider({ children }: { readonly children: ReactNode }) {
   const query = useQuery(publicBrandingQuery());
-  const branding: typeof DEFAULT_BRANDING = {
+  const branding: BrandingValue = {
     ...(query.data ?? DEFAULT_BRANDING),
     isPending: query.isPending,
   };

@@ -8,6 +8,8 @@ import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { Avatar } from '../../src/lib/avatar.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { SkeletonList } from '../../src/lib/skeleton.js';
+import { shadows } from '../../src/lib/premium.js';
 import {
   DIRECTORY_QUERY_KEY,
   directoryLabel,
@@ -95,9 +97,7 @@ function PeopleScreenContent() {
         Everyone in this organization, with their profile, role, and who they report to.
       </Text>
 
-      {directory.isPending && (
-        <ActivityIndicator style={styles.loading} color={colors.accent.hex} />
-      )}
+      {directory.isPending && <SkeletonList count={3} />}
       {directory.isError && (
         <Text style={styles.errorText}>
           {apiErrorOf(directory.error)?.error.message ?? 'Could not load the directory.'}
@@ -142,7 +142,8 @@ function PersonRow({ member }: { readonly member: DirectoryMember }) {
 
   return (
     <Pressable
-      style={styles.row}
+     
+      style={[styles.row, shadows.sm]}
       onPress={() => {
         router.push(`/person/${member.userId}`);
       }}
@@ -196,9 +197,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontSize: 13,
     color: colors.inkMuted.hex,
-  },
-  loading: {
-    marginTop: 12,
   },
   errorText: {
     fontSize: 13,

@@ -17,6 +17,7 @@ import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { AnimatedExpand, HeaderSkeleton, shadows } from '../../src/lib/premium.js';
 import {
   AUTOMATIONS_QUERY_KEY,
   actionOutcomeOf,
@@ -123,7 +124,7 @@ function AutomationsScreenContent() {
         </Pressable>
       </View>
 
-      {rules.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
+      {rules.isPending && <HeaderSkeleton />}
       {rules.isError && (
         <Text style={styles.errorText}>
           {apiErrorOf(rules.error)?.error.message ?? 'Could not load automation rules.'}
@@ -278,7 +279,9 @@ function RuleRow({
         </Pressable>
       </View>
 
-      {expanded && <RunHistory automationId={rule.automationId} />}
+      <AnimatedExpand expanded={expanded}>
+        <RunHistory automationId={rule.automationId} />
+      </AnimatedExpand>
     </View>
   );
 }
@@ -454,9 +457,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
     padding: 12,
     gap: 8,
+    ...shadows.sm,
   },
   ruleCardDisabled: {
-    borderColor: colors.line.hex + '80',
+    borderColor: colors.line.hex,
+    opacity: 0.6,
   },
   ruleHeader: {
     flexDirection: 'row',
@@ -475,10 +480,11 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
   },
   brokenBadge: {
-    backgroundColor: colors.danger.hex + '1A',
+    backgroundColor: colors.danger.hex,
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2,
+    opacity: 0.15,
   },
   brokenBadgeText: {
     fontSize: 10,
@@ -537,6 +543,11 @@ const styles = StyleSheet.create({
   },
   runRow: {
     gap: 2,
+    backgroundColor: colors.surface.hex,
+    borderRadius: radiusCard,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
   },
   runTop: {
     flexDirection: 'row',

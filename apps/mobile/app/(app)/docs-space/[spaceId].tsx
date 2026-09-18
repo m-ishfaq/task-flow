@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -19,6 +18,8 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import {
   SPACES_QUERY_KEY,
@@ -236,7 +237,7 @@ export default function DocsSpaceScreen() {
         </View>
       </View>
 
-      {pages.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
+      {pages.isPending && <SkeletonList count={3} />}
       {pages.isError && (
         <Text style={styles.errorText}>
           {apiErrorOf(pages.error)?.error.message ?? 'Could not load this space.'}
@@ -257,6 +258,7 @@ export default function DocsSpaceScreen() {
               { paddingLeft: 12 + item.depth * 18 },
               item.page.archivedAt !== null && styles.rowArchived,
             ]}
+           
             onPress={() => {
               router.push({
                 pathname: '/docs-page/[pageId]',
@@ -813,6 +815,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   row: {
+    ...shadows.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -853,6 +856,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
+    ...shadows.sm,
     backgroundColor: colors.surfaceRaised.hex,
     borderTopLeftRadius: radiusCard + 6,
     borderTopRightRadius: radiusCard + 6,

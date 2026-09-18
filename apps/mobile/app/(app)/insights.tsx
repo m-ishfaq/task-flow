@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -7,6 +7,7 @@ import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { HeaderSkeleton, StatBoxSkeleton, shadows } from '../../src/lib/premium.js';
 import {
   velocityKey,
   cycleTimeKey,
@@ -114,8 +115,14 @@ function InsightsScreenContent() {
       <Text style={styles.subtitle}>Last 30 days</Text>
 
       {isLoading && (
-        <View style={styles.loadingCenter}>
-          <ActivityIndicator color={colors.accent.hex} />
+        <View style={styles.skeletonSection}>
+          <HeaderSkeleton />
+          <View style={styles.statGrid}>
+            <StatBoxSkeleton />
+            <StatBoxSkeleton />
+            <StatBoxSkeleton />
+            <StatBoxSkeleton />
+          </View>
         </View>
       )}
 
@@ -360,9 +367,8 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     marginBottom: 8,
   },
-  loadingCenter: {
-    paddingVertical: 40,
-    alignItems: 'center',
+  skeletonSection: {
+    gap: 20,
   },
   errorCard: {
     borderRadius: radiusCard,
@@ -393,8 +399,9 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     padding: 14,
     borderWidth: 1,
-    borderColor: colors.line.hex + '60',
+    borderColor: colors.line.hex,
     gap: 10,
+    ...shadows.sm,
   },
   emptyText: {
     fontSize: 13,
@@ -422,7 +429,8 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     padding: 12,
     borderWidth: 1,
-    borderColor: colors.line.hex + '60',
+    borderColor: colors.line.hex,
+    ...shadows.sm,
   },
   statBoxValue: {
     fontSize: 22,

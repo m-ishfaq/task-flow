@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Text,
   View,
 } from 'react-native';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useQuery } from '@tanstack/react-query';
-import { CardIdSchema, type CardId } from '@taskflow/contracts';
+import { CardIdSchema, type CardId, type BoardId, type ProjectId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
-import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
@@ -34,6 +34,9 @@ import {
 } from '../../../src/lib/card-selectors.js';
 import { CustomFieldSection } from '../../../src/lib/card-custom-field-section.js';
 import { AttachmentSection } from '../../../src/lib/card-attachment-section.js';
+import { LocationSection } from '../../../src/lib/card-location-section.js';
+import { DevelopmentSection } from '../../../src/lib/card-development-section.js';
+import { RecordingSection } from '../../../src/lib/card-recordings-section.js';
 
 /**
  * Card detail (Wave 2's second slice, following "My Tasks", then made
@@ -117,7 +120,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
   if (card.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       </View>
     );
   }
@@ -142,7 +145,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop }]}>
+      <ScrollView style={[styles.container, shadows.sm]} contentContainerStyle={[styles.content, { paddingTop }]}>
         <BackButton />
         <Text style={styles.reference}>{data.reference}</Text>
 
@@ -180,6 +183,23 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
         <AssigneeSelector cardId={cardId} assigneeIds={data.assigneeIds} />
 
         <SprintSelector cardId={cardId} projectId={data.projectId} sprintId={data.sprintId} />
+
+        <LocationSection
+          cardId={cardId}
+          boardId={data.boardId as BoardId}
+          listId={data.listId}
+          projectId={data.projectId as ProjectId}
+          canMove={data.capabilities.update}
+          onLeaveBoard={() => {
+            router.back();
+          }}
+        />
+
+        <DevelopmentSection
+          orgId={orgId ?? ''}
+          cardId={cardId}
+          canEdit={data.capabilities.update}
+        />
 
         <LabelSelector cardId={cardId} projectId={data.projectId} />
 
@@ -224,9 +244,11 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
-        <ChecklistSection cardId={cardId} boardId={data.boardId} />
+        <ChecklistSection cardId={cardId} boardId={data.boardId} canEdit={data.capabilities.update} />
 
         <AttachmentSection cardId={cardId} />
+
+        <RecordingSection orgId={orgId ?? ''} cardId={cardId} />
 
         <CommentsSection cardId={cardId} canModerate={data.capabilities.moderateComments} />
       </ScrollView>

@@ -66,7 +66,9 @@ export function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      {({ pressed }) => (
+        <Text style={[styles.backButtonText, pressed && { opacity: 0.6 }]}>← Back</Text>
+      )}
     </Pressable>
   );
 }

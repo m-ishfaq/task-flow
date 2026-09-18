@@ -30,6 +30,8 @@ import { plainParagraph, type RichTextNode } from '@taskflow/api/richtext';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, chatSocket } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
@@ -1046,7 +1048,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         style={styles.listContainer}
         ListEmptyComponent={
           messages.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={3} />
           ) : (
             <Text style={styles.label}>No messages yet.</Text>
           )
@@ -1705,6 +1707,7 @@ function MessageRow({
               <Pressable
                 key={attachment.attachmentId}
                 style={styles.attachmentChip}
+               
                 onPress={() => {
                   onDownloadAttachment(attachment.attachmentId, attachment.contentType);
                 }}
@@ -1854,6 +1857,7 @@ function LinkPreviewList({ previews }: { readonly previews: readonly UnfurlPrevi
         <Pressable
           key={preview.url}
           style={styles.previewCard}
+         
           onPress={() => {
             void Linking.openURL(preview.url);
           }}
@@ -2120,6 +2124,7 @@ const styles = StyleSheet.create({
     padding: 6,
     gap: 8,
     maxWidth: 320,
+    ...shadows.sm,
   },
   previewImage: {
     width: 48,
@@ -2207,12 +2212,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radiusCard + 10,
     borderTopRightRadius: radiusCard + 10,
     paddingTop: 8,
-    /* Shadow lifts the sheet off the backdrop on iOS. */
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 16,
+    ...shadows.lg,
   },
   sheetHandle: {
     alignSelf: 'center',

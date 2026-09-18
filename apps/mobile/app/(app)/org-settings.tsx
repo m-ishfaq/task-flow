@@ -20,6 +20,7 @@ import { useSession } from '../../src/lib/use-session.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { useStepUp } from '../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
+import { HeaderSkeleton, CardSkeleton, shadows } from '../../src/lib/premium.js';
 import {
   ORG_DETAIL_QUERY_KEY,
   MEMBERS_QUERY_KEY,
@@ -294,7 +295,10 @@ function OrgSettingsScreenContent() {
       </View>
 
       {org.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <View style={styles.loadingSection}>
+          <HeaderSkeleton />
+          <CardSkeleton />
+        </View>
       ) : org.isError ? (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {apiErrorOf(org.error)?.error.message ?? "Couldn't load this organization."}
@@ -418,7 +422,9 @@ function OrgSettingsScreenContent() {
             )}
 
             {members.isPending ? (
-              <ActivityIndicator color={colors.accent.hex} />
+              <View style={styles.membersLoading}>
+                <CardSkeleton rows={5} />
+              </View>
             ) : members.isError ? (
               <Text style={styles.sectionError} accessibilityRole="alert">
                 {apiErrorOf(members.error)?.error.message ?? "Couldn't load members."}
@@ -512,7 +518,9 @@ function OrgSettingsScreenContent() {
             )}
 
             {teams.isPending ? (
-              <ActivityIndicator color={colors.accent.hex} />
+              <View style={styles.teamsLoading}>
+                <CardSkeleton rows={3} />
+              </View>
             ) : teams.isError ? (
               <Text style={styles.sectionError} accessibilityRole="alert">
                 {apiErrorOf(teams.error)?.error.message ?? "Couldn't load teams."}
@@ -600,7 +608,7 @@ function RolePickerModal({
     member === null ? [] : [...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])];
 
   return (
-    <Modal visible={member !== null} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={member !== null} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
           <Text style={styles.modalTitle}>
@@ -1014,8 +1022,9 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     padding: 12,
     borderWidth: 1,
-    borderColor: colors.line.hex + '60',
+    borderColor: colors.line.hex,
     gap: 10,
+    ...shadows.sm,
   },
   teamCardHeader: {
     flexDirection: 'row',
@@ -1288,5 +1297,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.danger.hex,
+  },
+  loadingSection: {
+    gap: 16,
+  },
+  membersLoading: {
+    paddingVertical: 8,
+  },
+  teamsLoading: {
+    paddingVertical: 8,
   },
 });
