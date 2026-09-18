@@ -257,10 +257,9 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
      longer checked, but the NOT NULL + no-cascade combination prevents
      the user DELETE from reaching that point. */
   if (allTables.includes('platform.operators')) {
-    await connection.query(
-      'DELETE FROM platform.operators WHERE granted_by = ANY($1::uuid[])',
-      [userIds],
-    );
+    await connection.query('DELETE FROM platform.operators WHERE granted_by = ANY($1::uuid[])', [
+      userIds,
+    ]);
   }
 
   /* `rtc.sessions` — two attribution columns (`initiated_by`,
