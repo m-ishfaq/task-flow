@@ -192,10 +192,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
-        <DevelopmentSection
-          cardId={cardId}
-          canEdit={data.capabilities.update}
-        />
+        <DevelopmentSection cardId={cardId} canEdit={data.capabilities.update} />
 
         <LabelSelector cardId={cardId} projectId={data.projectId} />
 

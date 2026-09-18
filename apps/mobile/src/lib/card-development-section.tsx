@@ -5,11 +5,7 @@ import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
 import { apiErrorOf } from './trpc-client.js';
-import {
-  cardBranchesQueryKey,
-  cardPullRequestsQueryKey,
-  githubReposQueryKey,
-} from './work.js';
+import { cardBranchesQueryKey, cardPullRequestsQueryKey, githubReposQueryKey } from './work.js';
 import { Section } from './card-detail-shared.js';
 import { styles } from './card-detail-styles.js';
 
@@ -285,7 +281,12 @@ function BranchSubsection({
       )}
 
       {canEdit && hasRepo && !formOpen && (
-        <Pressable style={styles.devButton} onPress={() => { setFormOpen(true); }}>
+        <Pressable
+          style={styles.devButton}
+          onPress={() => {
+            setFormOpen(true);
+          }}
+        >
           <Text style={styles.devButtonText}>Create branch</Text>
         </Pressable>
       )}
@@ -312,7 +313,12 @@ function BranchSubsection({
             >
               <Text style={styles.devButtonText}>{create.isPending ? 'Creating…' : 'Create'}</Text>
             </Pressable>
-            <Pressable style={styles.devButtonCancel} onPress={() => { setFormOpen(false); }}>
+            <Pressable
+              style={styles.devButtonCancel}
+              onPress={() => {
+                setFormOpen(false);
+              }}
+            >
               <Text style={styles.devButtonText}>Cancel</Text>
             </Pressable>
           </View>
