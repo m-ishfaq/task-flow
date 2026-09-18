@@ -232,6 +232,57 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     [userIds],
   );
 
+  /* `platform.branding.updated_by` references users without cascade. The
+     seeder never writes this table (the running application does via the
+     platform-admin console), so it is not in any module's `tables` array
+     and has no guard. A SET NULL is correct — the singleton row survives,
+     losing only attribution. */
+  await connection.query(
+    'UPDATE platform.branding SET updated_by = NULL WHERE updated_by = ANY($1::uuid[])',
+    [userIds],
+  );
+
+  /* `platform.ai_org_overrides.set_by` — operator-set config, not in any
+     seed module's `tables`. SET NULL is correct — the override row
+     survives, losing only attribution. */
+  await connection.query(
+    'UPDATE platform.ai_org_overrides SET set_by = NULL WHERE set_by = ANY($1::uuid[])',
+    [userIds],
+  );
+
+  /* `platform.operators.granted_by` is NOT NULL with no cascade. The
+     operator row is self-referencing (`granted_by = user_id`), so the
+     seeded operator's own row is the one blocking deletion. DELETE it —
+     `user_id` FK CASCADE would remove it anyway once `granted_by` is no
+     longer checked, but the NOT NULL + no-cascade combination prevents
+     the user DELETE from reaching that point. */
+  if (allTables.includes('platform.operators')) {
+    await connection.query(
+      'DELETE FROM platform.operators WHERE granted_by = ANY($1::uuid[])',
+      [userIds],
+    );
+  }
+
+  /* `rtc.sessions` — two attribution columns (`initiated_by`,
+     `recording_requested_by`), no cascade. */
+  if (allTables.includes('rtc.sessions')) {
+    await connection.query(
+      `UPDATE rtc.sessions
+         SET initiated_by = NULL, recording_requested_by = NULL
+       WHERE initiated_by = ANY($1::uuid[])
+          OR recording_requested_by = ANY($1::uuid[])`,
+      [userIds],
+    );
+  }
+
+  /* `rtc.recordings.created_by` — attribution column, no cascade. */
+  if (allTables.includes('rtc.recordings')) {
+    await connection.query(
+      'UPDATE rtc.recordings SET created_by = NULL WHERE created_by = ANY($1::uuid[])',
+      [userIds],
+    );
+  }
+
   /* Users last, and unscoped — `identity.users` carries no `org_id` (it is
      the one global table, CLAUDE.md). By this point every membership row
      that referenced them is gone, so the foreign key from
