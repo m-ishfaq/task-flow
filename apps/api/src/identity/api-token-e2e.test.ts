@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { buildServer } from '../server.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -67,6 +67,12 @@ beforeAll(async () => {
   initializeApiTokenAuthDatabase({
     url: API_TOKEN_AUTH_URL,
     applicationName: 'api-token-e2e-auth',
+  });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'api-token-e2e-admin',
   });
 
   app = await buildServer({

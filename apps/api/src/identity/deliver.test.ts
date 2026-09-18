@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { MemoryMailer } from '@taskflow/mail';
 import { buildServer } from '../server.js';
@@ -48,6 +48,12 @@ async function cleanupFixtures(): Promise<void> {
 
 beforeAll(async () => {
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'deliver-test' });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'deliver-test-admin',
+  });
   admin = await connectAsMigrator();
   await cleanupFixtures();
   app = await buildServer({ env: TEST_ENV, mailer });

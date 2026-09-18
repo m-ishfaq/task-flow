@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeDatabase, initializeDatabase, sql, withGlobalScope } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase, sql, withGlobalScope } from '@taskflow/db';
 import { up } from '@taskflow/db/migrate';
 import { RecordingEventBus } from '@taskflow/events';
 import { isAppError } from '@taskflow/contracts';
@@ -77,6 +77,12 @@ const PASSWORD = 'correct horse battery staple 42';
 beforeAll(async () => {
   await up({ migrationUrl: MIGRATION_URL, migrationsDir: MIGRATIONS_DIR });
   initializeDatabase({ url: APP_URL, applicationName: 'identity-test' });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'identity-test-admin',
+  });
 }, 60_000);
 
 afterAll(async () => {

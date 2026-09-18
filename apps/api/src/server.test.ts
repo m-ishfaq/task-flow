@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { buildServer } from './server.js';
 import type { DeliverableLink } from './identity/identity.service.js';
 import type { Env } from './config/env.js';
@@ -31,6 +31,12 @@ const deliveries: DeliverableLink[] = [];
 
 beforeAll(async () => {
   initializeDatabase({ url: env.DATABASE_URL, applicationName: 'server-test' });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'server-test-admin',
+  });
   app = await buildServer({
     env,
     deliver: (message) => {

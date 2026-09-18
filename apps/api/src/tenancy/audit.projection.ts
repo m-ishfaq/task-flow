@@ -482,6 +482,7 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
      whose chain this could belong to instead. The durable record is
      platform.operator_audit_log via recordOperatorAction. */
   'platform.branding_updated',
+  'platform.system_settings_updated',
   /* Operator broadcasts (migration 0083). Same structural reason as every
      platform event above — emitted by `taskflow_platform_admin`, which holds
      no grant on `platform.outbox`, so it never reaches THIS consumer. Unlike
