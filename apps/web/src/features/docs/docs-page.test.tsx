@@ -384,10 +384,10 @@ describe('archiving and restoring a page', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Getting Started' })).toBeInTheDocument();
     });
-    // Rename stays visible — `page:update` is a plain-Member role permission —
+    // Edit title stays visible — `page:update` is a plain-Member role permission —
     // only the archive/restore control, gated on the tuple-shareable
     // `page:delete`, is withheld.
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
   });
 });
