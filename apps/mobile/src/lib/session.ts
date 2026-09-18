@@ -96,7 +96,7 @@ export interface Preferences {
   removeItem(key: string): Promise<void>;
 }
 
-const ORG_PREF_KEY = 'taskflow.org';
+const ORG_PREF_KEY = 'rinavai.org';
 
 export type SessionStatus =
   /** Boot has not finished; the stored refresh token has not been exchanged. */
@@ -141,7 +141,7 @@ export interface MobileSession {
 }
 
 /** Header the API reads to select the tenant. Must match apps/api/src/tenancy/resolve.ts. */
-export const ORG_HEADER = 'x-taskflow-org';
+export const ORG_HEADER = 'x-rinavai-org';
 
 /**
  * Remaining lifetime, in ms, below which an access token is treated as spent.

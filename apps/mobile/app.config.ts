@@ -91,8 +91,8 @@ const REALTIME_BASE_URL = process.env['MOBILE_REALTIME_BASE_URL'];
 const COLLAB_BASE_URL = process.env['MOBILE_COLLAB_BASE_URL'];
 
 const config: ExpoConfig = {
-  name: 'TaskFlow',
-  slug: 'taskflow',
+  name: 'Rinavai',
+  slug: 'rinavai',
   /* The EAS account this project's builds belong to — paired with
      `extra.eas.projectId` below. Not a secret, same reasoning: it is a
      public identifier (the project's own dashboard URL already carries it),
@@ -106,8 +106,8 @@ const config: ExpoConfig = {
      fallback. `expo-router`'s deep-link handling reads it, and a scheme
      changed after release breaks every previously-installed app's
      return-from-browser flow. */
-  scheme: 'taskflow',
-  /* The TaskFlow flow-mark (`apps/web/src/components/taskflow-logo.tsx` /
+  scheme: 'rinavai',
+  /* The Rinavai flow-mark (`apps/web/src/components/taskflow-logo.tsx` /
      `apps/web/public/favicon.svg`'s three-node design), rendered to a 1024x1024
      PNG on the app's own dark surface color rather than left transparent —
      iOS composites the app icon on an opaque backing regardless, so an
@@ -129,7 +129,7 @@ const config: ExpoConfig = {
        checklist, which this line sits right next to in spirit: an id that
        collides with someone else's is a release-time failure, not a runtime
        security one, but it is exactly as easy to ship by accident. */
-    bundleIdentifier: 'com.taskflow.app',
+    bundleIdentifier: 'com.rinavai.app',
     supportsTablet: true,
     /* Passkeys (§4.4) need this ENTITLEMENT present before the ceremony can
        even start, but the entitlement alone does nothing without the domain
@@ -139,13 +139,13 @@ const config: ExpoConfig = {
        the domain, the AASA file on the domain points back at this app, and
        passkeys only work once BOTH sides agree. See the README's "Passkeys"
        section for the full checklist. */
-    associatedDomains: ['webcredentials:taskflow-demo.duckdns.org'],
+    associatedDomains: ['webcredentials:rinavai-demo.duckdns.org'],
     ...(existsSync(GOOGLE_SERVICE_INFO_PLIST)
       ? { googleServicesFile: './GoogleService-Info.plist' }
       : {}),
   },
   android: {
-    package: 'com.taskflow.app',
+    package: 'com.rinavai.app',
     /* The masked variant `icon` above needs on Android: a FOREGROUND layer
        only, transparent background, scaled well inside the ~66% safe zone
        the OS mask crops to (a full-bleed foreground gets clipped to a
@@ -260,7 +260,7 @@ const config: ExpoConfig = {
        Info.plist — not a soft failure, the ceremony never even starts
        (§4.4's biometric app-lock). Android has no equivalent string to set;
        the plugin is a no-op there. */
-    ['expo-local-authentication', { faceIDPermission: 'Unlock TaskFlow with Face ID.' }],
+    ['expo-local-authentication', { faceIDPermission: 'Unlock Rinavai with Face ID.' }],
     /* In-app voice calling (Phase 13, Wave 5 here). `react-native-webrtc`
        ships real native code — Expo Go can never run it — and this
        community plugin is what wires it into a config-plugin/dev-client
@@ -278,8 +278,8 @@ const config: ExpoConfig = {
     [
       '@config-plugins/react-native-webrtc',
       {
-        microphonePermission: 'TaskFlow uses your microphone for voice calls.',
-        cameraPermission: 'TaskFlow will use your camera for video calls in a future update.',
+        microphonePermission: 'Rinavai uses your microphone for voice calls.',
+        cameraPermission: 'Rinavai will use your camera for video calls in a future update.',
       },
     ],
     /* Native CallKit (iOS) / ConnectionService (Android) — `call-keep.ts`'s
@@ -308,7 +308,7 @@ const config: ExpoConfig = {
        EAS's own `eas init` cannot write it into automatically, unlike a
        static app.json, so it is set here by hand instead. */
     eas: {
-      projectId: 'b3129211-ec7b-4cca-ab67-6c39a32095cf',
+      projectId: '20abb8ce-052e-46aa-9822-967ff55be4df',
     },
   },
 };

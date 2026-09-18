@@ -82,6 +82,21 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * A live call clock as "4:12" or "1:02:05" — an elapsed time ticking every
+ * second client-side. For a FINISHED call's length, use `formatCallDuration`
+ * instead, which renders "4m 12s".
+ */
+export function formatCallClock(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  const ss = String(remainder).padStart(2, '0');
+  return hours > 0 ? `${String(hours)}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
  * A call duration as "3m 12s", or "45s" under a minute — never "0m 12s".
  *
  * For a FINISHED call's length. An in-progress call ticks its own elapsed

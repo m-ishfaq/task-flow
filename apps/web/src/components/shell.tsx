@@ -2,11 +2,14 @@ import { useEffect, useRef, type ComponentType } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Check,
   ChevronDown,
   Keyboard,
+  LogOut,
   Menu,
   ShieldCheck,
   SlidersHorizontal,
+  User,
   type LucideProps,
 } from 'lucide-react';
 import {
@@ -26,15 +29,18 @@ import { disconnectRtcSocket } from '../lib/rtc-socket.js';
 import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
-import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
+import { orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
-import { Avatar, Button } from './primitives.js';
+import { hueOf } from './avatar-color.js';
+import { Avatar } from './primitives.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
 import { CallSurface } from '../features/rtc/call-surface.js';
 import { NewOrgSetupDialog } from '../features/ai/setup-dialog.js';
+import { MaintenanceBanner, MaintenanceScreen } from './maintenance-banner.js';
+import { useMaintenanceStore } from '../lib/maintenance-store.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -78,6 +84,14 @@ export function Shell() {
   const mobileNavOpen = useUi((state) => state.mobileNavOpen);
   const closeMobileNav = useUi((state) => state.closeMobileNav);
   const isDesktop = useIsDesktop();
+
+  /* Read maintenance state early — before the bare/hasOrg layout decisions.
+     A prior session may have stored `active: true` in localStorage; reading
+     it here prevents a flash of the normal shell on a page reload while
+     maintenance is on. The fetch wrapper (query.ts) catches fresh 503s
+     before any query fires, but this handles the localStorage-rehydrated
+     case synchronously on first render. */
+  const maintenanceActive = useMaintenanceStore((s) => s.active);
 
   const bare =
     ANONYMOUS_PATHS.has(pathname) ||
@@ -165,9 +179,30 @@ export function Shell() {
       /* `h-dvh` for the same reason as the framed branch below — the login and
          mail-link pages centre themselves against this height. */
       <div className="flex h-dvh flex-col">
+        <MaintenanceBanner />
         <main className="min-h-0 flex-1">
           <Outlet />
         </main>
+      </div>
+    );
+  }
+
+  /* Maintenance mode: show the full-page maintenance screen instead of the
+     normal app shell. The banner-only path above handles the login page;
+     authenticated users see this full screen with the admin's message and,
+     for platform operators, a link to the admin console. maintenanceActive
+     is declared above (before the bare check) to keep hooks in a fixed
+     position and to catch the localStorage-rehydrated case on first render.
+
+     Platform admin routes are always accessible during maintenance — the
+     server bypasses them, and the admin needs the console to TOGGLE
+     maintenance mode off. Without this guard, the admin gets locked out
+     of the very console that controls the setting. */
+  const isPlatformAdminRoute = pathname.startsWith('/platform-admin');
+  if (maintenanceActive && !isPlatformAdminRoute) {
+    return (
+      <div className="flex h-dvh flex-col">
+        <MaintenanceScreen />
       </div>
     );
   }
@@ -193,13 +228,8 @@ export function Shell() {
 
            `dvh` is viewport-relative, so it resolves unconditionally. */
         'flex h-dvh overflow-hidden',
-        /* The pre-org state has no drawer, so its switcher is an ordinary flex
-           child with a fixed width — which below `md` left the org picker about
-           180px to render "Choose an organization" in, header and all. Stacking
-           is the fix rather than a narrower column: at this width there is no
-           room for two, and the switcher is the one thing on this screen that
-           is not the choice being made. */
-        !hasOrg && 'flex-col md:flex-row',
+        /* The pre-org state renders no sidebar, header, or footer — the org
+           picker is a standalone full-screen experience with its own chrome. */
       )}
     >
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
@@ -238,22 +268,17 @@ export function Shell() {
           /* Below `md`: an off-canvas drawer, fixed to the viewport and
              slid in/out with `translate-x`. At `md` and above: back to being
              an ordinary flex child with no fixed positioning at all — the
-             desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
+             desktop layout `Sidebar`'s own `open ? w-12 : w-60` already
              handles is untouched by anything here. */
           hasOrg &&
             cn(
               'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
             ),
-          /* Stacked (pre-org, below `md`) it belongs UNDER the choice, not
-             above it: source order puts it first because at `md`+ it is the
-             left column, and `order-last` restores the reading order the
-             layout implies without moving it in the DOM. */
-          !hasOrg && 'order-last md:order-0',
         )}
       >
         {hasOrg && <Sidebar />}
-        <SidebarFooter standalone={!hasOrg} />
+        {hasOrg && <SidebarFooter />}
       </div>
 
       {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
@@ -277,7 +302,12 @@ export function Shell() {
       {hasOrg && <NewOrgSetupDialog orgId={orgId} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header showMenuButton={hasOrg} />
+        {/* The header is hidden when no org is selected — the org picker is a
+            standalone full-screen experience with its own branding and chrome. */}
+        {hasOrg && <Header showMenuButton />}
+        {/* The maintenance banner sits between the header and the page content.
+            Only visible when the API returns a 503 maintenance response. */}
+        {hasOrg && <MaintenanceBanner />}
         {/* `relative` establishes a containing block, and it is load-bearing.
             An `position: absolute` descendant with no positioned ancestor
             resolves against the INITIAL containing block instead — which means
@@ -290,7 +320,7 @@ export function Shell() {
             window scrollbar dragged the entire fixed-height frame — header,
             sidebar and all — off the top. Positioning `main` keeps those
             descendants inside the frame that clips them. */}
-        <main className="relative min-h-0 flex-1 overflow-x-auto bg-surface">
+        <main className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-surface">
           <Outlet />
         </main>
       </div>
@@ -307,22 +337,21 @@ export function Shell() {
  * records: an empty org list used to hide the switcher entirely, leaving sign-out
  * as the only way out.
  */
-function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
+function SidebarFooter() {
+  const sidebarOpen = useUi((state) => state.sidebarOpen);
+  const isDesktop = useIsDesktop();
+  const collapsed = !sidebarOpen && isDesktop;
+
   return (
     <div
       className={cn(
-        'mt-auto flex shrink-0 items-center gap-1 border-t border-line bg-surface-raised p-2',
-        /* With no tree above it there is nothing to inherit a width from, and a
-           switcher sized to the word "Select organization" is not a layout. The
-           fixed width is `md`+ ONLY: below that the pre-org shell stacks, and a
-           240px column there consumed more than half a phone's width, leaving
-           the org picker to wrap "Choose an organization" over three lines and
-           truncating the header to "Orga…" and "Settir". */
-        standalone ? 'w-full border-r-0 md:w-60 md:border-r' : 'border-r',
+        'mt-auto flex shrink-0 items-center gap-1 border-t border-line/60 bg-surface-raised',
+        collapsed ? 'flex-col justify-center p-2' : 'flex-row p-2',
+        'border-r',
       )}
     >
-      <OrgSwitcher />
-      <AccountMenu />
+      <OrgSwitcher collapsed={collapsed} />
+      <AccountMenu collapsed={collapsed} />
     </div>
   );
 }
@@ -338,17 +367,6 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
 function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
-  const orgId = useSession((state) => state.orgId);
-  /* Gates the "Permissions" link below — `audit:read`, the same capability
-     `/settings/audit` already reads (Phase 15 §1's sweep: this link used to
-     render for every role and let `/admin/permissions` answer FORBIDDEN,
-     worse than most of that sweep's other findings because the page it
-     points at inspects a COLLEAGUE's access, not the caller's own). */
-  const canDebugPermissions = useQuery({
-    ...orgDetailQuery(orgId ?? ''),
-    enabled: orgId !== null,
-  }).data?.capabilities.viewAuditLog;
-
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
@@ -378,32 +396,40 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           short breadcrumb still fit without scrolling; scrolling is the
           fallback for narrower or zoomed cases, not the primary path. */}
       <nav
-        className="ml-auto flex flex-nowrap items-center gap-1.5 overflow-x-auto"
+        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
         aria-label="Settings"
       >
-        {/* Mentions and direct messages. In the shell rather than on the chat
-            page because its whole purpose is telling you about a conversation
-            you are NOT currently looking at. */}
-        <NotificationBell />
+        {/* Utility group: notifications, shortcuts */}
+        <div className="flex items-center gap-0.5">
+          {/* Mentions and direct messages. In the shell rather than on the chat
+              page because its whole purpose is telling you about a conversation
+              you are NOT currently looking at. */}
+          <NotificationBell />
 
-        {/* The only visible route to the shortcuts overlay — everything else
-            about it is keyboard-only, and a feature reachable by one key
-            nobody was told about is not discoverable. */}
-        <button
-          type="button"
-          onClick={() => {
-            setShortcutsOpen(true);
-          }}
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
-        >
-          <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
-        </button>
-        <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
-        {canDebugPermissions === true && (
-          <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
-        )}
+          {/* The only visible route to the shortcuts overlay — everything else
+              about it is keyboard-only, and a feature reachable by one key
+              nobody was told about is not discoverable. */}
+          <button
+            type="button"
+            onClick={() => {
+              setShortcutsOpen(true);
+            }}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className="shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+          >
+            <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Divider between utility and settings */}
+        <div className="mx-1 h-4 w-px bg-line/60" />
+
+        {/* Settings group */}
+        <div className="flex items-center gap-0.5">
+          <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
+          <NavLink to="/permissions" label="Permissions" icon={ShieldCheck} />
+        </div>
       </nav>
     </header>
   );
@@ -432,23 +458,33 @@ function Breadcrumbs() {
         ? 'Search'
         : pathname.startsWith('/chat')
           ? 'Chat'
-          : pathname.startsWith('/docs')
-            ? 'Docs'
-            : pathname.startsWith('/projects/')
-              ? 'Project'
-              : pathname.startsWith('/projects')
-                ? 'Projects'
-                : pathname.startsWith('/settings/audit')
-                  ? 'Audit log'
-                  : pathname.startsWith('/settings')
-                    ? 'Settings'
-                    : pathname.startsWith('/admin/permissions')
-                      ? 'Permissions'
-                      : pathname.startsWith('/platform-admin')
-                        ? 'Platform admin'
-                        : pathname.startsWith('/orgs')
-                          ? 'Organizations'
-                          : productName;
+          : pathname.startsWith('/calls')
+            ? 'Calls'
+            : pathname.startsWith('/docs')
+              ? 'Docs'
+              : pathname.startsWith('/projects/')
+                ? 'Project'
+                : pathname.startsWith('/people')
+                  ? 'People'
+                  : pathname.startsWith('/projects')
+                    ? 'Projects'
+                    : pathname.startsWith('/settings/audit')
+                      ? 'Audit log'
+                      : pathname.startsWith('/settings')
+                        ? 'Settings'
+                        : pathname.startsWith('/permissions')
+                          ? 'Permissions'
+                          : pathname.startsWith('/platform-admin')
+                            ? 'Platform admin'
+                            : pathname.startsWith('/orgs')
+                              ? 'Organizations'
+                              : pathname.startsWith('/assistant')
+                                ? 'Assistant'
+                                : pathname.startsWith('/analytics')
+                                  ? 'Analytics'
+                                  : pathname.startsWith('/account')
+                                    ? 'Account'
+                                    : productName;
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content
@@ -474,7 +510,7 @@ function NavLink({
   label,
   icon: Icon,
 }: {
-  readonly to: '/projects' | '/settings' | '/admin/permissions';
+  readonly to: '/projects' | '/settings' | '/permissions';
   readonly label: string;
   readonly icon: NavIcon;
 }) {
@@ -511,7 +547,7 @@ function NavLink({
  * the underlying staleness bug for so long. The picker is now always one click
  * away, whatever the list says.
  */
-function OrgSwitcher() {
+function OrgSwitcher({ collapsed }: { readonly collapsed: boolean }) {
   const orgId = useSession((state) => state.orgId);
   const selectOrg = useSession((state) => state.selectOrg);
   const queryClient = useQueryClient();
@@ -532,54 +568,129 @@ function OrgSwitcher() {
     void navigate({ to: '/projects' });
   };
 
-  return (
-    <DropdownMenuRoot>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
-          <span className="truncate">{current?.name ?? 'Select organization'}</span>
-          <ChevronDown
-            aria-hidden="true"
-            className="ml-auto size-3.5 shrink-0"
-            strokeWidth={2.25}
-          />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="min-w-48">
-        {memberships.map((org) => (
+  /** Org initials: first 2 chars of first word, or first 2 words */
+  const orgInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    const first = parts[0];
+    const second = parts[1];
+    if (first !== undefined && second !== undefined) {
+      return `${first[0] ?? ''}${second[0] ?? ''}`.toUpperCase();
+    }
+    if (first !== undefined) {
+      return (first.slice(0, 2) || '?').toUpperCase();
+    }
+    return '?';
+  };
+
+  const avatarDisc = (
+    <span
+      className="size-6 shrink-0 rounded-md flex items-center justify-center text-[10px] font-semibold text-white"
+      style={{
+        backgroundColor: `oklch(65% 0.15 ${String(hueOf(current?.orgId ?? 'default'))})`,
+      }}
+    >
+      {current ? current.name.charAt(0).toUpperCase() : '?'}
+    </span>
+  );
+
+  const menuItems = (
+    <>
+      {memberships.map((org) => {
+        const isActive = org.orgId === orgId;
+        return (
           <DropdownMenuItem
             key={org.orgId}
+            className={cn(
+              'flex items-center gap-2.5 rounded-md px-2 py-2',
+              isActive && 'bg-accent/8',
+            )}
             onSelect={() => {
               switchTo(org.orgId as OrgId);
             }}
           >
-            <span>{org.name}</span>
-            <span className="text-[11px] text-ink-faint">{org.role}</span>
+            <span
+              className="size-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-semibold text-white"
+              style={{
+                backgroundColor: `oklch(65% 0.15 ${String(hueOf(org.orgId))})`,
+              }}
+            >
+              {orgInitials(org.name)}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p
+                className={cn(
+                  'text-[13px] truncate',
+                  isActive ? 'font-semibold text-ink' : 'font-medium text-ink',
+                )}
+              >
+                {org.name}
+              </p>
+              <p className="text-[11px] text-ink-faint capitalize">{org.role}</p>
+            </div>
+            {isActive && <Check className="size-4 shrink-0 text-accent" />}
           </DropdownMenuItem>
-        ))}
+        );
+      })}
 
-        {memberships.length > 0 && <DropdownMenuSeparator />}
+      {memberships.length > 0 && <DropdownMenuSeparator />}
 
-        {/* The unconditional way to `/orgs`. It is also the only way to CREATE
-            an org, which the switcher cannot offer and which a caller with no
-            memberships needs before anything else in the app works. */}
-        <DropdownMenuItem
-          tone="muted"
-          onSelect={() => {
-            void navigate({ to: '/orgs' });
-          }}
-        >
-          All organizations…
-        </DropdownMenuItem>
+      {/* The unconditional way to `/orgs`. It is also the only way to CREATE
+          an org, which the switcher cannot offer and which a caller with no
+          memberships needs before anything else in the app works. */}
+      <DropdownMenuItem
+        tone="muted"
+        className="rounded-md px-2 py-2"
+        onSelect={() => {
+          void navigate({ to: '/orgs' });
+        }}
+      >
+        All organizations…
+      </DropdownMenuItem>
+    </>
+  );
+
+  return (
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
+        {collapsed ? (
+          <button
+            type="button"
+            aria-label={current?.name ?? 'Select organization'}
+            className="mx-auto rounded-full p-0.5 ring-2 ring-transparent transition-all hover:ring-surface-hover"
+          >
+            {avatarDisc}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover group"
+          >
+            {avatarDisc}
+            <span className="flex-1 min-w-0 text-left text-[13px] font-medium text-ink truncate">
+              {current?.name ?? 'Select organization'}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-ink-faint"
+              strokeWidth={2.25}
+            />
+          </button>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="min-w-52 p-1.5">
+        {menuItems}
       </DropdownMenuContent>
     </DropdownMenuRoot>
   );
 }
 
-function AccountMenu() {
+function AccountMenu({ collapsed }: { readonly collapsed: boolean }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const email = useSession((state) => state.email);
   const sessionId = useSession((state) => state.sessionId);
+  const me = useQuery({ queryKey: keys.me(), queryFn: async () => await api.auth.me.query() });
+  const emailPrefix = email?.split('@')[0];
 
   /* The ONE nav item this app hides on a server answer, and why that is not the
      §8.2 anti-pattern. Everywhere else the rule is "render the control, let the
@@ -624,19 +735,30 @@ function AccountMenu() {
         <button
           type="button"
           aria-label="Account"
-          className="shrink-0 rounded p-0.5 hover:bg-surface-hover"
+          className={cn(
+            'rounded-full p-0.5 ring-2 ring-transparent transition-all hover:ring-surface-hover',
+            collapsed ? 'mx-auto' : 'shrink-0',
+          )}
         >
           {/* `email` is in memory only and is null after a reload — see
-              session.ts on why it is deliberately not persisted. The session id
-              keeps the avatar's colour stable across that gap rather than having
-              it change on every refresh. */}
-          <Avatar userId={sessionId ?? 'anonymous'} label={email ?? 'Account'} />
+              session.ts on why it is deliberately not persisted. The display
+              name from `auth.me` provides stable initials; sessionId
+              provides a stable hue. */}
+          <Avatar
+            userId={sessionId ?? 'anonymous'}
+            label={me.data?.displayName ?? email ?? 'Account'}
+          />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="min-w-44">
+      <DropdownMenuContent align="end" side="top" className="min-w-48 p-1.5">
         {email !== null && (
           <>
-            <p className="truncate px-2 py-1.5 text-xs text-ink-faint">{email}</p>
+            <div className="px-2 py-2">
+              <p className="text-[13px] font-medium text-ink truncate">
+                {me.data?.displayName ?? emailPrefix ?? 'Account'}
+              </p>
+              <p className="text-[11px] text-ink-faint truncate">{email}</p>
+            </div>
             <DropdownMenuSeparator />
           </>
         )}
@@ -645,25 +767,33 @@ function AccountMenu() {
             switcher above it is the one place someone can be signed in with
             no org selected, and this is the account menu's only other item. */}
         <DropdownMenuItem
+          className="rounded-md px-2 py-2"
           onSelect={() => {
             void navigate({ to: '/account' });
           }}
         >
+          <User className="size-4 text-ink-faint" />
           Profile settings
         </DropdownMenuItem>
         {isOperator.data === true && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              className="rounded-md px-2 py-2"
               onSelect={() => {
                 void navigate({ to: '/platform-admin' });
               }}
             >
+              <ShieldCheck className="size-4 text-ink-faint" />
               Platform admin
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuItem onSelect={leave}>Sign out</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="rounded-md px-2 py-2" onSelect={leave}>
+          <LogOut className="size-4 text-ink-faint" />
+          Sign out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenuRoot>
   );

@@ -278,19 +278,25 @@ describe('delivering', () => {
     const request = calls[0]!;
     expect(request.url).toBe(URL);
     expect(request.headers['content-type']).toBe('application/json');
-    expect(request.headers['user-agent']).toBe('TaskFlow-Webhook/1.0');
+    expect(request.headers['user-agent']).toBe('Rinavai-Webhook/1.0');
 
     /* The receiver's exact check, with the secret the test captured at
-       creation: the signature must verify against the RAW body bytes. */
+       creation: the signature must verify against the RAW body bytes.
+       The header name is dynamic (`x-<product>-signature`), so we find
+       it by pattern rather than hardcoding. */
     const body = JSON.parse(request.body) as Record<string, unknown>;
     expect(body['eventId']).toBe(eventId);
     expect(body['eventName']).toBe('card.status_changed');
     expect(body['payload']).toEqual({ cardId: 'c1' });
+    const signatureHeader = Object.keys(request.headers).find(
+      (h) => h.startsWith('x-') && h.endsWith('-signature'),
+    );
+    expect(signatureHeader).toBeDefined();
     expect(
       verifyWebhookSignature({
         secret: fx.signingSecret,
         body: request.body,
-        signature: request.headers['x-taskflow-signature'] ?? '',
+        signature: request.headers[signatureHeader!] ?? '',
         maxAgeSeconds: 300,
       }),
     ).toBe(true);

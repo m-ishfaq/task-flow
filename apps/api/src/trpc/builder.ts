@@ -605,7 +605,7 @@ function requireOrg(ctx: AuthenticatedContext): OrgScopedContext {
  *
  * The fifth route kind, and the one that is relative to NO org. Unlike
  * `route()` it never calls `resolveOrgMembership` — a platform-admin request
- * carries no `x-taskflow-org` header and needs none — and instead checks
+ * carries no `x-rinavai-org` header and needs none — and instead checks
  * `isPlatformOperator(ctx.principal.userId)` after authentication. Anything
  * false gets the ordinary FORBIDDEN shape, not a disguised 404 (§3.2: an
  * honest denial, the same as every other permission boundary).

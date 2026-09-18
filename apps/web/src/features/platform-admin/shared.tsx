@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import {
+  DropdownMenuContent,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+} from '@taskflow/ui';
 import { MoreHorizontal, Search, ShieldAlert, type LucideProps } from 'lucide-react';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
@@ -20,9 +28,9 @@ import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
  */
 
 /**
- * Stat card shown in the summary overview at the top of the page.
- * An icon, a label, and a value — the same metric-widget shape every
- * SaaS admin console uses for at-a-glance numbers.
+ * Stat card shown in summary overviews.  Surface-difference depth
+ * (no visible border) with a subtle shadow — the same visual language the
+ * dashboard's HeroStat already uses, scaled down for inline placement.
  */
 export function StatCard({
   icon: Icon,
@@ -38,21 +46,25 @@ export function StatCard({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3',
-        accent ? 'border-accent/30 bg-accent/5' : 'border-line bg-surface-raised',
+        'flex items-center gap-3 rounded-xl px-4 py-3 transition-colors',
+        accent
+          ? 'bg-accent/6 shadow-[0_0_16px_-6px_color-mix(in_oklab,var(--color-accent)_15%,transparent)]'
+          : 'bg-surface-raised shadow-sm',
       )}
     >
       <span
         className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg',
+          'flex size-8 shrink-0 items-center justify-center rounded-lg',
           accent ? 'bg-accent/15 text-accent' : 'bg-surface-hover text-ink-muted',
         )}
       >
-        <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
+        <Icon aria-hidden="true" className="size-4" strokeWidth={1.8} />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
-        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
+        <p className="text-[11px] font-medium text-ink-faint">{label}</p>
+        <p className="truncate text-lg font-semibold tracking-tight text-ink tabular-nums">
+          {value}
+        </p>
       </div>
     </div>
   );
@@ -88,7 +100,7 @@ export function TableSearch({
           onChange(event.target.value);
         }}
         placeholder={placeholder}
-        className="h-8 w-full rounded-lg border border-line bg-surface-sunken pl-8 pr-3 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+        className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken pl-8 pr-3 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/20 focus:outline-none"
       />
     </div>
   );
@@ -153,7 +165,7 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
   return (
     <div className="flex items-center gap-2">
       <span className="tabular-nums text-ink-muted">{count}</span>
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
+      <div className="h-1 w-16 overflow-hidden rounded-full bg-surface-hover">
         <div
           className={cn(
             'h-full rounded-full transition-all',
@@ -170,100 +182,35 @@ export function MemberBar({ count, cap = 50 }: { readonly count: number; readonl
  * Dropdown menu for destructive row actions (Delete). Keeps them visually
  * separated from safe actions (Plan, Suspend/Reactivate) so an operator
  * does not misclick a destructive action.
+ *
+ * Was a fully hand-rolled `useState` + `fixed inset-0` click-catcher —
+ * functional, but with none of Radix's real menu behavior (arrow-key
+ * navigation between items, focus returning to the trigger on close, a
+ * click on the catcher div rather than a proper outside-click/Escape
+ * handler on the popup itself). Found during the warm-dark rebuild's own
+ * component-consolidation pass (`ai/design-rebuild-warm-dark.md` §3) as
+ * exactly the kind of thing `@taskflow/ui`'s `DropdownMenu` already exists
+ * for — this console just never reached for it. Kept as its own named
+ * wrapper (rather than inlining `DropdownMenuRoot`/`Trigger`/`Content` at
+ * the one call site) so the "More actions" trigger button's own icon and
+ * sizing stay defined once.
  */
 export function RowActionsMenu({ children }: { readonly children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-label="More actions"
-        onClick={() => {
-          setOpen(!open);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
-        }}
-        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
-      >
-        <MoreHorizontal className="size-3.5" strokeWidth={2} />
-      </button>
-      {open && (
-        <>
-          <div
-            role="presentation"
-            className="fixed inset-0 z-20"
-            onClick={() => {
-              setOpen(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setOpen(false);
-            }}
-          />
-          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-xl border border-line bg-surface-raised p-1 shadow-lg">
-            {children}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * A `role="tablist"` bar — the shell this console needed twice (the
- * top-level section switcher in platform-admin-page.tsx, and
- * `OperationsTab`'s kind filter) and had, until now, copied verbatim both
- * times, right down to the `bg-surface-raised text-ink shadow-sm`
- * active-state classes. Generic over the value type so a nullable "All"
- * filter and a plain non-null string union share one implementation instead
- * of one being a near-copy of the other with a `?? 'all'` key fallback
- * bolted on.
- */
-export function TabBar<T extends string | null>({
-  items,
-  value,
-  onChange,
-  ariaLabel,
-  size = 'sm',
-  className,
-}: {
-  readonly items: readonly (readonly [T, string])[];
-  readonly value: T;
-  readonly onChange: (value: T) => void;
-  readonly ariaLabel: string;
-  readonly size?: 'sm' | 'xs';
-  readonly className?: string;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className={cn(
-        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
-        className,
-      )}
-    >
-      {items.map(([itemValue, label]) => (
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
         <button
-          key={itemValue ?? 'null'}
           type="button"
-          role="tab"
-          aria-selected={value === itemValue}
-          onClick={() => {
-            onChange(itemValue);
-          }}
-          className={cn(
-            'relative rounded-lg px-3 py-1.5 font-medium transition-all duration-150',
-            size === 'sm' ? 'text-sm' : 'text-xs',
-            value === itemValue
-              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-          )}
+          aria-label="More actions"
+          className="flex size-7 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink"
         >
-          {label}
+          <MoreHorizontal className="size-3.5" strokeWidth={2} />
         </button>
-      ))}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-35">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }
 
@@ -275,8 +222,8 @@ export function TabBar<T extends string | null>({
  */
 export function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning/5 p-5">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning">
+    <div className="flex flex-col gap-3 rounded-xl bg-warning/6 px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
         <ShieldAlert className="size-5" strokeWidth={2} />
       </span>
       <div className="min-w-0 flex-1">
@@ -286,7 +233,7 @@ export function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
           — not from when you opened this page.
         </p>
       </div>
-      <Button variant="primary" onClick={onStepUp}>
+      <Button variant="primary" onClick={onStepUp} className="self-start sm:self-auto">
         Re-authenticate
       </Button>
     </div>

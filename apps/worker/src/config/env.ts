@@ -1,3 +1,4 @@
+import { DEFAULT_PRODUCT_NAME } from '@taskflow/api/platform-admin/branding-cache';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -327,7 +328,7 @@ export function assertNoMisspelledVariables(source: Record<string, string | unde
 
   if (suspects.length > 0) {
     throw new Error(
-      `Unrecognized TaskFlow environment variable(s): ${suspects.join(', ')}.\n` +
+      `Unrecognized ${DEFAULT_PRODUCT_NAME} environment variable(s): ${suspects.join(', ')}.\n` +
         'Check the spelling against .env.example — a near-miss name means the real\n' +
         'variable is unset and something is running on a default it should not be.',
     );

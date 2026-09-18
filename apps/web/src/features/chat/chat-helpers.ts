@@ -224,6 +224,27 @@ export function formatTime(value: string): string {
 }
 
 /**
+ * The viewer's own local calendar day for a timestamp — used only to detect
+ * when the timeline CROSSES midnight, never rendered directly.
+ */
+export function dayKeyOf(value: string): string {
+  return new Date(value).toDateString();
+}
+
+/**
+ * The day divider's own label — "Today" / "Yesterday" / a plain date.
+ */
+export function formatDayLabel(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dayKeyOf(value) === dayKeyOf(today.toISOString())) return 'Today';
+  if (dayKeyOf(value) === dayKeyOf(yesterday.toISOString())) return 'Yesterday';
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
+/**
  * Groups rows that carry a `messageId` by that id.
  *
  * Shared by attachments and previews, which are the same shape of problem: a

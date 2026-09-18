@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TrustProxy } from '@taskflow/api/config/trust-proxy';
 import { ACCESS_TOKEN_TTL_SECONDS } from '@taskflow/security';
+import { DEFAULT_PRODUCT_NAME } from '@taskflow/api/platform-admin/branding-cache';
 
 /**
  * Validated environment for the socket gateway — guardrail 3.
@@ -139,7 +140,7 @@ export const EnvSchema = z
 export type Env = z.infer<typeof EnvSchema>;
 
 /**
- * Every TaskFlow variable across ALL services, mirroring the set in
+ * Every Rinavai variable across ALL services, mirroring the set in
  * `apps/api/src/config/env.ts` — a developer's environment legitimately carries
  * variables this process does not read, so the misspelling check has to know
  * about them or it would reject a correct setup.
@@ -288,7 +289,7 @@ function assertNoMisspelledVariables(source: Record<string, string | undefined>)
 
   if (suspects.length > 0) {
     throw new Error(
-      `Unrecognized TaskFlow environment variable(s): ${suspects.join(', ')}.\n` +
+      `Unrecognized ${DEFAULT_PRODUCT_NAME} environment variable(s): ${suspects.join(', ')}.\n` +
         'Check the spelling against .env.example — a near-miss name means the real\n' +
         'variable is unset and something is running on a default it should not be.',
     );

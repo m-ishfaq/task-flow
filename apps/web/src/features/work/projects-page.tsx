@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderKanban } from 'lucide-react';
+import { FolderKanban, LayoutGrid, Settings, Copy, Plus } from 'lucide-react';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import {
-  Badge,
   Button,
   Empty,
   Field,
@@ -44,6 +43,19 @@ import { orgDetailQuery } from '../org/api.js';
  * identical to a broken one.
  */
 
+/**
+ * Derive a stable hue from a project key so each project gets a distinct
+ * accent colour. Uses the same hash technique as Avatar but over the key
+ * string instead of a user id.
+ */
+function projectHue(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
 export function ProjectsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const [showArchived, setShowArchived] = useState(false);
@@ -54,7 +66,7 @@ export function ProjectsPage() {
 
   if (projects.isPending) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <div className="mx-auto max-w-6xl p-6">
         <SkeletonRows rows={4} className="*:h-24" />
       </div>
     );
@@ -62,7 +74,7 @@ export function ProjectsPage() {
 
   if (projects.isError) {
     return (
-      <div className="mx-auto max-w-5xl p-6">
+      <div className="mx-auto max-w-6xl p-6">
         <ErrorView error={projects.error} title="Could not load projects" />
       </div>
     );
@@ -73,10 +85,7 @@ export function ProjectsPage() {
   const shown = showArchived ? projects.data : live;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-8">
-      {/* Hidden rather than disabled: a create form nobody without
-          project:create could submit is clutter, and the list below stays
-          fully visible either way. */}
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-6xl flex-col gap-6 p-8">
       <PageHeader
         title="Projects"
         description="A project owns its boards, labels, statuses and card numbering."
@@ -111,7 +120,7 @@ export function ProjectsPage() {
           description="A project holds boards, labels and fields. Create one to get started."
         />
       ) : (
-        <ul className="space-y-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {shown.map((project) => (
             <ProjectCard
               key={project.projectId}
@@ -121,19 +130,18 @@ export function ProjectsPage() {
               canDuplicate={canCreateProject}
             />
           ))}
-        </ul>
+        </div>
       )}
 
-      {/* Only offered once there is something behind it. */}
       {(archived.length > 0 || showArchived) && (
         <button
           type="button"
           onClick={() => {
             setShowArchived((value) => !value);
           }}
-          className="self-start text-xs text-ink-faint underline hover:text-ink-muted"
+          className="self-start rounded-md px-2 py-1 text-xs text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink-muted"
         >
-          {showArchived ? 'Hide archived projects' : `Show archived (${String(archived.length)})`}
+          {showArchived ? 'Hide archived' : `Show archived (${String(archived.length)})`}
         </button>
       )}
     </div>
@@ -159,68 +167,98 @@ interface ProjectCardProps {
 function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCardProps) {
   const isArchived = project.archivedAt !== null;
   const [duplicating, setDuplicating] = useState(false);
+  const hue = projectHue(project.key);
+  const hasDescription = project.description !== null && project.description !== '';
 
   return (
-    <li
-      className={cardClass(isArchived)}
-      // Archived projects stay legible rather than being dimmed into
-      // unreadability: they are restorable, so they have to be readable enough
-      // to decide whether to restore them.
-    >
-      <div className="flex items-center gap-2">
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-xs font-medium text-ink-muted">
-          {project.key}
-        </span>
-        <h2 className="truncate text-sm font-medium text-ink">{project.name}</h2>
-        {isArchived && <Badge className="text-warning">archived</Badge>}
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-line/50 bg-surface-raised transition-all duration-[var(--motion-base)] hover:border-line-strong hover:shadow-md">
+      {/* Subtle top accent — the project's identity stripe */}
+      <div className="h-1 w-full" style={{ backgroundColor: `oklch(58% 0.14 ${String(hue)})` }} />
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {/* Not offered on an archived project: duplicating one would create a
-              live copy of something somebody deliberately put away, and the
-              first question would be why it came back. */}
-          {!isArchived && canDuplicate && (
-            <button
-              type="button"
-              onClick={() => {
-                setDuplicating((open) => !open);
-              }}
-              className="rounded-md border border-line/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            >
-              Duplicate
-            </button>
-          )}
-          <Link
-            to="/projects/$projectId"
-            params={{ projectId: project.projectId as ProjectId }}
-            className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+      <div className="flex flex-1 flex-col p-5">
+        {/* Header: key badge + name */}
+        <div className="flex items-center gap-3">
+          <span
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-bold text-white shadow-sm"
+            style={{ backgroundColor: `oklch(50% 0.14 ${String(hue)})` }}
           >
-            Settings
-          </Link>
+            {project.key}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-sm font-semibold leading-snug text-ink">
+                {project.name}
+              </h2>
+              {isArchived && (
+                <span className="inline-flex shrink-0 items-center rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-medium text-ink-faint">
+                  archived
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Actions — icon buttons, visible on hover */}
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            {!isArchived && canDuplicate && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicating((open) => !open);
+                }}
+                className="rounded-md p-1.5 text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink"
+                title="Duplicate project"
+              >
+                <Copy aria-hidden="true" className="size-3.5" />
+              </button>
+            )}
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId: project.projectId as ProjectId }}
+              className="rounded-md p-1.5 text-ink-faint transition-colors hover:bg-surface-hover hover:text-ink"
+              title="Project settings"
+            >
+              <Settings aria-hidden="true" className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Description */}
+        <div className="mt-3 min-h-[2.5rem]">
+          {hasDescription ? (
+            <p className="line-clamp-2 text-[13px] leading-relaxed text-ink-muted">
+              {project.description}
+            </p>
+          ) : (
+            <p className="text-[13px] text-ink-faint/50">No description</p>
+          )}
+        </div>
+
+        {duplicating && (
+          <div className="mt-3">
+            <DuplicateProjectForm
+              orgId={orgId}
+              projectId={project.projectId as ProjectId}
+              sourceName={project.name}
+              onDone={() => {
+                setDuplicating(false);
+              }}
+            />
+          </div>
+        )}
+
+        {/* Boards section */}
+        <div className="mt-auto pt-4">
+          <BoardList
+            orgId={orgId}
+            projectId={project.projectId as ProjectId}
+            boardCount={project.boardCount}
+            showArchived={showArchived}
+            canCreateBoard={project.capabilities.update}
+            hue={hue}
+          />
         </div>
       </div>
-
-      {duplicating && (
-        <DuplicateProjectForm
-          orgId={orgId}
-          projectId={project.projectId as ProjectId}
-          sourceName={project.name}
-          onDone={() => {
-            setDuplicating(false);
-          }}
-        />
-      )}
-
-      {project.description !== null && project.description !== '' && (
-        <p className="mt-1 line-clamp-2 text-xs text-ink-muted">{project.description}</p>
-      )}
-
-      <BoardList
-        orgId={orgId}
-        projectId={project.projectId as ProjectId}
-        showArchived={showArchived}
-        canCreateBoard={project.capabilities.update}
-      />
-    </li>
+    </div>
   );
 }
 
@@ -262,9 +300,6 @@ function DuplicateProjectForm({
         includeCards,
       }),
     onSuccess: async () => {
-      /* The list gained a project, and each project row lazily loads its own
-         boards — invalidating the projects query is what makes the copy
-         appear without a reload. */
       await queryClient.invalidateQueries({ queryKey: keys.projects(orgId) });
       onDone();
     },
@@ -272,15 +307,12 @@ function DuplicateProjectForm({
 
   return (
     <form
-      className="mt-2 space-y-2 rounded border border-line bg-surface-sunken/60 p-3"
+      className="space-y-3 rounded-lg border border-line/40 bg-surface-sunken/80 p-4"
       onSubmit={(event) => {
         event.preventDefault();
         duplicate.mutate();
       }}
     >
-      {/* Ids carry the project id: several of these forms can be open at once
-          on this page, and duplicated ids would make every label point at the
-          first card's inputs. */}
       <div className="flex flex-wrap gap-2">
         <div className="min-w-0 flex-1 basis-40">
           <Field label="New name" htmlFor={`dup-name-${projectId}`}>
@@ -317,7 +349,7 @@ function DuplicateProjectForm({
           }}
           className="mt-0.5"
         />
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-xs text-ink-muted">
           Copy the cards too
           <span className="block text-ink-faint">
             Unticked copies only the shape — boards, lists, statuses, labels and custom fields —
@@ -345,23 +377,21 @@ function DuplicateProjectForm({
   );
 }
 
-function cardClass(isArchived: boolean): string {
-  return isArchived
-    ? 'rounded-xl border border-dashed border-line/40 bg-surface-sunken/30 p-5'
-    : 'rounded-xl border border-line/50 bg-surface-raised p-5 transition-all duration-[var(--motion-base)] hover:border-line-strong hover:bg-surface-hover hover:shadow-sm';
-}
-
 function BoardList({
   orgId,
   projectId,
+  boardCount,
   showArchived,
   canCreateBoard,
+  hue,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId;
+  readonly boardCount: number;
   readonly showArchived: boolean;
   /** project:update on THIS project — createBoard enforces it on the parent, not board:create. */
   readonly canCreateBoard: boolean;
+  readonly hue: number;
 }) {
   const boards = useQuery(boardsQuery(orgId, projectId));
   const queryClient = useQueryClient();
@@ -378,31 +408,51 @@ function BoardList({
     },
   });
 
-  if (boards.data === undefined) {
-    return <div className="mt-3 h-7 border-t border-line pt-3" />;
-  }
-
-  const live = boards.data.filter((board) => board.archivedAt === null);
+  const live = boards.data?.filter((board) => board.archivedAt === null) ?? [];
+  const totalBoards = boards.data?.length ?? boardCount;
+  const archivedCount = totalBoards - live.length;
 
   return (
-    <div className="mt-3 border-t border-line/50 pt-2.5">
-      <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-col gap-2.5">
+      {/* Section header */}
+      <div className="flex items-center gap-1.5">
+        <LayoutGrid aria-hidden="true" className="size-3.5 text-ink-faint" strokeWidth={1.75} />
+        <span className="text-xs font-medium text-ink-faint">
+          Boards
+          {boards.data !== undefined && (
+            <span
+              className="ml-1.5 inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+              style={{
+                backgroundColor: `oklch(58% 0.14 ${String(hue)} / 10%)`,
+                color: `oklch(65% 0.12 ${String(hue)})`,
+              }}
+            >
+              {live.length}
+            </span>
+          )}
+          {showArchived && archivedCount > 0 && (
+            <span className="ml-1 text-[10px] text-ink-faint">+{archivedCount} archived</span>
+          )}
+        </span>
+      </div>
+
+      {/* Board chips */}
+      <div className="flex flex-wrap gap-1.5">
         {live.map((board) => (
           <Link
             key={board.boardId}
             to="/boards/$boardId"
             params={{ boardId: board.boardId as BoardId }}
             search={{ view: 'board', project: projectId }}
-            className="rounded-lg border border-line/50 bg-surface px-2.5 py-1.5 text-xs font-medium text-ink transition-colors duration-[var(--motion-fast)] hover:border-accent/40 hover:bg-surface-hover"
+            className="inline-flex items-center gap-1.5 rounded-md bg-surface-sunken px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
           >
+            <LayoutGrid aria-hidden="true" className="size-3 text-ink-faint" strokeWidth={1.75} />
             {board.name}
           </Link>
         ))}
 
-        {live.length === 0 && !adding && (
-          <span className="text-xs text-ink-faint">
-            No boards yet — a project without one has nowhere to put cards.
-          </span>
+        {boards.data !== undefined && live.length === 0 && !adding && (
+          <span className="text-xs text-ink-faint">No boards yet</span>
         )}
 
         {canCreateBoard &&
@@ -414,10 +464,6 @@ function BoardList({
                 if (name.trim() !== '') create.mutate(name.trim());
               }}
             >
-              {/* `FocusOnMountInput`, not `autoFocus`: the attribute is banned by
-                  jsx-a11y because it steals focus on page load. This input is
-                  mounted by a click, so focusing it is following the user rather
-                  than surprising them. */}
               <FocusOnMountInput
                 aria-label="New board name"
                 placeholder="Board name"
@@ -454,19 +500,12 @@ function BoardList({
               onClick={() => {
                 setAdding(true);
               }}
-              className="rounded-lg border border-dashed border-line/50 px-2.5 py-1 text-xs text-ink-faint hover:border-line hover:bg-surface-hover hover:text-ink"
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-line/40 px-2.5 py-1 text-xs text-ink-faint transition-colors hover:border-line hover:bg-surface-hover hover:text-ink"
             >
-              + Board
+              <Plus aria-hidden="true" className="size-3" />
+              Board
             </button>
           ))}
-
-        {/* The count is only interesting when it disagrees with what is shown —
-            which is exactly the archived case, and otherwise it is noise. */}
-        {showArchived && boards.data.length > live.length && (
-          <span className="text-[11px] text-ink-faint">
-            {boards.data.length - live.length} archived
-          </span>
-        )}
       </div>
 
       {create.isError && <ErrorView error={create.error} />}
@@ -508,62 +547,47 @@ function CreateProjectForm({
 
   return (
     <form
-      className="space-y-3 rounded-lg border border-dashed border-line bg-surface-sunken/60 p-3"
+      className="space-y-4 rounded-xl border border-dashed border-line bg-surface-sunken/60 p-5"
       onSubmit={(event) => {
         void handleSubmit((values) => {
           create.mutate(values);
         })(event);
       }}
     >
-      <Field label="Name" htmlFor="project-name">
-        <Input
-          id="project-name"
-          placeholder="Web Platform"
-          {...register('name', { required: true })}
-        />
-      </Field>
+      <div className="flex flex-wrap gap-4">
+        <div className="min-w-0 flex-1 basis-48">
+          <Field label="Name" htmlFor="project-name">
+            <Input
+              id="project-name"
+              placeholder="Web Platform"
+              {...register('name', { required: true })}
+            />
+          </Field>
+        </div>
 
-      {/**
-       * No hyphen appears anywhere near this field, and that is the whole point.
-       *
-       * The hint used to read "Prefixes every card number, e.g. WEB-142", which
-       * is an example of the RESULT and reads as an example of the INPUT — so
-       * `WEB-142` went into the box and came back rejected for the hyphen. The
-       * obvious repair, spelling out "enter WEB and cards become WEB-1", failed
-       * the same way for the same reason: `WEB-1` was the last thing on the line
-       * and got typed too.
-       *
-       * A form field cannot show a worked example of a value it will not accept.
-       * Whatever the sentence says, the token nearest the input is what people
-       * copy — so the only reliable fix is that every token here is a legal key.
-       */}
-      <Field
-        label="Key"
-        htmlFor="project-key"
-        hint="Letters and digits only, 2-10 characters — no spaces, no dashes. Card numbers are built from it automatically. Cannot be changed later."
-        error={formState.errors.key?.message}
-      >
-        <Input
-          id="project-key"
-          className="w-32 font-mono uppercase"
-          placeholder="WEB"
-          /* Stops the over-long case at the keyboard. The server still trims,
-             uppercases and re-validates — neither this nor the pattern below is
-             the check, they only move the answer to where it is useful. */
-          maxLength={10}
-          {...register('key', {
-            required: 'A key is required.',
-            /* The same shape as `ProjectKey` in apps/api/src/work/router.ts,
-               relaxed to accept lowercase because the value is uppercased on the
-               way out. Restated rather than imported: it is a message, and the
-               server's identical rejection is what actually decides. */
-            pattern: {
-              value: /^[A-Za-z][A-Za-z0-9]{1,9}$/,
-              message: 'Letters and digits only, starting with a letter. No spaces or dashes.',
-            },
-          })}
-        />
-      </Field>
+        <div className="w-32 shrink-0">
+          <Field
+            label="Key"
+            htmlFor="project-key"
+            hint="2-10 chars, letters & digits. Used in card numbers. Cannot be changed later."
+            error={formState.errors.key?.message}
+          >
+            <Input
+              id="project-key"
+              className="font-mono uppercase"
+              placeholder="WEB"
+              maxLength={10}
+              {...register('key', {
+                required: 'A key is required.',
+                pattern: {
+                  value: /^[A-Za-z][A-Za-z0-9]{1,9}$/,
+                  message: 'Letters and digits only, starting with a letter.',
+                },
+              })}
+            />
+          </Field>
+        </div>
+      </div>
 
       <Field label="Description" htmlFor="project-description">
         <Input

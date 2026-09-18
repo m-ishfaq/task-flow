@@ -1,4 +1,4 @@
-# TaskFlow
+# Rinavai
 
 Multi-tenant company platform: Work, Chat, Docs, Voice & Messaging, People, Platform.
 

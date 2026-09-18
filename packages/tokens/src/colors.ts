@@ -44,41 +44,62 @@ export interface ColorToken {
  * files yet (`expo-font` asset loading has not been wired). Both are real
  * Wave 2 work, not values this module can honestly claim to share today.
  */
+/**
+ * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.7): every value below
+ * mirrors `styles.css`'s own warm-dark update (§2.1-§2.3) — hue 262 -> 55 for
+ * the neutral family, 285 -> 88 for accent (L=60, richer warm gold — §2.4
+ * re-verification found L=72 gave max 3.66:1 for dark ink, below AA 4.5:1;
+ * at L=60, white accentInk clears 9.69:1). Every `hex` here was re-derived
+ * through the exact `@csstools/color-helpers` pipeline `colors.test.ts`
+ * already trusts — never hand-converted — and the contrast numbers quoted in
+ * `styles.css`'s own updated comments apply identically here, since these
+ * are the same oklch triples.
+ */
 export const colors = {
-  surface: { oklch: { l: 16, c: 0.015, h: 262 }, hex: '#0a0d14' },
-  surfaceRaised: { oklch: { l: 20, c: 0.018, h: 262 }, hex: '#12161e' },
-  surfaceSunken: { oklch: { l: 12, c: 0.013, h: 262 }, hex: '#04060a' },
-  surfaceHover: { oklch: { l: 23, c: 0.018, h: 262 }, hex: '#181d26' },
+  surface: { oklch: { l: 16, c: 0.014, h: 55 }, hex: '#120c08' },
+  surfaceRaised: { oklch: { l: 20, c: 0.017, h: 55 }, hex: '#1c140f' },
+  surfaceSunken: { oklch: { l: 12, c: 0.012, h: 55 }, hex: '#090503' },
+  surfaceHover: { oklch: { l: 23, c: 0.017, h: 55 }, hex: '#231b15' },
 
-  ink: { oklch: { l: 93, c: 0.008, h: 262 }, hex: '#e5e8ed' },
-  inkMuted: { oklch: { l: 66, c: 0.015, h: 262 }, hex: '#8d929c' },
-  inkFaint: { oklch: { l: 56, c: 0.014, h: 262 }, hex: '#70757d' },
+  ink: { oklch: { l: 93, c: 0.01, h: 55 }, hex: '#ede6e2' },
+  inkMuted: { oklch: { l: 78, c: 0.016, h: 55 }, hex: '#c0b5ae' },
+  inkFaint: { oklch: { l: 56, c: 0.015, h: 55 }, hex: '#7c726c' },
 
-  line: { oklch: { l: 28, c: 0.012, h: 262 }, hex: '#26292f' },
-  lineStrong: { oklch: { l: 35, c: 0.014, h: 262 }, hex: '#373b42' },
+  line: { oklch: { l: 28, c: 0.013, h: 55 }, hex: '#2e2723' },
+  lineStrong: { oklch: { l: 35, c: 0.015, h: 55 }, hex: '#413933' },
 
-  accent: { oklch: { l: 55, c: 0.17, h: 285 }, hex: '#6b5dcf' },
-  accentInk: { oklch: { l: 98, c: 0.01, h: 285 }, hex: '#f7f8ff' },
-  accentHover: { oklch: { l: 50, c: 0.17, h: 285 }, hex: '#5d4dbe' },
+  accent: { oklch: { l: 60, c: 0.14, h: 177 }, hex: '#009a7f' },
+  accentInk: { oklch: { l: 98, c: 0.01, h: 177 }, hex: '#f2fbf8' },
+  accentHover: { oklch: { l: 55, c: 0.14, h: 177 }, hex: '#008b70' },
 
-  danger: { oklch: { l: 55, c: 0.19, h: 22 }, hex: '#c92e3b' },
+  danger: { oklch: { l: 68, c: 0.19, h: 22 }, hex: '#f75c61' },
   dangerInk: { oklch: { l: 98, c: 0.01, h: 22 }, hex: '#fff6f5' },
   warning: { oklch: { l: 76, c: 0.15, h: 75 }, hex: '#e8a127' },
   success: { oklch: { l: 70, c: 0.15, h: 155 }, hex: '#3bb974' },
 
   priorityUrgent: { oklch: { l: 60, c: 0.19, h: 22 }, hex: '#da4149' },
-  priorityMedium: { oklch: { l: 60, c: 0.17, h: 285 }, hex: '#796ce0' },
+  priorityMedium: { oklch: { l: 60, c: 0.16, h: 88 }, hex: '#a87700' },
 
   /**
    * `styles.css`'s own token also carries `/ 60%` alpha, dropped here: a
-   * single hex cannot express it, and a modal scrim is exactly where the
-   * DIFFERENCE between "opaque dark color" and "60%-transparent dark color"
-   * is the entire visual effect. `apps/mobile`'s own overlay usage (once a
-   * modal exists to need one, Wave 2+) applies opacity as a separate RN
-   * style property alongside this hex, the same way `styles.css`'s alpha is
-   * a separate channel from its L/C/H.
+   * bare `ColorToken` has no alpha channel of its own, so the real usage
+   * (found by the warm-dark rebuild's own mobile-primitives audit,
+   * `ai/design-rebuild-warm-dark.md` §4) is `colors.overlay.hex + '99'` at
+   * the call site — an 8-digit hex string, which React Native's own color
+   * parser accepts directly as `backgroundColor`, the identical
+   * hex-plus-alpha-suffix convention `apps/mobile`'s own screens already use
+   * for a translucent border (`colors.line.hex + '80'`). This corrects an
+   * earlier version of this comment, which predicted a separate RN
+   * `opacity` style property instead — that plan was never how any of the
+   * ~20 real modal/sheet backdrops that have since been written actually
+   * did it; every one used a RAW `'#00000099'` literal, this token's own
+   * warm hue never reaching any of them until this pass replaced each with
+   * `colors.overlay.hex` plus its own call site's alpha suffix (`'66'` for
+   * a lighter menu backdrop, `'ee'` for a near-opaque image-preview
+   * backdrop, `'99'` for every ordinary modal/sheet — matching `styles.css`'s
+   * own 60%).
    */
-  overlay: { oklch: { l: 15, c: 0.02, h: 265 }, hex: '#070b14' },
+  overlay: { oklch: { l: 15, c: 0.02, h: 55 }, hex: '#120904' },
 } as const satisfies Record<string, ColorToken>;
 
 export type ColorName = keyof typeof colors;

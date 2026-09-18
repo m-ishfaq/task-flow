@@ -12,6 +12,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows, EmptyState, ErrorView } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ProjectIdSchema, type ProjectId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
@@ -215,11 +217,14 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
 
   if (sprints.isError || boards.isError) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.label}>
-          {apiErrorOf(sprints.error ?? boards.error)?.error.message ??
-            "Couldn't load this project's sprints."}
-        </Text>
+      <View style={[styles.center, { paddingTop }]}>
+        <ErrorView
+          message={apiErrorOf(sprints.error ?? boards.error)?.error.message}
+          onRetry={() => {
+            void sprints.refetch();
+            void boards.refetch();
+          }}
+        />
         <BackButton />
       </View>
     );
@@ -228,7 +233,7 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
   if (sprints.isPending || boards.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       </View>
     );
   }
@@ -318,7 +323,11 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabStripFrame}>
         <View style={styles.tabStrip}>
           <Pressable
-            style={[styles.tab, activeSelection === 'backlog' && styles.tabActive]}
+            style={({ pressed }) => [
+              styles.tab,
+              activeSelection === 'backlog' && styles.tabActive,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => {
               setSelection('backlog');
             }}
@@ -330,7 +339,11 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
           {sprints.data.map((sprint) => (
             <Pressable
               key={sprint.sprintId}
-              style={[styles.tab, activeSelection === sprint.sprintId && styles.tabActive]}
+              style={({ pressed }) => [
+                styles.tab,
+                activeSelection === sprint.sprintId && styles.tabActive,
+                pressed && { opacity: 0.7 },
+              ]}
               onPress={() => {
                 setSelection(sprint.sprintId);
               }}
@@ -389,7 +402,7 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
             <View style={styles.sprintActions}>
               {selectedSprint.status === 'planned' && (
                 <Pressable
-                  style={styles.sprintActionButton}
+                  style={({ pressed }) => [styles.sprintActionButton, pressed && { opacity: 0.7 }]}
                   disabled={start.isPending}
                   onPress={() => {
                     start.mutate(selectedSprint.sprintId);
@@ -400,7 +413,7 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
               )}
               {selectedSprint.status === 'active' && (
                 <Pressable
-                  style={styles.sprintActionButton}
+                  style={({ pressed }) => [styles.sprintActionButton, pressed && { opacity: 0.7 }]}
                   onPress={() => {
                     setCompleting(selectedSprint);
                   }}
@@ -410,7 +423,7 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
               )}
               {isOpenSprint(selectedSprint) && (
                 <Pressable
-                  style={styles.sprintActionButton}
+                  style={({ pressed }) => [styles.sprintActionButton, pressed && { opacity: 0.7 }]}
                   disabled={cancel.isPending}
                   onPress={() => {
                     cancel.mutate(selectedSprint.sprintId);
@@ -440,11 +453,17 @@ function SprintsContent({ projectId }: { projectId: ReturnType<typeof ProjectIdS
         style={styles.cardListContainer}
         ListEmptyComponent={
           cards.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={4} />
           ) : (
-            <Text style={styles.label}>
-              {activeSelection === 'backlog' ? 'The backlog is empty.' : 'No cards in this sprint.'}
-            </Text>
+            <EmptyState
+              icon="📋"
+              title={activeSelection === 'backlog' ? 'Backlog is empty' : 'No cards in this sprint'}
+              description={
+                activeSelection === 'backlog'
+                  ? 'Cards without a sprint appear here.'
+                  : 'Assign cards to this sprint to see them here.'
+              }
+            />
           )
         }
       />
@@ -763,6 +782,7 @@ const styles = StyleSheet.create({
     color: colors.accent.hex,
   },
   formCard: {
+    ...shadows.sm,
     marginHorizontal: 24,
     marginBottom: 12,
     padding: 14,
@@ -897,6 +917,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger.hex,
   },
   sprintInfo: {
+    ...shadows.sm,
     marginHorizontal: 24,
     marginBottom: 12,
     padding: 14,
@@ -951,10 +972,11 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {
+    ...shadows.sm,
     backgroundColor: colors.surfaceRaised.hex,
     borderTopLeftRadius: radiusCard + 6,
     borderTopRightRadius: radiusCard + 6,

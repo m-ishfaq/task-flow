@@ -392,7 +392,8 @@ export const flagOverrides = platform.table('flag_overrides', {
  */
 export const branding = platform.table('branding', {
   id: boolean('id').primaryKey().default(true),
-  productName: text('product_name').notNull().default('TaskFlow'),
+  /** NULL until an operator sets one — falls back to PRODUCT_NAME env var. */
+  productName: text('product_name'),
   logoKey: text('logo_key'),
   faviconKey: text('favicon_key'),
   paletteId: text('palette_id').notNull().default('default'),
@@ -1004,3 +1005,23 @@ export const cardCalendarSubscriptions = platform.table(
     index('card_calendar_subscriptions_user_idx').on(table.orgId, table.userId),
   ],
 );
+
+/**
+ * Runtime-configurable platform settings (migration 0114).
+ *
+ * Operational settings an operator can change without a deploy — maintenance
+ * mode, registration toggle, lockout thresholds, step-up timeout. Stored as
+ * typed key-value rows rather than per-setting columns so new settings can be
+ * added with an INSERT, not a migration.
+ *
+ * taskflow_app reads (cached in-process, refreshed periodically) to enforce
+ * maintenance mode and registration toggle. taskflow_platform_admin has full
+ * CRUD through the operator console's Config tab.
+ */
+export const systemSettings = platform.table('system_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  description: text('description').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

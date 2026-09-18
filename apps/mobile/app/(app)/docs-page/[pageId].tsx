@@ -44,6 +44,8 @@ import {
 import { extractMentions, hasPageLink } from '../../../src/lib/docs-page-editor.js';
 import type { PendingMention } from '../../../src/lib/message-compose.js';
 import { savePdfAndShare } from '../../../src/lib/pdf-save.js';
+import { Skeleton, SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import {
   pagesQueryKey,
@@ -373,7 +375,7 @@ function DocsPageContent({
             }}
           >
             {publish.isPending || unpublish.isPending ? (
-              <ActivityIndicator size="small" color={colors.ink.hex} />
+              <Skeleton width={60} height={16} borderRadius={4} />
             ) : (
               <Text style={styles.actionButtonText}>
                 {page?.publishedAt !== null && page?.publishedAt !== undefined
@@ -390,7 +392,7 @@ function DocsPageContent({
             }}
           >
             {exportPdf.isPending ? (
-              <ActivityIndicator size="small" color={colors.ink.hex} />
+              <Skeleton width={80} height={16} borderRadius={4} />
             ) : (
               <Text style={styles.actionButtonText}>Export PDF</Text>
             )}
@@ -414,10 +416,10 @@ function DocsPageContent({
 
         {!hasEverSynced ? (
           <View style={styles.loading}>
-            <ActivityIndicator color={colors.accent.hex} />
             <Text style={styles.loadingHint}>
               {status === 'disconnected' ? 'Reconnecting…' : 'Connecting…'}
             </Text>
+            <SkeletonList count={3} />
           </View>
         ) : doc === null ? null : editing ? (
           <PageEditor
@@ -855,7 +857,7 @@ function CommentsSection({ pageId, doc }: { readonly pageId: string; readonly do
 
   return (
     <Section label="Comments">
-      {comments.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {comments.isPending && <SkeletonList count={3} />}
       {rows.map((comment) => (
         <CommentRow
           key={comment.commentId}
@@ -1084,7 +1086,7 @@ function SuggestionsSection({
 
   return (
     <Section label="Suggestions">
-      {suggestions.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {suggestions.isPending && <SkeletonList count={2} />}
       {rows.map((suggestion) => (
         <SuggestionRow
           key={suggestion.suggestionId}
@@ -1216,7 +1218,7 @@ function BacklinksSection({ pageId }: { readonly pageId: string }) {
 
   return (
     <Section label="Backlinks">
-      {backlinks.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {backlinks.isPending && <SkeletonList count={2} />}
       {rows.map((link: Backlink) => (
         <Pressable
           key={link.sourcePageId}
@@ -1305,7 +1307,7 @@ function VersionHistorySection({
         )}
       </Pressable>
 
-      {versions.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {versions.isPending && <SkeletonList count={3} />}
       {rows.map((version: PageVersionSummary) => {
         const authorLabel = version.createdBy === null ? null : personOf(version.createdBy).label;
         return (
@@ -1575,6 +1577,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
     paddingBottom: 10,
+    backgroundColor: colors.surfaceRaised.hex,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    ...shadows.sm,
   },
   itemRowResolved: {
     opacity: 0.6,
@@ -1698,6 +1704,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
+    backgroundColor: colors.surfaceRaised.hex,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    ...shadows.sm,
   },
   backlinkText: {
     fontSize: 14,
@@ -1712,6 +1723,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
+    backgroundColor: colors.surfaceRaised.hex,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    ...shadows.sm,
   },
   versionInfo: {
     flex: 1,
@@ -1750,7 +1766,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {

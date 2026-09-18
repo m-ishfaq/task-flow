@@ -14,7 +14,7 @@ import { projectGuestsQuery } from './api.js';
  *
  * Originally required an admin to add someone as a Guest-role member of the
  * ORG first (via the generic Members section), then come back HERE to grant
- * project access — a real, reported gap for anyone with no TaskFlow account
+ * project access — a real, reported gap for anyone with no Rinavai account
  * yet, who had no path through this at all. `work.guests.inviteByEmail` (see
  * `apps/api/src/work/guest-access.service.ts`'s "One door, not two" header)
  * collapsed that into one email box: the server decides whether to grant

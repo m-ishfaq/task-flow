@@ -32,6 +32,44 @@ export type ViewMode = 'board' | 'table';
  */
 const COLLAPSED_KEY = 'taskflow.sidebar.collapsed';
 const PINNED_KEY = 'taskflow.sidebar.pinned';
+const RECENT_KEY = 'taskflow.sidebar.recentBoards';
+
+/** A board the user recently visited, stored for the sidebar's Recents section. */
+export interface RecentBoard {
+  readonly boardId: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly projectKey: string | undefined;
+}
+
+function readRecent(): readonly RecentBoard[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry): entry is RecentBoard =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof (entry as RecentBoard).boardId === 'string' &&
+        typeof (entry as RecentBoard).projectId === 'string' &&
+        typeof (entry as RecentBoard).name === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeRecent(boards: readonly RecentBoard[]): void {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(boards));
+  } catch {
+    // Private browsing and blocked storage both throw.
+  }
+}
+
+const MAX_RECENT = 5;
 
 function readIds(key: string): readonly string[] {
   try {
@@ -103,6 +141,16 @@ interface UiState {
    */
   readonly pinnedBoards: readonly string[];
   /**
+   * Boards the user recently visited, most recent first.
+   *
+   * Stored in localStorage and shown at the top of the sidebar scroll region
+   * as a quick-access shortcut. Max 5 entries — the 80% case is "I visit the
+   * same 3-5 boards daily". The name is captured at visit time so collapsed
+   * projects need no extra query; a renamed board shows a slightly stale name,
+   * which is acceptable for a shortcut.
+   */
+  readonly recentBoards: readonly RecentBoard[];
+  /**
    * The card being dragged, if any.
    *
    * Genuinely ephemeral: it exists between pointer-down and drop and has no
@@ -142,6 +190,7 @@ interface UiActions {
   readonly setDraggingCard: (cardId: string | null) => void;
   readonly toggleProject: (projectId: string) => void;
   readonly togglePinnedBoard: (projectId: string, boardId: string) => void;
+  readonly addRecentBoard: (board: RecentBoard) => void;
   readonly setCommandPaletteOpen: (open: boolean) => void;
   readonly setShortcutsOpen: (open: boolean) => void;
   readonly toggleMobileNav: () => void;
@@ -155,6 +204,7 @@ export const useUi = create<UiState & UiActions>((set) => ({
   draggingCardId: null,
   collapsedProjects: readIds(COLLAPSED_KEY),
   pinnedBoards: readIds(PINNED_KEY),
+  recentBoards: readRecent(),
   commandPaletteOpen: false,
   shortcutsOpen: false,
   mobileNavOpen: false,
@@ -185,6 +235,16 @@ export const useUi = create<UiState & UiActions>((set) => ({
       const pinnedBoards = toggled(state.pinnedBoards, pinKey(projectId, boardId));
       writeIds(PINNED_KEY, pinnedBoards);
       return { pinnedBoards };
+    });
+  },
+
+  addRecentBoard: (board) => {
+    set((state) => {
+      // Dedupe by boardId, move to front, cap at MAX_RECENT
+      const filtered = state.recentBoards.filter((r) => r.boardId !== board.boardId);
+      const recentBoards = [board, ...filtered].slice(0, MAX_RECENT);
+      writeRecent(recentBoards);
+      return { recentBoards };
     });
   },
 

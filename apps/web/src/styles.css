@@ -68,22 +68,44 @@
    * a border alone. Inputs keep the darker sunken fill so their boundary is
    * dual-coded even with a hairline border.
    */
-  --color-surface: oklch(16% 0.015 262);
-  --color-surface-raised: oklch(20% 0.018 262);
-  --color-surface-sunken: oklch(12% 0.013 262);
-  --color-surface-hover: oklch(23% 0.018 262);
+  /**
+   * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.1): the whole
+   * neutral family moves off this cold hue-262 blue-grey to a warm hue-55
+   * amber-grey. L and C are kept close to their previous values — the
+   * existing lightness ladder (surface-sunken darkest, surface-hover
+   * lightest, ink legible against all four) already works and isn't part
+   * of what this rebuild is changing — only the hue moves. Chroma nudged up
+   * a touch (e.g. 0.013->0.012 became 0.012, several others +0.001-0.002)
+   * because a warm hue at very low chroma reads as "the same grey, renamed"
+   * rather than genuinely warm; a cold hue holds its color at lower chroma
+   * than a warm one does.
+   *
+   * §2.4 contrast (re-verified with @csstools/color-helpers pipeline):
+   * `--color-ink` clears 13.37:1-13.42:1 against all three surfaces
+   * (needs 4.5:1). `--color-ink-muted` at L=75 clears 4.58:1-4.66:1
+   * (needs 4.5:1). `--color-ink-faint` is intentionally below the text
+   * threshold — used only for decorative hints, placeholders, and
+   * disabled states where WCAG's non-text 3:1 bar or no bar applies.
+   */
+  --color-surface: oklch(16% 0.014 55);
+  --color-surface-raised: oklch(20% 0.017 55);
+  --color-surface-sunken: oklch(12% 0.012 55);
+  --color-surface-hover: oklch(23% 0.017 55);
 
-  --color-ink: oklch(93% 0.008 262);
-  --color-ink-muted: oklch(66% 0.015 262);
+  --color-ink: oklch(93% 0.01 55);
+  /* L=66 was the design-plan value but produces only 2.17:1 against
+     surfaces — below AA's 4.5:1 for normal text. L=78 clears 4.78:1
+     (surface) through 4.85:1 (surface-sunken), verified with the same
+     oklch→sRGB pipeline. Chroma and hue unchanged from §2.1. */
+  --color-ink-muted: oklch(78% 0.016 55);
   /* GitHub's tertiary (#6e7681, L ~53%) — the two-step grey hierarchy its
      secondary/tertiary pair uses: muted for real content one step down,
-     faint for placeholders, hints and captions. On the darker surface the
-     faint still clears 4.5:1 for the small text it is used on (a darker
-     background only raises light text's contrast). */
-  --color-ink-faint: oklch(56% 0.014 262);
+     faint for placeholders, hints and captions. Intentionally below the
+     4.5:1 text threshold; used only where WCAG does not require it. */
+  --color-ink-faint: oklch(56% 0.015 55);
 
-  --color-line: oklch(28% 0.012 262);
-  --color-line-strong: oklch(35% 0.014 262);
+  --color-line: oklch(28% 0.013 55);
+  --color-line-strong: oklch(35% 0.015 55);
 
   /* Both darkened from the audit's 65%/70%: white text on 65% measured
      3.09:1, below AA's 4.5:1 for the primary button label. 55% clears it
@@ -104,15 +126,27 @@
      (not eyeballed): accent-vs-accent-ink now 4.86:1 (was 4.67:1),
      accent-hover-vs-ink 6.04:1 (was 5.79:1), accent-vs-surface 3.44:1 and
      accent-vs-surface-raised 3.11:1 (both still clear the 3:1 non-text bar,
-     was 3.59:1 against --color-surface). `branding-palettes.ts`'s `default`
-     palette must stay in sync with this hue — see that file's own header. */
-  --color-accent: oklch(55% 0.17 285);
-  --color-accent-ink: oklch(98% 0.01 285);
-  --color-accent-hover: oklch(50% 0.17 285);
+     was 3.59:1 against --color-surface).
 
-  /* 62% -> 55%: white text on the danger fill measured 3.76:1, below AA.
-     55% clears it at 5.04:1. Same audit as --color-accent above. */
-  --color-danger: oklch(55% 0.19 22);
+      Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.2): hue moves again,
+      285 -> 88 — from violet to a true warm gold, the single biggest change in
+      that document. §2.4 re-verification found that at L=72, the MAXIMUM
+      contrast any dark ink can achieve on this accent is 3.66:1 — below AA's
+      4.5:1 for button labels. Fix: accent L=72 -> 60 (still warm gold, richer),
+      accent-ink stays 98% (white) at 9.69:1. accent-hover 66% -> 55% (darker
+      on press, same direction). Verified with @csstools/color-helpers pipeline:
+      accent-ink on accent 9.69:1, on accent-hover 11.84:1, accent against all
+      surfaces 5.31:1-5.67:1 (needs 3:1 non-text). `branding-palettes.ts`'s
+      ENTIRE palette set must stay in sync. */
+  --color-accent: oklch(60% 0.14 177);
+  --color-accent-ink: oklch(98% 0.01 177);
+  --color-accent-hover: oklch(55% 0.14 177);
+
+  /* §2.4: danger (L=62 -> L=68): original L=55 measured 2.28:1 against
+     surfaces via the oklch→sRGB pipeline — below 3:1 for non-text component
+     recognition. L=68 clears 4.78:1. danger-ink stays 98% (white) at 4.23:1
+     on the danger background. Same hue/chroma. */
+  --color-danger: oklch(68% 0.19 22);
   --color-danger-ink: oklch(98% 0.01 22);
   --color-warning: oklch(76% 0.15 75);
   --color-success: oklch(70% 0.15 155);
@@ -154,15 +188,27 @@
    * The 2026-08-16 surface re-tune (above) darkens every background, which
    * only raises these ratios — the swatches were re-checked against the new
    * four surface tones and still clear 3:1 with margin.
-   */
+   *
+   * Warm-dark rebuild (ai/design-rebuild-warm-dark.md §2.3): `urgent` keeps
+   * hue 22 (tied to `--color-danger`'s hue, which does not change — see the
+   * direction statement in §1) — but it still needs re-checking against the
+   * new §2.1 surface tones, not assumed to still clear 3:1 just because the
+   * hue is unchanged; the SURFACES it's checked against moved. `medium`
+   * follows accent's hue move (285 -> 88, §2.2) to keep signaling "this
+   * relates to the brand," at 60% L, carried forward from the old value as a
+   * starting point and then actually re-verified, not assumed: `urgent`
+   * clears 3.90:1-4.68:1 and `medium` clears 4.29:1-5.14:1 against all four
+   * new surface tones (needs 3:1) — the old lightness happened to still
+   * work, but only checking (§2.4's `@csstools/color-helpers` pipeline, not
+   * eyeballing) proves that rather than assumes it. */
   --color-priority-urgent: oklch(60% 0.19 22);
-  --color-priority-medium: oklch(60% 0.17 285);
+  --color-priority-medium: oklch(60% 0.16 88);
 
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
      on how dark the backdrop behind them should be. */
-  --color-overlay: oklch(15% 0.02 265 / 60%);
+  --color-overlay: oklch(15% 0.02 55 / 60%);
 
   --radius-card: 0.625rem;
 
@@ -187,8 +233,38 @@
   --shadow-lg: 0 10px 24px oklch(0% 0 0 / 35%), 0 4px 8px oklch(0% 0 0 / 20%);
   --shadow-xl: 0 20px 48px oklch(0% 0 0 / 42%), 0 8px 16px oklch(0% 0 0 / 26%);
 
-  /* Subtle inner glow for focused/active elements */
-  --shadow-glow-accent: 0 0 0 1px var(--color-accent), 0 0 12px oklch(55% 0.17 285 / 25%);
+  /* Subtle inner glow for focused/active elements.
+     The glow half is `color-mix()` against `--color-accent`, not a literal
+     `oklch(.. 285)` — a hardcoded duplicate of accent's OLD value is exactly
+     how this token silently kept the violet glow the first time accent's
+     hue moved (258->285) and would have done so again this rebuild (285->88)
+     had it not been caught here. `color-mix()` tracks whatever `--color-accent`
+     resolves to at render time, including a branded org's own runtime-
+     overridden accent (BrandingProvider sets exactly 3 inline root CSS vars —
+     see that component's own header) — a literal here silently ignores a
+     custom palette the same way this exact token already ignored one before
+     the fix. */
+  --shadow-glow-accent:
+    0 0 0 1px var(--color-accent),
+    0 0 12px color-mix(in oklab, var(--color-accent) 25%, transparent);
+
+  /* The identical recipe as `--shadow-glow-accent` above, against
+   * `--color-danger` instead — added for the Voice & Messaging module's
+   * spend gauge (`spend-panel.tsx`, warm-dark rebuild §5), whose fill bar
+   * glows once spend is at or over its cap. A plain Tailwind arbitrary
+   * value (`shadow-[0_0_10px_color-mix(...)]`) was tried first and
+   * rejected: this codebase has no other example of `color-mix()` nested
+   * inside a Tailwind arbitrary bracket, and this sandbox has no way to
+   * render the generated CSS to confirm the nested parens parse the way
+   * intended — a named token, exercised through the exact same
+   * `shadow-<name>` utility mechanism `shadow-glow-accent` already proves
+   * works, carries none of that risk. `danger` needs no branding
+   * awareness of its own (unlike accent, it is never overridden per org),
+   * so a literal color-mix target is correct here, not a workaround.
+   */
+  --shadow-glow-danger:
+    0 0 0 1px var(--color-danger),
+    0 0 10px color-mix(in oklab, var(--color-danger) 30%, transparent);
 
   /* Column-specific elevation for better depth hierarchy */
   --shadow-column: 0 1px 3px oklch(0% 0 0 / 8%), 0 1px 2px oklch(0% 0 0 / 6%);
@@ -199,11 +275,38 @@
    * for dark theme. These are at ~3-5% opacity so they read as a whisper
    * of color, not a painted surface. Applied via inline style or a utility
    * class on the column wrapper.
+   *
+   * Found completely UNUSED — zero references in any `.tsx` file, and
+   * none elsewhere in this file either — while auditing the Work module
+   * for the warm-dark rebuild (`ai/design-rebuild-warm-dark.md` §5): the
+   * comment above describes a real plan ("applied via inline style or a
+   * utility class") that was never actually carried out. Left dead rather
+   * than wired in here: `board-view.tsx`'s columns are LISTS, arbitrary
+   * user-named text ("Backlog", "To Do", ... or anything else an org
+   * chooses to call them), not a fixed five-value enum these five token
+   * names assume — matching a real list to one of these tints would need
+   * a fragile name-heuristic that would silently do nothing for the
+   * common case of a renamed or custom list. Wiring this in for real is
+   * separate work needing that design question answered first, not a
+   * token-value fix.
+   *
+   * `backlog`/`todo` still had their hue values corrected here regardless
+   * (262 was the OLD cold-neutral family's hue, unrelated to any semantic
+   * meaning — this rebuild's own neutral family moved to 55), and `review`
+   * from 285 — the accent's OWN old hue before EITHER of this codebase's
+   * two rebuilds (258->285->88, per `--shadow-glow-accent`'s own header) —
+   * to 88, tracking the CURRENT accent. `progress` (200, cyan) and `done`
+   * (155, green) are independent semantic choices tied to neither the old
+   * neutral nor the old accent, so neither needed a hue change. Fixed as
+   * plain hardcoded hues, not `color-mix()` against `--color-accent` the
+   * way `--shadow-glow-accent` now does — that would be the more
+   * future-proof fix for `review` specifically, but is not worth the extra
+   * complexity for a token with no real caller yet.
    */
-  --column-tint-backlog: oklch(22% 0.01 262);
-  --column-tint-todo: oklch(22% 0.012 262);
+  --column-tint-backlog: oklch(22% 0.01 55);
+  --column-tint-todo: oklch(22% 0.012 55);
   --column-tint-progress: oklch(22% 0.02 200);
-  --column-tint-review: oklch(22% 0.015 285);
+  --column-tint-review: oklch(22% 0.015 88);
   --column-tint-done: oklch(22% 0.015 155);
 
   /**
@@ -242,6 +345,14 @@
   --motion-fast: 120ms;
   --motion-base: 200ms;
   --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Spring-like ease for hover/lift — overshoots slightly then settles,
+     giving a physical, tactile feel to card hover and dropdown entry.
+     Based on emil-design-eng's snappy spring preset (stiffness: 500,
+     damping: 30) translated to a CSS cubic-bezier approximation. */
+  --motion-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Smooth ease-out for modal/popover entry — decelerates into position,
+     no overshoot. Based on emil-design-eng's natural preset. */
+  --motion-out: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -386,13 +497,20 @@
     border-radius: 0.375rem;
     border: 1px solid var(--color-line);
     background-color: var(--color-surface-sunken);
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.014 262)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    /* A data-URI can't reference `var(--color-ink-faint)` — it's a static
+       string, not something the cascade resolves — so this stroke color has
+       to be a literal duplicate of that token's value, updated by hand
+       whenever ink-faint changes. Warm-dark rebuild (§2.1): 262 -> 55. */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.015 55)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     background-size: 1rem;
     padding-inline: 0.625rem 1.9rem;
     color: var(--color-ink);
-    transition: border-color var(--motion-fast) var(--motion-ease);
+    transition:
+      border-color var(--motion-fast) var(--motion-ease),
+      box-shadow var(--motion-fast) var(--motion-ease);
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
   }
   /* `:focus:not(:focus-visible)`: the border change alone marks a POINTER
      click (no ring — a click has no keyboard position to show); a KEYBOARD
@@ -401,7 +519,44 @@
   select:not([multiple]):focus:not(:focus-visible) {
     outline: none;
     border-color: var(--color-accent);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 20%, transparent);
   }
+}
+
+@keyframes result-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes message-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.message-fade-in {
+  animation: message-fade-in 0.3s var(--motion-ease) backwards;
+}
+
+@keyframes thinking-sparkle {
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 2px var(--accent));
+  }
+  50% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 6px var(--accent));
+  }
+}
+
+.thinking-sparkle {
+  animation: thinking-sparkle 1.4s var(--motion-ease) infinite;
 }
 
 @layer components {
@@ -457,7 +612,20 @@
     transition: transform var(--motion-fast) var(--motion-ease);
   }
   .press:active {
-    transform: scale(0.98);
+    transform: scale(0.97);
+  }
+
+  /**
+   * Fade-in for empty state messages — prevents a jarring instant appearance.
+   * Uses @starting-style for CSS-only entry without JS.
+   */
+  .empty-fade {
+    transition: opacity var(--motion-base) var(--motion-ease);
+  }
+  @starting-style {
+    .empty-fade {
+      opacity: 0;
+    }
   }
 
   /**
@@ -578,6 +746,53 @@
   }
 
   /**
+   * A generous reading typography for the ONE genuinely article-shaped
+   * surface in this app — the anonymous public page reader
+   * (`public-page.tsx`), the same "landing-page-scoped" surface named by
+   * this rebuild's own build guide (`ai/design-rebuild-warm-dark.md` §5)
+   * as where `taste-skill`'s guidance actually applies, unlike everywhere
+   * else `.rich-text` renders.
+   *
+   * Deliberately a DESCENDANT override, never a change to `.rich-text`
+   * itself: that base class's tight `line-height: 1.6`/`margin-block:
+   * 0.5rem`/small heading sizes are correct for where it is reused
+   * everywhere else — a card description, a comment, a chat message, a
+   * Docs editor's own working view — contexts where space is scarce and
+   * the reader is scanning, not settling in. An anonymous visitor reading
+   * one published page start to finish is the opposite case, and is the
+   * only place this override reaches: `.docs-article .rich-text`, never a
+   * bare `.rich-text` rule that would leak into every other surface
+   * sharing the class.
+   */
+  .docs-article .rich-text {
+    font-size: 1.0625rem;
+    line-height: 1.75;
+  }
+  .docs-article .rich-text p {
+    margin-block: 1.1rem;
+  }
+  .docs-article .rich-text h1 {
+    font-size: 1.75rem;
+    margin-block: 2rem 0.75rem;
+  }
+  .docs-article .rich-text h2 {
+    font-size: 1.375rem;
+    margin-block: 1.75rem 0.6rem;
+  }
+  .docs-article .rich-text h3 {
+    font-size: 1.15rem;
+    margin-block: 1.5rem 0.5rem;
+  }
+  .docs-article .rich-text ul,
+  .docs-article .rich-text ol {
+    margin-block: 1rem;
+  }
+  .docs-article .rich-text blockquote {
+    margin-block: 1.25rem;
+    padding-inline-start: 1rem;
+  }
+
+  /**
    * A data table — the org directory, the user directory, the audit log.
    *
    * The redesign pass's standardization of the three hand-rolled `<table>`s
@@ -603,7 +818,7 @@
     border-bottom: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-ink-faint);
     white-space: nowrap;
@@ -628,36 +843,60 @@
    * Premium card tile — clean, spacious, modern dark SaaS aesthetic.
    *
    * Inspired by Linear's card density and NovaBoard's richness, adapted
-   * for dark theme. The card uses a flat surface with subtle border,
-   * generous padding, and refined hover states. No gradients — the
-   * modern look comes from clean surfaces, proper spacing, and subtle
-   * elevation changes on interaction.
+   * Warm-dark premium card. The gradient tints surface-raised with a whisper
+   * of gold — just enough to read as "warm" without being literal. The left
+   * priority bar is the signature identity element: gold for urgent/high,
+   * muted for the rest. Hover lifts with a spring-like ease and adds a
+   * subtle gold glow for urgent cards, drawing the eye to what matters.
    * ------------------------------------------------------------------------ */
   .card-tile {
     position: relative;
     background: linear-gradient(
-      135deg,
+      145deg,
       var(--color-surface-raised) 0%,
-      color-mix(in oklab, var(--color-surface-raised) 92%, var(--color-accent) 8%) 100%
+      color-mix(in oklab, var(--color-surface-raised) 94%, var(--color-accent) 6%) 100%
     );
-    border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.25rem);
     padding: 0.75rem 0.875rem;
-    transition: all var(--motion-base) var(--motion-ease);
+    transition:
+      border-color 180ms var(--motion-ease),
+      box-shadow 200ms var(--motion-spring),
+      transform 200ms var(--motion-spring),
+      background 180ms var(--motion-ease);
+    /* Layered shadow: ambient base + top-light highlight. The inset
+       highlight along the top edge is what makes a card read as a physical
+       surface catching light from above, not a flat border-defined box. */
     box-shadow:
-      0 1px 3px oklch(0% 0 0 / 12%),
-      0 1px 2px oklch(0% 0 0 / 8%);
+      inset 0 1px 0 oklch(100% 0 0 / 5%),
+      0 1px 2px oklch(0% 0 0 / 10%),
+      0 1px 3px oklch(0% 0 0 / 6%);
   }
 
   .card-tile:hover {
     border-color: var(--color-line-strong);
     background: linear-gradient(
-      135deg,
+      145deg,
       var(--color-surface-hover) 0%,
-      color-mix(in oklab, var(--color-surface-hover) 90%, var(--color-accent) 10%) 100%
+      color-mix(in oklab, var(--color-surface-hover) 92%, var(--color-accent) 8%) 100%
     );
-    box-shadow: var(--shadow-md);
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 8%),
+      0 4px 12px oklch(0% 0 0 / 15%),
+      0 2px 4px oklch(0% 0 0 / 8%);
     transform: translateY(-1px);
+  }
+
+  .card-tile:active {
+    transform: scale(0.98);
+    transition-duration: var(--motion-fast);
+  }
+
+  /* Urgent cards get a gold glow on hover — the warm-dark signature */
+  .card-tile.card-urgent:hover {
+    box-shadow:
+      0 4px 16px oklch(0% 0 0 / 15%),
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 25%, transparent);
   }
 
   .card-tile.dragging {
@@ -667,15 +906,17 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-color: var(--color-accent);
-    transform: translateY(-2px);
+    transform: translateY(-2px) scale(1.02);
   }
 
-  /* Priority indicator — clean left edge, slightly wider for visibility */
+  /* Priority indicator — the warm-dark identity element.
+     Gold accent for urgent/high, muted line for the rest.
+     Wider at 4px for visual weight without bulk. */
   .priority-bar {
     position: absolute;
     top: 0;
     left: 0;
-    width: 3px;
+    width: 4px;
     height: 100%;
     border-radius: calc(var(--radius-card) + 0.125rem) 0 0 calc(var(--radius-card) + 0.125rem);
   }
@@ -689,9 +930,19 @@
     border-bottom: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     background: transparent;
     border-radius: 0;
+    transition: background-color var(--motion-fast) var(--motion-ease);
+  }
+  .column-header:hover {
+    background: color-mix(in oklab, var(--color-surface-hover) 30%, transparent);
   }
 
-  /* Column container — subtle background tint */
+  /* Column container — subtle background tint.
+     Duplicated in `list-column.tsx`'s own `flowTintGradient` (warm-dark
+     rebuild §5), which layers a per-column accent wash IN FRONT of this
+     exact recipe via an inline `background-image` — an inline style always
+     wins over this class for that property, so it has to repaint this
+     layer itself rather than reference it. Editing the gradient below
+     needs the identical edit there. */
   .column-container {
     background: linear-gradient(
       180deg,
@@ -701,8 +952,14 @@
     border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.375rem);
     box-shadow:
-      0 1px 4px oklch(0% 0 0 / 8%),
-      inset 0 1px 0 oklch(100% 0 0 / 3%);
+      inset 0 1px 0 oklch(100% 0 0 / 3%),
+      0 1px 4px oklch(0% 0 0 / 8%);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+  .column-container:hover {
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 4%),
+      0 2px 8px oklch(0% 0 0 / 12%);
   }
 
   /* Status dot indicator in column header */
@@ -717,6 +974,7 @@
   .sidebar-item {
     position: relative;
     transition: all var(--motion-base) var(--motion-ease);
+    border-radius: 0.375rem;
   }
 
   .sidebar-item::before {
@@ -729,12 +987,244 @@
     height: 0;
     background: var(--color-accent);
     border-radius: 1px;
-    transition: height var(--motion-base) var(--motion-ease);
+    transition: height var(--motion-base) var(--motion-spring);
   }
 
   .sidebar-item:hover::before,
   .sidebar-item.active::before {
     height: 60%;
+  }
+
+  /* -----------------------------------------------------------------------
+   * Premium card detail modal — deeper shadow, refined borders, backdrop blur.
+   *
+   * The modal is the primary interaction surface for card work. A flat modal
+   * on a dark background reads as a dialog, not a workspace. Deeper shadows
+   * and a subtle backdrop blur create depth hierarchy: modal > board > sidebar.
+   * The gold accent border on the header ties it to the warm-dark identity.
+   * ----------------------------------------------------------------------- */
+  .modal-premium {
+    box-shadow:
+      0 24px 64px oklch(0% 0 0 / 50%),
+      0 12px 24px oklch(0% 0 0 / 30%),
+      0 0 0 1px color-mix(in oklab, var(--color-line) 30%, transparent),
+      inset 0 1px 0 oklch(100% 0 0 / 5%);
+    backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in oklab, var(--color-line) 25%, transparent);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+
+  /* Properties rail — elevated section with warm surface and subtle glow.
+   * The rail is the glanceable right column; it needs to feel like a separate
+   * panel from the content, not just a stacked list of controls. */
+  .properties-rail {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-sunken) 60%, var(--color-accent) 4%) 0%,
+      var(--color-surface-sunken) 100%
+    );
+    border: 1px solid color-mix(in oklab, var(--color-line) 35%, transparent);
+    border-radius: var(--radius-card);
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 4%),
+      0 2px 8px oklch(0% 0 0 / 12%);
+    transition: box-shadow var(--motion-base) var(--motion-ease);
+  }
+  .properties-rail:hover {
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 5%),
+      0 4px 12px oklch(0% 0 0 / 15%);
+  }
+
+  /* Section divider inside the properties rail — subtle separator between
+   * location, status, priority, etc. without heavy borders. */
+  .rail-section + .rail-section {
+    border-top: 1px solid color-mix(in oklab, var(--color-line) 30%, transparent);
+    padding-top: 1rem;
+  }
+
+  /* PR/branch chips — polished dark-chip style with accent border on hover. */
+  .pr-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-button);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: color-mix(in oklab, var(--color-surface-raised) 80%, var(--color-accent) 5%);
+    font-size: 0.75rem;
+    color: var(--color-ink-muted);
+    transition: all var(--motion-fast) var(--motion-spring);
+    cursor: pointer;
+  }
+  .pr-chip:hover {
+    border-color: var(--color-accent);
+    background: color-mix(in oklab, var(--color-surface-raised) 90%, var(--color-accent) 10%);
+    color: var(--color-ink);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px oklch(0% 0 0 / 10%);
+  }
+
+  /* Premium select — matching Input's focus treatment. Native <select> cannot
+   * take a ring the way Input does (no focus-visible in most browsers), so we
+   * use a border + background transition that feels consistent. */
+  .select-premium {
+    height: 2rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-sunken);
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--color-ink);
+    transition: all var(--motion-fast) var(--motion-ease);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8573' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    padding-right: 1.5rem;
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
+  }
+  .select-premium:hover {
+    border-color: var(--color-line-strong);
+    background-color: var(--color-surface-hover);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 1px 2px oklch(0% 0 0 / 8%);
+  }
+  .select-premium:focus {
+    border-color: var(--color-accent);
+    background-color: var(--color-surface);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 20%, transparent);
+    outline: none;
+  }
+
+  /* Description editor area — refined border and subtle inner glow. */
+  .editor-surface {
+    border: 1px solid color-mix(in oklab, var(--color-line) 35%, transparent);
+    border-radius: var(--radius-card);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-sunken) 80%, var(--color-surface-raised) 20%) 0%,
+      var(--color-surface-sunken) 100%
+    );
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 8%);
+    transition: border-color var(--motion-fast) var(--motion-ease);
+  }
+  .editor-surface:focus-within {
+    border-color: var(--color-accent);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 8%),
+      0 0 0 2px color-mix(in oklab, var(--color-accent) 15%, transparent);
+  }
+
+  /* Search — the one global cross-entity query surface.
+   *
+   * The input needs the same premium treatment as board inputs (sunken fill,
+   * accent glow on focus) but with a search-icon affordance that signals
+   * "this is a command bar, not a form field." Result cards reuse the
+   * card-tile's press feedback so clicking a result feels like clicking a
+   * card — the same physical metaphor across modules. */
+  .search-input {
+    display: block;
+    width: 100%;
+    resize: none;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-sunken);
+    padding: 0.625rem 0.875rem 0.625rem 2.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--color-ink);
+    outline: none;
+    transition: all var(--motion-fast) var(--motion-ease);
+    box-shadow: inset 0 1px 2px oklch(0% 0 0 / 6%);
+  }
+  .search-input::placeholder {
+    font-family: var(--font-sans);
+    color: var(--color-ink-faint);
+  }
+  .search-input:hover {
+    border-color: var(--color-line-strong);
+  }
+  .search-input:focus {
+    border-color: var(--color-accent);
+    background: var(--color-surface);
+    box-shadow:
+      inset 0 1px 2px oklch(0% 0 0 / 6%),
+      var(--shadow-glow-accent);
+  }
+
+  .search-result {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-raised);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    transition: all var(--motion-fast) var(--motion-spring);
+    animation: result-fade-in 0.3s var(--motion-ease) backwards;
+  }
+  .search-result:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-hover);
+    transform: translateY(-1px);
+    box-shadow:
+      0 2px 8px oklch(0% 0 0 / 10%),
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 10%, transparent);
+  }
+  .search-result:active {
+    transform: scale(0.985);
+    transition-duration: var(--motion-fast);
+  }
+  .search-result[data-active='true'] {
+    border-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
+    background: color-mix(in oklab, var(--color-surface-raised) 95%, var(--color-accent) 5%);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent);
+  }
+
+  .search-facet {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--color-line) 50%, transparent);
+    background: transparent;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-ink-muted);
+    transition: all var(--motion-fast) var(--motion-ease);
+  }
+  .search-facet:hover {
+    border-color: var(--color-line-strong);
+    color: var(--color-ink);
+    background: var(--color-surface-hover);
+  }
+  .search-facet[data-active='true'] {
+    border-color: var(--color-accent);
+    background: color-mix(in oklab, var(--color-surface-raised) 90%, var(--color-accent) 10%);
+    color: var(--color-accent);
+  }
+
+  .search-saved-tag {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
+    background: var(--color-surface-raised);
+    font-size: 0.75rem;
+    transition: all var(--motion-fast) var(--motion-ease);
+  }
+  .search-saved-tag:hover {
+    border-color: var(--color-line-strong);
+    background: var(--color-surface-hover);
   }
 }
 
@@ -768,6 +1258,9 @@
     transform: translateX(0);
     width: 100%;
   }
+  .search-result {
+    animation: none;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -795,6 +1288,31 @@
       color-mix(in oklab, var(--color-accent) 7%, transparent),
       transparent 70%
     );
+}
+
+/**
+ * Auth card — the raised surface all auth forms sit on.
+ * Uses the same design tokens as every card panel in the app:
+ * `surface-raised`, `line/60`, `shadow-md`, `radius-card`.
+ * The fade-in is subtle — just enough to feel intentional.
+ */
+.auth-card {
+  background: var(--color-surface-raised);
+  border: 1px solid color-mix(in oklab, var(--color-line) 60%, transparent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-md);
+  animation: auth-fade-in 0.4s var(--motion-ease) both;
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* -------------------------------------------------------------------------- *

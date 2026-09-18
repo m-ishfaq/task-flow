@@ -2,6 +2,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { createQueryClient as createSharedQueryClient } from '@taskflow/client';
 import { errorCodeOf, isUnauthenticated } from './trpc.js';
 import { refresh, useSession } from './session.js';
+import { useMaintenanceStore } from './maintenance-store.js';
+import { TRPC_URL } from './config.js';
 
 /**
  * The query client (PLAN.md §10.5).
@@ -65,6 +67,68 @@ function recoverFromLostOrg(error: unknown): void {
   orgLostHandler?.();
 }
 
+/**
+ * Wraps fetch to detect 503 maintenance responses at the transport level.
+ *
+ * tRPC's batch link may not always surface the raw response body in
+ * `error.data` — a proxy HTML page, a network error, or a batch-level 503
+ * can leave `data` empty or malformed. Detecting the 503 HERE, before tRPC
+ * processes the response, guarantees the maintenance store activates on the
+ * very first blocked request with no dependency on tRPC's error wrapping.
+ *
+ * The response is cloned so tRPC can still read the original body. The clone
+ * is consumed (body read) to avoid resource leaks.
+ */
+function wrapFetchForMaintenanceDetection(): void {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const response = await originalFetch(input, init);
+
+    /* Only intercept responses targeting the tRPC endpoint. */
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (typeof url === 'string' && url.includes(TRPC_URL) && response.status === 503) {
+      /* Skip activation for URLs the server bypasses during maintenance:
+         auth endpoints (login, register, refresh, etc.) and platform admin
+         routes. If the server let the request through, a 503 here means
+         something else is wrong — not that maintenance is on. More
+         importantly, the admin's own platform admin queries succeed, so
+         catching 503 from OTHER queries and activating the store would
+         show MaintenanceScreen on top of the admin console.
+
+         tRPC batch URLs put procedure names in the PATH:
+         /trpc/platformAdmin.config.overview,platformAdmin.self.check?batch=1
+         The leading char before "platformAdmin" is "/" not ".", so we check
+         for "platformAdmin." without requiring a leading dot. Auth routes
+         are /trpc/auth.login which has ".login" with a leading dot. */
+      const BYPASS_PATTERN =
+        /\.(login|register|refresh|logout|verifyEmail|resendVerification|requestPasswordReset|resetPassword|callback|finishAuthentication|verifyLogin|start|providers)|platformAdmin\./;
+      if (!BYPASS_PATTERN.test(url)) {
+        try {
+          const clone = response.clone();
+          const body = (await clone.json()) as Record<string, unknown>;
+          if (body['status'] === 'maintenance') {
+            const msg =
+              typeof body['message'] === 'string'
+                ? body['message']
+                : 'System is currently under maintenance. Please check back shortly.';
+            useMaintenanceStore.getState().activate(msg);
+          }
+        } catch {
+          /* Non-JSON or unreadable — activate with a generic message. */
+          useMaintenanceStore
+            .getState()
+            .activate('System is currently under maintenance. Please check back shortly.');
+        }
+      }
+    }
+
+    return response;
+  };
+}
+
+/* Activate the fetch wrapper once at module load — before any query fires. */
+wrapFetchForMaintenanceDetection();
+
 export function createQueryClient(): QueryClient {
   return createSharedQueryClient({
     isUnauthenticated,
@@ -72,7 +136,16 @@ export function createQueryClient(): QueryClient {
     /* On the caches rather than in each query's `onError`, because it has to
        fire for a failure nobody wrote a handler for — which is every query on a
        page whose org just went away. */
-    onCacheError: recoverFromLostOrg,
+    onCacheError(error) {
+      recoverFromLostOrg(error);
+      /* Maintenance detection is handled exclusively by the fetch-level
+         wrapper (wrapFetchForMaintenanceDetection). That wrapper knows the
+         request URL and can skip activation for bypass endpoints (auth,
+         platform admin). This handler does NOT have the URL, so adding
+         maintenance detection here would re-activate the store for queries
+         the server correctly lets through during maintenance — locking the
+         admin out of the console. */
+    },
   });
 }
 
@@ -430,6 +503,8 @@ export const keys = {
   platformUsers: (cursor: string | null) => ['platform', 'users', cursor ?? 'first'] as const,
   /** The flag registry with resolved values. */
   platformFlags: () => ['platform', 'flags'] as const,
+  /** Platform config overview — system health, auth constants, runtime info. */
+  platformConfig: () => ['platform', 'config'] as const,
   /** The deployment's branding — the console tab's own read, always fresh. */
   platformBranding: () => ['platform', 'branding'] as const,
   /** One page of the billing directory (Phase 12 Wave 3 §3.6). */
@@ -439,6 +514,8 @@ export const keys = {
   /** One page of the operations dashboard, optionally filtered by kind. */
   platformOperations: (cursor: string | null, kind: string | null) =>
     ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
+  /** Error health aggregation for a given time range. */
+  platformErrorHealth: (timeRange: string) => ['platform', 'error-health', timeRange] as const,
   /** The org lookup a broadcast's composer resolves before showing the form. */
   platformOrgLookup: (orgId: string) => ['platform', 'org-lookup', orgId] as const,
   /**

@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import type { AttachmentId } from '@taskflow/contracts';
+import { FileIcon, Paperclip, Download } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Button } from '../../components/primitives.js';
@@ -64,34 +65,44 @@ export function MessageAttachments({
           <li
             key={attachment.attachmentId}
             className={cn(
-              'flex items-center gap-2 rounded border px-2 py-1 text-xs',
-              clean ? 'border-line bg-surface-raised' : 'border-warning/40 bg-warning/5',
+              'group/file flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors duration-[var(--motion-fast)]',
+              clean
+                ? 'border-line/60 bg-surface-raised hover:border-line hover:bg-surface-hover'
+                : 'border-warning/30 bg-warning/5',
             )}
           >
-            <span aria-hidden>📎</span>
-            <span className="min-w-0 flex-1 truncate text-ink">{attachment.filename}</span>
+            <span
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded',
+                clean ? 'bg-accent/10 text-accent' : 'bg-warning/10 text-warning',
+              )}
+            >
+              {clean ? <Paperclip className="size-4" /> : <FileIcon className="size-4" />}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
+              {attachment.filename}
+            </span>
 
             {clean ? (
               <>
-                <span className="shrink-0 text-ink-faint">{formatBytes(attachment.sizeBytes)}</span>
+                <span className="shrink-0 text-[11px] text-ink-faint">
+                  {formatBytes(attachment.sizeBytes)}
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-5 shrink-0 px-1 text-[11px]"
+                  className="h-6 shrink-0 gap-1 px-1.5 text-[11px] text-ink-muted hover:text-accent"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(attachment.attachmentId as AttachmentId);
                   }}
                 >
+                  <Download className="size-3" />
                   Download
                 </Button>
               </>
             ) : (
-              /* No download control at all for anything that is not clean —
-                 not a disabled one. `presignDownload` refuses these outright,
-                 so offering a button whose only outcome is an error would be
-                 describing a capability that does not exist. */
-              <span className="shrink-0 text-warning">
+              <span className="shrink-0 text-[11px] text-warning">
                 {STATUS_LABEL.get(attachment.status) ?? attachment.status}
               </span>
             )}

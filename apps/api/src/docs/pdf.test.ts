@@ -210,7 +210,7 @@ describe('renderPdf', () => {
     expect(loaded.getPageCount()).toBe(1);
   });
 
-  it('stamps every page with a footer naming the resolved product, defaulting to TaskFlow', async () => {
+  it('stamps every page with a footer naming the resolved product, defaulting to Rinavai', async () => {
     const doc: RenderedNode = {
       type: 'doc',
       content: [{ type: 'paragraph', content: [text('x')] }],
@@ -218,7 +218,7 @@ describe('renderPdf', () => {
 
     const defaulted = await renderPdf('Doc', doc);
     expect(decodedStreamText(defaulted).toLowerCase()).toContain(
-      hexOf('Exported from TaskFlow').toLowerCase(),
+      hexOf('Exported from Rinavai').toLowerCase(),
     );
 
     const branded = await renderPdf('Doc', doc, 'Acme Flow');

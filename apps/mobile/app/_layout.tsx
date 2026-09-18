@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, Slot } from 'expo-router';
+import * as Updates from 'expo-updates';
 import {
   AppState,
   type AppStateStatus,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
@@ -110,6 +112,26 @@ export default function RootLayout() {
     };
   }, []);
 
+  // OTA update check — runs once on cold start. `expo-updates` is wired
+  // (eas.json `runtimeVersion`, `updates.url`) but nothing previously checked
+  // for updates at runtime. This silently downloads and applies any pending
+  // update, then reloads the app to pick it up. On failure (no network,
+  // EAS down, dev mode), it fails silently — the user sees nothing.
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    void (async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+        // Network error, EAS unavailable, or dev mode — not actionable.
+      }
+    })();
+  }, []);
+
   // The tapped-notification listener (push-notifications.ts's own header) —
   // same unconditional, whole-lifetime placement as the `AppState` listener
   // above, and for the identical reason: listening costs nothing and
@@ -140,15 +162,24 @@ export default function RootLayout() {
   const status = useSession((state) => state.status);
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <BrandingProvider>
-          {unlockState === 'checking' && <Splash />}
-          {unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
-          {unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
-        </BrandingProvider>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    /* `GestureHandlerRootView` has to be the true outermost wrapper — the
+       library's own documented requirement, not a style choice — because
+       gesture-handler intercepts touch events at the native root view, and
+       a gesture whose target sits inside anything ELSE mounted outside it
+       (a Modal, notably) can silently fail to receive touches on Android.
+       Added while adopting `react-native-gesture-handler` for the first
+       time in this app (`ai/design-rebuild-warm-dark.md` §4). */
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrandingProvider>
+            {unlockState === 'checking' && <Splash />}
+            {unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
+            {unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
+          </BrandingProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -174,6 +205,9 @@ function LockScreen({ onRetry }: { onRetry: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   splash: {
     flex: 1,
     alignItems: 'center',

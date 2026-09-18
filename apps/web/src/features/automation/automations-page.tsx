@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Globe, Zap } from 'lucide-react';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -10,7 +11,15 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '@taskflow/client';
-import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Badge,
+  Button,
+  ConfirmButton,
+  Field,
+  NavTabs,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
@@ -310,49 +319,32 @@ export function AutomationsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2 md:px-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Automations</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          When something happens, check a condition, then act. Rules run with the permissions of
-          whoever created them.
-        </p>
+        <PageHeader
+          title="Automations"
+          description="When something happens, check a condition, then act. Rules run with the permissions of whoever created them."
+        />
 
-        <nav aria-label="Automation sections" className="mt-3 flex gap-1">
-          {visibleTabs.map((item) => {
-            const count = counts[item.id];
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-current={tab === item.id ? 'page' : undefined}
-                onClick={() => {
-                  selectTab(item.id);
-                }}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  tab === item.id
-                    ? 'bg-accent text-accent-ink shadow-sm'
-                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-                )}
-              >
-                {item.label}
-                {/* Deliberately rendered only once the query has settled. A
-                    zero that is really "still loading" is the one number worth
-                    not guessing at here — it is the difference between "you
-                    have no webhooks" and "we have not asked yet". */}
-                {count !== undefined && (
-                  <span
-                    className={cn(
-                      'rounded px-1 text-[10px] tabular-nums',
-                      tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
-                    )}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
+        {/* `NavTabs` (`primitives.tsx`, consolidated during the warm-dark
+            rebuild — `ai/design-rebuild-warm-dark.md` §3) is this exact
+            markup, extracted after being found duplicated byte-for-byte
+            in telephony-page.tsx. The per-tab count comment moved to
+            `NavTabs`'s own `badge` doc comment — still true here, since
+            `counts[item.id]` stays `undefined` until its own query
+            settles. */}
+        <NavTabs
+          ariaLabel="Automation sections"
+          value={tab}
+          onChange={selectTab}
+          className="mt-3 overflow-x-auto whitespace-nowrap"
+          items={visibleTabs.map((item) => {
+            const badge = counts[item.id];
+            return {
+              value: item.id,
+              label: item.label,
+              ...(badge !== undefined ? { badge } : {}),
+            };
           })}
-        </nav>
+        />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -396,103 +388,114 @@ function RulesPanel({ orgId }: { readonly orgId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs text-ink-faint">
+      <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap aria-hidden="true" className="size-4 text-ink-faint" />
+            <h2 className="text-sm font-semibold text-ink">Rules</h2>
+            {automations.data !== undefined && <Badge>{automations.data.automations.length}</Badge>}
+          </div>
+          {!creating && editingRule === undefined && (
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                setCreating(true);
+                setEditingRuleId(null);
+              }}
+            >
+              New rule
+            </Button>
+          )}
+        </div>
+
+        <p className="mb-4 text-xs text-ink-faint">
           Every rule records a run each time its trigger fires — including the times its condition
           did not match.
         </p>
-        {!creating && editingRule === undefined && (
-          <Button
-            size="sm"
-            className="shrink-0"
-            onClick={() => {
-              setCreating(true);
+
+        {creating && (
+          <RuleEditor
+            orgId={orgId}
+            onDone={() => {
+              setCreating(false);
+            }}
+          />
+        )}
+
+        {editingRule !== undefined && (
+          /* `key` remounts the editor when a different rule is picked. Without
+             it, React keeps the previous rule's form state — you would open rule
+             B and be editing it with rule A's name and actions still in the
+             fields, which is the shape of an edit that silently overwrites the
+             wrong thing. */
+          <RuleEditor
+            key={editingRule.automationId}
+            orgId={orgId}
+            initial={editingRule}
+            onDone={() => {
               setEditingRuleId(null);
             }}
-          >
-            New rule
-          </Button>
+          />
         )}
-      </div>
 
-      {creating && (
-        <RuleEditor
-          orgId={orgId}
-          onDone={() => {
-            setCreating(false);
-          }}
-        />
-      )}
-
-      {editingRule !== undefined && (
-        /* `key` remounts the editor when a different rule is picked. Without
-           it, React keeps the previous rule's form state — you would open rule
-           B and be editing it with rule A's name and actions still in the
-           fields, which is the shape of an edit that silently overwrites the
-           wrong thing. */
-        <RuleEditor
-          key={editingRule.automationId}
-          orgId={orgId}
-          initial={editingRule}
-          onDone={() => {
-            setEditingRuleId(null);
-          }}
-        />
-      )}
-
-      {automations.isPending ? (
-        <SkeletonRows rows={3} />
-      ) : automations.isError ? (
-        <ErrorView error={automations.error} title="Could not load automations" />
-      ) : automations.data.automations.length === 0 ? (
-        <Empty
-          title="No automations yet"
-          description="A rule watches for an event — a card entering Done, a comment being added — and then does something."
-          action={
-            !creating ? (
+        {automations.isPending ? (
+          <SkeletonRows rows={3} />
+        ) : automations.isError ? (
+          <ErrorView error={automations.error} title="Could not load automations" />
+        ) : automations.data.automations.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-6 text-center">
+            <Zap aria-hidden="true" className="mx-auto mb-2 size-5 text-ink-faint" />
+            <p className="text-sm font-medium text-ink-muted">No automations yet</p>
+            <p className="mt-1 text-xs text-ink-faint">
+              A rule watches for an event — a card entering Done, a comment being added — and then
+              does something.
+            </p>
+            {!creating && (
               <Button
                 size="sm"
+                className="mt-3"
                 onClick={() => {
                   setCreating(true);
                 }}
               >
                 New rule
               </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <ul className="space-y-2">
-          {automations.data.automations.map((rule) => (
-            <li key={rule.automationId}>
-              <RuleRow
-                orgId={orgId}
-                rule={rule}
-                expanded={showingRuns === rule.automationId}
-                onToggleExpanded={() => {
-                  setShowingRuns(showingRuns === rule.automationId ? null : rule.automationId);
-                }}
-                onEdit={() => {
-                  setEditingRuleId(rule.automationId);
-                  setCreating(false);
-                }}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+            )}
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {automations.data.automations.map((rule) => (
+              <li key={rule.automationId}>
+                <RuleRow
+                  orgId={orgId}
+                  rule={rule}
+                  expanded={showingRuns === rule.automationId}
+                  onToggleExpanded={() => {
+                    setShowingRuns(showingRuns === rule.automationId ? null : rule.automationId);
+                  }}
+                  onEdit={() => {
+                    setEditingRuleId(rule.automationId);
+                    setCreating(false);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {automations.data !== undefined && (
-        <Pager
-          canPrev={pager.canPrev}
-          hasNext={automations.data.nextCursor !== null}
-          busy={automations.isFetching}
-          onPrev={pager.goPrev}
-          onNext={() => {
-            if (automations.data.nextCursor !== null) pager.goNext(automations.data.nextCursor);
-          }}
-        />
-      )}
+        {automations.data !== undefined && (
+          <Pager
+            canPrev={pager.canPrev}
+            hasNext={automations.data.nextCursor !== null}
+            busy={automations.isFetching}
+            onPrev={pager.goPrev}
+            onNext={() => {
+              if (automations.data.nextCursor !== null) pager.goNext(automations.data.nextCursor);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -1152,12 +1155,13 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
   const webhooks = useQuery({ ...webhooksPageQuery(orgId, pager.cursor), enabled: orgId !== '' });
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs text-ink-faint">
-          Endpoints a rule's “Call a webhook” action can reach. The receiver verifies the signature
-          header with the secret shown at creation.
-        </p>
+    <div className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe aria-hidden="true" className="size-4 text-ink-faint" />
+          <h2 className="text-sm font-semibold text-ink">Webhooks</h2>
+          {webhooks.data !== undefined && <Badge>{webhooks.data.webhooks.length}</Badge>}
+        </div>
         {!creating && (
           <Button
             size="sm"
@@ -1170,6 +1174,11 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
           </Button>
         )}
       </div>
+
+      <p className="mb-4 text-xs text-ink-faint">
+        Endpoints a rule's "Call a webhook" action can reach. The receiver verifies the signature
+        header with the secret shown at creation.
+      </p>
 
       {creating && (
         <WebhookCreateForm
@@ -1201,22 +1210,25 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
       ) : webhooks.isError ? (
         <ErrorText error={webhooks.error} />
       ) : webhooks.data.webhooks.length === 0 ? (
-        <Empty
-          title="No webhooks yet"
-          description="A rule cannot call an endpoint that is not registered here. Register one, paste its signing secret into your receiver, then pick it from a rule's “Call a webhook” action."
-          action={
-            !creating ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setCreating(true);
-                }}
-              >
-                New webhook
-              </Button>
-            ) : undefined
-          }
-        />
+        <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-6 text-center">
+          <Globe aria-hidden="true" className="mx-auto mb-2 size-5 text-ink-faint" />
+          <p className="text-sm font-medium text-ink-muted">No webhooks yet</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            A rule cannot call an endpoint that is not registered here. Register one, paste its
+            signing secret into your receiver, then pick it from a rule's "Call a webhook" action.
+          </p>
+          {!creating && (
+            <Button
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                setCreating(true);
+              }}
+            >
+              New webhook
+            </Button>
+          )}
+        </div>
       ) : (
         <ul className="space-y-2">
           {webhooks.data.webhooks.map((webhook) => (
@@ -1247,7 +1259,7 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 

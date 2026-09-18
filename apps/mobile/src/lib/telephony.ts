@@ -43,6 +43,10 @@ export type SpendReportRow = Wire<
   Awaited<ReturnType<MobileTRPCClient['telephony']['spend']['report']['query']>>
 >[number];
 
+export type CardRecording = Wire<
+  Awaited<ReturnType<MobileTRPCClient['telephony']['cards']['recordings']['query']>>
+>[number];
+
 export const PHONE_NUMBERS_QUERY_KEY = ['telephony.numbers.list'] as const;
 export const CALLS_QUERY_KEY = ['telephony.calls.list'] as const;
 
@@ -72,6 +76,12 @@ export function spendReportQueryKey(
   sinceDays: number,
 ): readonly ['telephony.spend.report', number] {
   return ['telephony.spend.report', sinceDays];
+}
+
+export function cardRecordingsQueryKey(
+  cardId: string,
+): readonly ['telephony.cards.recordings', string] {
+  return ['telephony.cards.recordings', cardId];
 }
 
 /**

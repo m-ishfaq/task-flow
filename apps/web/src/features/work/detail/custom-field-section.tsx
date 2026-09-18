@@ -78,7 +78,7 @@ export function CustomFieldSection({
       </h3>
 
       {live.length === 0 && (
-        <p className="text-xs text-ink-faint">
+        <p className="empty-fade text-xs text-ink-faint">
           This project has no custom fields yet. Adding one here defines it for every card in the
           project.
         </p>
@@ -166,7 +166,7 @@ function AddFieldForm({
       <Button
         size="sm"
         variant="ghost"
-        className="h-6 px-1 text-[11px]"
+        className="h-8 px-2 text-xs"
         onClick={() => {
           setOpen(true);
         }}
@@ -339,7 +339,7 @@ function FieldInput({
               onClick={() => {
                 onCommit(on ? selected.filter((entry) => entry !== choice) : [...selected, choice]);
               }}
-              className={`rounded px-1.5 py-0.5 text-[11px] disabled:opacity-60 ${
+              className={`rounded px-1.5 py-0.5 text-xs disabled:opacity-60 ${
                 on ? 'bg-accent text-accent-ink' : 'bg-surface-hover text-ink-muted'
               }`}
             >

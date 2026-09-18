@@ -44,7 +44,7 @@ export interface ValueEditorProps {
   readonly onChange: (value: FilterValue | readonly FilterValue[]) => void;
 }
 
-const CONTROL = 'h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink';
+const CONTROL = 'select-premium h-7';
 
 export function ValueEditor(props: ValueEditorProps) {
   const { field, operator } = props;

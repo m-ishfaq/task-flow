@@ -82,26 +82,24 @@ export function CardTile({
 
   const body = (
     <>
-      {/* The priority signature (`styles.css`'s `--color-priority-urgent`
-          comment, `priority-colors.ts`) — absent entirely for an
-          unprioritized card, since there is no color for "none" to show.
-          Clipped to the tile's rounded corners by `tileClassName`'s
-          `overflow-hidden`, not by rounding the bar itself. */}
+      {/* Priority edge — the warm-dark identity element.
+          Gold accent for urgent, amber for high, neutral for normal/low.
+          Clipped to the tile's rounded corners by overflow-hidden. */}
       {card.priority !== null && (
         <span
           aria-hidden="true"
-          className={cn('absolute inset-y-0 left-0 w-[3px]', PRIORITY_SWATCH[card.priority])}
+          className={cn('absolute inset-y-0 left-0 w-1', PRIORITY_SWATCH[card.priority])}
         />
       )}
 
-      {/* Title — bold, clean, 14px for proper readability on a kanban board */}
+      {/* Title — 14px, medium weight, the primary element on the card */}
       <span className="block text-[14px] font-medium leading-snug text-ink">{card.title}</span>
 
       {/* Metadata row — reference, due, checklist, comments, and avatars.
-          Generous spacing so the row doesn't feel cramped. */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {/* Reference code — styled as a subtle pill for quick scanning */}
-        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+          Recessed pills on surface-sunken so they don't compete with the title. */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {/* Reference code — mono, muted, the "filing number" */}
+        <span className="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted">
           {card.reference}
         </span>
 
@@ -154,11 +152,8 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    /* Premium card: clean surface, subtle border, generous padding.
-       The card sits on surface-raised, one step above the tinted column.
-       Border uses 60% opacity for a hairline effect that reads as a
-       boundary without noise. */
     'card-tile w-full text-left',
+    card.priority === 'urgent' && 'card-urgent',
     dragging && 'ring-1 ring-accent/70',
     selected === true && 'ring-1 ring-accent',
   );
@@ -240,8 +235,9 @@ export function CardTile({
 }
 
 const ICON_BUTTON =
-  'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
-  'ring-1 ring-line hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
+  'flex h-8 w-8 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
+  'ring-1 ring-line transition-all duration-150 ease-out hover:text-ink hover:ring-line-strong hover:bg-surface-hover ' +
+  'focus:outline-none focus-visible:ring-accent active:scale-95';
 
 /**
  * Quick-assign, straight from the tile.
@@ -291,7 +287,7 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
         {people.length === 0 ? (
-          <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
+          <p className="empty-fade p-1 text-xs text-ink-faint">No members to assign.</p>
         ) : (
           <ul className="max-h-56 space-y-0.5 overflow-y-auto">
             {people.map((member) => {

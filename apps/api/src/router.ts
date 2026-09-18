@@ -98,6 +98,7 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * reads `trialDays` off this same object — see `tenancy/router.ts`.
    */
   readonly billing: BillingDeps;
+  readonly productName?: string;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -304,6 +305,7 @@ export function createAppRouter(deps: AppRouterDeps) {
       keys: deps.automation.keys,
       searchProvider,
       providers: deps.automation.integration.providers,
+      ...(deps.productName != null ? { productName: deps.productName } : {}),
     }),
 
     /**
@@ -368,7 +370,7 @@ export function createAppRouter(deps: AppRouterDeps) {
              org the caller has selected.
 
              Still a `selfRoute`, so `principal.org` is null until the client
-             sends `x-taskflow-org` — during sign-in, on the org picker, and
+             sends `x-rinavai-org` — during sign-in, on the org picker, and
              for a user who belongs to none. That case falls back to the
              global snapshot rather than to an empty one: a nav rendered
              before an org is chosen must not flicker every module off and

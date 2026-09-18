@@ -9,6 +9,7 @@ function hit(overrides: Partial<SearchHit> & Pick<SearchHit, 'type' | 'entityId'
     updatedAt: '2026-08-24T00:00:00.000Z',
     archived: false,
     metadata: { channel_id: 'chan_1' },
+    contextLabel: null,
     score: 1,
     ...overrides,
   };

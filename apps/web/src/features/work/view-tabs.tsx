@@ -60,7 +60,7 @@ export function ViewTabs({ orgId, boardId, current, onApply, canManageBoard }: V
   const activeId = matchingView(saved, current);
 
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {saved.map((view) => (
         <ViewTab
           key={view.viewId}
@@ -264,7 +264,7 @@ function SaveViewDialog({
               onChange={(event) => {
                 setName(event.target.value);
               }}
-              className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+              className="select-premium h-8 w-full"
             />
           </label>
 

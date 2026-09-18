@@ -112,7 +112,7 @@ export function SprintPlanning({ orgId, projectId }: SprintPlanningProps) {
               onChange={(event) => {
                 setBoardId(event.target.value);
               }}
-              className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+              className="select-premium h-7"
             >
               {liveBoards.map((board) => (
                 <option key={board.boardId} value={board.boardId}>
@@ -127,7 +127,7 @@ export function SprintPlanning({ orgId, projectId }: SprintPlanningProps) {
             onChange={(event) => {
               setSprintId(event.target.value);
             }}
-            className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+            className="select-premium h-7"
           >
             {openSprints.map((sprint) => (
               <option key={sprint.sprintId} value={sprint.sprintId}>
@@ -235,7 +235,7 @@ function Panel({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 shrink-0 px-1.5 text-[11px]"
+                className="h-8 shrink-0 px-2 text-[11px]"
                 disabled={move.isPending}
                 onClick={() => {
                   move.mutate(card.cardId);

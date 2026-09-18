@@ -1,30 +1,165 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
-  Bot,
+  ArrowRightLeft,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleDot,
+  Columns3,
+  CreditCard,
+  FileCode,
+  FilePlus,
+  FileText,
+  FolderGit2,
+  FolderKanban,
+  GitBranch,
+  GitMerge,
   GitPullRequest,
+  Hash,
+  LayoutList,
+  Link,
   MessageCircle,
+  MessageSquare,
+  Pencil,
   PencilLine,
+  Plus,
+  PlusCircle,
   Search as SearchIcon,
   Send,
   Sparkles,
   SquarePen,
+  Tag,
+  Tags,
+  Timer,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+  XCircle,
 } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
-import { Button, Empty, PageHeader } from '../../components/primitives.js';
+import { Avatar, Button, Empty, PageHeader } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useAssistantSeedStore } from '../../lib/assistant-seed.js';
 import { useSession } from '../../lib/session.js';
+import { useMembers, type Person } from '../org/use-members.js';
+import type { Member } from '../org/api.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 import { MarkdownLite } from './markdown-lite.js';
 import { AssistantComposer, type AssistantComposerHandle } from './assistant-composer.js';
 import { stripReferenceEmbeds } from './entity-reference.js';
 import { sendChatTurn, windowForRequest, type ChatMessageWire, type ToolCallWire } from './api.js';
 import { renderToolResult, toolResultsById } from './tool-results.js';
+
+/**
+ * Replace `@userId` patterns in text with display names.
+ *
+ * The composer's entity-reference extension embeds `@userId` into the raw text
+ * for the model to read. In the assistant's reply, these appear as bare UUIDs
+ * that should resolve to the person's display name for readability.
+ */
+function resolveMentionNames(content: string, members: readonly Member[]): string {
+  const byId = new Map(members.map((m) => [m.userId, m]));
+  return content.replace(/@([0-9a-f-]{36})/gi, (match, id: string) => {
+    const person = byId.get(id);
+    if (!person) return match;
+    return `@${person.displayName ?? person.email ?? id}`;
+  });
+}
+
+const TOOL_ICON: Record<string, typeof SearchIcon> = {
+  search: SearchIcon,
+  my_cards: LayoutList,
+  find_card: CreditCard,
+  card_create: PlusCircle,
+  card_update: Pencil,
+  card_assign: UserPlus,
+  card_unassign: UserMinus,
+  card_set_status: CircleDot,
+  card_add_labels: Tag,
+  card_remove_labels: Tags,
+  card_move: ArrowRightLeft,
+  card_add_comment: MessageSquare,
+  list_projects: FolderKanban,
+  list_boards: Columns3,
+  list_labels: Tags,
+  list_members: Users,
+  list_sprints: Timer,
+  list_statuses: CircleDot,
+  list_channels: Hash,
+  chat_post_message: Send,
+  docs_create_page: FilePlus,
+  sprint_create: Timer,
+  sprint_add_cards: Plus,
+  list_repos: FolderGit2,
+  list_prs: GitPullRequest,
+  get_pr_diff: GitPullRequest,
+  get_pr_files: FileText,
+  get_pr_file_content: FileCode,
+  get_pr_file_diff: FileCode,
+  get_pr_comments: MessageSquare,
+  pr_post_comment: MessageSquare,
+  pr_comment_on_file: MessageSquare,
+  pr_request_changes: XCircle,
+  pr_approve: CheckCircle,
+  pr_merge: GitMerge,
+  pr_close: X,
+  list_card_prs: GitPullRequest,
+  card_link_pr: Link,
+  create_branch_from_card: GitBranch,
+};
+
+function ToolCallIcon({ name, className }: { readonly name: string; readonly className?: string }) {
+  const Icon = TOOL_ICON[name];
+  if (!Icon) return null;
+  return <Icon className={cn('h-3 w-3', className)} />;
+}
+
+/** Tools whose results are large enough to start collapsed. */
+const COLLAPSIBLE_TOOLS = new Set([
+  'search',
+  'my_cards',
+  'list_projects',
+  'list_boards',
+  'list_labels',
+  'list_members',
+  'list_sprints',
+  'list_statuses',
+  'list_channels',
+  'list_prs',
+  'list_card_prs',
+  'get_pr_diff',
+  'get_pr_files',
+  'get_pr_file_content',
+  'get_pr_file_diff',
+  'get_pr_comments',
+]);
+
+function ToolResultSection({
+  call,
+  rendered,
+}: {
+  readonly call: ToolCallWire;
+  readonly rendered: ReactNode;
+}) {
+  const shouldCollapse = COLLAPSIBLE_TOOLS.has(call.name);
+  if (!shouldCollapse) {
+    return <div>{rendered}</div>;
+  }
+  return (
+    <details className="group rounded-lg border border-line/60 bg-surface">
+      <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs text-ink-faint select-none [&::-webkit-details-marker]:hidden">
+        <ToolCallIcon name={call.name} className="text-ink-muted" />
+        <span className="font-mono text-ink-muted">{call.name}</span>
+        <ChevronRight className="ml-auto h-3 w-3 transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="border-t border-line/40 px-2.5 py-2">{rendered}</div>
+    </details>
+  );
+}
 
 /**
  * The AI assistant chat page (ai/phase-15-ai-copilot-and-permissions.md §4).
@@ -228,18 +363,10 @@ export function AssistantPage() {
   // Open by default on a fresh conversation — exactly when a person most
   // needs to see what the assistant can do — and toggled from the header
   // afterward via the same button.
-  const [showCapabilities, setShowCapabilities] = useState(
-    () =>
-      (useAssistantSeedStore.getState().seed ?? []).length === 0 &&
-      // On small screens the sidebar is hidden and the inline panel is
-      // toggled by the "What can I do?" button — open by default only on
-      // wide screens where the sidebar is always visible.  The 1024px
-      // threshold matches the `lg:` Tailwind breakpoint the sidebar's
-      // `hidden lg:block` / `lg:hidden` classes use.
-      typeof window !== 'undefined' &&
-      window.innerWidth >= 1024,
-  );
+  const [showCapabilities, setShowCapabilities] = useState(false);
   const orgId = useSession((state) => state.orgId) ?? '';
+  const currentUserId = useSession((state) => state.userId) ?? '';
+  const { personOf, people } = useMembers();
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
@@ -298,7 +425,7 @@ export function AssistantPage() {
   }, []);
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, pendingToolCalls]);
 
   const send = () => {
@@ -354,10 +481,7 @@ export function AssistantPage() {
   const resetConversation = () => {
     setMessages([]);
     setPendingToolCalls([]);
-    // Re-derive the same desktop-vs-mobile default the initialiser uses:
-    // wide screens open the panel on a fresh conversation, narrow ones
-    // keep it collapsed so the toggle button is the entry point.
-    setShowCapabilities(typeof window !== 'undefined' && window.innerWidth >= 1024);
+    setShowCapabilities(false);
     // `turn`'s own error/data from the PREVIOUS conversation otherwise
     // survives the reset — `useMutation` keeps its last result until a new
     // mutation runs or `reset()` is called, so without this a fresh, empty
@@ -378,7 +502,7 @@ export function AssistantPage() {
 
   return (
     <div className="mx-auto flex h-full max-w-350 gap-6 p-6 overflow-y-hidden">
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         <PageHeader
           title="Assistant"
           description="Ask about your work, or let it make a change — every write waits for your OK first."
@@ -431,24 +555,29 @@ export function AssistantPage() {
               description="Try one of the prompts on the side, or just type your question below."
             />
           ) : (
-            messages
-              .filter(isDisplayable)
-              .map((message, index) => (
+            messages.filter(isDisplayable).map((message, index) => (
+              <div
+                key={index}
+                className="message-fade-in"
+                style={{ animationDelay: `${String(index * 0.05)}s` }}
+              >
                 <MessageBubble
-                  key={index}
                   message={message}
                   resultsById={resultsById}
                   orgId={orgId}
                   onOpenCard={setOpenCardId}
+                  currentUser={currentUserId === '' ? null : personOf(currentUserId)}
+                  members={people}
                 />
-              ))
+              </div>
+            ))
           )}
 
           {busy && (
             <div className="flex items-center gap-2.5">
-              <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-                <Bot aria-hidden="true" className="size-3.5 animate-pulse" strokeWidth={2} />
-              </div>
+              <span className="thinking-sparkle">
+                <AiMark />
+              </span>
               <span className="text-xs text-ink-faint">Thinking…</span>
             </div>
           )}
@@ -478,7 +607,7 @@ export function AssistantPage() {
         {turn.isError && <ErrorView error={turn.error} title="The assistant could not reply" />}
 
         <form
-          className="flex items-end gap-2"
+          className="flex shrink-0 items-end gap-2 border-t border-line pt-4"
           onSubmit={(event) => {
             event.preventDefault();
             send();
@@ -632,6 +761,31 @@ function CapabilitiesPanel({
 }
 
 /**
+ * The assistant's own brand mark — a solid gold square with a sparkle,
+ * Design Bible §12's own page-header identity mark, reused unchanged as the
+ * per-message avatar and the "Thinking…" indicator so every place this page
+ * speaks carries the identical mark. A circle would collide with
+ * `Avatar`'s own shape for a PERSON; staying square is what keeps "the
+ * assistant" reading as a distinct kind of thing from "a person" at a glance.
+ */
+function AiMark({ size = 'sm' }: { readonly size?: 'sm' | 'lg' }) {
+  return (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-accent to-accent/70 text-white shadow-xs',
+        size === 'lg' ? 'size-9' : 'size-6',
+      )}
+    >
+      <Sparkles
+        aria-hidden="true"
+        className={size === 'lg' ? 'size-4' : 'size-3.5'}
+        strokeWidth={2}
+      />
+    </span>
+  );
+}
+
+/**
  * Every message shown in the transcript — `tool_result` rows are the model's
  * own scratch space, not something a person reads.
  *
@@ -660,11 +814,19 @@ function MessageBubble({
   resultsById,
   orgId,
   onOpenCard,
+  currentUser,
+  members,
 }: {
   readonly message: DisplayableMessage;
   readonly resultsById: ReturnType<typeof toolResultsById>;
   readonly orgId: string;
   readonly onOpenCard: (cardId: CardId) => void;
+  /** `null` while the member list hasn't loaded yet, or the caller is not
+      resolvable (a role with no `member:read`) — the bubble still renders,
+      just without the avatar, the same "degrade, don't block" `personOf`
+      itself already promises for an unknown id. */
+  readonly currentUser: Person | null;
+  readonly members: readonly Member[];
 }) {
   switch (message.role) {
     case 'user':
@@ -672,35 +834,36 @@ function MessageBubble({
       // mention (`entity-reference.ts`'s own header) — real for the model
       // to read, never for a person to see in their own sent bubble.
       return (
-        <div className="flex justify-end">
+        <div className="flex items-end justify-end gap-2">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-white">
             {stripReferenceEmbeds(message.content)}
           </p>
+          {currentUser !== null && (
+            <Avatar userId={currentUser.userId} label={currentUser.label} size="sm" />
+          )}
         </div>
       );
     case 'assistant':
       return (
         <div className="flex items-start gap-2.5">
-          {/* A small avatar mark, the same "who's speaking" cue Claude/
-              ChatGPT both use — the user's own bubble needs none (it's
-              already right-aligned in accent color, unambiguous), but a
-              left-aligned assistant bubble with no mark reads as just
-              another block of page text rather than a reply. */}
-          <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <Bot aria-hidden="true" className="size-3.5" strokeWidth={2} />
+          <div className="mt-0.5">
+            <AiMark />
           </div>
           <div className="min-w-0 max-w-[85%] space-y-2">
             {message.content !== '' && (
-              <div className="rounded-2xl rounded-bl-sm bg-surface-sunken px-3.5 py-2.5 text-ink">
-                <MarkdownLite text={message.content} />
+              <div className="text-[13px] leading-relaxed text-ink">
+                <MarkdownLite text={resolveMentionNames(message.content, members)} />
               </div>
             )}
             {(message.toolCalls ?? []).map((call) => {
               const rendered = renderToolResult(call, resultsById, { orgId, onOpenCard });
               return (
                 <div key={call.id}>
-                  {rendered ?? (
-                    <p className="rounded-lg border border-line/60 bg-surface px-2.5 py-1.5 text-xs text-ink-faint">
+                  {rendered ? (
+                    <ToolResultSection call={call} rendered={rendered} />
+                  ) : (
+                    <p className="inline-flex items-center gap-1.5 rounded-lg border border-line/60 bg-surface px-2.5 py-1.5 text-xs text-ink-faint">
+                      <ToolCallIcon name={call.name} className="text-ink-muted" />
                       Used <span className="font-mono text-ink-muted">{call.name}</span>
                     </p>
                   )}
@@ -710,14 +873,33 @@ function MessageBubble({
           </div>
         </div>
       );
+    default:
+      return null;
   }
 }
 
 /**
- * §4.2's confirm-before-execute, rendered. Each call is its own row with its
- * own Approve/Decline — not one blanket "Approve all" — because a batch of
- * proposed actions is exactly the shape a person should be able to say yes to
- * SOME of, per `assistant.ts`'s own per-id semantics.
+ * §4.2's confirm-before-execute, rendered.
+ *
+ * Design Bible §12's own `.pending` row is two small chips —
+ * "Approve · move to In Review" / "Decline" — sized like an ordinary inline
+ * control (30px tall, 8px radius), not a boxed warning panel with the raw
+ * tool name and JSON args spelled out. `describePendingAction` supplies the
+ * verb phrase after "Approve · ", the same hand-curated, deterministic
+ * mapping this file's own `CAPABILITIES` constant already is — real tool
+ * names read like an API reference, the wrong thing to put in front of a
+ * person deciding whether to click a button.
+ *
+ * The overwhelming common case is exactly ONE pending call (every write tool
+ * in this registry is confirmed individually; §4.1's own `card_create`
+ * bundling is the one exception, and even that is still ONE tool call) — for
+ * that case, clicking Approve or Decline resolves immediately, matching the
+ * mockup's actual one-click interaction. A batch of several DISTINCT write
+ * tools requested in the same round (real, if rarer — e.g. "create a card
+ * and post a message") still needs each call decided before the whole batch
+ * is sent in one `confirmedToolCallIds` list, per `assistant.ts`'s own
+ * per-id semantics — that per-call decide-then-continue flow is kept for
+ * that case, just restyled to match.
  */
 function PendingActions({
   calls,
@@ -732,82 +914,123 @@ function PendingActions({
   const [approved, setApproved] = useState<ReadonlySet<string>>(new Set());
 
   const decide = (id: string, approve: boolean) => {
+    if (calls.length === 1) {
+      onRespond(approve ? [id] : []);
+      return;
+    }
     setDecided((current) => new Set(current).add(id));
     if (approve) setApproved((current) => new Set(current).add(id));
   };
 
-  const allDecided = calls.every((call) => decided.has(call.id));
+  const allDecided = calls.length > 1 && calls.every((call) => decided.has(call.id));
 
   return (
-    <div className="space-y-2 rounded-xl border border-warning/40 bg-warning/10 p-3">
-      <p className="text-xs font-medium text-ink">The assistant wants to:</p>
-      <ul className="space-y-1.5">
-        {calls.map((call) => (
-          <li
-            key={call.id}
-            className="flex items-start justify-between gap-3 rounded-lg bg-surface px-2.5 py-2"
-          >
-            <div className="min-w-0">
-              <p className="font-mono text-xs font-medium text-ink">{call.name}</p>
-              {/* Each field its OWN small segment, not one run-on string —
-                  `key: "value", key2: "value2"` reads as raw JSON; this
-                  keeps the key dim and the value legible without the
-                  quote-marks JSON.stringify adds around a plain string. */}
-              {Object.keys(call.input).length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+    <div className="flex items-start gap-2.5 message-fade-in">
+      <div className="mt-0.5 size-6 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 max-w-[85%] space-y-2">
+        <ul className="space-y-2">
+          {calls.map((call) => (
+            <li key={call.id} className="space-y-1">
+              {decided.has(call.id) ? (
+                <span className="inline-flex items-center gap-1 text-xs text-ink-faint">
+                  {approved.has(call.id) ? 'Approved' : 'Declined'} ·{' '}
+                  <ToolCallIcon name={call.name} className="text-ink-muted" />
+                  <span className="font-mono">{call.name}</span>
+                </span>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      decide(call.id, true);
+                    }}
+                    className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity duration-(--motion-fast) hover:opacity-90 disabled:opacity-50"
+                  >
+                    Approve · {describePendingAction(call)}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      decide(call.id, false);
+                    }}
+                    className="flex h-9 items-center rounded-lg border border-line bg-surface-raised px-4 text-[13px] font-medium text-ink-muted transition-colors duration-(--motion-fast) hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    Decline
+                  </button>
+                </div>
+              )}
+              {!decided.has(call.id) && Object.keys(call.input).length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                   {Object.entries(call.input).map(([key, value]) => (
-                    <span key={key} className="text-[11px] text-ink-faint">
+                    <span key={key} className="text-xs text-ink-faint">
                       {key}: <span className="text-ink-muted">{formatCallValue(value)}</span>
                     </span>
                   ))}
                 </div>
               )}
-            </div>
-            {decided.has(call.id) ? (
-              <span className="shrink-0 text-xs text-ink-faint">
-                {approved.has(call.id) ? 'Approved' : 'Declined'}
-              </span>
-            ) : (
-              <span className="flex shrink-0 gap-1.5">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={disabled}
-                  onClick={() => {
-                    decide(call.id, true);
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={disabled}
-                  onClick={() => {
-                    decide(call.id, false);
-                  }}
-                >
-                  Decline
-                </Button>
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      {allDecided && (
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={disabled}
-          onClick={() => {
-            onRespond([...approved]);
-          }}
-        >
-          Continue
-        </Button>
-      )}
+            </li>
+          ))}
+        </ul>
+        {allDecided && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              onRespond([...approved]);
+            }}
+            className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13px] font-medium text-white shadow-xs transition-opacity duration-(--motion-fast) hover:opacity-90 disabled:opacity-50"
+          >
+            Continue
+          </button>
+        )}
+      </div>
     </div>
   );
 }
+
+/**
+ * A short, hand-curated verb phrase per write tool — the same
+ * "hand-maintained, kept in sync by hand" trade this file's own
+ * `CAPABILITIES` constant already accepts, for the identical reason: a tool
+ * name is written for the model (`apps/api/src/ai/tools/index.ts`'s own
+ * registry keys), not for a person deciding whether to click Approve.
+ * Deliberately does not attempt to name the concrete target (e.g. the
+ * destination LIST's name for `card_move`) — the tool call carries only an
+ * id for that, with no name available on this page without a second lookup
+ * query the confirm step should not have to wait on. The card/PR reference
+ * that IS already on the call's own input (an id the model resolved earlier
+ * in the conversation) still shows below, in the dim field list.
+ */
+function describePendingAction(call: ToolCallWire): string {
+  const phrase = PENDING_ACTION_PHRASES[call.name];
+  return phrase ?? call.name.replaceAll('_', ' ');
+}
+
+const PENDING_ACTION_PHRASES: Readonly<Record<string, string>> = {
+  card_create: 'create this card',
+  card_update: 'update this card',
+  card_assign: 'assign this card',
+  card_unassign: 'unassign this card',
+  card_set_status: "change this card's status",
+  card_add_labels: 'add labels to this card',
+  card_remove_labels: 'remove labels from this card',
+  card_move: 'move this card',
+  card_add_comment: 'add a comment',
+  sprint_create: 'create this sprint',
+  sprint_add_cards: 'add cards to the sprint',
+  chat_post_message: 'post this message',
+  docs_create_page: 'create this page',
+  pr_post_comment: 'post this comment',
+  pr_comment_on_file: 'comment on this file',
+  pr_request_changes: 'request changes',
+  pr_approve: 'approve this PR',
+  pr_merge: 'merge this PR',
+  pr_close: 'close this PR',
+  card_link_pr: 'link this PR to the card',
+  create_branch_from_card: 'create a branch',
+};
 
 /** A plain string renders bare, without the quote marks `JSON.stringify`
     would wrap it in — a call.input value is overwhelmingly a plain string

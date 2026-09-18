@@ -263,7 +263,7 @@ function AgendaList({
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm text-ink-faint">Nothing due this month.</p>
+        <p className="empty-fade text-sm text-ink-faint">Nothing due this month.</p>
       </div>
     );
   }

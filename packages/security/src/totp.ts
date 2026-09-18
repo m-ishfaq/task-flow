@@ -22,13 +22,17 @@ export function generateTotpSecret(): string {
  * The `otpauth://` URI an authenticator app scans as a QR code.
  *
  * `accountLabel` is the user's email — what the app shows under the entry.
- * `issuer` is fixed to `'TaskFlow'` rather than taking a parameter: every
- * account in this system enrolls against the same issuer, and a caller-
- * supplied issuer string would let a bug (or a compromised caller) forge an
- * entry that LOOKS like it belongs to a different service.
+ * `issuer` defaults to `'Rinavai'` but can be overridden by the caller's
+ * branding configuration. The issuer is set server-side, never from user
+ * input, so a compromised caller cannot forge an entry that looks like a
+ * different service.
  */
-export function totpProvisioningUri(accountLabel: string, secret: string): string {
-  return authenticator.keyuri(accountLabel, 'TaskFlow', secret);
+export function totpProvisioningUri(
+  accountLabel: string,
+  secret: string,
+  issuer = 'Rinavai',
+): string {
+  return authenticator.keyuri(accountLabel, issuer, secret);
 }
 
 /** The 30-second step TOTP counts in, per RFC 6238's default. */

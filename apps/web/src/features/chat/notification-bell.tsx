@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
+import { Bell, AtSign, Mail, MessageSquare, Tag, Phone, Inbox } from 'lucide-react';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import { onNotification } from '../../lib/socket.js';
-import { Button, Empty } from '../../components/primitives.js';
+import { Button } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import {
   invalidateNotifications,
@@ -132,20 +133,20 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'}
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
-          🔔
+          <Bell aria-hidden="true" className="size-4" />
           {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-danger-ink">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" sideOffset={6} className="w-80 overflow-hidden">
-        <header className="flex items-center justify-between border-b border-line px-3 py-2">
-          <h2 className="text-sm font-medium text-ink">Notifications</h2>
+      <PopoverContent align="end" sideOffset={6} className="w-80 overflow-hidden p-0">
+        <header className="flex items-center justify-between border-b border-line/50 px-4 py-3">
+          <h2 className="text-sm font-semibold text-ink">Notifications</h2>
           {unread > 0 && (
             <Button
               size="sm"
@@ -162,8 +163,10 @@ export function NotificationBell() {
 
         <div className="max-h-96 overflow-y-auto">
           {(list.data ?? []).length === 0 ? (
-            <div className="p-3">
-              <Empty title="Nothing yet" description="Mentions and direct messages show up here." />
+            <div className="flex flex-col items-center gap-2 p-8 text-center">
+              <Inbox aria-hidden="true" className="size-8 text-ink-faint/40" strokeWidth={1.25} />
+              <p className="text-sm font-medium text-ink-muted">Nothing yet</p>
+              <p className="text-xs text-ink-faint">Mentions and direct messages show up here.</p>
             </div>
           ) : (
             <ul>
@@ -199,49 +202,68 @@ function NotificationRow({
   return (
     <li
       className={cn(
-        'border-b border-line last:border-b-0',
+        'border-b border-line/30 last:border-b-0 transition-colors',
         notification.readAt === null && 'bg-accent/5',
       )}
     >
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full flex-col gap-0.5 px-3 py-2 text-left"
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/50"
       >
-        <span className="flex items-center gap-1.5">
-          <span aria-hidden>{iconFor(notification.kind)}</span>
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
-            {notification.title}
-          </span>
-          {notification.readAt === null && (
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+        {/* Kind icon */}
+        <span
+          className={cn(
+            'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full',
+            notification.readAt === null
+              ? 'bg-accent/10 text-accent'
+              : 'bg-surface-sunken text-ink-faint',
           )}
+        >
+          <NotificationIcon kind={notification.kind} />
         </span>
 
-        {actorLabel !== null && (
-          <span className="truncate text-[11px] text-ink-faint">{actorLabel}</span>
-        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-snug text-ink">
+              {notification.title}
+            </span>
+            {notification.readAt === null && (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            )}
+          </div>
 
-        {notification.excerpt !== null && (
-          <span className="line-clamp-2 text-xs text-ink-muted">{notification.excerpt}</span>
-        )}
+          {actorLabel !== null && (
+            <span className="mt-0.5 block truncate text-xs text-ink-faint">{actorLabel}</span>
+          )}
+
+          {notification.excerpt !== null && (
+            <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">
+              {notification.excerpt}
+            </span>
+          )}
+        </div>
       </button>
     </li>
   );
 }
 
-/** A glyph per kind. Kept here rather than on the row: it is presentation. */
-function iconFor(kind: string): string {
+/** Lucide icon component per notification kind. */
+function NotificationIcon({ kind }: { readonly kind: string }): React.JSX.Element {
   if (
     kind === 'chat.mention' ||
     kind === 'card.comment_mention' ||
     kind === 'page.comment_mention'
   ) {
-    return '@';
+    return <AtSign aria-hidden="true" className="size-3.5" strokeWidth={2} />;
   }
-  if (kind === 'chat.direct') return '✉️';
-  if (kind === 'chat.thread_reply') return '↩️';
-  if (kind === 'card.assigned') return '📌';
-  if (kind === 'call.missed') return '📞';
-  return '🔔';
+  if (kind === 'chat.direct')
+    return <Mail aria-hidden="true" className="size-3.5" strokeWidth={2} />;
+  if (kind === 'chat.thread_reply')
+    return <MessageSquare aria-hidden="true" className="size-3.5" strokeWidth={2} />;
+  if (kind === 'card.assigned')
+    return <Tag aria-hidden="true" className="size-3.5" strokeWidth={2} />;
+  if (kind === 'call.missed')
+    return <Phone aria-hidden="true" className="size-3.5" strokeWidth={2} />;
+  return <Bell aria-hidden="true" className="size-3.5" strokeWidth={2} />;
 }

@@ -46,6 +46,7 @@ import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { SprintsPage } from './features/work/sprints-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
+import { OrgInspectorPage } from './features/platform-admin/org-inspector-page.js';
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
 import { AnalyticsPage } from './features/analytics/analytics-page.js';
@@ -528,24 +529,25 @@ const publicDocsPageRoute = createRoute({
 });
 
 /**
- * Behind `audit:read` server-side (`apps/api/src/tenancy/router.ts`'s
- * `authz.explain` — "because it reports another user's access, which is
- * exactly the information an attacker would want before choosing a
- * target"). Wrapped in `CapabilityGate capability="viewAuditLog"` — the
- * SAME capability the Audit log route already uses, since both are gated
- * on the identical permission — rather than showing this page to every
- * role and letting it answer FORBIDDEN: unlike a page reporting the
- * caller's OWN access, this one exists specifically to inspect someone
- * ELSE's, so leaving it reachable-but-refused is not a cosmetic miss, it
- * advertises the existence of a tool for probing a colleague's grants to
- * people who were never going to be allowed to use it (Phase 15 §1's sweep).
+ * The Permission Guide — a member-facing knowledge base showing what the
+ * current user can do, based on their role and any individual grants.
+ *
+ * Every member can see their own permissions (self-service). The old
+ * admin-only debugger (which inspected OTHER users' access via
+ * `audit:read`) is now a collapsed "Decision trace" section at the bottom,
+ * still gated on `viewAuditLog` inline — so Admins/Owners can still run
+ * the full `can()` trace, but the page itself is reachable by everyone.
+ *
+ * Wrapped in `CapabilityGate capability="viewDirectory"` — `member:read`,
+ * which every Member holds — to ensure the user is in an org with a real
+ * membership, matching the same floor `tenancy.members.list` uses.
  */
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/admin/permissions',
-  beforeLoad: () => requireOrg('/admin/permissions'),
+  path: '/permissions',
+  beforeLoad: () => requireOrg('/permissions'),
   component: () => (
-    <CapabilityGate capability="viewAuditLog">
+    <CapabilityGate capability="viewDirectory">
       <PermissionDebugPage />
     </CapabilityGate>
   ),
@@ -655,6 +657,28 @@ const platformAdminRoute = createRoute({
   path: '/platform-admin',
   beforeLoad: () => requireSession('/platform-admin'),
   component: PlatformAdminPage,
+});
+
+/**
+ * Org inspector — a dedicated page at `/platform-admin/org/:orgId` that shows
+ * the full detail for one organization. The slide-over panel (OrgInspectorPanel)
+ * shows immediate context; this page shows everything including full member
+ * list, invoices, entitlements, and comprehensive operator history.
+ *
+ * Same access control as the platform admin page itself: `requireSession`,
+ * every query is `platformRoute`, and a non-operator gets FORBIDDEN from every
+ * query it fires.
+ */
+const orgInspectorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/platform-admin/org/$orgId',
+  parseParams: (params) => ({ orgId: OrgIdSchema.parse(params.orgId) }),
+  stringifyParams: (params) => ({ orgId: params.orgId }),
+  beforeLoad: () => requireSession('/platform-admin/org/$orgId'),
+  component: function OrgInspectorRoute() {
+    const { orgId } = orgInspectorRoute.useParams();
+    return <OrgInspectorPage orgId={orgId} />;
+  },
 });
 
 /**
@@ -795,6 +819,7 @@ const routeTree = rootRoute.addChildren([
   permissionsRoute,
   accountRoute,
   platformAdminRoute,
+  orgInspectorRoute,
   automationsRoute,
   analyticsRoute,
   assistantRoute,

@@ -89,7 +89,7 @@ export interface AddMemberInput {
 /**
  * Adds an existing user to the organization.
  *
- * DELIBERATE LIMIT: the person must already have a TaskFlow account. Inviting
+ * DELIBERATE LIMIT: the person must already have a Rinavai account. Inviting
  * an address that has never signed up needs an invitations table, a mailed
  * token, and an acceptance flow that decides what happens when the invited
  * address later registers by another route — which is the same account-linking

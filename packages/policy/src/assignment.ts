@@ -80,3 +80,19 @@ export function sameRole(left: Role, right: Role): boolean {
 export function isGuestRole(role: string): boolean {
   return role === 'guest';
 }
+
+/**
+ * Whether a role is the Owner role — same trivial shape as `isGuestRole`,
+ * for the same reason: guardrail 7 makes `role === 'owner'` a lint error
+ * outside this package, and visual styling needs to distinguish it.
+ */
+export function isOwnerRole(role: string): boolean {
+  return role === 'owner';
+}
+
+/**
+ * Whether a role is the Admin role — same shape, same reason.
+ */
+export function isAdminRole(role: string): boolean {
+  return role === 'admin';
+}

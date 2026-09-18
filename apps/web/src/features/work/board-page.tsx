@@ -517,7 +517,7 @@ function GroupBySelect({
         onChange={(event) => {
           onChange(event.target.value as GroupBy);
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        className="select-premium h-7"
       >
         {GROUP_BY_OPTIONS.map((option) => (
           <option key={option} value={option}>
@@ -545,7 +545,7 @@ function SortBySelect({
         onChange={(event) => {
           onChange(event.target.value as SortBy);
         }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        className="select-premium h-7"
       >
         {SORT_BY_OPTIONS.map((option) => (
           <option key={option} value={option}>

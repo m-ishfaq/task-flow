@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeApiTokenAuthDatabase,
+  initializeDatabase,
+  initializePlatformAdminDatabase,
+} from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { buildServer } from '../server.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -67,6 +72,12 @@ beforeAll(async () => {
   initializeApiTokenAuthDatabase({
     url: API_TOKEN_AUTH_URL,
     applicationName: 'api-token-e2e-auth',
+  });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'api-token-e2e-admin',
   });
 
   app = await buildServer({
@@ -144,7 +155,7 @@ describe('the API-token round trip over HTTP', () => {
     const mint = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.create',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { name: 'Release CI', scopes: ['webhook:manage'] },
     });
     expect(mint.statusCode).toBe(200);
@@ -195,7 +206,7 @@ describe('the API-token round trip over HTTP', () => {
     const narrow = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.create',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { name: 'Narrow', scopes: ['card:read'] },
     });
     expect(narrow.statusCode).toBe(200);
@@ -216,7 +227,7 @@ describe('the API-token round trip over HTTP', () => {
     const steered = await app.inject({
       method: 'GET',
       url: '/trpc/automation.webhooks.list?input={}',
-      headers: { authorization: `Bearer ${token}`, 'x-taskflow-org': crypto.randomUUID() },
+      headers: { authorization: `Bearer ${token}`, 'x-rinavai-org': crypto.randomUUID() },
     });
     expect(steered.statusCode).toBe(401);
     expect(steered.json()).toMatchObject({ error: { data: { code: 'UNAUTHENTICATED' } } });
@@ -226,7 +237,7 @@ describe('the API-token round trip over HTTP', () => {
     const revoke = await app.inject({
       method: 'POST',
       url: '/trpc/apiToken.revoke',
-      headers: { authorization: `Bearer ${session}`, 'x-taskflow-org': orgId },
+      headers: { authorization: `Bearer ${session}`, 'x-rinavai-org': orgId },
       payload: { tokenId },
     });
     expect(revoke.statusCode).toBe(200);

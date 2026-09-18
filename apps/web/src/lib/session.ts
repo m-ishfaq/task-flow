@@ -41,7 +41,7 @@ import { createClient, isUnauthenticated } from './trpc-client.js';
  */
 
 /** The org header the API reads. Must match apps/api/src/tenancy/resolve.ts. */
-export const ORG_HEADER = 'x-taskflow-org';
+export const ORG_HEADER = 'x-rinavai-org';
 
 /**
  * Where the selected org is remembered between visits.

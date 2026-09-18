@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import { ShieldAlert } from 'lucide-react';
+import { Layers, Package, Search, ShieldAlert, TrendingUp, Users, XCircle } from 'lucide-react';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
+import { cn } from '../../lib/cn.js';
 import {
   Badge,
   Button,
@@ -16,13 +17,127 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { LIMIT_COPY, featureDescription, featureLabel } from '../../lib/feature-labels.js';
-import { StepUpGate, TableSearch, ceiling, money } from './shared.js';
+import { StepUpGate, StatCard, TableSearch, ceiling, money } from './shared.js';
 
 /**
- * The plan catalog.
+ * Palette of visually distinct color tokens. Each entry is a complete set
+ * (bar, price, dot, chipBg, chipText) that works on the dark card background.
+ * The palette is fixed — adding a new plan tier never requires a code change;
+ * `tierAccent` picks from here deterministically based on a hash of the plan id.
+ */
+const PALETTE: readonly {
+  readonly bar: string;
+  readonly price: string;
+  readonly dot: string;
+  readonly chipBg: string;
+  readonly chipText: string;
+}[] = [
+  /* sky     */ {
+    bar: 'bg-sky-500/60',
+    price: 'text-sky-400',
+    dot: 'bg-sky-400',
+    chipBg: 'bg-sky-500/10',
+    chipText: 'text-sky-400',
+  },
+  /* teal    */ {
+    bar: 'bg-teal-500/60',
+    price: 'text-teal-400',
+    dot: 'bg-teal-400',
+    chipBg: 'bg-teal-500/10',
+    chipText: 'text-teal-400',
+  },
+  /* accent  */ {
+    bar: 'bg-accent/60',
+    price: 'text-accent',
+    dot: 'bg-accent',
+    chipBg: 'bg-accent/10',
+    chipText: 'text-accent',
+  },
+  /* amber   */ {
+    bar: 'bg-amber-500/60',
+    price: 'text-amber-400',
+    dot: 'bg-amber-400',
+    chipBg: 'bg-amber-500/10',
+    chipText: 'text-amber-400',
+  },
+  /* violet  */ {
+    bar: 'bg-violet-500/60',
+    price: 'text-violet-400',
+    dot: 'bg-violet-400',
+    chipBg: 'bg-violet-500/10',
+    chipText: 'text-violet-400',
+  },
+  /* rose    */ {
+    bar: 'bg-rose-500/60',
+    price: 'text-rose-400',
+    dot: 'bg-rose-400',
+    chipBg: 'bg-rose-500/10',
+    chipText: 'text-rose-400',
+  },
+  /* emerald */ {
+    bar: 'bg-emerald-500/60',
+    price: 'text-emerald-400',
+    dot: 'bg-emerald-400',
+    chipBg: 'bg-emerald-500/10',
+    chipText: 'text-emerald-400',
+  },
+  /* orange  */ {
+    bar: 'bg-orange-500/60',
+    price: 'text-orange-400',
+    dot: 'bg-orange-400',
+    chipBg: 'bg-orange-500/10',
+    chipText: 'text-orange-400',
+  },
+  /* fuchsia */ {
+    bar: 'bg-fuchsia-500/60',
+    price: 'text-fuchsia-400',
+    dot: 'bg-fuchsia-400',
+    chipBg: 'bg-fuchsia-500/10',
+    chipText: 'text-fuchsia-400',
+  },
+  /* cyan    */ {
+    bar: 'bg-cyan-500/60',
+    price: 'text-cyan-400',
+    dot: 'bg-cyan-400',
+    chipBg: 'bg-cyan-500/10',
+    chipText: 'text-cyan-400',
+  },
+];
+
+/** djb2 — simple string hash that distributes well over lowercase plan ids. */
+function hashId(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Deterministic visual identity for plan cards. Any plan id — including ones
+ * the operator creates at runtime — gets a stable, distinct color from a fixed
+ * palette without a code change.
+ */
+function tierAccent(planId: string): (typeof PALETTE)[number] {
+  const idx = hashId(planId) % PALETTE.length;
+  const entry = PALETTE[idx];
+  if (entry === undefined) {
+    // PALETTE is non-empty and idx < length — this branch is unreachable.
+    return {
+      bar: 'bg-accent/40',
+      price: 'text-ink',
+      dot: 'bg-accent',
+      chipBg: 'bg-accent/10',
+      chipText: 'text-accent',
+    };
+  }
+  return entry;
+}
+
+/**
+ * The plan catalog — the tab that replaces opening the Stripe dashboard.
  *
- * The tab that replaces opening the Stripe dashboard. Two things here are
- * deliberate rather than incidental:
+ * Two things here are deliberate rather than incidental:
  *
  * - **Repricing states its consequence before it happens.** Stripe Prices are
  *   immutable, so changing an amount archives the old Price and creates a new
@@ -34,6 +149,16 @@ import { StepUpGate, TableSearch, ceiling, money } from './shared.js';
  *   still has tenants on it. Hiding it would make "why is this org on a plan I
  *   cannot see" the first question this page cannot answer.
  */
+/** Convert a display name into a safe plan id: lowercase, spaces to hyphens, strip non-alphanumeric. */
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 export function PlansTab({
   guard,
   onStepUp,
@@ -96,8 +221,36 @@ export function PlansTab({
     );
   });
 
+  /* Summary stats — computed from the full plan list. */
+  const allPlans = plans.data ?? [];
+  const activePlans = allPlans.filter((p) => p.isActive);
+  const retiredPlans = allPlans.filter((p) => !p.isActive);
+  const totalOrgsOnPaid = allPlans
+    .filter((p) => p.isActive && p.currentPrices.some((pr) => pr.amountCents > 0))
+    .reduce((sum, p) => sum + p.orgCount, 0);
+  let totalMrr = 0;
+  for (const plan of allPlans) {
+    if (!plan.isActive) continue;
+    const price = plan.currentPrices.find((pr) => pr.interval === 'month');
+    if (price !== undefined && price.amountCents > 0) {
+      totalMrr += price.amountCents * plan.orgCount;
+    }
+  }
+
   return (
-    <section aria-label="Plans">
+    <section aria-label="Plans" className="space-y-4">
+      {/* ── Summary stat cards ── */}
+      {allPlans.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard icon={Layers} label="Total plans" value={allPlans.length} accent />
+          <StatCard icon={Package} label="Active" value={activePlans.length} />
+          <StatCard icon={XCircle} label="Retired" value={retiredPlans.length} />
+          <StatCard icon={Users} label="Orgs on paid" value={totalOrgsOnPaid} />
+          <StatCard icon={TrendingUp} label="MRR (all plans)" value={money(totalMrr, 'usd')} />
+        </div>
+      )}
+
+      {/* ── Toolbar ── */}
       <div className="flex items-start justify-between gap-3">
         <p className="max-w-2xl text-xs text-ink-muted">
           What tenants may buy. Creating or repricing a plan writes to the payment processor
@@ -115,7 +268,7 @@ export function PlansTab({
         </Button>
       </div>
 
-      {plans.data !== undefined && plans.data.length > 0 && (
+      {allPlans.length > 0 && (
         <TableSearch
           value={search}
           onChange={setSearch}
@@ -123,9 +276,15 @@ export function PlansTab({
         />
       )}
 
-      {plans.isPending && <SkeletonRows rows={3} className="mt-3 *:h-24" />}
+      {/* ── Loading / Error ── */}
+      {plans.isPending && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <SkeletonRows rows={3} className="*:h-52" />
+        </div>
+      )}
       {plans.isError && <ErrorView error={plans.error} title="Could not load plans" />}
 
+      {/* ── Plan cards grid ── */}
       {plans.data !== undefined &&
         (plans.data.length === 0 ? (
           <Empty
@@ -133,87 +292,170 @@ export function PlansTab({
             description="Create your first plan to start defining what tenants can buy."
           />
         ) : (
-          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
-            {(filteredPlans ?? []).map((plan) => (
-              <li
-                key={plan.id}
-                className="flex flex-col gap-2 px-4 py-4 transition-colors hover:bg-surface-hover/30"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
-                      {plan.name}
-                      <span className="font-mono text-[11px] text-ink-faint">{plan.id}</span>
-                      {plan.isDefault && <Badge>default</Badge>}
-                      {!plan.isActive && <Badge>retired</Badge>}
-                      {plan.stripeProductId === null && <Badge>no processor product</Badge>}
-                    </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {(filteredPlans ?? []).map((plan) => {
+              const price = plan.currentPrices.find((pr) => pr.interval === 'month');
+              const yearlyPrice = plan.currentPrices.find((pr) => pr.interval === 'year');
+              const tier = tierAccent(plan.id);
+
+              return (
+                <div
+                  key={plan.id}
+                  className={cn(
+                    'flex flex-col overflow-hidden rounded-xl border transition-all',
+                    plan.isActive
+                      ? 'border-line bg-surface-raised hover:border-line/80 hover:shadow-md'
+                      : 'border-line/50 bg-surface-sunken/60 opacity-80',
+                  )}
+                >
+                  {/* Tier accent bar — the visual identity of each plan tier. */}
+                  <div className={cn('h-1', tier.bar)} />
+
+                  {/* Card header */}
+                  <div className="px-4 pt-3 pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-[15px] font-semibold text-ink">{plan.name}</h3>
+                          {plan.isDefault && (
+                            <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                              default
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 font-mono text-[11px] text-ink-faint">{plan.id}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1">
+                        {!plan.isActive && (
+                          <span className="rounded bg-ink-faint/15 px-1.5 py-0.5 text-[10px] font-medium text-ink-faint">
+                            retired
+                          </span>
+                        )}
+                        {plan.stripeProductId === null && (
+                          <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+                            no product
+                          </span>
+                        )}
+                      </div>
+                    </div>
                     {plan.description !== null && (
-                      <p className="truncate text-xs text-ink-muted">{plan.description}</p>
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">
+                        {plan.description}
+                      </p>
                     )}
+                  </div>
 
-                    <p className="mt-1 text-xs text-ink">
-                      {plan.currentPrices.length === 0 ? (
-                        <span className="text-ink-faint">no price configured</span>
-                      ) : (
-                        plan.currentPrices
-                          .map(
-                            (price) =>
-                              `${money(price.amountCents, price.currency)}/${price.interval}`,
-                          )
-                          .join(' · ')
+                  {/* Price — the most important number, visually dominant */}
+                  <div className="border-t border-line/40 px-4 py-3">
+                    {plan.currentPrices.length === 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold text-ink-faint">—</span>
+                        <span className="text-xs text-ink-faint">No price configured</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-baseline gap-3">
+                        {price !== undefined && (
+                          <div>
+                            <span className={cn('text-xl font-bold tabular-nums', tier.price)}>
+                              {money(price.amountCents, price.currency)}
+                            </span>
+                            <span className="ml-0.5 text-xs text-ink-faint">/mo</span>
+                          </div>
+                        )}
+                        {yearlyPrice !== undefined && (
+                          <div>
+                            <span className="text-sm font-medium tabular-nums text-ink-muted">
+                              {money(yearlyPrice.amountCents, yearlyPrice.currency)}
+                            </span>
+                            <span className="ml-0.5 text-[11px] text-ink-faint">/yr</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Limits grid */}
+                  <div className="border-t border-line/40 px-4 py-3">
+                    <div className="mb-2 flex items-center gap-1.5">
+                      <span className={cn('size-1.5 rounded-full', tier.dot)} />
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                        Limits
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                      <LimitRow label="Telephony" value={ceiling(plan.telephonyCapCents, '¢')} />
+                      <LimitRow
+                        label="Automation"
+                        value={ceiling(plan.automationRunsPerHour, 'runs/hr')}
+                      />
+                      <LimitRow
+                        label="TURN"
+                        value={ceiling(plan.turnIssuancePerDay, 'creds/day')}
+                      />
+                      <LimitRow
+                        label="AI spend"
+                        value={ceiling(plan.aiTokenBudgetMonthlyCents, '¢/mo')}
+                      />
+                      {plan.telephonyIncludedCents > 0 && (
+                        <LimitRow
+                          label="Included"
+                          value={`${money(plan.telephonyIncludedCents, 'usd')} usage`}
+                        />
                       )}
-                    </p>
+                      {plan.telephonyMarkupPct > 0 && (
+                        <LimitRow label="Markup" value={`+${String(plan.telephonyMarkupPct)}%`} />
+                      )}
+                    </div>
+                  </div>
 
-                    <p className="mt-1 text-[11px] text-ink-faint">
-                      {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
-                      {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
-                      {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
-                      {ceiling(plan.turnIssuancePerDay, 'issues/day')} · AI{' '}
-                      {ceiling(plan.aiTokenBudgetMonthlyCents, 'cents/mo')}
-                      {plan.telephonyIncludedCents > 0 &&
-                        ` · includes ${money(plan.telephonyIncludedCents, 'usd')} usage`}
-                      {plan.telephonyMarkupPct > 0 &&
-                        ` · +${String(plan.telephonyMarkupPct)}% markup`}
-                    </p>
+                  {/* Features */}
+                  {plan.features.length > 0 && (
+                    <div className="border-t border-line/40 px-4 py-3">
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <span className={cn('size-1.5 rounded-full', tier.dot)} />
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                          Features
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {plan.features.map((feature) => (
+                          <span
+                            key={feature}
+                            className={cn(
+                              'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium',
+                              tier.chipBg,
+                              tier.chipText,
+                            )}
+                            title={featureDescription(feature) ?? feature}
+                          >
+                            {featureLabel(feature)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                    <p className="mt-1 text-[11px] text-ink-faint">
-                      {plan.features.length === 0
-                        ? 'core only — no flagged modules'
-                        : plan.features.join(', ')}
-                    </p>
-
-                    {/* The processor ids, with a link where there is a console
-                        to link to. A stored id is a CLAIM that the object was
-                        created; it is not evidence the object is still there,
-                        or that it belongs to the Stripe account this
-                        deployment currently points at. Only looking settles
-                        that, so the console makes looking one click. */}
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
-                      {plan.stripeProductId === null ? (
-                        <span>not yet at the processor — created on first price</span>
-                      ) : (
+                  {/* Org count + processor refs */}
+                  <div className="mt-auto border-t border-line/40 px-4 py-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-ink-faint">
+                        {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'}
+                      </span>
+                      {plan.stripeProductId !== null && (
                         <ProcessorRef
                           label="product"
                           id={plan.stripeProductId}
                           url={plan.stripeProductUrl}
                         />
                       )}
-                      {plan.currentPrices.map((price) =>
-                        price.stripePriceId === null ? null : (
-                          <ProcessorRef
-                            key={price.id}
-                            label={price.interval}
-                            id={price.stripePriceId}
-                            url={price.stripePriceUrl}
-                          />
-                        ),
-                      )}
-                    </p>
+                    </div>
                   </div>
 
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 border-t border-line/40 px-3 py-2">
                     <Button
+                      size="sm"
+                      variant="ghost"
                       onClick={() => {
                         setEditingFeatures(plan.id);
                       }}
@@ -221,21 +463,18 @@ export function PlansTab({
                       Features
                     </Button>
                     <Button
+                      size="sm"
+                      variant="ghost"
                       onClick={() => {
                         setEditingLimits(plan.id);
                       }}
                     >
                       Limits
                     </Button>
-                    {/* Shown for ANY active plan, including one with no
-                        processor product yet. `setPrice` creates the product
-                        on demand — hiding this button for a product-less plan
-                        was a dead end: migration 0063 seeds `free` and `pro`
-                        without one (a migration cannot call Stripe), so on a
-                        fresh database neither seeded plan could ever be given
-                        a price and no org could ever upgrade. */}
                     {plan.isActive && (
                       <Button
+                        size="sm"
+                        variant="ghost"
                         onClick={() => {
                           setPricing(plan.id);
                         }}
@@ -243,18 +482,22 @@ export function PlansTab({
                         Set price
                       </Button>
                     )}
+                    <div className="flex-1" />
                     {!plan.isDefault && plan.isActive && (
                       <Button
+                        size="sm"
+                        variant="ghost"
                         disabled={setDefault.isPending}
                         onClick={() => {
                           setDefault.mutate({ planId: plan.id });
                         }}
                       >
-                        Make default
+                        Default
                       </Button>
                     )}
                     {plan.isActive && !plan.isDefault && (
                       <Button
+                        size="sm"
                         variant="danger"
                         disabled={archive.isPending}
                         onClick={() => {
@@ -271,21 +514,24 @@ export function PlansTab({
                     )}
                   </div>
                 </div>
-              </li>
-            ))}
+              );
+            })}
             {(filteredPlans ?? []).length === 0 && search.trim() !== '' && (
-              <li className="px-4 py-8 text-center text-sm text-ink-faint">
-                No plans match your search.
-              </li>
+              <div className="col-span-full flex flex-col items-center gap-2 py-12">
+                <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                <p className="text-sm text-ink-faint">No plans match your search.</p>
+              </div>
             )}
-          </ul>
+          </div>
         ))}
 
+      {/* ── Error states ── */}
       {archive.isError && <ErrorView error={archive.error} title="Could not retire the plan" />}
       {setDefault.isError && (
         <ErrorView error={setDefault.error} title="Could not change the default plan" />
       )}
 
+      {/* ── Dialogs ── */}
       {creating && (
         <CreatePlanDialog
           guard={guard}
@@ -355,6 +601,60 @@ export function PlansTab({
         />
       )}
     </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Sub-components
+ * -------------------------------------------------------------------------- */
+
+/** A single limit row — label + value, compact. */
+function LimitRow({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-1">
+      <span className="text-ink-faint">{label}</span>
+      <span className="truncate text-right font-medium text-ink">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * One processor object, linked where the processor has a console.
+ *
+ * `url === null` means the configured provider has no dashboard — the fake, on
+ * a deployment with no Stripe account. The id still renders, because "there is
+ * nowhere to look" and "there is nothing here" are different facts and only
+ * one of them is a problem.
+ */
+function ProcessorRef({
+  label,
+  id,
+  url,
+}: {
+  readonly label: string;
+  readonly id: string;
+  readonly url: string | null;
+}) {
+  const body = (
+    <>
+      {label}:{id.length > 18 ? `${id.slice(0, 18)}…` : id}
+    </>
+  );
+
+  if (url === null) return <span title={id}>{body}</span>;
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      /* noreferrer alongside noopener: the target is an external console, and
+         the referrer would leak this deployment's own admin path to it. */
+      rel="noopener noreferrer"
+      title={`${id} — open in the payment processor's console`}
+      className="font-mono text-[10px] text-ink-faint underline decoration-dotted hover:text-ink"
+    >
+      {body} ↗
+    </a>
   );
 }
 
@@ -689,46 +989,6 @@ function EditLimitsDialog({
 }
 
 /**
- * One processor object, linked where the processor has a console.
- *
- * `url === null` means the configured provider has no dashboard — the fake, on
- * a deployment with no Stripe account. The id still renders, because "there is
- * nowhere to look" and "there is nothing here" are different facts and only
- * one of them is a problem.
- */
-function ProcessorRef({
-  label,
-  id,
-  url,
-}: {
-  readonly label: string;
-  readonly id: string;
-  readonly url: string | null;
-}) {
-  const body = (
-    <>
-      {label}:{id.length > 18 ? `${id.slice(0, 18)}…` : id}
-    </>
-  );
-
-  if (url === null) return <span title={id}>{body}</span>;
-
-  return (
-    <a
-      href={url}
-      target="_blank"
-      /* noreferrer alongside noopener: the target is an external console, and
-         the referrer would leak this deployment's own admin path to it. */
-      rel="noopener noreferrer"
-      title={`${id} — open in the payment processor's console`}
-      className="underline decoration-dotted hover:text-ink"
-    >
-      {body} ↗
-    </a>
-  );
-}
-
-/**
  * The per-plan feature editor.
  *
  * This is what makes "which modules does this tier include" a decision an
@@ -873,6 +1133,17 @@ function EditFeaturesDialog({
   );
 }
 
+/**
+ * All-in-one plan creation dialog — identity, features, limits, and pricing
+ * in a single flow, so an operator never has to create-then-edit.
+ *
+ * The create mutation accepts every field the update does (features, limits,
+ * description) plus `withProduct`. Pricing is the one separate call
+ * (`setPrice`), chained after creation when the operator fills in an amount.
+ * If the plan is created without a processor product, the price section is
+ * hidden — a plan without a Stripe product cannot carry a price, and showing
+ * the field would be an input the schema would refuse.
+ */
 function CreatePlanDialog({
   guard,
   onClose,
@@ -884,11 +1155,61 @@ function CreatePlanDialog({
 }) {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [withProduct, setWithProduct] = useState(true);
 
+  /* Track whether the operator manually touched the id field — once they do,
+     auto-fill from name stops so their edits are not overwritten. */
+  const idManuallyEdited = useRef(false);
+
+  /* Features — same toggle model as EditFeaturesDialog. */
+  const registry = useQuery({
+    queryKey: keys.platformFlags(),
+    queryFn: async () => wire(await api.platformAdmin.flags.list.query(undefined)),
+  });
+  const [selectedFeatures, setSelectedFeatures] = useState<readonly string[]>([]);
+
+  /* Limits — same three-state string model as EditLimitsDialog. */
+  const [cap, setCap] = useState('');
+  const [runs, setRuns] = useState('');
+  const [turn, setTurn] = useState('');
+  const [included, setIncluded] = useState('0');
+  const [markup, setMarkup] = useState('0');
+  const [aiBudget, setAiBudget] = useState('');
+
+  /* Pricing — interval + amount, only shown when withProduct is true. */
+  const [priceInterval, setPriceInterval] = useState<'month' | 'year'>('month');
+  const [priceAmount, setPriceAmount] = useState('');
+
   const create = useMutation({
-    mutationFn: (input: { id: string; name: string; withProduct: boolean }) =>
-      api.platformAdmin.plans.create.mutate(input),
+    mutationFn: async (input: {
+      id: string;
+      name: string;
+      description: string | null;
+      withProduct: boolean;
+      features: string[];
+      telephonyCapCents: number | null;
+      automationRunsPerHour: number | null;
+      turnIssuancePerDay: number | null;
+      telephonyIncludedCents: number;
+      telephonyMarkupPct: number;
+      aiTokenBudgetMonthlyCents: number | null;
+    }) => {
+      const plan = await api.platformAdmin.plans.create.mutate(input);
+      /* Chain pricing if a price was entered and a product was created. */
+      if (input.withProduct && priceAmount.trim() !== '') {
+        const amountCents = Math.round(Number.parseFloat(priceAmount) * 100);
+        if (Number.isInteger(amountCents) && amountCents > 0) {
+          await api.platformAdmin.plans.setPrice.mutate({
+            planId: input.id,
+            interval: priceInterval,
+            amountCents,
+            currency: 'usd',
+          });
+        }
+      }
+      return plan;
+    },
     onSuccess: onCreated,
     onError: (error, input) => {
       guard(error, () => {
@@ -897,71 +1218,308 @@ function CreatePlanDialog({
     },
   });
 
+  const nullableInt = (text: string): number | null | 'invalid' => {
+    if (text.trim() === '') return null;
+    const value = Number(text);
+    return Number.isInteger(value) && value >= 0 ? value : 'invalid';
+  };
+  const requiredInt = (text: string): number | 'invalid' => {
+    const value = Number(text);
+    return text.trim() !== '' && Number.isInteger(value) && value >= 0 ? value : 'invalid';
+  };
+
+  const limitsParsed = {
+    telephonyCapCents: nullableInt(cap),
+    automationRunsPerHour: nullableInt(runs),
+    turnIssuancePerDay: nullableInt(turn),
+    telephonyIncludedCents: requiredInt(included),
+    telephonyMarkupPct: requiredInt(markup),
+    aiTokenBudgetMonthlyCents: nullableInt(aiBudget),
+  };
+  const limitsValid = !Object.values(limitsParsed).includes('invalid');
+
+  const priceCents = Math.round(Number.parseFloat(priceAmount === '' ? 'NaN' : priceAmount) * 100);
+  const priceValid = priceAmount.trim() === '' || (Number.isInteger(priceCents) && priceCents >= 0);
+
+  const canSubmit =
+    id.trim() !== '' &&
+    name.trim() !== '' &&
+    limitsValid &&
+    priceValid &&
+    (withProduct || priceAmount.trim() === '');
+
+  const toggleFeature = (flagName: string) => {
+    setSelectedFeatures((prev) =>
+      prev.includes(flagName) ? prev.filter((n) => n !== flagName) : [...prev, flagName],
+    );
+  };
+
+  const grantable = (registry.data ?? []).filter((f) => f.perOrg);
+
+  const limitField = (
+    fieldId: string,
+    label: string,
+    copyKey: string,
+    value: string,
+    onChange: (next: string) => void,
+  ) => (
+    <Field label={label} htmlFor={fieldId}>
+      <Input
+        id={fieldId}
+        value={value}
+        inputMode="numeric"
+        placeholder="unlimited"
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+      />
+      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[copyKey] ?? ''}</p>
+    </Field>
+  );
+
   return (
     <ModalRoot open onOpenChange={onClose}>
-      <ModalContent className="p-4">
+      <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-5">
         <ModalTitle>New plan</ModalTitle>
         <ModalDescription>
           The id is permanent — it is written onto every org that subscribes, and it appears in logs
-          and support conversations. Features and ceilings are edited after creation.
+          and support conversations.
         </ModalDescription>
 
-        <div className="mt-3 flex flex-col gap-3">
-          <Field label="Id" htmlFor="plan-id">
-            <Input
-              id="plan-id"
-              value={id}
-              placeholder="business"
-              onChange={(event) => {
-                setId(event.target.value);
-              }}
-            />
-          </Field>
-          <Field label="Name" htmlFor="plan-name">
-            <Input
-              id="plan-name"
-              value={name}
-              placeholder="Business"
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </Field>
+        <div className="mt-4 flex flex-col gap-5">
+          {/* ── Identity ── */}
+          <Section label="Identity">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Name" htmlFor="plan-name">
+                <Input
+                  id="plan-name"
+                  value={name}
+                  placeholder="Business"
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setName(next);
+                    if (!idManuallyEdited.current) {
+                      setId(slugify(next));
+                    }
+                  }}
+                />
+              </Field>
+              <Field label="Id" htmlFor="plan-id">
+                <Input
+                  id="plan-id"
+                  value={id}
+                  placeholder="business"
+                  onChange={(event) => {
+                    idManuallyEdited.current = true;
+                    setId(event.target.value);
+                  }}
+                />
+                <p className="mt-0.5 text-[11px] text-ink-faint">
+                  Auto-fills from the name. Edit directly to override.
+                </p>
+              </Field>
+            </div>
+            <Field label="Description" htmlFor="plan-desc">
+              <Input
+                id="plan-desc"
+                value={description}
+                placeholder="For teams that need it all."
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                }}
+              />
+            </Field>
+            <label className="flex items-start gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={withProduct}
+                onChange={(event) => {
+                  setWithProduct(event.target.checked);
+                }}
+              />
+              <span>
+                Create a product at the payment processor. Uncheck for a free tier — a plan created
+                without one can never carry a price.
+              </span>
+            </label>
+          </Section>
 
-          <label className="flex items-start gap-2 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              checked={withProduct}
-              onChange={(event) => {
-                setWithProduct(event.target.checked);
-              }}
-            />
-            {/* Not inferable from a zero price: "this tier is never charged
-                for" is a decision, and a plan created without a processor
-                product cannot grow one later. */}
-            <span>
-              Create a product at the payment processor. Uncheck for a free tier — a plan created
-              without one can never carry a price.
-            </span>
-          </label>
+          {/* ── Features ── */}
+          <Section label="Features">
+            {registry.isPending && <SkeletonRows rows={3} className="*:h-8" />}
+            {registry.isError && (
+              <ErrorView error={registry.error} title="Could not load the flag registry" />
+            )}
+            {registry.data !== undefined && grantable.length > 0 && (
+              <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
+                {grantable.map((flag) => (
+                  <li
+                    key={flag.flagName}
+                    className="flex items-start gap-2 px-3 py-2 hover:bg-surface-hover"
+                  >
+                    <input
+                      type="checkbox"
+                      id={`create-feature-${flag.flagName}`}
+                      className="mt-0.5"
+                      checked={selectedFeatures.includes(flag.flagName)}
+                      onChange={() => {
+                        toggleFeature(flag.flagName);
+                      }}
+                    />
+                    <label
+                      htmlFor={`create-feature-${flag.flagName}`}
+                      className="min-w-0 flex-1 cursor-pointer"
+                    >
+                      <span className="block text-sm text-ink">{featureLabel(flag.flagName)}</span>
+                      <span className="block text-[11px] text-ink-muted">
+                        {featureDescription(flag.flagName) ?? flag.description}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {registry.data !== undefined && grantable.length === 0 && (
+              <p className="text-xs text-ink-faint">No grantable features in the registry.</p>
+            )}
+          </Section>
+
+          {/* ── Limits ── */}
+          <Section label="Limits">
+            <p className="mb-1 text-[11px] text-ink-muted">
+              Ceilings, not values — the most an org on this plan may be raised to. Leave empty for
+              unlimited; enter 0 for none at all.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {limitField(
+                'create-cap',
+                'Telephony spend cap (¢ / 30 days)',
+                'telephonyCapCents',
+                cap,
+                setCap,
+              )}
+              {limitField(
+                'create-runs',
+                'Automation runs per hour',
+                'automationRunsPerHour',
+                runs,
+                setRuns,
+              )}
+              {limitField(
+                'create-turn',
+                'TURN credentials per day',
+                'turnIssuancePerDay',
+                turn,
+                setTurn,
+              )}
+              {limitField(
+                'create-ai',
+                'AI spend cap (¢ / month)',
+                'aiTokenBudgetMonthlyCents',
+                aiBudget,
+                setAiBudget,
+              )}
+              {limitField(
+                'create-included',
+                'Included telephony usage (¢)',
+                'telephonyIncludedCents',
+                included,
+                setIncluded,
+              )}
+              {limitField(
+                'create-markup',
+                'Usage markup (%)',
+                'telephonyMarkupPct',
+                markup,
+                setMarkup,
+              )}
+            </div>
+          </Section>
+
+          {/* ── Pricing ── */}
+          {withProduct && (
+            <Section label="Pricing">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Interval" htmlFor="create-interval">
+                  <div className="flex gap-1.5">
+                    {(['month', 'year'] as const).map((value) => (
+                      <Button
+                        key={value}
+                        {...(priceInterval === value ? ({ variant: 'primary' } as const) : {})}
+                        onClick={() => {
+                          setPriceInterval(value);
+                        }}
+                      >
+                        {value}ly
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Amount (USD)" htmlFor="create-amount">
+                  <Input
+                    id="create-amount"
+                    value={priceAmount}
+                    inputMode="decimal"
+                    placeholder="29.00"
+                    onChange={(event) => {
+                      setPriceAmount(event.target.value);
+                    }}
+                  />
+                  <p className="mt-0.5 text-[11px] text-ink-faint">
+                    Leave empty to create without a price — you can set one later.
+                  </p>
+                </Field>
+              </div>
+            </Section>
+          )}
 
           {create.isError && <ErrorView error={create.error} title="Could not create the plan" />}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 border-t border-line/40 pt-4">
             <Button onClick={onClose}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={create.isPending || id.trim() === '' || name.trim() === ''}
+              disabled={create.isPending || !canSubmit}
               onClick={() => {
-                create.mutate({ id: id.trim(), name: name.trim(), withProduct });
+                if (!canSubmit) return;
+                create.mutate({
+                  id: id.trim(),
+                  name: name.trim(),
+                  description: description.trim() === '' ? null : description.trim(),
+                  withProduct,
+                  features: [...selectedFeatures],
+                  telephonyCapCents: limitsParsed.telephonyCapCents as number | null,
+                  automationRunsPerHour: limitsParsed.automationRunsPerHour as number | null,
+                  turnIssuancePerDay: limitsParsed.turnIssuancePerDay as number | null,
+                  telephonyIncludedCents: limitsParsed.telephonyIncludedCents as number,
+                  telephonyMarkupPct: limitsParsed.telephonyMarkupPct as number,
+                  aiTokenBudgetMonthlyCents: limitsParsed.aiTokenBudgetMonthlyCents as
+                    number | null,
+                });
               }}
             >
-              {create.isPending ? <Spinner /> : 'Create'}
+              {create.isPending ? <Spinner /> : 'Create plan'}
             </Button>
           </div>
         </div>
       </ModalContent>
     </ModalRoot>
+  );
+}
+
+/** Collapsible section wrapper for the create dialog. */
+function Section({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-line/40 bg-surface-sunken/30 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">{label}</p>
+      <div className="flex flex-col gap-3">{children}</div>
+    </div>
   );
 }
 

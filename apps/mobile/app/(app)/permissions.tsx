@@ -22,6 +22,8 @@ import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { useStepUp } from '../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
+import { SkeletonList } from '../../src/lib/skeleton.js';
+import { shadows } from '../../src/lib/premium.js';
 import {
   MEMBERS_QUERY_KEY,
   MEMBER_GRANTS_QUERY_KEY,
@@ -190,9 +192,7 @@ function PermissionsScreenContent() {
         person.
       </Text>
 
-      {(members.isPending || grants.isPending) && (
-        <ActivityIndicator style={styles.loading} color={colors.accent.hex} />
-      )}
+      {(members.isPending || grants.isPending) && <SkeletonList count={3} />}
 
       {grants.isSuccess && grants.data.length === 0 && (
         <Text style={styles.emptyHint}>No individual grants yet. Tap + Add to create one.</Text>
@@ -202,7 +202,7 @@ function PermissionsScreenContent() {
         {(grants.data ?? []).map((entry: MemberGrant) => {
           const member = memberById.get(entry.userId);
           return (
-            <View key={`${entry.userId}:${entry.permission}`} style={styles.row}>
+            <View key={`${entry.userId}:${entry.permission}`} style={[styles.row, shadows.sm]}>
               <View style={styles.rowText}>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {member ? labelOf(member) : entry.userId}
@@ -233,7 +233,7 @@ function PermissionsScreenContent() {
       <Modal
         visible={addOpen}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setAddOpen(false);
         }}
@@ -408,9 +408,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  loading: {
-    marginTop: 20,
-  },
   emptyHint: {
     marginTop: 16,
     fontSize: 13,
@@ -474,7 +471,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {

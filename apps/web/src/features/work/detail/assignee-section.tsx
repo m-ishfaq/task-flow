@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Users } from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -115,7 +115,7 @@ export function AssigneeSection({
                 toggle(person.userId);
               }}
               title={`Remove ${person.label}`}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted hover:text-danger"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted hover:text-danger"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>
@@ -123,7 +123,7 @@ export function AssigneeSection({
           ) : (
             <span
               key={person.userId}
-              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-[11px] text-ink-muted"
+              className="flex items-center gap-1.5 rounded-full bg-surface-hover py-0.5 pr-2 pl-0.5 text-xs text-ink-muted"
             >
               <Avatar userId={person.userId} label={person.label} size="xs" />
               <span className="max-w-32 truncate">{person.label}</span>
@@ -143,14 +143,14 @@ export function AssigneeSection({
               <button
                 type="button"
                 aria-label="Add assignee"
-                className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
+                className="flex size-6 items-center justify-center rounded-full text-ink-faint ring-1 ring-line hover:text-ink hover:ring-line-strong"
               >
-                +
+                <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-56 space-y-1.5 p-2">
               {people.length === 0 ? (
-                <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
+                <p className="empty-fade p-1 text-xs text-ink-faint">No members to assign.</p>
               ) : (
                 <>
                   {/* Only worth the row past a handful of members — see the
@@ -168,7 +168,7 @@ export function AssigneeSection({
                   )}
 
                   {filtered.length === 0 ? (
-                    <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                    <p className="empty-fade p-1 text-xs text-ink-faint">No matches.</p>
                   ) : (
                     <ul className="max-h-56 space-y-0.5 overflow-y-auto">
                       {filtered.map((member) => {

@@ -6,7 +6,9 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from 'react';
+import { Search } from 'lucide-react';
 import { cn } from '../lib/cn.js';
+import { hueOf } from './avatar-color.js';
 
 /**
  * The primitives this app actually uses.
@@ -45,12 +47,12 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      control. On the accent fill it is nearly invisible, which is the point:
      it is a boundary, not a decoration. */
   primary:
-    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.17_285/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.17_285/40%)]',
+    'bg-accent text-accent-ink shadow-[0_2px_8px_color-mix(in_oklab,var(--color-accent)_30%,transparent)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]',
   secondary:
     'bg-surface-raised text-ink border border-line/60 shadow-sm hover:bg-surface-hover hover:border-line-strong',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
   danger:
-    'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_oklch(55%_0.19_22/30%)]',
+    'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_color-mix(in_oklab,var(--color-danger)_30%,transparent)]',
 };
 
 const BUTTON_SIZES: Readonly<Record<ButtonSize, string>> = {
@@ -77,10 +79,46 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'press inline-flex items-center justify-center rounded font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded font-medium transition-[color,box-shadow,border-color,background-color] duration-150 ease-out',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export type IconButtonSize = 'sm' | 'md';
+
+/**
+ * A plain, borderless icon-only button — the shell's own hamburger and
+ * keyboard-shortcuts triggers, and chat's header icons, had each written
+ * the identical `flex size-8 shrink-0 items-center justify-center
+ * rounded-lg ...` class string by hand. `Button`'s own sizes carry
+ * horizontal padding built for text and are the wrong shape for an
+ * icon-only square, which is why this is a second, small primitive.
+ */
+export function IconButton({
+  size = 'md',
+  active = false,
+  className,
+  type,
+  ...props
+}: ComponentPropsWithoutRef<'button'> & {
+  readonly size?: IconButtonSize;
+  readonly active?: boolean;
+}) {
+  return (
+    <button
+      type={type ?? 'button'}
+      className={cn(
+        'press flex shrink-0 items-center justify-center rounded-lg transition-colors duration-150 ease-out',
+        size === 'sm' ? 'size-7' : 'size-8',
+        active
+          ? 'bg-accent/10 text-accent'
+          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         className,
       )}
       {...props}
@@ -96,21 +134,47 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all',
-        /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
-           — is the "considered" touch here: a field that visibly comes
-           forward when it takes focus. A soft `ring-2` at 25% accent is the
-           same glow the focused select gets, so every form control in the
-           app announces focus the same way; it sits OUTSIDE the border where
-           the global `:focus-visible` outline lives, so the two do not
-           collide — and `:focus-visible` never fires for a mouse click
-           anyway, which is the case this ring is for. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
+        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all shadow-[inset_0_1px_2px_oklch(0%_0_0/6%)]',
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none',
         'disabled:opacity-50',
         className,
       )}
       {...props}
     />
+  );
+}
+
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  'aria-label': ariaLabel,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly className?: string;
+  readonly 'aria-label'?: string;
+}) {
+  return (
+    <div className={cn('relative h-9', className)}>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-faint"
+        strokeWidth={2}
+      />
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel ?? placeholder}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken py-2 pr-3 pl-8 text-sm text-ink transition-all placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none"
+      />
+    </div>
   );
 }
 
@@ -142,8 +206,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
     <textarea
       className={cn(
         'w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink transition-all',
-        /* Same reasoning as Input's `focus:bg-surface` above. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:shadow-[0_0_12px_color-mix(in_oklab,var(--color-accent)_20%,transparent)] focus:outline-none',
         className,
       )}
       {...props}
@@ -225,28 +288,6 @@ export function Badge({ children, className, title }: BadgeProps) {
       {children}
     </span>
   );
-}
-
-/**
- * Hues an avatar can take, spread around the wheel.
- *
- * Chosen from the id rather than from a counter, so the same person is the same
- * colour on every board and in every list — which is the only property that
- * makes a colour worth having. A per-render counter would recolour everyone the
- * moment one card was filtered out.
- */
-const AVATAR_HUES = [12, 45, 92, 150, 196, 258, 302, 334] as const;
-
-function hueOf(id: string): number {
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    /* An ordinary string hash, and deliberately not from @taskflow/security: this
-       picks a colour. Reaching for a CSPRNG here would say the choice is
-       security-relevant, and it also has to be STABLE, which a random source is
-       not. */
-    hash = (hash * 31 + id.charCodeAt(index)) % 1_000_003;
-  }
-  return AVATAR_HUES[hash % AVATAR_HUES.length] ?? 258;
 }
 
 /**
@@ -433,7 +474,7 @@ export function Empty({
   readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
+    <div className="empty-fade flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
       {icon !== undefined && (
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           {icon}
@@ -628,5 +669,162 @@ export function ConfirmButton({
         Cancel
       </Button>
     </span>
+  );
+}
+
+/**
+ * A `role="tablist"` bar for a search-param-driven section switcher — the
+ * shape `platform-admin-page.tsx`, `analytics-page.tsx`, and
+ * `import-export-dialog.tsx` had each hand-rolled independently, found while
+ * auditing the warm-dark rebuild's own component-consolidation pass
+ * (`ai/design-rebuild-warm-dark.md` §3): the same `role="tablist"`/
+ * `role="tab"`/`aria-selected` shape, the same active/inactive class pair,
+ * each with its own small drift from the other two (a plain template-literal
+ * className instead of `cn()`, a solid `bg-accent` active background instead
+ * of the ring style below, no shared way to stretch tabs to equal width).
+ * Lives here rather than `platform-admin/shared.tsx` (where the first,
+ * two-caller version of this started) because every one of its real callers
+ * now spans unrelated features — this is the shared-across-features layer.
+ *
+ * Generic over the value type so a nullable "All" filter and a plain
+ * non-null string union share one implementation instead of one being a
+ * near-copy of the other with a `?? 'all'` key fallback bolted on.
+ *
+ * `icon` is a rendered node, not a component reference — the same choice
+ * `Empty`'s own `icon` prop makes just above, so this file never needs to
+ * import `lucide-react` itself; the caller renders its own icon element
+ * exactly as it would inline.
+ *
+ * `stretch` makes every tab share the row's width equally
+ * (`import-export-dialog.tsx`'s two-item export/import switch, whose narrow
+ * dialog width makes an intrinsic-width row look wrong) — a real, deliberate
+ * visual change for that one adopter (solid active background → this
+ * component's own ring-based one), not an accidental behavior change.
+ */
+export function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  stretch = false,
+  className,
+}: {
+  readonly items: readonly {
+    readonly value: T;
+    readonly label: string;
+    readonly icon?: ReactNode;
+  }[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly stretch?: boolean;
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1 overflow-x-auto',
+        className,
+      )}
+    >
+      {items.map(({ value: itemValue, label, icon }) => (
+        <button
+          key={itemValue ?? 'null'}
+          type="button"
+          role="tab"
+          aria-selected={value === itemValue}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'relative flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap transition-all duration-150',
+            size === 'sm' ? 'text-sm' : 'text-xs',
+            stretch && 'flex-1',
+            value === itemValue
+              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {icon}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A `<nav>` + `aria-current="page"` section switcher — deliberately NOT
+ * `TabBar` (`role="tablist"`/`role="tab"`/`aria-selected`) above, even
+ * though every one of its real callers looks identical to a TabBar caller
+ * at a glance. The ARIA distinction is real: a `tablist` describes several
+ * panels of one widget, none individually a navigable destination; every
+ * caller of THIS component (`automations-page.tsx`, `telephony-page.tsx`)
+ * is a search-param-driven view with its own shareable, back-button-correct
+ * URL — a `nav` of page-like links is the correct semantic for that, the
+ * same reasoning those two files' own header comments already state for
+ * choosing `aria-current` over `aria-selected` in the first place. Found
+ * duplicated byte-for-byte between the two files during the warm-dark
+ * rebuild's own component-consolidation pass
+ * (`ai/design-rebuild-warm-dark.md` §3): the identical button classes,
+ * the identical `bg-accent text-accent-ink shadow-sm` active state, only
+ * automations-page.tsx's optional per-tab count badge differing.
+ */
+export function NavTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  readonly items: readonly {
+    readonly value: T;
+    readonly label: string;
+    /** A small count pill after the label — automations-page.tsx's own
+     * per-tab "how many" indicator. Omitted entirely (not just hidden)
+     * while still loading, so a zero that means "no data yet" is never
+     * shown as if it meant "confirmed empty". */
+    readonly badge?: string | number;
+  }[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly className?: string;
+}) {
+  return (
+    <nav aria-label={ariaLabel} className={cn('flex gap-1', className)}>
+      {items.map(({ value: itemValue, label, badge }) => (
+        <button
+          key={itemValue}
+          type="button"
+          aria-current={value === itemValue ? 'page' : undefined}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            value === itemValue
+              ? 'bg-accent text-accent-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {label}
+          {badge !== undefined && (
+            <span
+              className={cn(
+                'rounded px-1 text-[10px] tabular-nums',
+                value === itemValue ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
+              )}
+            >
+              {badge}
+            </span>
+          )}
+        </button>
+      ))}
+    </nav>
   );
 }

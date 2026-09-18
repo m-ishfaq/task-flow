@@ -97,14 +97,14 @@ function aadFor(userId: string): string {
 
 export async function startEnrollment(
   deps: TotpDeps,
-  input: { userId: string; email: string },
+  input: { userId: string; email: string; issuer?: string },
 ): Promise<{ secret: string; otpauthUrl: string }> {
   const secret = generateTotpSecret();
   const encrypted = Buffer.from(encryptString(deps.identityDataKey, secret, aadFor(input.userId)));
 
   await repo.upsertPendingTotp(input.userId, encrypted);
 
-  return { secret, otpauthUrl: totpProvisioningUri(input.email, secret) };
+  return { secret, otpauthUrl: totpProvisioningUri(input.email, secret, input.issuer) };
 }
 
 export interface ConfirmEnrollmentResult {

@@ -40,7 +40,11 @@ export interface BillingDeps {
   readonly webOrigin: string;
 }
 
-export function buildBillingDeps(env: Env, mailQueue?: MailQueue): BillingDeps {
+export function buildBillingDeps(
+  env: Env,
+  mailQueue?: MailQueue,
+  productName?: string,
+): BillingDeps {
   /* No price map here any more. Wave 4 moved the catalog into
      `billing.plans`/`billing.plan_prices`, so a price is a row an operator
      edits from the console rather than a value baked in at boot — and
@@ -55,7 +59,15 @@ export function buildBillingDeps(env: Env, mailQueue?: MailQueue): BillingDeps {
     webOrigin: env.WEB_ORIGIN,
     /* Absent when no queue was supplied — a test building deps directly gets
        no billing mail rather than a stub that silently swallows it. */
-    ...(mailQueue === undefined ? {} : { mail: { queue: mailQueue, webOrigin: env.WEB_ORIGIN } }),
+    ...(mailQueue === undefined
+      ? {}
+      : {
+          mail: {
+            queue: mailQueue,
+            webOrigin: env.WEB_ORIGIN,
+            ...(productName != null ? { productName } : {}),
+          },
+        }),
   };
 }
 

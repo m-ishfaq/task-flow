@@ -359,6 +359,20 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.accent.hex,
     borderColor: colors.accent.hex,
   },
+  checklistBoxDisabled: {
+    opacity: 0.5,
+  },
+  progressBarTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceSunken.hex,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: colors.success.hex,
+  },
   checklistBoxCheck: {
     fontSize: 11,
     fontWeight: '700',
@@ -489,7 +503,7 @@ export const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {
@@ -590,5 +604,97 @@ export const styles = StyleSheet.create({
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     padding: 10,
+  },
+
+  // Development section
+  devSubsection: {
+    marginBottom: 12,
+  },
+  devSubsectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  devList: {
+    gap: 4,
+  },
+  devRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  devRowPressable: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  devRowIcon: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.inkMuted.hex,
+    backgroundColor: colors.surfaceHover.hex,
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  devRowLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.accent.hex,
+  },
+  devBranchName: {
+    fontFamily: 'monospace',
+  },
+  devUnlink: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+  },
+  devInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    color: colors.ink.hex,
+    backgroundColor: colors.surface.hex,
+  },
+  devButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  devButtonDisabled: {
+    opacity: 0.5,
+  },
+  devButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.accentInk.hex,
+  },
+  devButtonCancel: {
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  devForm: {
+    gap: 8,
+  },
+  devFormActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
 });

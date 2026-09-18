@@ -92,7 +92,7 @@ export function RecordingSection({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1.5 text-[11px]"
+                className="h-8 px-2 text-xs"
                 disabled={detach.isPending}
                 onClick={() => {
                   detach.mutate(recording.recordingId);
@@ -212,11 +212,11 @@ function RecordingsOfCall({
   return (
     <div className="space-y-1">
       {stored.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">Not stored yet — try again shortly.</p>
+        <p className="empty-fade text-xs text-ink-faint">Not stored yet — try again shortly.</p>
       ) : (
         stored.map((recording) => (
           <div key={recording.recordingId} className="flex items-center gap-2">
-            <span className="text-[11px] text-ink-muted">
+            <span className="text-xs text-ink-muted">
               {recording.durationSeconds !== null ? `${String(recording.durationSeconds)}s` : '—'}
             </span>
             <Button

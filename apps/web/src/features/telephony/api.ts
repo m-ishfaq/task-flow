@@ -39,6 +39,12 @@ export type SpendCurrent = Wire<Outputs['spendCurrent']>;
 export type SpendReportRow = Wire<Outputs['spendReport']>[number];
 
 /* -------------------------------------------------------------------------- *
+ * Limits — shared between the query and the UI's "showing N of M" note
+ * -------------------------------------------------------------------------- */
+
+export const CALL_LOG_LIMIT = 50;
+
+/* -------------------------------------------------------------------------- *
  * Reads
  * -------------------------------------------------------------------------- */
 
@@ -52,7 +58,7 @@ export function phoneNumbersQuery(orgId: string) {
 export function callsQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.calls(orgId),
-    queryFn: async () => wire(await api.telephony.calls.list.query({ limit: 50 })),
+    queryFn: async () => wire(await api.telephony.calls.list.query({ limit: CALL_LOG_LIMIT })),
   });
 }
 
@@ -173,10 +179,13 @@ export function phoneContactsQuery(orgId: string) {
   });
 }
 
+export const MESSAGE_THREADS_LIMIT = 50;
+
 export function messageThreadsQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.messageThreads(orgId),
-    queryFn: async () => wire(await api.telephony.messages.threads.query({ limit: 50 })),
+    queryFn: async () =>
+      wire(await api.telephony.messages.threads.query({ limit: MESSAGE_THREADS_LIMIT })),
   });
 }
 

@@ -20,7 +20,7 @@ describe('totpProvisioningUri', () => {
     expect(uri).toMatch(/^otpauth:\/\/totp\//);
     expect(uri).toContain(encodeURIComponent('alice@example.test'));
     expect(uri).toContain(`secret=${secret}`);
-    expect(uri).toContain('issuer=TaskFlow');
+    expect(uri).toContain('issuer=Rinavai');
   });
 });
 

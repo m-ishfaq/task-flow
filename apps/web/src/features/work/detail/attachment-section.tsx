@@ -140,12 +140,18 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
     onSuccess: refresh,
   });
 
+  const empty = attachments.isSuccess && attachments.data.length === 0;
+
   return (
     <section className="space-y-2">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
         <Paperclip aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Attachments
       </h3>
+
+      {/* A viewer/commenter-relation guest gets no file input below — without
+          this, an attachment-free card shows this header over nothing. */}
+      {empty && !canEdit && <p className="empty-fade text-xs text-ink-faint">No attachments.</p>}
 
       <ul className="space-y-1">
         {(attachments.data ?? []).map((attachment) => {
@@ -167,7 +173,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 </p>
                 <p
                   className={cn(
-                    'text-[11px]',
+                    'text-xs',
                     status === 'infected'
                       ? 'text-danger'
                       : status === 'rejected'
@@ -184,7 +190,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-8 px-2 text-xs"
                   disabled={download.isPending}
                   onClick={() => {
                     download.mutate(attachment.attachmentId as AttachmentId);
@@ -198,7 +204,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-8 px-2 text-xs"
                   onClick={() => {
                     remove.mutate(attachment.attachmentId as AttachmentId);
                   }}
@@ -226,7 +232,7 @@ export function AttachmentSection({ orgId, cardId, canEdit }: AttachmentSectionP
         />
       )}
 
-      {progress !== null && <p className="text-[11px] text-ink-faint">{progress}</p>}
+      {progress !== null && <p className="text-xs text-ink-faint">{progress}</p>}
 
       {/* A refusal is a normal outcome, not an exception — `confirm` returns a
           status rather than throwing — so it renders here rather than as an

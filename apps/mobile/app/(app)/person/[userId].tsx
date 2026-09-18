@@ -11,6 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isPast } from 'date-fns';
 import { UserIdSchema } from '@taskflow/contracts';
@@ -105,7 +107,7 @@ function PersonContent({ userId }: { readonly userId: string }) {
   if (detail.isPending) {
     return (
       <View style={[styles.center, { paddingTop }]}>
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       </View>
     );
   }
@@ -204,6 +206,7 @@ function ChartCard({
         people.map((person) => (
           <Pressable
             key={person.userId}
+
             style={styles.chartCardRow}
             onPress={() => {
               router.push(`/person/${person.userId}`);
@@ -462,7 +465,7 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
       <Modal
         visible={pickerOpen}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setPickerOpen(false);
         }}
@@ -489,6 +492,7 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
               {candidates.map((candidate) => (
                 <Pressable
                   key={candidate.userId}
+
                   style={styles.modalRow}
                   onPress={() => {
                     setManagerId(candidate.userId);
@@ -622,6 +626,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
     padding: 12,
     gap: 6,
+    ...shadows.sm,
   },
   chartCardTitle: {
     fontSize: 12,
@@ -767,7 +772,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {
@@ -776,6 +781,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radiusCard + 6,
     padding: 20,
     maxHeight: '70%',
+    ...shadows.lg,
   },
   modalTitle: {
     fontSize: 16,

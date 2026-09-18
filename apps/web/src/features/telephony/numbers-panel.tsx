@@ -92,7 +92,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
   });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-[85%] space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">This org's numbers</h2>
@@ -113,14 +113,16 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
             description="Search below to buy the organization's first one. A number is what calls and texts are made from."
           />
         ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface-raised">
+          <ul className="divide-y divide-line/60 overflow-hidden rounded-lg border border-line bg-surface-raised">
             {numbers.data.map((number) => (
               <li
                 key={number.phoneNumberId}
-                className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover"
+                className="group flex items-center gap-3 px-4 py-3 transition-colors duration-(--motion-fast) hover:bg-surface-hover"
               >
-                <span className="font-mono text-sm text-ink">{String(number.e164)}</span>
-                <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                <span className="font-mono text-sm font-medium text-ink">
+                  {String(number.e164)}
+                </span>
+                <span className="rounded-md bg-surface-hover px-2 py-0.5 text-[10px] font-medium text-ink-muted">
                   {number.isoCountry}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
@@ -150,7 +152,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
             <h2 className="text-[13px] font-semibold text-ink">Buy a number</h2>
           </div>
           <form
-            className="rounded-lg border border-line bg-surface-raised p-3"
+            className="rounded-lg border border-line bg-surface-raised p-4"
             onSubmit={(event) => {
               event.preventDefault();
               search.mutate();
@@ -189,24 +191,26 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
             {search.isError && <ErrorText error={search.error} />}
 
             {results !== null && (
-              <div className="mt-3 border-t border-line pt-3">
+              <div className="mt-4 border-t border-line/60 pt-4">
                 {results.length === 0 ? (
                   <p className="text-xs text-ink-muted">No numbers matched that search.</p>
                 ) : (
-                  <ul className="space-y-1">
+                  <ul className="space-y-1.5">
                     {results.map((available) => {
                       const phoneNumber = String(available.phoneNumber);
                       return (
                         <li
                           key={phoneNumber}
-                          className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                          className="group flex items-center gap-3 rounded-md border border-line px-3 py-2 transition-colors duration-(--motion-fast) hover:border-accent/40 hover:bg-surface-hover"
                         >
-                          <span className="font-mono text-xs text-ink">{phoneNumber}</span>
+                          <span className="font-mono text-xs font-medium text-ink">
+                            {phoneNumber}
+                          </span>
                           <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
                             {[available.locality, available.region].filter(Boolean).join(', ') ||
                               available.isoCountry}
                           </span>
-                          <span className="text-[11px] text-ink-muted">
+                          <span className="text-[11px] font-medium text-ink-muted tabular-nums">
                             ${(available.monthlyCostCents / 100).toFixed(2)}/mo
                           </span>
                           <Button

@@ -17,6 +17,7 @@ export {
   isPermission,
   isReadOnly,
   isGrantable,
+  isOrgLevel,
   resourceOf,
   type Permission,
   type ResourceType,
@@ -36,6 +37,8 @@ export {
   isDirectlyAssignable,
   sameRole,
   isGuestRole,
+  isOwnerRole,
+  isAdminRole,
   DIRECTLY_ASSIGNABLE_ROLES,
 } from './assignment.js';
 

@@ -37,7 +37,7 @@ import { loadSubaccountAuthToken } from './subaccount.service.js';
  * 4. Only now may anything be validated, written, or emitted.
  *
  * Step 2 looks like trusting the payload and is not, for the same reason
- * Phase 4's `x-taskflow-org` header is safe: a client-supplied value used as a
+ * Phase 4's `x-rinavai-org` header is safe: a client-supplied value used as a
  * LOOKUP KEY is not a client-supplied value used as an ASSERTION. Naming a
  * subaccount you do not hold the token for resolves to an org whose key then
  * refuses your signature.

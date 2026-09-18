@@ -1,3 +1,4 @@
+import { DEFAULT_PRODUCT_NAME } from '@taskflow/api/platform-admin/branding-cache';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,7 +70,7 @@ export const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 /**
- * Every TaskFlow variable this process's misspelling check needs to know
+ * Every Rinavai variable this process's misspelling check needs to know
  * about — mirrors `apps/realtime`'s `KNOWN_VARIABLES`, scoped to what a
  * developer's `.env` legitimately carries that starts with a prefix this
  * schema cares about.
@@ -162,7 +163,7 @@ function assertNoMisspelledVariables(source: Record<string, string | undefined>)
 
   if (suspects.length > 0) {
     throw new Error(
-      `Unrecognized TaskFlow environment variable(s): ${suspects.join(', ')}.\n` +
+      `Unrecognized ${DEFAULT_PRODUCT_NAME} environment variable(s): ${suspects.join(', ')}.\n` +
         'Check the spelling against .env.example — a near-miss name means the real\n' +
         'variable is unset and something is running on a default it should not be.',
     );

@@ -56,7 +56,7 @@ import type { OrgMembership } from '../trpc/context.js';
  */
 
 /** Header naming the organization a request acts in. */
-export const ORG_HEADER = 'x-taskflow-org';
+export const ORG_HEADER = 'x-rinavai-org';
 
 /**
  * Loads the caller's membership in `requestedOrgId`, or null.

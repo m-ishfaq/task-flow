@@ -15,6 +15,8 @@ import {
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
+import { ArrowLeft } from 'lucide-react';
+import { hueOf } from '../../components/avatar-color.js';
 import { ErrorView } from '../../components/error-view.js';
 import { CallButton } from '../telephony/call-button.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -69,9 +71,29 @@ export function PersonPage({ userId }: { readonly userId: string }) {
   const label = displayName({ name: member.displayName, email: member.email });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
-      <header className="flex items-center gap-4">
-        <Avatar userId={member.userId} label={label} size="sm" className="size-12 text-lg" />
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-5xl flex-col gap-8 p-6">
+      {/* A profile banner personalized to THIS person, not a generic card
+          header — the same deterministic hue `Avatar` already colors their
+          initials with (`hueOf`, now exported for exactly this), washed as
+          a soft gradient behind the header rather than a flat fill, the
+          same "meaningful, not painted" restraint `flowTintGradient`
+          (Work module) and `--shadow-glow-accent`'s own header both apply
+          elsewhere in this rebuild. Warm-dark rebuild's own People-module
+          pass (ai/design-rebuild-warm-dark.md §5). */}
+      <header
+        className="-m-6 mb-2 flex items-center gap-4 rounded-b-2xl p-6"
+        style={{
+          backgroundImage: `linear-gradient(180deg, oklch(50% 0.09 ${String(hueOf(member.userId))} / 12%) 0%, transparent 100%)`,
+        }}
+      >
+        <Link
+          to="/people"
+          className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover/50 hover:text-ink"
+          aria-label="Back to People"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
+        <Avatar userId={member.userId} label={label} size="sm" className="size-14 text-xl" />
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-ink">{label}</h1>
           <p className="truncate text-xs text-ink-muted">

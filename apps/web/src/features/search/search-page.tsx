@@ -16,7 +16,7 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Search } from 'lucide-react';
+import { Search, SearchX, AlertCircle } from 'lucide-react';
 import { Button, Empty, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
@@ -75,10 +75,10 @@ function withFacet(query: string, facet: Facet): string {
 
 const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }> = {
   card: { label: 'Card', className: 'bg-accent/10 text-accent' },
-  message: { label: 'Message', className: 'bg-violet-500/10 text-violet-500' },
-  page: { label: 'Page', className: 'bg-emerald-500/10 text-emerald-500' },
-  comment: { label: 'Comment', className: 'bg-amber-500/10 text-amber-500' },
-  transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
+  message: { label: 'Message', className: 'bg-accent/10 text-accent' },
+  page: { label: 'Page', className: 'bg-success/10 text-success' },
+  comment: { label: 'Comment', className: 'bg-warning/10 text-warning' },
+  transcript: { label: 'Transcript', className: 'bg-ink-muted/10 text-ink-muted' },
 };
 
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
@@ -200,7 +200,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
+    <div className="mx-auto flex h-full max-w-5xl flex-col gap-5 overflow-hidden p-4 md:p-8">
       <PageHeader
         title="Search"
         description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
@@ -250,13 +250,8 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 setFacet(entry.id);
                 setActive(0);
               }}
-              aria-pressed={facet === entry.id}
-              className={cn(
-                'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
-                facet === entry.id
-                  ? 'border-accent bg-accent text-white'
-                  : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
-              )}
+              className="search-facet"
+              data-active={facet === entry.id}
             >
               {entry.label}
             </button>
@@ -264,25 +259,26 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         </div>
       </div>
 
-      {errors.length > 0 && (
-        <ul className="shrink-0 space-y-1 rounded border border-danger/30 bg-danger/5 p-3">
-          {errors.map((error, index) => (
-            <li key={index} className="text-xs text-danger">
-              {error.message}
-            </li>
-          ))}
-        </ul>
-      )}
+      <main className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+        {errors.length > 0 && (
+          <ul className="space-y-1 rounded border border-danger/30 bg-danger/5 p-3">
+            {errors.map((error, index) => (
+              <li key={index} className="text-xs text-danger">
+                {error.message}
+              </li>
+            ))}
+          </ul>
+        )}
 
-      <main className="min-h-0 flex-1">
         {text.trim() === '' ? (
           <Empty
             icon={<Search aria-hidden="true" className="size-5" strokeWidth={1.75} />}
             title="Search your workspace"
-            description="Try “deploy outage”, or type `assignee = me AND due < -7d` to combine filters with free text."
+            description="Try `deploy outage`, or type `assignee = me AND due < -7d` to combine filters with free text."
           />
         ) : errors.length > 0 ? (
           <Empty
+            icon={<AlertCircle aria-hidden="true" className="size-5" strokeWidth={1.75} />}
             title="Fix the query to search"
             description="The underlined tokens above need attention."
           />
@@ -295,11 +291,18 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         ) : results.isError ? (
           <ErrorView error={results.error} title="Could not search" />
         ) : results.data.length === 0 ? (
-          <Empty title="No results" description={`Nothing matched “${effectiveQuery.trim()}”.`} />
+          <Empty
+            icon={<SearchX aria-hidden="true" className="size-5" strokeWidth={1.75} />}
+            title="No results"
+            description={`Nothing matched “${effectiveQuery.trim()}”.`}
+          />
         ) : (
           <ul className="space-y-1.5" role="listbox" aria-label="Search results">
             {results.data.map((hit, index) => (
-              <li key={`${hit.type}-${hit.entityId}`}>
+              <li
+                key={`${hit.type}-${hit.entityId}`}
+                style={{ animationDelay: `${String(index * 30)}ms` }}
+              >
                 <button
                   type="button"
                   role="option"
@@ -310,17 +313,13 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                   onClick={() => {
                     open(hit);
                   }}
-                  className={cn(
-                    'flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-all duration-[var(--motion-fast)]',
-                    index === active
-                      ? 'border-accent/40 bg-accent/5 shadow-sm'
-                      : 'border-line/50 bg-surface-raised hover:border-line-strong hover:bg-surface-hover',
-                  )}
+                  className="search-result"
+                  data-active={index === active}
                 >
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
                         TYPE_BADGE[hit.type].className,
                       )}
                     >
@@ -332,9 +331,9 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                       </span>
                     )}
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                      {hit.title ?? `${TYPE_BADGE[hit.type].label} · ${hit.entityId}`}
+                      {hit.title ?? hit.contextLabel ?? TYPE_BADGE[hit.type].label}
                     </span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">
+                    <span className="shrink-0 text-xs text-ink-faint">
                       {formatRelative(hit.updatedAt)}
                     </span>
                   </div>
@@ -346,7 +345,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                 </button>
               </li>
             ))}
-            <li className="pt-1 text-center text-[11px] text-ink-faint">
+            <li className="pt-1 text-center text-xs text-ink-faint">
               {results.data.length} of at most {results.data.length} results
             </li>
           </ul>
@@ -426,13 +425,10 @@ function SavedSearches({
   const trimmed = current.trim();
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
         {entries.map((entry) => (
-          <span
-            key={entry.searchId}
-            className="group inline-flex items-center rounded-full border border-line bg-surface-raised text-xs"
-          >
+          <span key={entry.searchId} className="group search-saved-tag">
             <button
               type="button"
               disabled={entry.broken}
@@ -444,7 +440,7 @@ function SavedSearches({
             >
               {entry.name}
               {entry.isShared && (
-                <span className="ml-1 text-[10px] text-ink-faint" title="Shared with everyone">
+                <span className="ml-1 text-ink-faint" title="Shared with everyone">
                   ◇
                 </span>
               )}
@@ -483,7 +479,7 @@ function SavedSearches({
             event.preventDefault();
             create.mutate({ name: name.trim(), query: trimmed, isShared: share });
           }}
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface-raised px-2.5 py-2"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-line/40 bg-surface-raised px-3 py-2"
         >
           <input
             value={name}
@@ -493,7 +489,7 @@ function SavedSearches({
             maxLength={60}
             aria-label="Name for this saved search"
             placeholder="Name it"
-            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
+            className="min-w-32 flex-1 rounded-lg border border-line/40 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none transition-all duration-[var(--motion-fast)] focus:border-accent focus:shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-accent)_10%,transparent)]"
           />
           {canShare && (
             <label className="flex items-center gap-1.5 text-xs text-ink-muted">
@@ -586,10 +582,15 @@ function QueryInput({
   }, [value]);
 
   return (
-    <div className="relative">
+    <div className="relative group">
+      <Search
+        size={16}
+        className="pointer-events-none absolute left-3 top-2.5 z-10 text-ink-faint transition-colors duration-[var(--motion-fast)] group-focus-within:text-accent"
+        aria-hidden="true"
+      />
       <pre
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 overflow-hidden font-mono text-sm leading-6 whitespace-pre-wrap break-words px-3 py-2 text-transparent"
+        className="pointer-events-none absolute inset-0 overflow-hidden font-mono text-sm leading-6 whitespace-pre-wrap break-words pl-9 pr-3.5 py-2.5 text-transparent rounded-xl"
       >
         {renderUnderlines(value, errors)}
       </pre>
@@ -604,7 +605,7 @@ function QueryInput({
         autoComplete="off"
         aria-label="Search query (TQL)"
         placeholder='Try "deploy outage", or `assignee = me AND due < -7d`'
-        className="relative block w-full resize-none overflow-hidden rounded-xl border border-line/50 bg-surface-raised px-3.5 py-2.5 font-mono text-sm leading-6 text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/25 placeholder:font-sans placeholder:text-ink-faint"
+        className="block w-full resize-none overflow-hidden rounded-xl border border-line/50 bg-surface-raised pl-9 pr-3.5 py-2.5 font-mono text-sm leading-6 text-ink outline-none transition-all duration-[var(--motion-fast)] focus:border-accent focus:bg-surface focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-accent)_15%,transparent)] placeholder:font-sans placeholder:text-ink-faint"
       />
     </div>
   );

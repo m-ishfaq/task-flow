@@ -4,6 +4,7 @@ import {
   relyingPartyFrom,
   type AccessTokenSigningConfig,
 } from '@taskflow/security';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 import type { Env } from '../config/env.js';
 import type { DeliverableLink, IdentityDeps } from './identity.service.js';
 import type { PasskeyDeps } from './passkey.service.js';
@@ -70,6 +71,12 @@ export interface BuildIdentityDepsOptions {
    * become async for a value most of them would still have to fake.
    */
   readonly jwtPrivateKey: AccessTokenSigningConfig['privateKey'];
+  /**
+   * Product name for the HIBP breach-check User-Agent header. Passed by the
+   * caller from the branding cache so the breach check identifies itself as
+   * the self-hosted product, not "Rinavai".
+   */
+  readonly productName?: string | undefined;
 }
 
 export function buildIdentityDeps(options: BuildIdentityDepsOptions): IdentityDeps {
@@ -98,7 +105,10 @@ export function buildIdentityDeps(options: BuildIdentityDepsOptions): IdentityDe
     },
 
     events: options.events ?? new InMemoryEventBus(),
-    checkBreached: (password) => checkPasswordBreached(password),
+    checkBreached: (password) =>
+      checkPasswordBreached(password, {
+        ...(options.productName != null ? { productName: options.productName } : {}),
+      }),
 
     deliver: options.deliver,
   };
@@ -108,10 +118,10 @@ export function buildIdentityDeps(options: BuildIdentityDepsOptions): IdentityDe
  * User-visible relying party name.
  *
  * Shown by the authenticator when the user picks a passkey — "Use your passkey
- * for TaskFlow?" — so it has to be the product name a person recognizes, not a
+ * for Rinavai?" — so it has to be the product name a person recognizes, not a
  * hostname.
  */
-const RELYING_PARTY_NAME = 'TaskFlow';
+const DEFAULT_RELYING_PARTY_NAME = DEFAULT_PRODUCT_NAME;
 
 /**
  * Adds the WebAuthn relying party to the identity dependencies.
@@ -120,6 +130,13 @@ const RELYING_PARTY_NAME = 'TaskFlow';
  * WebAuthn made concrete: the origin a ceremony is checked against comes from
  * configuration, and there is no code path by which a request can influence it.
  */
-export function buildPasskeyDeps(identity: IdentityDeps, env: Env): PasskeyDeps {
-  return { ...identity, relyingParty: relyingPartyFrom(env.WEB_ORIGIN, RELYING_PARTY_NAME) };
+export function buildPasskeyDeps(
+  identity: IdentityDeps,
+  env: Env,
+  productName?: string,
+): PasskeyDeps {
+  return {
+    ...identity,
+    relyingParty: relyingPartyFrom(env.WEB_ORIGIN, productName ?? DEFAULT_RELYING_PARTY_NAME),
+  };
 }

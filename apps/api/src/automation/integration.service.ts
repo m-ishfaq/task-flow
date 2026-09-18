@@ -7,6 +7,7 @@ import {
   type OrgId,
 } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 import {
   decryptString,
   encryptString,
@@ -26,6 +27,7 @@ import {
   integrationDisconnected,
   integrationPending,
 } from './integration-events.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 import {
   expiresAtFrom,
   parseGithubTokenGrant,
@@ -877,7 +879,12 @@ async function exchangeSlackCode(
   return { token: body.access_token, teamId: testBody.team_id, teamName: testBody.team };
 }
 
-const GITHUB_HEADERS = { accept: 'application/vnd.github+json', 'user-agent': 'TaskFlow' };
+function githubHeaders(productName?: string) {
+  return {
+    accept: 'application/vnd.github+json',
+    'user-agent': productName ?? DEFAULT_PRODUCT_NAME,
+  };
+}
 
 async function exchangeGithubCode(
   deps: IntegrationDeps,
@@ -912,7 +919,8 @@ async function exchangeGithubCode(
   }
 
   const token = grant.token;
-  const authHeaders = { ...GITHUB_HEADERS, authorization: `Bearer ${token}` };
+  const { productName } = await getResolvedBranding();
+  const authHeaders = { ...githubHeaders(productName), authorization: `Bearer ${token}` };
 
   const userResponse = await fetchFn('https://api.github.com/user', { headers: authHeaders });
   if (!userResponse.ok) {
@@ -961,12 +969,13 @@ const GITHUB_REPO_PAGE_LIMIT = 10;
 async function githubRepos(deps: IntegrationDeps, token: string): Promise<readonly RepoRef[]> {
   const fetchFn = deps.fetchImpl ?? fetch;
   const collected: RepoRef[] = [];
+  const { productName } = await getResolvedBranding();
 
   for (let page = 1; page <= GITHUB_REPO_PAGE_LIMIT; page += 1) {
     const response = await fetchFn(
       `https://api.github.com/user/repos?per_page=${String(GITHUB_REPO_PAGE_SIZE)}` +
         `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${String(page)}`,
-      { headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}` } },
+      { headers: { ...githubHeaders(productName), authorization: `Bearer ${token}` } },
     );
     if (!response.ok) {
       throw errors.validation({ code: 'GitHub rejected the access token.' });

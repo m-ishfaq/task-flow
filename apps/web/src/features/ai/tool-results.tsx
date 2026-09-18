@@ -75,7 +75,7 @@ import { DiffView, singleFileDiffText } from './diff-view.js';
  *
  * `list_prs`/`get_pr_diff`/`get_pr_comments` (Phase 15 §7 Wave 1) are this
  * file's first renderers reaching outside the app: a GitHub PR has no
- * TaskFlow route, so `renderListPrs` is the first plain external `<a>` here
+ * Rinavai route, so `renderListPrs` is the first plain external `<a>` here
  * rather than a `<Link>`, and `renderGetPrDiff` is the first renderer
  * showing preformatted text instead of a structured list.
  *
@@ -122,9 +122,20 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
 
 /** Every renderer below shares this shell — the same bordered-list style
     `standup-page.tsx`'s buckets and this file's own `EntityList` use. */
-function ResultPanel({ children }: { readonly children: ReactNode }) {
+function ResultPanel({
+  children,
+  count,
+}: {
+  readonly children: ReactNode;
+  readonly count?: number;
+}) {
   return (
-    <div className="space-y-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-xs">
+    <div className="relative space-y-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-xs">
+      {count !== undefined && count > 0 && (
+        <span className="absolute right-2 top-1.5 inline-flex items-center rounded-full border border-line/60 bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-faint">
+          {count === 1 ? '1 result' : `${String(count)} results`}
+        </span>
+      )}
       {children}
     </div>
   );
@@ -409,7 +420,7 @@ function renderListProjects(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={projects.length}>
       <EntityList>
         {projects.map((project) => (
           <li key={project.projectId}>
@@ -456,7 +467,7 @@ function renderListBoards(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={boards.length}>
       <ul className="space-y-2">
         {boards.map((board) => (
           <li key={board.boardId}>
@@ -515,7 +526,7 @@ function renderListLabels(result: ToolResultMessage): ReactNode | null {
   // "choredesigndocsfeature..." — found from a real pasted transcript. Each
   // `<li>` here is block-level, so both problems are the same fix.
   return (
-    <ResultPanel>
+    <ResultPanel count={labels.length}>
       <EntityList>
         {labels.map((label) => (
           <EntityRow
@@ -549,7 +560,7 @@ function renderListMembers(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={members.length}>
       <EntityList>
         {members.map((member) => (
           <li key={member.userId}>
@@ -591,7 +602,7 @@ function renderListSprints(result: ToolResultMessage, call: ToolCallWire): React
   const projectId = typeof call.input['projectId'] === 'string' ? call.input['projectId'] : null;
 
   return (
-    <ResultPanel>
+    <ResultPanel count={sprints.length}>
       <EntityList>
         {sprints.map((sprint) => (
           <EntityRow
@@ -635,7 +646,7 @@ function renderListStatuses(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={statuses.length}>
       <EntityList>
         {statuses.map((status) => (
           <EntityRow
@@ -681,7 +692,7 @@ function renderListChannels(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={channels.length}>
       <EntityList>
         {channels.map((channel) => (
           <EntityRow
@@ -931,8 +942,8 @@ function renderDocsCreatePage(result: ToolResultMessage, call: ToolCallWire): Re
  * -------------------------------------------------------------------------- */
 
 /**
- * The first renderers in this file that link OUTSIDE TaskFlow. A GitHub pull
- * request has no TaskFlow route — every other renderer here uses a TanStack
+ * The first renderers in this file that link OUTSIDE Rinavai. A GitHub pull
+ * request has no Rinavai route — every other renderer here uses a TanStack
  * `<Link>` into a real `apps/web` page, but there is no page for a PR to open
  * into, so this is a plain `<a target="_blank" rel="noopener noreferrer">` to
  * the PR's own `html_url` instead.
@@ -958,7 +969,7 @@ function renderListPrs(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={prs.length}>
       <EntityList>
         {prs.map((pr) => (
           <li key={pr.number}>
@@ -1481,7 +1492,7 @@ function renderGetPrComments(result: ToolResultMessage): ReactNode | null {
  * RESULT rather than `call.input`, because — unlike a `cardId` — the model
  * never sees `providerScope` anywhere; `pr-write.service.ts`'s own header
  * explains why it has to be returned at all. Links externally, like
- * `renderListPrs` above — a PR has no TaskFlow route to open.
+ * `renderListPrs` above — a PR has no Rinavai route to open.
  */
 function prWriteRenderer(verb: string) {
   return (result: ToolResultMessage, call: ToolCallWire): ReactNode | null => {
@@ -1577,7 +1588,7 @@ function renderListCardPrs(result: ToolResultMessage): ReactNode | null {
   }
 
   return (
-    <ResultPanel>
+    <ResultPanel count={links.length}>
       <EntityList>
         {links.map((link) => (
           <li key={`${link.providerScope}#${String(link.prNumber)}`}>

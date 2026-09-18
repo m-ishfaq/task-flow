@@ -18,7 +18,7 @@ import { VirtualAuthenticator } from './testing/virtual-authenticator.js';
  * specific forgery is not.
  */
 
-const RP = relyingPartyFrom('http://localhost:5173', 'TaskFlow');
+const RP = relyingPartyFrom('http://localhost:5173', 'Rinavai');
 
 const USER = {
   id: '018f4d1e-7c3a-7b2e-8f1a-000000000001',
@@ -45,22 +45,22 @@ describe('relyingPartyFrom', () => {
     // A credential is scoped to a registrable domain. An rpID carrying a scheme
     // or a port matches nothing, and the failure surfaces as "no passkeys
     // available" rather than as an error anyone can debug.
-    const rp = relyingPartyFrom('https://app.taskflow.io', 'TaskFlow');
+    const rp = relyingPartyFrom('https://app.rinavai.io', 'Rinavai');
 
-    expect(rp.id).toBe('app.taskflow.io');
-    expect(rp.origin).toBe('https://app.taskflow.io');
+    expect(rp.id).toBe('app.rinavai.io');
+    expect(rp.origin).toBe('https://app.rinavai.io');
   });
 
   it('allows localhost over http', () => {
     // The one secure-context exception browsers make, and local development
     // depends on it.
-    expect(relyingPartyFrom('http://localhost:5173', 'TaskFlow').id).toBe('localhost');
+    expect(relyingPartyFrom('http://localhost:5173', 'Rinavai').id).toBe('localhost');
   });
 
   it('refuses plain http anywhere else', () => {
     // The browser will refuse every ceremony, so failing at boot with a clear
     // message beats a WebAuthn call that silently does nothing in staging.
-    expect(() => relyingPartyFrom('http://staging.taskflow.io', 'TaskFlow')).toThrow(
+    expect(() => relyingPartyFrom('http://staging.rinavai.io', 'Rinavai')).toThrow(
       /secure context/,
     );
   });
@@ -122,7 +122,7 @@ describe('registration verification', () => {
 
   it('rejects a ceremony performed on another origin', async () => {
     /* The anti-phishing property, and the single most important assertion in
-       this file. A credential enrolled for taskflow.io must be unusable to a
+       this file. A credential enrolled for rinavai.io must be unusable to a
        page served from a lookalike domain, and the only thing enforcing that is
        the origin inside the signed client data. */
     const device = authenticator();

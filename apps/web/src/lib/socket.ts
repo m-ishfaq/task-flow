@@ -262,7 +262,7 @@ function ensureSocket(): GatewaySocket {
 /**
  * Joins `board:{boardId}`'s room.
  *
- * `orgId` is a scope selector, exactly like the `x-taskflow-org` header on
+ * `orgId` is a scope selector, exactly like the `x-rinavai-org` header on
  * HTTP (session.ts) — never trusted, only a filter the gateway's `can()`
  * checks against the verified caller. Returns whether the join was granted;
  * a caller that gets `false` has nothing further to do here; the board's

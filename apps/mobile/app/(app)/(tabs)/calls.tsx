@@ -16,6 +16,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Skeleton, SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows, ErrorView } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import { wire } from '@taskflow/client';
@@ -151,7 +153,11 @@ export default function CallsScreen() {
         {visibleTabs.map((entry) => (
           <Pressable
             key={entry.id}
-            style={[styles.tab, tab === entry.id && styles.tabActive]}
+            style={({ pressed }) => [
+              styles.tab,
+              tab === entry.id && styles.tabActive,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => {
               setTab(entry.id);
             }}
@@ -309,11 +315,15 @@ function CallsPanel() {
       <Section
         label={`Call log${calls.data !== undefined ? ` · ${String(calls.data.length)}` : ''}`}
       >
-        {calls.isPending && <ActivityIndicator color={colors.accent.hex} />}
+        {calls.isPending && <SkeletonList count={3} />}
         {calls.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(calls.error)?.error.message ?? 'Could not load the call log.'}
-          </Text>
+          <ErrorView
+            title="Could not load calls"
+            message={apiErrorOf(calls.error)?.error.message}
+            onRetry={() => {
+              void calls.refetch();
+            }}
+          />
         )}
         {calls.data?.length === 0 && (
           <Text style={styles.emptyHint}>
@@ -411,12 +421,16 @@ function CallRecordings({ callId }: { readonly callId: string }) {
     },
   });
 
-  if (recordings.isPending) return <ActivityIndicator color={colors.accent.hex} />;
+  if (recordings.isPending) return <SkeletonList count={2} />;
   if (recordings.isError) {
     return (
-      <Text style={styles.errorText}>
-        {apiErrorOf(recordings.error)?.error.message ?? 'Could not load recordings.'}
-      </Text>
+      <ErrorView
+        title="Could not load recordings"
+        message={apiErrorOf(recordings.error)?.error.message}
+        onRetry={() => {
+          void recordings.refetch();
+        }}
+      />
     );
   }
   if (recordings.data.length === 0) {
@@ -604,11 +618,15 @@ function NumbersPanel() {
       <Section
         label={`This org's numbers${numbers.data !== undefined ? ` · ${String(numbers.data.length)}` : ''}`}
       >
-        {numbers.isPending && <ActivityIndicator color={colors.accent.hex} />}
+        {numbers.isPending && <SkeletonList count={3} />}
         {numbers.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(numbers.error)?.error.message ?? 'Could not load phone numbers.'}
-          </Text>
+          <ErrorView
+            title="Could not load phone numbers"
+            message={apiErrorOf(numbers.error)?.error.message}
+            onRetry={() => {
+              void numbers.refetch();
+            }}
+          />
         )}
         {numbers.data?.length === 0 && (
           <Text style={styles.emptyHint}>No numbers yet — search below to buy the first one.</Text>
@@ -807,11 +825,15 @@ function MessagesPanel() {
         <Text style={styles.primaryButtonText}>New message</Text>
       </Pressable>
 
-      {threads.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {threads.isPending && <SkeletonList count={4} />}
       {threads.isError && (
-        <Text style={styles.errorText}>
-          {apiErrorOf(threads.error)?.error.message ?? 'Could not load threads.'}
-        </Text>
+        <ErrorView
+          title="Could not load threads"
+          message={apiErrorOf(threads.error)?.error.message}
+          onRetry={() => {
+            void threads.refetch();
+          }}
+        />
       )}
       {threads.data?.length === 0 && (
         <Text style={styles.emptyHint}>Inbound texts to your numbers land here.</Text>
@@ -1030,11 +1052,15 @@ function ThreadView({
       </View>
 
       <ScrollView contentContainerStyle={styles.messageList}>
-        {messages.isPending && <ActivityIndicator color={colors.accent.hex} />}
+        {messages.isPending && <SkeletonList count={5} />}
         {messages.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(messages.error)?.error.message ?? 'Could not load messages.'}
-          </Text>
+          <ErrorView
+            title="Could not load messages"
+            message={apiErrorOf(messages.error)?.error.message}
+            onRetry={() => {
+              void messages.refetch();
+            }}
+          />
         )}
         {messages.data?.length === 0 && (
           <Text style={styles.emptyHint}>No messages yet — send the first one below.</Text>
@@ -1205,7 +1231,13 @@ function SpendPanel() {
       }
     >
       <Section label="This organization's spend">
-        {current.isPending && <ActivityIndicator color={colors.accent.hex} />}
+        {current.isPending && (
+          <View style={styles.spendCard}>
+            <Skeleton width={80} height={28} borderRadius={6} />
+            <Skeleton width={120} height={14} borderRadius={4} />
+            <Skeleton width="100%" height={6} borderRadius={3} />
+          </View>
+        )}
         {current.isError && (
           <Text style={styles.errorText}>
             {apiErrorOf(current.error)?.error.message ?? 'Could not load spend.'}
@@ -1270,11 +1302,15 @@ function SpendPanel() {
 
       {canReadRecordings && (
         <Section label={`Cost attribution — last ${String(SINCE_DAYS)} days`}>
-          {report.isPending && <ActivityIndicator color={colors.accent.hex} />}
+          {report.isPending && <SkeletonList count={3} />}
           {report.isError && (
-            <Text style={styles.errorText}>
-              {apiErrorOf(report.error)?.error.message ?? 'Could not load the itemized report.'}
-            </Text>
+            <ErrorView
+              title="Could not load report"
+              message={apiErrorOf(report.error)?.error.message}
+              onRetry={() => {
+                void report.refetch();
+              }}
+            />
           )}
           {report.data?.length === 0 && (
             <Text style={styles.emptyHint}>
@@ -1562,6 +1598,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
     overflow: 'hidden',
     marginTop: 6,
+    ...shadows.sm,
   },
   rowCardActive: {
     borderColor: colors.accent.hex + '80',
@@ -1711,6 +1748,7 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 8,
+    ...shadows.sm,
   },
   threadRow: {
     flexDirection: 'row',
@@ -1722,6 +1760,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginTop: 6,
+    ...shadows.sm,
   },
   threadRowText: {
     flex: 1,
@@ -1837,6 +1876,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
     gap: 8,
+    ...shadows.sm,
   },
   spendHeaderRow: {
     flexDirection: 'row',

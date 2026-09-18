@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -23,6 +22,8 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SPACES_QUERY_KEY, type Space } from '../../../src/lib/docs.js';
 import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
 import { Fab } from '../../../src/lib/fab.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows, ErrorView, EmptyState } from '../../../src/lib/premium.js';
 import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 const TOPBAR_ICON_CLEARANCE = 120;
@@ -116,18 +117,26 @@ export default function DocsScreen() {
         </View>
       </View>
 
-      {spaces.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
+      {spaces.isPending && <SkeletonList count={3} />}
       {spaces.isError && (
-        <Text style={styles.errorText}>
-          {apiErrorOf(spaces.error)?.error.message ?? 'Could not load Docs spaces.'}
-        </Text>
+        <ErrorView
+          title="Could not load Docs"
+          message={apiErrorOf(spaces.error)?.error.message}
+          onRetry={() => {
+            void spaces.refetch();
+          }}
+        />
       )}
       {spaces.isSuccess && spaces.data.length === 0 && (
-        <Text style={styles.emptyHint}>
-          {canCreateSpace
-            ? 'No spaces yet. Tap the + button to create the first one.'
-            : 'No spaces yet. An admin or owner needs to create the first one.'}
-        </Text>
+        <EmptyState
+          icon={'\uD83D\uDCDA'}
+          title="No spaces yet"
+          description={
+            canCreateSpace
+              ? 'Tap the + button to create your first Docs space.'
+              : 'An admin or owner needs to create the first space.'
+          }
+        />
       )}
 
       <FlatList<Space>
@@ -145,7 +154,8 @@ export default function DocsScreen() {
         }
         renderItem={({ item }) => (
           <Pressable
-            style={[styles.row, item.archivedAt !== null && styles.rowArchived]}
+            style={[styles.row, shadows.sm, item.archivedAt !== null && styles.rowArchived]}
+
             onPress={() => {
               router.push(`/docs-space/${item.spaceId}`);
             }}
@@ -328,7 +338,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#00000099',
+    backgroundColor: colors.overlay.hex + '99',
     justifyContent: 'flex-end',
   },
   modalCard: {

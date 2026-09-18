@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SearchProvider } from '@taskflow/contracts';
+import { DEFAULT_PRODUCT_NAME } from '../../platform-admin/branding-cache.js';
 import { performSearch } from '../../search/search.service.js';
 import { defineTool, type ToolDefinition } from './registry.js';
 
@@ -40,24 +41,27 @@ const DEFAULT_LIMIT = 8;
 
 const QUERY_EXAMPLE = 'type = page AND text contains "budget"';
 
-const SearchToolInput = z
-  .object({
-    query: z
-      .string()
-      .trim()
-      .min(1)
-      .max(1_000)
-      .describe(`A TaskFlow Query Language (TQL) query, e.g. "${QUERY_EXAMPLE}"`),
-    limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
-  })
-  .strict();
+export function createSearchTool(
+  provider: SearchProvider,
+  productName = DEFAULT_PRODUCT_NAME,
+): ToolDefinition {
+  const SearchToolInput = z
+    .object({
+      query: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1_000)
+        .describe(`A ${productName} Query Language (TQL) query, e.g. "${QUERY_EXAMPLE}"`),
+      limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+    })
+    .strict();
 
-export function createSearchTool(provider: SearchProvider): ToolDefinition {
   return defineTool({
     name: 'search',
     description:
       'Full-text search over cards, chat messages, docs pages, comments, and call transcripts ' +
-      'using TaskFlow Query Language (TQL). Fields available here: type, title, text, author, ' +
+      `using ${productName} Query Language (TQL). Fields available here: type, title, text, author, ` +
       'updated, created, archived — there is NO assignee field and NO due-date field. For "what ' +
       'is assigned to me", "what is due", or "what is overdue", use the `my_cards` tool instead; ' +
       'it will not work here. Returns only results the current user is allowed to see.',

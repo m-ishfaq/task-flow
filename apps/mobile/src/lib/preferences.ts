@@ -7,7 +7,7 @@ import type { Preferences } from './session.js';
  *
  * `org-gate.ts`'s own header makes the argument: the remembered org id is not a
  * credential and confers nothing on its own — it becomes the
- * attacker-controllable `x-taskflow-org` header, a WHERE filter against the
+ * attacker-controllable `x-rinavai-org` header, a WHERE filter against the
  * caller's OWN memberships, never a value written to `app.org_id`. So ordinary
  * on-disk storage is the right amount of protection, the same reasoning
  * apps/web gives for `localStorage`.

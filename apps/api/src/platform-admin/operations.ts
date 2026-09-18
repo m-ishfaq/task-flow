@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, schema, withPlatformAdminScope } from '@taskflow/db';
+import { and, countRows, desc, eq, lt, or, schema, withPlatformAdminScope } from '@taskflow/db';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
 import type { PlatformOperator } from './org-directory.service.js';
@@ -27,6 +27,10 @@ export interface OperationalEventRow {
   readonly occurredAt: Date;
 }
 
+function toNumber(val: unknown): number {
+  return Number(val ?? 0) || 0;
+}
+
 export async function listOperationalEvents(
   operator: PlatformOperator,
   input: {
@@ -38,11 +42,20 @@ export async function listOperationalEvents(
 ): Promise<{
   readonly events: readonly OperationalEventRow[];
   readonly nextCursor: string | null;
+  readonly summary: {
+    readonly totalEvents: number;
+    readonly successCount: number;
+    readonly failureCount: number;
+    readonly byKind: readonly { readonly kind: string; readonly count: number }[];
+  };
 }> {
   const cursor = parseCreatedCursor(input.cursor);
 
-  const rows = await withPlatformAdminScope(async (tx) => {
-    const query = tx
+  const kindCondition =
+    input.kind === null ? undefined : eq(schema.operationalEvents.kind, input.kind);
+
+  const [rows, summaryRows] = await withPlatformAdminScope(async (tx) => {
+    const paginatedQuery = tx
       .select({
         id: schema.operationalEvents.id,
         kind: schema.operationalEvents.kind,
@@ -55,8 +68,17 @@ export async function listOperationalEvents(
       .orderBy(desc(schema.operationalEvents.occurredAt), desc(schema.operationalEvents.id))
       .limit(input.limit + 1);
 
-    const conditions = [
-      input.kind === null ? undefined : eq(schema.operationalEvents.kind, input.kind),
+    const summaryQuery = tx
+      .select({
+        kind: schema.operationalEvents.kind,
+        outcome: schema.operationalEvents.outcome,
+        count: countRows(schema.operationalEvents.id),
+      })
+      .from(schema.operationalEvents)
+      .groupBy(schema.operationalEvents.kind, schema.operationalEvents.outcome);
+
+    const paginatedConditions = [
+      kindCondition,
       cursor === null
         ? undefined
         : or(
@@ -68,10 +90,18 @@ export async function listOperationalEvents(
           ),
     ].filter((condition) => condition !== undefined);
 
-    if (conditions.length > 0) {
-      query.where(and(...conditions));
+    if (paginatedConditions.length > 0) {
+      paginatedQuery.where(and(...paginatedConditions));
     }
-    return query;
+
+    const summaryConditions = [kindCondition].filter((condition) => condition !== undefined);
+
+    if (summaryConditions.length > 0) {
+      summaryQuery.where(and(...summaryConditions));
+    }
+
+    const [paginated, summary] = await Promise.all([paginatedQuery, summaryQuery]);
+    return [paginated, summary] as const;
   });
 
   /* Every operator action lands in the global chain — including a read
@@ -88,6 +118,26 @@ export async function listOperationalEvents(
   const page = hasMore ? rows.slice(0, input.limit) : rows;
   const last = page[page.length - 1];
 
+  /* Build summary from the grouped aggregation — collapse (kind, outcome)
+     rows into totals and per-kind counts. */
+  let totalEvents = 0;
+  let successCount = 0;
+  let failureCount = 0;
+  const kindMap = new Map<string, number>();
+  for (const row of summaryRows) {
+    const n = toNumber(row.count);
+    totalEvents += n;
+    if (row.outcome === 'success') {
+      successCount += n;
+    } else {
+      failureCount += n;
+    }
+    kindMap.set(row.kind, (kindMap.get(row.kind) ?? 0) + n);
+  }
+  const byKind = [...kindMap.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     events: page.map((row) => ({
       id: row.id,
@@ -99,5 +149,6 @@ export async function listOperationalEvents(
     })),
     nextCursor:
       hasMore && last !== undefined ? encodeCreatedCursor(last.occurredAt, last.id) : null,
+    summary: { totalEvents, successCount, failureCount, byKind },
   };
 }

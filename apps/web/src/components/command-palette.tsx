@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { Keyboard } from 'lucide-react';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { useUi } from '../lib/ui-store.js';
@@ -128,8 +129,7 @@ function PaletteDialog({
 
   const commands = useMemo<readonly Command[]>(() => {
     const go =
-      (to: '/home' | '/projects' | '/settings' | '/settings/audit' | '/admin/permissions') =>
-      () => {
+      (to: '/home' | '/projects' | '/settings' | '/settings/audit' | '/permissions') => () => {
         void navigate({ to });
       };
 
@@ -137,16 +137,9 @@ function PaletteDialog({
       { id: 'home', label: 'My tasks', hint: 'Go to', run: go('/home') },
       { id: 'projects', label: 'Projects', hint: 'Go to', run: go('/projects') },
       { id: 'settings', label: 'Settings', hint: 'Go to', run: go('/settings') },
+      { id: 'permissions', label: 'Permissions', hint: 'Go to', run: go('/permissions') },
       ...(capabilities?.viewAuditLog === true
-        ? [
-            { id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') },
-            {
-              id: 'permissions',
-              label: 'Permissions',
-              hint: 'Go to',
-              run: go('/admin/permissions'),
-            },
-          ]
+        ? [{ id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') }]
         : []),
       { id: 'toggle-sidebar', label: 'Toggle sidebar', hint: 'Action', run: toggleSidebar },
     ];
@@ -359,23 +352,33 @@ function ShortcutsDialog({
 }) {
   return (
     <ModalRoot open={open} onOpenChange={onOpenChange}>
-      <ModalContent size="md" className="p-4">
-        <ModalTitle>Keyboard shortcuts</ModalTitle>
-        <ModalDescription className="sr-only">
-          Every shortcut this app understands.
-        </ModalDescription>
+      <ModalContent size="md" className="p-0">
+        <div className="flex items-center gap-3 border-b border-line/50 px-5 py-4">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-surface-sunken">
+            <Keyboard aria-hidden="true" className="size-4 text-ink-faint" strokeWidth={1.75} />
+          </span>
+          <div>
+            <ModalTitle className="text-sm font-semibold">Keyboard shortcuts</ModalTitle>
+            <ModalDescription className="text-xs text-ink-faint">
+              Every shortcut this app understands.
+            </ModalDescription>
+          </div>
+        </div>
 
-        <div className="mt-3 space-y-4">
+        <div className="space-y-5 px-5 py-4">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                 {group.title}
               </p>
-              <ul className="space-y-1">
+              <ul className="space-y-0.5">
                 {group.items.map((item) => (
-                  <li key={item.keys} className="flex items-center justify-between text-sm">
+                  <li
+                    key={item.keys}
+                    className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-surface-hover/50"
+                  >
                     <span className="text-ink-muted">{item.description}</span>
-                    <kbd className="rounded-md border border-line/60 bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink">
+                    <kbd className="ml-4 inline-flex items-center gap-1 rounded-md border border-line/60 bg-surface-sunken px-2 py-0.5 font-mono text-[11px] font-medium text-ink shadow-[0_1px_0_0_var(--color-line)]">
                       {item.keys}
                     </kbd>
                   </li>

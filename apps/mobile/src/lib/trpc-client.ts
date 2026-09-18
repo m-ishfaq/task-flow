@@ -23,7 +23,7 @@ import {
  *     for its refresh cookie; a phone has no cookie and authenticates with a
  *     Bearer header it constructs per request (`deps.authHeaders`, from the
  *     session store). Nothing here reads or writes a cookie.
- *   - A client-type marker header. `x-taskflow-client: mobile` announces the
+ *   - A client-type marker header. `x-rinavai-client: mobile` announces the
  *     native transport so the API can route to the native auth path (§4.3). It
  *     is a hint the server treats as untrusted — a browser cannot set it and be
  *     believed — never an authorization input.

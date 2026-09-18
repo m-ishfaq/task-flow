@@ -6,6 +6,7 @@ import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { Badge, Button, Section, SkeletonRows } from '../../components/primitives.js';
+import { cn } from '../../lib/cn.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
 import { useBranding } from '../../lib/branding-context.js';
@@ -162,135 +163,126 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
       {overview.isError && <ErrorView error={overview.error} title="Could not load billing" />}
 
       {data !== undefined && (
-        <div className="flex flex-col gap-3">
-          <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <StatusBadge billingStatus={data.billingStatus} />
-                <span className="text-sm text-ink">
-                  {data.planName ?? data.planId ?? 'No plan'}
-                </span>
+        <div className="flex flex-col gap-4">
+          {/* ── Hero: current plan + price + renewal ── */}
+          <div className="rounded-xl border border-line/50 bg-surface-raised p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2.5">
+                  <StatusBadge billingStatus={data.billingStatus} />
+                  <span className="text-lg font-semibold text-ink">
+                    {data.planName ?? data.planId ?? 'No plan'}
+                  </span>
+                </div>
+
+                {data.currentPriceCents !== null && (
+                  <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
+                    {money(data.currentPriceCents)}
+                    <span className="text-sm font-normal text-ink-muted">/month</span>
+                  </p>
+                )}
+
+                {data.deadline !== null && (
+                  <p
+                    className={
+                      data.deadline.kind === 'grace_ends' || data.deadline.kind === 'cancels'
+                        ? 'mt-2 text-sm text-danger'
+                        : 'mt-2 text-sm text-ink-muted'
+                    }
+                  >
+                    {data.deadline.kind === 'trial_ends' && 'Trial ends '}
+                    {data.deadline.kind === 'grace_ends' && 'Access pauses '}
+                    {data.deadline.kind === 'renews' && 'Renews '}
+                    {data.deadline.kind === 'cancels' && 'Your subscription ends '}
+                    {data.deadline.kind === 'plan_changes' &&
+                      `Moves to ${data.deadline.planId ?? 'another plan'} `}
+                    <strong className="text-ink">{formatDate(data.deadline.at)}</strong>
+                    {daysUntil(data.deadline.at) !== null && (
+                      <span className="ml-1 inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                        {String(daysUntil(data.deadline.at))} days
+                      </span>
+                    )}
+                  </p>
+                )}
+
+                {data.billingStatus === 'trialing' && data.deadline === null && (
+                  <p className="mt-2 text-sm text-ink-muted">
+                    On trial, with no end date set. Choose a plan whenever you are ready.
+                  </p>
+                )}
+
+                {data.billingStatus === 'past_due' && data.billingGraceEndsAt !== null && (
+                  <p className="mt-2 text-sm text-danger">
+                    A recent payment failed. Update your payment method by{' '}
+                    {formatDate(data.billingGraceEndsAt)}, or access will pause.
+                  </p>
+                )}
+
+                {data.cancelAtPeriodEnd && data.billingStatus !== 'canceled' && (
+                  <p className="mt-2 text-sm text-ink-muted">
+                    Nothing changes until then — you keep {data.planName ?? 'your plan'} and every
+                    feature it includes, and you will not be charged again. Resume any time before
+                    the date to carry on as normal.
+                  </p>
+                )}
+
+                {data.billingStatus === 'canceled' && (
+                  <p className="mt-2 text-sm text-danger">
+                    This organization's subscription has ended. Choose a plan to restore access.
+                  </p>
+                )}
               </div>
 
-              {(data.billingStatus === 'active' || data.billingStatus === 'past_due') && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={portal.isPending}
-                  onClick={() => {
-                    portal.mutate();
-                  }}
-                >
-                  {portal.isPending ? 'Redirecting…' : 'Manage subscription'}
-                </Button>
-              )}
-
-              {/* Cancelling never takes effect immediately — the customer keeps
-                  what they paid for until the period ends, and the server
-                  refuses to do otherwise.
-
-                  Gated on `cancelAtPeriodEnd` as well as the renewal, because
-                  the first version was gated on the renewal ALONE: pressing
-                  Cancel changed nothing this page could see, so the button
-                  stayed, offering an action that had already been taken. */}
-              {data.billingStatus === 'active' &&
-                !data.cancelAtPeriodEnd &&
-                data.deadline?.kind === 'renews' && (
+              {/* Action buttons */}
+              <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:flex-col max-sm:[&>button]:w-full">
+                {(data.billingStatus === 'active' || data.billingStatus === 'past_due') && (
                   <Button
+                    variant="secondary"
                     size="sm"
-                    disabled={cancel.isPending}
+                    disabled={portal.isPending}
                     onClick={() => {
-                      cancel.mutate();
+                      portal.mutate();
                     }}
                   >
-                    {cancel.isPending ? 'Cancelling…' : 'Cancel at period end'}
+                    {portal.isPending ? 'Redirecting…' : 'Manage subscription'}
                   </Button>
                 )}
 
-              {/* Two routes to the same button. `cancelAtPeriodEnd` is the
-                  useful one — the subscription is still live and resuming
-                  genuinely calls it off — where `canceled` means it has
-                  already lapsed and this restarts it. */}
-              {(data.cancelAtPeriodEnd || data.billingStatus === 'canceled') && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={resume.isPending}
-                  onClick={() => {
-                    resume.mutate();
-                  }}
-                >
-                  {resume.isPending ? 'Resuming…' : 'Resume subscription'}
-                </Button>
-              )}
+                {data.billingStatus === 'active' &&
+                  !data.cancelAtPeriodEnd &&
+                  data.deadline?.kind === 'renews' && (
+                    <Button
+                      size="sm"
+                      disabled={cancel.isPending}
+                      onClick={() => {
+                        cancel.mutate();
+                      }}
+                    >
+                      {cancel.isPending ? 'Cancelling…' : 'Cancel at period end'}
+                    </Button>
+                  )}
+
+                {(data.cancelAtPeriodEnd || data.billingStatus === 'canceled') && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={resume.isPending}
+                    onClick={() => {
+                      resume.mutate();
+                    }}
+                  >
+                    {resume.isPending ? 'Resuming…' : 'Resume subscription'}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {reconcile.isPending && (
-              <p className="mt-2 text-xs text-ink-muted">Confirming your payment…</p>
+              <p className="mt-3 text-xs text-ink-muted">Confirming your payment…</p>
             )}
 
-            {/* ONE sentence, from the server's computed deadline — this page
-                no longer decides which of three date columns matters. */}
-            {data.deadline !== null && (
-              <p
-                className={
-                  data.deadline.kind === 'grace_ends' || data.deadline.kind === 'cancels'
-                    ? 'mt-2 text-xs text-danger'
-                    : 'mt-2 text-xs text-ink-muted'
-                }
-              >
-                {data.deadline.kind === 'trial_ends' && 'Trial ends '}
-                {data.deadline.kind === 'grace_ends' && 'Access pauses '}
-                {data.deadline.kind === 'renews' && 'Renews '}
-                {data.deadline.kind === 'cancels' && 'Your subscription ends '}
-                {data.deadline.kind === 'plan_changes' &&
-                  `Moves to ${data.deadline.planId ?? 'another plan'} `}
-                <strong>{formatDate(data.deadline.at)}</strong>
-                {daysUntil(data.deadline.at) !== null &&
-                  ` — ${String(daysUntil(data.deadline.at))} days`}
-                .
-              </p>
-            )}
-
-            {data.billingStatus === 'trialing' && data.deadline === null && (
-              /* A trialing org with no end date is a real state here: seeded
-                 orgs are created without one. Say so rather than rendering
-                 nothing, which looked like the page was still loading. */
-              <p className="mt-2 text-xs text-ink-muted">
-                On trial, with no end date set. Choose a plan whenever you are ready.
-              </p>
-            )}
-
-            {data.billingStatus === 'past_due' && data.billingGraceEndsAt !== null && (
-              <p className="mt-2 text-xs text-danger">
-                A recent payment failed. Update your payment method by{' '}
-                {formatDate(data.billingGraceEndsAt)}, or access will pause.
-              </p>
-            )}
-
-            {data.cancelAtPeriodEnd && data.billingStatus !== 'canceled' && (
-              /* Said in full rather than left to the one-line deadline above:
-                 "ends 13 Sep" does not tell somebody whether they lose access
-                 that day, and that is the only question they have. */
-              <p className="mt-2 text-xs text-ink-muted">
-                Nothing changes until then — you keep {data.planName ?? 'your plan'} and every
-                feature it includes, and you will not be charged again. Resume any time before the
-                date to carry on as normal.
-              </p>
-            )}
-
-            {data.billingStatus === 'canceled' && (
-              <p className="mt-2 text-xs text-danger">
-                This organization’s subscription has ended. Choose a plan to restore access.
-              </p>
-            )}
-
-            {/* Who can act. `org:billing` is Owner-only and no tuple can
-                grant it, so an admin reading this page can do nothing about
-                what it says — naming the owner turns a dead end into a next
-                step. */}
             {data.billingContact !== null && (
-              <p className="mt-2 text-[11px] text-ink-faint">
+              <p className="mt-3 text-xs text-ink-faint">
                 Billing is managed by{' '}
                 <strong className="text-ink-muted">
                   {data.billingContact.name ?? data.billingContact.email}
@@ -300,142 +292,95 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
             )}
           </div>
 
-          {data.features.length > 0 && (
-            <div className="rounded-xl border border-line/50 p-4">
-              <h4 className="text-xs font-semibold text-ink">Included in your plan</h4>
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {data.features.map((feature) => (
-                  <li key={feature.flagName} className="flex items-baseline gap-2">
-                    <span className="shrink-0 text-success">✓</span>
-                    <span>
-                      <span className="text-xs text-ink">{featureLabel(feature.flagName)}</span>
-                      {/* What it actually means. A chip reading "tqlTextSyntax"
-                          tells a customer nothing about what they are paying
-                          for. */}
-                      {featureDescription(feature.flagName) !== null && (
-                        <span className="block text-[11px] text-ink-muted">
-                          {featureDescription(feature.flagName)}
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Usage, but only where there is a ceiling to compare against.
-              `null` is unlimited and showing "spent $0 of unlimited" is noise;
-              a real cap is the thing worth watching. */}
-          {data.usage.telephonyCapCents !== null && (
-            <div className="rounded-xl border border-line/50 p-4">
-              <div className="flex items-baseline justify-between text-xs">
-                <span className="font-semibold text-ink">Voice &amp; messaging, last 30 days</span>
-                <span className="text-ink-muted">
-                  {money(data.usage.telephonySpentCents)} of {money(data.usage.telephonyCapCents)}
-                </span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-sunken">
-                <div
-                  className={
-                    data.usage.telephonySpentCents >= data.usage.telephonyCapCents
-                      ? 'h-full bg-danger'
-                      : 'h-full bg-accent'
-                  }
-                  style={{
-                    width: `${String(
-                      Math.min(
-                        100,
-                        data.usage.telephonyCapCents === 0
-                          ? 100
-                          : Math.round(
-                              (data.usage.telephonySpentCents / data.usage.telephonyCapCents) * 100,
-                            ),
-                      ),
-                    )}%`,
-                  }}
+          {/* ── Usage ── */}
+          {(data.usage.telephonyCapCents !== null || data.usage.aiCapCents !== null) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {data.usage.telephonyCapCents !== null && (
+                <UsageCard
+                  label="Voice & messaging"
+                  sublabel="last 30 days"
+                  spent={data.usage.telephonySpentCents}
+                  cap={data.usage.telephonyCapCents}
+                  included={data.usage.telephonyIncludedCents}
+                  includedNote="included in your plan; usage past that is billed with your next invoice"
                 />
-              </div>
-              {data.usage.telephonyIncludedCents > 0 && (
-                <p className="mt-1 text-[10px] text-ink-faint">
-                  {money(data.usage.telephonyIncludedCents)} is included in your plan; usage past
-                  that is billed with your next invoice.
-                </p>
+              )}
+              {data.usage.aiCapCents !== null && (
+                <UsageCard
+                  label="AI assistant"
+                  sublabel="this month"
+                  spent={data.usage.aiSpentCents}
+                  cap={data.usage.aiCapCents}
+                />
               )}
             </div>
           )}
 
-          {/* AI assistant spend, alongside telephony's — previously visible
-              only to a platform operator (the AI Models console tab's own
-              cross-org report), never to the org that actually pays for it.
-              Same "only where there is a ceiling" rule as telephony's own
-              panel above. */}
-          {data.usage.aiCapCents !== null && (
-            <div className="rounded-xl border border-line/50 p-4">
-              <div className="flex items-baseline justify-between text-xs">
-                <span className="font-semibold text-ink">AI assistant, this month</span>
-                <span className="text-ink-muted">
-                  {money(data.usage.aiSpentCents)} of {money(data.usage.aiCapCents)}
-                </span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-sunken">
-                <div
-                  className={
-                    data.usage.aiSpentCents >= data.usage.aiCapCents
-                      ? 'h-full bg-danger'
-                      : 'h-full bg-accent'
-                  }
-                  style={{
-                    width: `${String(
-                      Math.min(
-                        100,
-                        data.usage.aiCapCents === 0
-                          ? 100
-                          : Math.round((data.usage.aiSpentCents / data.usage.aiCapCents) * 100),
-                      ),
-                    )}%`,
-                  }}
-                />
+          {/* ── Included features ── */}
+          {data.features.length > 0 && (
+            <div className="rounded-xl border border-line/50 bg-surface-raised p-4">
+              <h4 className="text-xs font-semibold text-ink">Included in your plan</h4>
+              <div className="mt-2.5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                {data.features.map((feature) => (
+                  <div key={feature.flagName} className="flex items-start gap-2.5">
+                    <span className="mt-0.5 shrink-0 text-sm text-success">✓</span>
+                    <div className="min-w-0">
+                      <span className="text-sm text-ink">{featureLabel(feature.flagName)}</span>
+                      {featureDescription(feature.flagName) !== null && (
+                        <span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">
+                          {featureDescription(feature.flagName)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          <InvoiceHistory orgId={orgId} />
-
-          <div className="rounded-xl border border-line/50 p-4">
+          {/* ── Plans ── */}
+          <div className="rounded-xl border border-line/50 bg-surface-raised p-4">
             <h4 className="text-xs font-semibold text-ink">Plans</h4>
 
-            {plans.isPending && <SkeletonRows rows={2} className="mt-1.5 *:h-10" />}
+            {plans.isPending && <SkeletonRows rows={2} className="mt-2.5 *:h-10" />}
             {plans.isError && <ErrorText error={plans.error} />}
 
-            {/* An empty catalog is a real state, and the previous version of
-                this page rendered it as a disabled button with no words. */}
             {plans.data !== undefined && sellable.length === 0 && (
-              <p className="mt-1.5 text-xs text-ink-muted">
+              <p className="mt-2.5 text-xs text-ink-muted">
                 No plans are available for purchase yet. Nothing is wrong with your account — the
                 catalog has not been set up.
               </p>
             )}
 
             {sellable.length > 0 && (
-              <ul className="mt-1.5 divide-y divide-line">
+              <ul className="mt-2.5 space-y-1.5">
                 {sellable.map((plan) => {
                   const monthly = plan.prices.find((price) => price.interval === 'month');
                   const current = plan.id === data.planId;
 
                   return (
-                    <li key={plan.id} className="flex items-center gap-3 py-2">
+                    <li
+                      key={plan.id}
+                      className={cn(
+                        'flex flex-wrap items-center gap-4 rounded-lg border p-3.5 transition-colors max-sm:flex-col max-sm:items-stretch max-sm:gap-3',
+                        current
+                          ? 'border-accent/30 bg-accent/5'
+                          : 'border-line/50 hover:border-line-strong',
+                      )}
+                    >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-ink">
-                          {plan.name}
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-ink">{plan.name}</p>
                           {current && (
-                            <span className="ml-1.5 text-[10px] text-accent">current</span>
+                            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                              current
+                            </span>
                           )}
-                        </p>
+                        </div>
                         {plan.description !== null && (
-                          <p className="text-xs text-ink-muted">{plan.description}</p>
+                          <p className="mt-0.5 text-xs text-ink-muted">{plan.description}</p>
                         )}
-                        <p className="mt-0.5 text-xs text-ink">
+                        <p className="mt-1 text-xs text-ink">
                           {plan.prices
                             .map(
                               (price) =>
@@ -444,40 +389,31 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                             .join(' · ')}
                         </p>
 
-                        {/* What you actually GET. The picker previously showed
-                            a name and a price and left "what is the difference
-                            between these tiers" unanswerable — which is the
-                            only question anyone opens a plan picker with. */}
-                        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                          {plan.features.length === 0 ? (
-                            <li className="text-[11px] text-ink-faint">
-                              Core work management only
-                            </li>
-                          ) : (
-                            plan.features.map((feature) => (
+                        {plan.features.length > 0 && (
+                          <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                            {plan.features.map((feature) => (
                               <li key={feature} className="text-[11px] text-ink-muted">
                                 ✓ {featureLabel(feature)}
                               </li>
-                            ))
-                          )}
-                        </ul>
+                            ))}
+                          </ul>
+                        )}
+                        {plan.features.length === 0 && (
+                          <p className="mt-1.5 text-[11px] text-ink-faint">
+                            Core work management only
+                          </p>
+                        )}
                       </div>
 
-                      {/* Two different processor operations behind one column.
-                          With no subscription this STARTS one (checkout); with
-                          a subscription it reprices the existing one, because
-                          checkout would create a SECOND and bill for both. */}
                       <Button
                         {...(current ? {} : ({ variant: 'primary' } as const))}
                         size="sm"
+                        className="max-sm:w-full"
                         disabled={
                           current || checkout.isPending || change.isPending || monthly === undefined
                         }
                         onClick={() => {
                           if (hasSubscription) {
-                            /* Propose, do not act. Checkout confirms on the
-                               processor's own hosted page before taking money;
-                               a switch has no such step, and it moves money. */
                             setProposed({
                               planId: plan.id,
                               planName: plan.name,
@@ -502,18 +438,8 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               </ul>
             )}
 
-            {/* Static — not a `billing.plans` row. Enterprise has no fixed
-                price to sell through Checkout, so it can never be
-                `sellable` (`plan.prices.length > 0`); the fulfillment side
-                already exists (`billing.org_entitlements`, the operator
-                console's per-org override) and needs no plan row to work.
-                `salesEmail` comes from the platform-wide branding singleton
-                (migration 0096, Branding tab in the operator console) —
-                never a hardcoded address — and the whole tile renders
-                nothing until an operator sets one, the same "no dead
-                button" rule `sellable.length === 0` above follows. */}
             {salesEmail !== null && (
-              <div className="mt-3 flex items-center justify-between gap-3 border-t border-line/50 pt-3">
+              <div className="flex items-center justify-between gap-3 border-t border-line/50 pt-3 max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
                 <div>
                   <p className="text-sm text-ink">Enterprise</p>
                   <p className="text-xs text-ink-muted">
@@ -522,6 +448,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 </div>
                 <Button
                   size="sm"
+                  className="max-sm:w-full"
                   onClick={() => {
                     window.location.assign(`mailto:${salesEmail}`);
                   }}
@@ -531,31 +458,33 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               </div>
             )}
           </div>
+
+          <InvoiceHistory orgId={orgId} />
+
+          {proposed !== null && data !== undefined && (
+            <SwitchPlanDialog
+              planName={proposed.planName}
+              amountCents={proposed.amountCents}
+              currentPriceCents={data.currentPriceCents}
+              renewsAt={data.deadline?.kind === 'renews' ? data.deadline.at : null}
+              pending={change.isPending}
+              onClose={() => {
+                setProposed(null);
+              }}
+              onConfirm={() => {
+                change.mutate({ planId: proposed.planId, interval: 'month' });
+                setProposed(null);
+              }}
+            />
+          )}
+
+          {change.isError && <ErrorText error={change.error} />}
+          {cancel.isError && <ErrorText error={cancel.error} />}
+          {resume.isError && <ErrorText error={resume.error} />}
+          {checkout.isError && <ErrorText error={checkout.error} />}
+          {portal.isError && <ErrorText error={portal.error} />}
         </div>
       )}
-
-      {proposed !== null && data !== undefined && (
-        <SwitchPlanDialog
-          planName={proposed.planName}
-          amountCents={proposed.amountCents}
-          currentPriceCents={data.currentPriceCents}
-          renewsAt={data.deadline?.kind === 'renews' ? data.deadline.at : null}
-          pending={change.isPending}
-          onClose={() => {
-            setProposed(null);
-          }}
-          onConfirm={() => {
-            change.mutate({ planId: proposed.planId, interval: 'month' });
-            setProposed(null);
-          }}
-        />
-      )}
-
-      {change.isError && <ErrorText error={change.error} />}
-      {cancel.isError && <ErrorText error={cancel.error} />}
-      {resume.isError && <ErrorText error={resume.error} />}
-      {checkout.isError && <ErrorText error={checkout.error} />}
-      {portal.isError && <ErrorText error={portal.error} />}
     </Section>
   );
 }
@@ -654,33 +583,45 @@ function InvoiceHistory({ orgId }: { readonly orgId: string }) {
     queryFn: async () => wire(await api.billing.invoices.query({ limit: 24 })),
   });
 
-  /* Rendered only when there is something to show. A "no invoices yet" panel
-     on every trialing org's settings page is noise about a normal state. */
   if (invoices.data === undefined || invoices.data.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-line/50 p-4">
+    <div className="rounded-xl border border-line/50 bg-surface-raised p-4">
       <h4 className="text-xs font-semibold text-ink">Invoices</h4>
-      <ul className="mt-1.5 divide-y divide-line">
+      <ul className="mt-2.5 divide-y divide-line/50">
         {invoices.data.map((invoice) => (
-          <li key={invoice.providerInvoiceId} className="flex items-center gap-3 py-1.5 text-xs">
-            <span className="w-24 shrink-0 text-ink-muted">{formatDate(invoice.issuedAt)}</span>
-            <span className="min-w-0 flex-1 truncate text-ink">
+          <li
+            key={invoice.providerInvoiceId}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-xs first:pt-0 last:pb-0 max-sm:gap-x-2 max-sm:gap-y-0.5"
+          >
+            <span className="w-24 shrink-0 text-ink-muted max-sm:w-auto">
+              {formatDate(invoice.issuedAt)}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium text-ink">
               {invoice.number ?? invoice.providerInvoiceId}
             </span>
-            <Badge>{invoice.status}</Badge>
-            <span className="w-20 shrink-0 text-right text-ink">
+            <Badge
+              className={cn(
+                invoice.status === 'paid'
+                  ? 'text-success border-success/30 bg-success/10'
+                  : invoice.status === 'open'
+                    ? 'text-accent border-accent/30 bg-accent/10'
+                    : invoice.status === 'void'
+                      ? 'text-ink-faint border-line/30 bg-surface-hover/50'
+                      : '',
+              )}
+            >
+              {invoice.status}
+            </Badge>
+            <span className="w-20 shrink-0 text-right font-medium text-ink max-sm:w-auto max-sm:text-left">
               {money(invoice.amountDueCents, invoice.currency)}
             </span>
             {invoice.hostedInvoiceUrl !== null && (
               <a
                 href={invoice.hostedInvoiceUrl}
                 target="_blank"
-                /* noreferrer alongside noopener: the target is the processor's
-                   own page, and the referrer would leak this app's settings
-                   path to it. */
                 rel="noopener noreferrer"
-                className="shrink-0 text-accent underline decoration-dotted"
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
               >
                 View
               </a>
@@ -718,6 +659,67 @@ function money(cents: number, currency = 'usd'): string {
   }).format(cents / 100);
 }
 
+function UsageCard({
+  label,
+  sublabel,
+  spent,
+  cap,
+  included,
+  includedNote,
+}: {
+  readonly label: string;
+  readonly sublabel: string;
+  readonly spent: number;
+  readonly cap: number;
+  readonly included?: number;
+  readonly includedNote?: string;
+}) {
+  const pct = cap === 0 ? 100 : Math.min(100, Math.round((spent / cap) * 100));
+  const over = spent >= cap;
+
+  return (
+    <div className="rounded-xl border border-line/50 bg-surface-raised p-4">
+      <p className="text-xs font-semibold text-ink">{label}</p>
+      <div className="mt-2 flex items-baseline justify-between">
+        <span className="text-2xl font-bold tracking-tight text-ink">{money(spent)}</span>
+        <span className="text-xs text-ink-muted">
+          of {money(cap)}
+          <span className="ml-1 text-ink-faint">· {sublabel}</span>
+        </span>
+      </div>
+      <div className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-surface-sunken">
+        <div
+          className={cn(
+            'h-full rounded-full transition-all',
+            over ? 'bg-danger' : pct > 75 ? 'bg-warning' : 'bg-accent',
+          )}
+          style={{ width: `${String(pct)}%` }}
+        />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[11px]">
+        <span className={cn('font-medium', over ? 'text-danger' : 'text-ink-muted')}>
+          {String(pct)}% used
+        </span>
+        {included !== undefined && included > 0 && includedNote !== undefined && (
+          <span className="text-ink-faint">
+            {money(included)} {includedNote}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ billingStatus }: { readonly billingStatus: string }) {
-  return <Badge>{billingStatus}</Badge>;
+  const color =
+    billingStatus === 'active'
+      ? 'text-success border-success/30 bg-success/10'
+      : billingStatus === 'trialing'
+        ? 'text-accent border-accent/30 bg-accent/10'
+        : billingStatus === 'past_due'
+          ? 'text-warning border-warning/30 bg-warning/10'
+          : billingStatus === 'canceled'
+            ? 'text-danger border-danger/30 bg-danger/10'
+            : '';
+  return <Badge className={color}>{billingStatus}</Badge>;
 }

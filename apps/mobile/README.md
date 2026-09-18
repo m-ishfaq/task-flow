@@ -122,7 +122,7 @@ Origin, nothing stops any caller from sending that same string, so it would
 be security theater rather than a real control. `auth.ts` instead gets one
 narrow, explicitly-labeled `isNativeClient` branch that relaxes the origin
 check ONLY when `Origin` is completely absent AND the caller presents the
-`x-taskflow-client: mobile` marker (relocated to `@taskflow/contracts` so
+`x-rinavai-client: mobile` marker (relocated to `@taskflow/contracts` so
 `apps/mobile`'s HTTP client, its socket client, and `apps/realtime`'s
 handshake all read the same constant). The token verification that
 immediately follows is what still decides — see that function's own header

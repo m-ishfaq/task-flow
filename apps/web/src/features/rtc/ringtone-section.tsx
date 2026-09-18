@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { cn } from '../../lib/cn.js';
 import { Skeleton } from '../../components/primitives.js';
 import { callPrefsQuery, invalidateCallPrefs } from './api.js';
@@ -25,6 +26,7 @@ import { previewRingtone, RINGTONE_NAMES, RINGTONES, type RingtoneName } from '.
 export function RingtoneSection() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { productName } = useBranding();
   const prefs = useQuery(callPrefsQuery());
 
   const save = useMutation({
@@ -46,7 +48,7 @@ export function RingtoneSection() {
       <div>
         <h2 className="text-sm font-medium text-ink">Ringtone</h2>
         <p className="text-xs text-ink-muted">
-          What you hear when somebody calls you in TaskFlow. Select one to preview it.
+          What you hear when somebody calls you in {productName}. Select one to preview it.
         </p>
       </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,6 +8,7 @@ import {
   Folder,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
 } from 'lucide-react';
 import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
@@ -17,6 +18,7 @@ import { useIsDesktop } from '../../lib/use-media-query.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
+  AvatarStack,
   Badge,
   Button,
   Empty,
@@ -26,7 +28,10 @@ import {
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgDetailQuery } from '../org/api.js';
+import { useMembers } from '../org/use-members.js';
 import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
+import { useDocsPresence } from './editor/use-docs-presence.js';
+import { useCollabProvider } from './editor/use-collab-provider.js';
 import { PublishPanel } from './publish-panel.js';
 import { VersionHistoryPanel } from './version-history.js';
 import { CommentsSuggestionsPanel } from './comments-suggestions.js';
@@ -236,7 +241,7 @@ function SpaceTreePanel({
       )}
 
       {spacesOpen && (
-        <nav aria-label="Spaces" className="min-h-0 flex-1 overflow-y-auto p-2">
+        <nav aria-label="Spaces" className="min-h-0 flex-1 overflow-y-auto p-2.5">
           {spaces.isPending ? (
             <div aria-busy="true" className="space-y-1.5 p-1">
               <Skeleton className="h-5 w-4/5" />
@@ -368,7 +373,7 @@ function SpaceNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${space.name}` : `Collapse ${space.name}`}
-          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
         >
           {collapsed ? (
             <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
@@ -383,7 +388,7 @@ function SpaceNode({
             setCollapsed((value) => !value);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs font-medium',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs font-medium',
             isArchived ? 'text-ink-faint' : 'text-ink-muted hover:text-ink',
           )}
           title={space.name}
@@ -401,7 +406,7 @@ function SpaceNode({
               onClick={() => {
                 restore.mutate();
               }}
-              className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+              className="shrink-0 px-1.5 py-1 text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
             >
               Restore
             </button>
@@ -416,7 +421,7 @@ function SpaceNode({
               setAddingRootPage((value) => !value);
             }}
             aria-label={`New page in ${space.name}`}
-            className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+            className="shrink-0 px-1.5 py-1 text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
           >
             + Page
           </button>
@@ -424,7 +429,7 @@ function SpaceNode({
       </div>
 
       {!collapsed && (
-        <div className="mb-1 ml-5 border-l border-line/50 pl-2">
+        <div className="mb-1 ml-5 border-l border-line/70 pl-2">
           {addingRootPage && (
             <div className="py-1">
               <CreatePageForm
@@ -529,7 +534,7 @@ function PageNode({
             }}
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Expand ${page.title}` : `Collapse ${page.title}`}
-            className="flex w-4 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
+            className="flex w-4 shrink-0 items-center justify-center py-1.5 text-ink-faint hover:text-ink"
           >
             {collapsed ? (
               <ChevronRight aria-hidden="true" className="size-3" strokeWidth={2.25} />
@@ -547,7 +552,7 @@ function PageNode({
             onSelect(pageId);
           }}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1.5 text-left text-xs',
             selected ? 'font-medium text-ink' : 'text-ink-muted hover:text-ink',
           )}
           title={page.title}
@@ -570,7 +575,7 @@ function PageNode({
 
       {(addingChild || (!collapsed && children.length > 0)) && (
         <ul
-          className="border-l border-line/50/50"
+          className="border-l border-line/70"
           style={{
             /* BOTH the margin and the padding are the indent, and both must
                stop past the cap — a level that kept padding would quietly
@@ -733,6 +738,7 @@ function PagePanel({
 }) {
   const navigate = useNavigate();
   const pages = useQuery(pagesQuery(orgId, spaceId));
+  const spaces = useQuery({ ...spacesQuery(orgId), enabled: orgId !== '' });
   const queryClient = useQueryClient();
   const toast = useToast();
   const [editingTitle, setEditingTitle] = useState(false);
@@ -742,6 +748,7 @@ function PagePanel({
      fresh Hocuspocus connection — `version-history.tsx`'s own header on why
      a restore is otherwise invisible until the next reload. */
   const [editorGeneration, setEditorGeneration] = useState(0);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
 
   /* Must be stable, or `docs-editor.tsx`'s `onReady` effect re-fires (and
      re-notifies) on every render — see that file's own header. */
@@ -771,6 +778,41 @@ function PagePanel({
       toast.failure('That did not go through', error);
     },
   });
+
+  /* Live presence — deduplicated by userId from the Yjs awareness map. */
+  const { provider: liveProvider } = useCollabProvider(orgId as OrgId, pageId);
+  const presenceUsers = useDocsPresence(liveProvider);
+  const { personOf } = useMembers();
+  const resolvedPresence = useMemo(() => {
+    if (presenceUsers.length === 0)
+      return [] as { readonly userId: string; readonly label: string }[];
+    return presenceUsers.map((user) => ({
+      ...user,
+      label: personOf(user.userId).label,
+    }));
+  }, [presenceUsers, personOf]);
+
+  /* Breadcrumb — walk parentPageId up through the pages list. */
+  const ancestors = useMemo(() => {
+    const all = pages.data ?? [];
+    const path: { pageId: string; title: string }[] = [];
+    let current = all.find((row) => row.pageId === pageId);
+    while (current?.parentPageId) {
+      const parentId = current.parentPageId;
+      const parent = all.find((row) => row.pageId === parentId);
+      if (parent) {
+        path.unshift({ pageId: parent.pageId, title: parent.title });
+        current = parent;
+      } else break;
+    }
+    return path;
+  }, [pages.data, pageId]);
+
+  /* Resolved names for space (breadcrumb). */
+  const spaceTitle = useMemo(() => {
+    const allSpaces = (spaces.data ?? []) as SpaceSummary[];
+    return allSpaces.find((s) => s.spaceId === spaceId)?.name ?? '';
+  }, [spaces.data, spaceId]);
 
   if (pages.isPending) {
     return (
@@ -802,6 +844,15 @@ function PagePanel({
 
   const isArchived = page.archivedAt !== null;
 
+  /* Tab strip — each tool renders below the editor; only the active one is mounted. */
+  const DOC_TOOLS = [
+    { id: 'comments' as const, label: 'Comments' },
+    { id: 'versions' as const, label: 'Version history' },
+    { id: 'publish' as const, label: 'Publish' },
+    { id: 'templates' as const, label: 'Templates' },
+    { id: 'backlinks' as const, label: 'Backlinks' },
+  ];
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
@@ -814,6 +865,38 @@ function PagePanel({
         <span aria-hidden="true">←</span> Spaces
       </button>
 
+      {/* Breadcrumb */}
+      <nav aria-label="Breadcrumbs" className="text-xs text-ink-faint">
+        <ol className="flex flex-wrap items-center gap-1">
+          <li>
+            <button
+              type="button"
+              onClick={() => {
+                void navigate({ to: '/docs', search: { space: spaceId } });
+              }}
+              className="rounded px-1 py-0.5 transition-colors hover:bg-surface-hover hover:text-ink"
+            >
+              {spaceTitle}
+            </button>
+          </li>
+          {ancestors.map((a) => (
+            <li key={a.pageId} className="flex items-center gap-1">
+              <span aria-hidden="true">/</span>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigate({ to: '/docs', search: { space: spaceId, page: a.pageId } });
+                }}
+                className="truncate rounded px-1 py-0.5 transition-colors hover:bg-surface-hover hover:text-ink"
+              >
+                {a.title}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      {/* Title + actions */}
       <div className="flex items-start justify-between gap-3">
         {editingTitle ? (
           <form
@@ -851,37 +934,40 @@ function PagePanel({
           </form>
         ) : (
           <>
-            <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
-              {page.title}
-              {isArchived && <Badge className="text-warning">archived</Badge>}
-            </h1>
+            <div className="flex flex-1 flex-col gap-1">
+              <h1 className="group flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
+                <span className="leading-snug">{page.title}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTitle(page.title);
+                    setEditingTitle(true);
+                  }}
+                  className="rounded p-0.5 text-ink-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-surface-hover"
+                  aria-label="Edit title"
+                >
+                  <Pencil aria-hidden="true" className="size-3.5" />
+                </button>
+                {isArchived && <Badge className="text-warning">archived</Badge>}
+              </h1>
+              {/* Metadata line — "N people here now" */}
+              {resolvedPresence.length > 0 && (
+                <p className="flex items-center gap-1.5 text-xs text-ink-faint">
+                  <AvatarStack people={resolvedPresence} max={3} size="xs" />
+                  <span>
+                    {resolvedPresence.length === 1
+                      ? '1 person here now'
+                      : `${String(resolvedPresence.length)} people here now`}
+                  </span>
+                </p>
+              )}
+            </div>
             <div className="flex shrink-0 gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setTitle(page.title);
-                  setEditingTitle(true);
-                }}
-              >
-                Rename
-              </Button>
-              {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
-                  per page — `page.capabilities.archive` is the server's own
-                  answer, not a rule re-derived here. Hidden entirely for a
-                  Member with no grant, rather than shown and left to answer
-                  FORBIDDEN (Phase 15 §1's sweep). */}
               {page.capabilities.archive && (
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    // `restore: true` means "un-archive" — when the page is
-                    // NOT currently archived, this button archives it, so the
-                    // mutation's `restore` argument is `isArchived` itself,
-                    // not its negation. (Caught by an end-to-end smoke test:
-                    // the flipped version silently no-oped on every click,
-                    // since "restore" on a live page has nothing to undo.)
                     archive.mutate(isArchived);
                   }}
                   disabled={archive.isPending}
@@ -902,33 +988,64 @@ function PagePanel({
         onReady={handleEditorReady}
       />
 
-      <div className="space-y-6 border-t border-line pt-4">
-        <PublishPanel
-          orgId={orgId}
-          spaceId={spaceId}
-          pageId={pageId}
-          publishedAt={page.publishedAt}
-        />
+      {/* Tab strip */}
+      <div className="flex items-center gap-1 border-b border-line">
+        {DOC_TOOLS.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            onClick={() => {
+              setActiveTool(activeTool === tool.id ? null : tool.id);
+            }}
+            className={cn(
+              'px-3 py-2 text-xs font-medium transition-colors',
+              activeTool === tool.id
+                ? 'border-b-2 border-accent text-ink'
+                : 'text-ink-faint hover:text-ink',
+            )}
+          >
+            {tool.label}
+          </button>
+        ))}
+      </div>
 
-        <VersionHistoryPanel
-          orgId={orgId}
-          pageId={pageId}
-          onRestored={() => {
-            setEditorGeneration((generation) => generation + 1);
-          }}
-        />
-
-        <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
-
-        <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
-
-        <BacklinksPanel
-          orgId={orgId}
-          pageId={pageId}
-          onNavigate={(targetSpaceId, targetPageId) => {
-            void navigate({ to: '/docs', search: { space: targetSpaceId, page: targetPageId } });
-          }}
-        />
+      {/* Active panel content */}
+      <div className="space-y-3">
+        {activeTool === 'comments' && (
+          <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
+        )}
+        {activeTool === 'versions' && (
+          <VersionHistoryPanel
+            orgId={orgId}
+            pageId={pageId}
+            onRestored={() => {
+              setEditorGeneration((generation) => generation + 1);
+            }}
+          />
+        )}
+        {activeTool === 'publish' && (
+          <PublishPanel
+            orgId={orgId}
+            spaceId={spaceId}
+            pageId={pageId}
+            publishedAt={page.publishedAt}
+          />
+        )}
+        {activeTool === 'templates' && (
+          <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
+        )}
+        {activeTool === 'backlinks' && (
+          <BacklinksPanel
+            orgId={orgId}
+            pageId={pageId}
+            onNavigate={(targetSpaceId, targetPageId) => {
+              void navigate({
+                to: '/docs',
+                search: { space: targetSpaceId, page: targetPageId },
+              });
+            }}
+          />
+        )}
       </div>
     </div>
   );

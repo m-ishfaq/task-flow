@@ -352,7 +352,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px]"
+                      className="h-6 px-1.5 text-[11px]"
                       onClick={() => {
                         if (!revealAnchor(editorHandle, comment.anchorFrom)) {
                           toast.show('That text is no longer available.', { tone: 'neutral' });
@@ -365,7 +365,7 @@ function CommentsTab({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-5 px-1 text-[11px]"
+                        className="h-6 px-1.5 text-[11px]"
                         onClick={() => {
                           setEditing(comment.commentId);
                         }}
@@ -376,7 +376,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px]"
+                      className="h-6 px-1.5 text-[11px]"
                       onClick={() => {
                         resolve.mutate({
                           commentId: comment.commentId as CommentId,
@@ -389,7 +389,7 @@ function CommentsTab({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-5 px-1 text-[11px] text-danger"
+                      className="h-6 px-1.5 text-[11px] text-danger"
                       onClick={() => {
                         remove.mutate(comment.commentId as CommentId);
                       }}
@@ -669,7 +669,7 @@ function SuggestionRow({
       )}
 
       <div className="mt-1 flex flex-wrap gap-1">
-        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onReveal}>
+        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onReveal}>
           Reveal
         </Button>
         {pending && (
@@ -677,7 +677,7 @@ function SuggestionRow({
             <Button
               size="sm"
               variant="ghost"
-              className="h-5 px-1 text-[11px] text-success"
+              className="h-6 px-1.5 text-[11px] text-success"
               disabled={decidePending}
               onClick={() => {
                 onDecide('accepted');

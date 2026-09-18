@@ -47,7 +47,7 @@ export const TEST_ENV: Env = parseEnv({
   JWT_STATE_SECRET: Buffer.alloc(32, 2).toString('base64'),
   MAIL_HOST: 'localhost',
   MAIL_PORT: '1025',
-  MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
+  MAIL_FROM: 'Rinavai <no-reply@rinavai.test>',
   WEB_ORIGIN: 'http://localhost:5173',
   LOG_LEVEL: 'fatal',
 
@@ -220,6 +220,7 @@ export function testAppRouter(
          in CI) — the same in-memory FakePaymentProvider every billing route
          must work end-to-end against. */
       billing: buildBillingDeps(TEST_ENV),
+      productName: 'Rinavai',
     }),
     events,
     deps,

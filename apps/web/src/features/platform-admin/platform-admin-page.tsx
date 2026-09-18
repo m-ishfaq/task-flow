@@ -1,26 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bot,
-  Building2,
-  CreditCard,
-  Flag,
-  LayoutGrid,
-  Megaphone,
-  Palette,
-  Shield,
-  Users,
-  Zap,
-} from 'lucide-react';
+import { Download, Menu } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
-import { cn } from '../../lib/cn.js';
-import { Button, PageHeader } from '../../components/primitives.js';
+import { Button } from '../../components/primitives.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
-import { StatCard, downloadCsv, money } from './shared.js';
+import { downloadCsv, money } from './shared.js';
+import { PlatformSidebar } from './platform-sidebar.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
+import { cn } from '../../lib/cn.js';
 import { BroadcastTab } from './broadcast-tab.js';
 import { OrgsTab } from './orgs-tab.js';
 import { UsersTab } from './users-tab.js';
@@ -31,71 +22,84 @@ import { AuditTab } from './audit-tab.js';
 import { OperationsTab } from './operations-tab.js';
 import { BillingTab } from './billing-tab.js';
 import { AiTab } from './ai-tab.js';
+import { ErrorsTab } from './errors-tab.js';
+import { DashboardTab } from './dashboard-tab.js';
+import { ConfigTab } from './config-tab.js';
 
 /**
- * ## What this page is
+ * ## Platform Admin Page — premium responsive layout
  *
- * The ONE place in the app that is relative to no organization. Every query and
- * mutation behind it is `platformRoute` — authenticated, checked against the
- * `platform.operators` flag, and (unconditionally) step-up. It is reachable
- * with no org selected, which is why the route guard is `requireSession` and
- * why its query keys are deliberately not org-prefixed.
+ * Mobile: hamburger → fixed drawer overlay (dark sidebar slides in from left).
+ * Desktop: static collapsible sidebar on the left, content fills remaining space.
  *
- * ## Step-up, and why even the READS prompt for it
- *
- * `platformRoute` bakes `stepUp: true` into every call, reads included — a
- * cross-tenant read is as sensitive as a cross-tenant write, and the operator
- * tier is exactly what a stolen session is for. So a session older than the
- * five-minute proof window answers STEP_UP_REQUIRED on the first data query.
- * Mutations use the standard `useStepUp` guard/retry pair; a QUERY has no
- * thunk to replay, so each tab renders a "re-authenticate" gate instead, and
- * confirming invalidates every platform key so the queries refetch under the
- * fresh credential.
- *
- * ## A non-operator landing here
- *
- * There is no `isOperator` check on the page. The account menu hides the link
- * from everyone the server answers "no" to, and a non-operator who types the
- * URL anyway gets the honest thing: every query answers FORBIDDEN and the tab
- * renders `ErrorView`. The UI never re-derives authorization (§8.2) — the
- * server's answer is the access-denied screen.
- *
- * ## Layout of this feature
- *
- * This file is the page shell only (state, summary stats, the tab switcher).
- * Each tab, its dialogs, and the primitives/formatters they share were split
- * out of what used to be one ~4,900-line file (mechanical extraction, no
- * behavior changes): `shared.tsx` for cross-tab primitives and the two
- * dialogs opened from more than one tab, and one file per tab otherwise.
+ * The drawer auto-closes on navigation (mobile only). Escape closes it too.
+ * Focus management matches the member shell's drawer pattern.
  */
+export type PlatformTab =
+  | 'dashboard'
+  | 'orgs'
+  | 'users'
+  | 'plans'
+  | 'billing'
+  | 'ai'
+  | 'flags'
+  | 'branding'
+  | 'broadcast'
+  | 'audit'
+  | 'operations'
+  | 'errors'
+  | 'config';
+
 export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
-  const [tab, setTab] = useState<
-    | 'orgs'
-    | 'users'
-    | 'plans'
-    | 'billing'
-    | 'ai'
-    | 'flags'
-    | 'branding'
-    | 'broadcast'
-    | 'audit'
-    | 'operations'
-  >('orgs');
+  const [tab, setTab] = useState<PlatformTab>('dashboard');
+  const isDesktop = useIsDesktop();
 
-  /* The query-side step-up gate (see the header comment). Confirming runs the
-     same login the mutation dialog runs; invalidating every `['platform']` key
-     makes the active tab's query refetch under the fresh authenticatedAt. */
+  /* Mobile drawer state */
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  /* Escape closes the drawer */
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDrawerOpen(false);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [drawerOpen]);
+
+  /* Focus management for drawer */
+  useEffect(() => {
+    if (drawerOpen) {
+      previouslyFocused.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      drawerRef.current?.focus();
+    } else {
+      previouslyFocused.current?.focus();
+      previouslyFocused.current = null;
+    }
+  }, [drawerOpen]);
+
+  /* Navigate with drawer close */
+  const navigate = (t: PlatformTab) => {
+    setTab(t);
+    if (!isDesktop) setDrawerOpen(false);
+  };
+
+  /* Step-up gate */
   const onProof = () => {
     setGateOpen(false);
     void queryClient.invalidateQueries({ queryKey: ['platform'] });
   };
 
-  /* Summary stats — computed from the first page of each list. The queries
-     are keyed without pagination cursors, so they return the default first
-     page and are deduped with the tabs' own queries when those mount. */
+  /* Summary stats */
   const orgs = useQuery({
     queryKey: keys.platformOrgs(null),
     queryFn: async () =>
@@ -112,32 +116,99 @@ export function PlatformAdminPage() {
       wire(await api.platformAdmin.billing.list.query({ cursor: null, limit: 100 })),
   });
 
-  const orgData = orgs.data;
-  const totalOrgs = orgData?.orgs.length ?? 0;
-  const activeOrgs = orgData?.orgs.filter((o) => o.status === 'active').length ?? 0;
-  const totalMembers = orgData?.orgs.reduce((sum, o) => sum + o.memberCount, 0) ?? 0;
-  const totalUsers = users.data?.users.length ?? 0;
-  const mrr =
-    billing.data?.orgs.reduce((sum, o) => {
-      if (o.currentPriceCents !== null && o.billingStatus === 'active') {
-        return sum + o.currentPriceCents;
-      }
-      return sum;
-    }, 0) ?? 0;
-  const trials = billing.data?.orgs.filter((o) => o.billingStatus === 'trialing').length ?? 0;
-
   const hasExportData =
     (orgs.data?.orgs.length ?? 0) > 0 ||
     (users.data?.users.length ?? 0) > 0 ||
     (billing.data?.orgs.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-8">
-      <PageHeader
-        title="Platform administration"
-        description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
-        actions={
-          hasExportData ? (
+    <div className="flex h-full min-h-0 overflow-hidden bg-surface">
+      {/* ── Mobile backdrop — tap outside to dismiss.
+           Matches shell.tsx's own backdrop: same z-index, same `bg-overlay`,
+           same click-to-close. The sidebar (z-40) sits above this; anything
+           to the RIGHT of the sidebar hits this div and closes the drawer. */}
+      {drawerOpen && (
+        <div
+          aria-hidden="true"
+          onClick={() => {
+            setDrawerOpen(false);
+          }}
+          className="fixed inset-0 z-30 bg-overlay md:hidden"
+        />
+      )}
+
+      {/* ── Mobile drawer sidebar ── */}
+      <div
+        ref={drawerRef}
+        tabIndex={-1}
+        inert={!drawerOpen}
+        className={cn(
+          'md:hidden',
+          'fixed inset-y-0 left-0 z-40 w-64 transition-transform duration-200',
+          drawerOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <PlatformSidebar
+          activeTab={tab}
+          onNavigate={(t) => {
+            navigate(t as PlatformTab);
+          }}
+          isMobileDrawer
+          onCloseMobile={() => {
+            setDrawerOpen(false);
+          }}
+        />
+      </div>
+
+      {/* ── Desktop static sidebar ── */}
+      <div className="hidden md:block">
+        <PlatformSidebar
+          activeTab={tab}
+          onNavigate={(t) => {
+            navigate(t as PlatformTab);
+          }}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => {
+            setSidebarCollapsed((c) => !c);
+          }}
+        />
+      </div>
+
+      {/* ── Content area ── */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        {/* Sticky top bar */}
+        <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-line/50 bg-surface/90 px-4 backdrop-blur-md">
+          {/* Mobile hamburger */}
+          <button
+            type="button"
+            onClick={() => {
+              setDrawerOpen(true);
+            }}
+            aria-label="Open navigation"
+            className="-ml-1 shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
+          >
+            <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
+          </button>
+
+          {/* Page title */}
+          <h1 className="min-w-0 truncate text-[15px] font-semibold text-ink">
+            {tab === 'dashboard' && 'Dashboard'}
+            {tab === 'orgs' && 'Organizations'}
+            {tab === 'users' && 'Users'}
+            {tab === 'plans' && 'Plans'}
+            {tab === 'billing' && 'Billing'}
+            {tab === 'ai' && 'AI Models'}
+            {tab === 'flags' && 'Feature Flags'}
+            {tab === 'branding' && 'Branding'}
+            {tab === 'broadcast' && 'Broadcast'}
+            {tab === 'audit' && 'Audit Log'}
+            {tab === 'operations' && 'Operations'}
+            {tab === 'errors' && 'Error Health'}
+            {tab === 'config' && 'Configuration'}
+          </h1>
+
+          {/* Export button (desktop only, orgs tab) */}
+          {hasExportData && tab === 'orgs' && (
             <Button
               variant="secondary"
               onClick={() => {
@@ -243,160 +314,151 @@ export function PlatformAdminPage() {
                 }
               }}
             >
-              Export all CSVs
+              <Download className="size-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Export CSVs</span>
             </Button>
-          ) : undefined
-        }
-      />
+          )}
+        </div>
 
-      {/* Summary stat cards — the at-a-glance dashboard every admin console leads with. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard icon={Building2} label="Orgs" value={totalOrgs} accent={tab === 'orgs'} />
-        <StatCard icon={Users} label="Users" value={totalUsers} accent={tab === 'users'} />
-        <StatCard icon={Building2} label="Active" value={activeOrgs} />
-        <StatCard icon={Users} label="Members" value={totalMembers} />
-        <StatCard
-          icon={CreditCard}
-          label="MRR"
-          value={`$${String(mrr / 100)}`}
-          accent={tab === 'billing'}
-        />
-        <StatCard icon={Zap} label="Trials" value={trials} />
-      </div>
+        {/* Scrollable content */}
+        <div className="min-h-0 flex-1 p-4 sm:p-6">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+            {/* Tab subtitle */}
+            <p className="text-[13px] text-ink-muted">
+              {tab === 'dashboard' && 'Platform health at a glance.'}
+              {tab === 'orgs' &&
+                'Every organization in the platform. Click an org to inspect its health and activity.'}
+              {tab === 'users' && 'All registered users across every organization.'}
+              {tab === 'plans' && 'The plan catalog and per-org entitlement overrides.'}
+              {tab === 'billing' && 'Revenue, subscriptions, and invoices.'}
+              {tab === 'ai' && 'Provider catalog, per-org overrides, and spend.'}
+              {tab === 'flags' && 'Global feature flag overrides.'}
+              {tab === 'branding' && 'Product name and color palette.'}
+              {tab === 'broadcast' && 'Send a message to one or more organizations.'}
+              {tab === 'audit' && 'The accountability record of every operator action.'}
+              {tab === 'operations' && 'System-action outcomes across every process.'}
+              {tab === 'errors' && 'Per-org error rates, trends, and velocity tracking.'}
+              {tab === 'config' &&
+                'Platform identity, infrastructure status, and feature flag overview.'}
+            </p>
 
-      {/* Tabs, not routes: the console is one surface with four views, and a
-          child route per tab would mount a fresh component tree on every
-          switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1 shadow-sm"
-      >
-        {(
-          [
-            ['orgs', 'Organizations', Building2],
-            ['users', 'Users', Users],
-            ['plans', 'Plans', LayoutGrid],
-            ['billing', 'Billing', CreditCard],
-            ['ai', 'AI Models', Bot],
-            ['flags', 'Feature flags', Flag],
-            ['branding', 'Branding', Palette],
-            ['broadcast', 'Broadcast', Megaphone],
-            ['audit', 'Operator audit', Shield],
-            ['operations', 'Operations', Zap],
-          ] as const
-        ).map(([value, label, Icon]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
-              tab === value
-                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            {/* Tab content */}
+            {tab === 'dashboard' && (
+              <DashboardTab
+                onNavigate={(t) => {
+                  navigate(t as PlatformTab);
+                }}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
             )}
-          >
-            <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
-            {label}
-          </button>
-        ))}
+            {tab === 'orgs' && (
+              <OrgsTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'users' && (
+              <UsersTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'plans' && (
+              <PlansTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'billing' && (
+              <BillingTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'ai' && (
+              <AiTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'flags' && (
+              <FlagsTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'branding' && (
+              <BrandingTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'broadcast' && (
+              <BroadcastTab
+                guard={guard}
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'audit' && (
+              <AuditTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'operations' && (
+              <OperationsTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'errors' && (
+              <ErrorsTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+            {tab === 'config' && (
+              <ConfigTab
+                onStepUp={() => {
+                  setGateOpen(true);
+                }}
+              />
+            )}
+
+            {/* Step-up dialogs */}
+            {dialog}
+            {gateOpen && (
+              <StepUpDialog
+                open
+                onClose={() => {
+                  setGateOpen(false);
+                }}
+                onConfirmed={onProof}
+              />
+            )}
+          </div>
+        </div>
       </div>
-
-      {tab === 'orgs' && (
-        <OrgsTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'users' && (
-        <UsersTab
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'plans' && (
-        <PlansTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'billing' && (
-        <BillingTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'ai' && (
-        <AiTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'flags' && (
-        <FlagsTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'branding' && (
-        <BrandingTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'broadcast' && (
-        <BroadcastTab
-          guard={guard}
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'audit' && (
-        <AuditTab
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-      {tab === 'operations' && (
-        <OperationsTab
-          onStepUp={() => {
-            setGateOpen(true);
-          }}
-        />
-      )}
-
-      {/* The mutation dialog (useStepUp) and the query gate dialog. Only one is
-          ever open — the other renders nothing when closed. */}
-      {dialog}
-      {gateOpen && (
-        <StepUpDialog
-          open
-          onClose={() => {
-            setGateOpen(false);
-          }}
-          onConfirmed={onProof}
-        />
-      )}
     </div>
   );
 }

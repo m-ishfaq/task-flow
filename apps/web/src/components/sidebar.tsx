@@ -5,15 +5,15 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  Clock,
   FileText,
   Folder,
+  LayoutList,
   ListChecks,
   Lock,
   MessageSquare,
-  Pin,
   Phone,
   PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Search,
   Sparkles,
@@ -357,6 +357,13 @@ export function Sidebar() {
 
   const live = (projects.data ?? []).filter((project) => project.archivedAt === null);
 
+  const [projectFilter, setProjectFilter] = useState('');
+
+  const recentBoards = useUi((state) => state.recentBoards);
+  const pinnedBoards = useUi((state) => state.pinnedBoards);
+  const hasRecent = recentBoards.length > 0;
+  const hasFavorites = pinnedBoards.length > 0;
+
   return (
     <aside
       aria-label="Workspace"
@@ -374,8 +381,8 @@ export function Sidebar() {
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
-      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line/50 px-4">
-        {open && (
+      <div className="flex h-14 shrink-0 items-center border-b border-line/50 px-4">
+        {open ? (
           <Link
             to="/projects"
             className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
@@ -389,39 +396,159 @@ export function Sidebar() {
                 use of the display face alongside the login page's heading. */}
             <span className="font-display truncate tracking-tight">{productName}</span>
           </Link>
+        ) : (
+          /* Collapsed: logo acts as the expand toggle — like ChatGPT's rail,
+              clicking the logo reopens the sidebar. Cursor changes to signal
+              the click target. */
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Expand sidebar"
+            className="mx-auto cursor-pointer rounded p-1 text-ink-faint transition-colors hover:text-ink"
+          >
+            {logoUrl !== null ? (
+              <img src={logoUrl} alt="" className="size-5 rounded object-contain" />
+            ) : (
+              <TaskFlowLogo size={20} className="text-accent" />
+            )}
+          </button>
         )}
         {/* The collapse toggle only makes sense as a desktop rail control —
             below `md` the drawer's own backdrop and header hamburger are the
             close affordances, and a second, differently-behaved toggle here
             would be confusing next to them. */}
-        {isDesktop && (
+        {isDesktop && open && (
           <button
             type="button"
             onClick={toggleSidebar}
-            aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-label="Collapse sidebar"
             aria-expanded={open}
             className="ml-auto rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
           >
-            {open ? (
-              <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
-            ) : (
-              <PanelLeftOpen aria-hidden="true" className="size-4" strokeWidth={2} />
-            )}
+            <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
           </button>
         )}
       </div>
 
-      {/* Collapsed is a rail, not a narrow tree. Truncating project names to two
-          characters would produce a column of ambiguous stubs; hiding them and
-          keeping the toggle is honest about what a 3rem column can show. */}
-      {open && (
+      {/* Collapsed: icon-only rail. Expanded: full tree with labels. */}
+      {!open ? (
+        <nav aria-label="Navigation" className="flex flex-1 flex-col items-center gap-0.5 pt-2">
+          {/* Primary nav items */}
+          {PRIMARY_SECTIONS.flatMap((s) => s.items)
+            .filter(visible)
+            .map((item) => {
+              const Icon = item.icon;
+              const locked = item.flag !== undefined && !(entitlements?.[item.flag] ?? true);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  title={item.label}
+                  className={cn(
+                    'relative flex size-8 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
+                    locked
+                      ? 'text-ink-faint hover:bg-surface-hover'
+                      : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                  )}
+                  activeProps={{
+                    className: cn(
+                      'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+                      ACTIVE_BAR,
+                    ),
+                  }}
+                >
+                  <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
+                </Link>
+              );
+            })}
+
+          {/* Recents — icon-only with section label and title tooltip */}
+          {recentBoards.length > 0 && (
+            <>
+              <div className="my-1 h-px w-5 bg-line/60" />
+              <span className="text-[8px] font-medium text-ink-faint/60 uppercase tracking-widest select-none">
+                Recent
+              </span>
+              {recentBoards.map((board) => (
+                <Link
+                  key={board.boardId}
+                  to="/boards/$boardId"
+                  params={{ boardId: board.boardId as BoardId }}
+                  search={{ view: 'board', project: board.projectId }}
+                  activeOptions={{ includeSearch: false }}
+                  title={board.name}
+                  className="relative flex size-8 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+                  activeProps={{
+                    className: cn(
+                      'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+                      ACTIVE_BAR,
+                    ),
+                  }}
+                >
+                  <LayoutList aria-hidden="true" className="size-4" strokeWidth={2} />
+                </Link>
+              ))}
+            </>
+          )}
+
+          {/* Favorites — icon-only with section label and title tooltip */}
+          {pinnedBoards.length > 0 && (
+            <>
+              <div className="my-1 h-px w-5 bg-line/60" />
+              <span className="text-[8px] font-medium text-ink-faint/60 uppercase tracking-widest select-none">
+                Fav
+              </span>
+              {pinnedProjectIds(pinnedBoards).map((projectId) => (
+                <CollapsedPinnedBoard
+                  key={projectId}
+                  projectId={projectId as ProjectId}
+                  pins={pinnedBoards}
+                />
+              ))}
+            </>
+          )}
+
+          {/* Config items */}
+          <div className="mt-auto mb-1 pt-1">
+            <div className="mx-auto mb-1 h-px w-5 bg-line/60" />
+            {CONFIG_ITEMS.filter(visible).map((item) => {
+              const Icon = item.icon;
+              const locked = item.flag !== undefined && !(entitlements?.[item.flag] ?? true);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  title={item.label}
+                  className={cn(
+                    'relative flex size-8 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
+                    locked
+                      ? 'text-ink-faint hover:bg-surface-hover'
+                      : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                  )}
+                  activeProps={{
+                    className: cn(
+                      'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+                      ACTIVE_BAR,
+                    ),
+                  }}
+                >
+                  <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      ) : (
         <>
           {/* Fixed. These four-to-six destinations are the ones reached by
-              muscle memory, and they must be in the same place whether the
-              workspace has two projects or eighty. */}
+               muscle memory, and they must be in the same place whether the
+               workspace has two projects or eighty. */}
           <nav aria-label="Main" className="shrink-0 px-2 pt-2">
             {PRIMARY_SECTIONS.map((section, index) => (
-              <div key={section.id} className={cn(index > 0 && 'mt-2 border-t border-line pt-2')}>
+              <div
+                key={section.id}
+                className={cn(index > 0 && 'mt-3 pt-3 border-t border-line/60')}
+              >
                 {section.items.filter(visible).map((item) => (
                   <NavLink
                     key={item.to}
@@ -440,9 +567,38 @@ export function Sidebar() {
               outside it. */}
           <nav
             aria-label="Projects"
-            className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-line px-2 pt-2 pb-2"
+            className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-line/60 px-2 pt-2 pb-2"
           >
+            <RecentBoards />
             <PinnedBoards />
+
+            {/* Divider between quick-access and the full tree — only when at
+                least one quick-access section rendered. */}
+            {(hasRecent || hasFavorites) && <div className="mx-2 mb-2 border-t border-line/40" />}
+
+            {/* Search — filters the project tree in real-time. Below the tree's
+                heading so the Projects link stays at the top. */}
+            {live.length > 3 && (
+              <div className="relative mb-1.5 mt-1">
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-ink-faint"
+                  strokeWidth={2.25}
+                />
+                <input
+                  type="text"
+                  placeholder="Filter projects…"
+                  value={projectFilter}
+                  onChange={(event) => {
+                    setProjectFilter(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setProjectFilter('');
+                  }}
+                  className="h-8 w-full rounded-md border border-line/60 bg-surface pl-7 pr-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none md:h-7 md:text-[11px]"
+                />
+              </div>
+            )}
 
             {/* A heading that is also the link to `/projects`. It used to be a
                 bare `<p>`, which meant the projects page — the only place a
@@ -479,16 +635,22 @@ export function Sidebar() {
               </Link>
             ) : (
               <ul>
-                {live.map((project) => (
-                  <ProjectNode
-                    key={project.projectId}
-                    orgId={orgId ?? ''}
-                    projectId={project.projectId as ProjectId}
-                    name={project.name}
-                    projectKey={project.key}
-                    canCreateBoard={project.capabilities.update}
-                  />
-                ))}
+                {live
+                  .filter((project) =>
+                    projectFilter.trim() === ''
+                      ? true
+                      : project.name.toLowerCase().includes(projectFilter.trim().toLowerCase()),
+                  )
+                  .map((project) => (
+                    <ProjectNode
+                      key={project.projectId}
+                      orgId={orgId ?? ''}
+                      projectId={project.projectId as ProjectId}
+                      name={project.name}
+                      projectKey={project.key}
+                      canCreateBoard={project.capabilities.update}
+                    />
+                  ))}
               </ul>
             )}
           </nav>
@@ -497,7 +659,7 @@ export function Sidebar() {
               rather than in the list above. */}
           <nav
             aria-label="Configuration"
-            className="shrink-0 border-t border-line px-2 pt-2 pb-1.5"
+            className="shrink-0 border-t border-line/60 px-2 pt-3 pb-1.5"
           >
             {CONFIG_ITEMS.filter(visible).map((item) => (
               <NavLink
@@ -581,14 +743,19 @@ function ProjectNode({
       <ActiveSprintLine orgId={orgId} projectId={projectId} />
 
       {!collapsed && (
-        <ul className="mb-1 ml-5 border-l border-line pl-2">
+        <ul className="mb-1 ml-5 border-l border-line/60 pl-2">
           {boards.isPending ? (
             <li aria-busy="true" className="py-1">
               <Skeleton className="h-4 w-3/4" />
             </li>
           ) : (
             live.map((board) => (
-              <BoardLink key={board.boardId} board={board} projectId={projectId} />
+              <BoardLink
+                key={board.boardId}
+                board={board}
+                projectId={projectId}
+                projectKey={projectKey}
+              />
             ))
           )}
 
@@ -759,17 +926,20 @@ function AddBoard({
 function BoardLink({
   board,
   projectId,
+  projectKey,
 }: {
   readonly board: BoardSummary;
   readonly projectId: ProjectId;
+  readonly projectKey?: string;
 }) {
   const pinned = useUi((state) => state.pinnedBoards.includes(pinKey(projectId, board.boardId)));
   const togglePinnedBoard = useUi((state) => state.togglePinnedBoard);
+  const addRecentBoard = useUi((state) => state.addRecentBoard);
 
   return (
     <li
       className={cn(
-        'group relative flex items-center rounded-md hover:bg-surface-hover',
+        'group relative flex items-center rounded-md px-2.5 hover:bg-surface-hover',
         ACTIVE_ROW,
       )}
     >
@@ -786,10 +956,23 @@ function BoardLink({
            un-highlights the board you are looking at. The path is what
            identifies a board; `view` and `project` are state on top of it. */
         activeOptions={{ includeSearch: false }}
-        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
+        className="flex min-w-0 flex-1 items-center gap-2 truncate py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
         activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+        onClick={() => {
+          addRecentBoard({
+            boardId: board.boardId,
+            projectId,
+            name: board.name,
+            projectKey,
+          });
+        }}
       >
-        {board.name}
+        <LayoutList
+          aria-hidden="true"
+          className="size-3.5 shrink-0 text-ink-faint"
+          strokeWidth={2}
+        />
+        <span className="truncate">{board.name}</span>
       </Link>
 
       <button
@@ -821,6 +1004,60 @@ function BoardLink({
 }
 
 /**
+ * Boards the user recently visited, most recent first.
+ *
+ * Auto-tracked from sidebar clicks — the name is captured at visit time so
+ * collapsed projects need no extra query. A renamed board shows a slightly stale
+ * name, which is acceptable for a shortcut. Max 5 entries.
+ */
+function RecentBoards() {
+  const recent = useUi((state) => state.recentBoards);
+
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="mb-2">
+      <p className="flex items-center gap-1.5 px-2.5 pb-1 text-[10px] font-semibold tracking-widest text-ink-faint uppercase">
+        <Clock aria-hidden="true" className="size-3" strokeWidth={2} />
+        Recent
+      </p>
+      <ul>
+        {recent.map((board) => (
+          <li
+            key={board.boardId}
+            className={cn(
+              'group relative flex items-center rounded-md px-2.5 hover:bg-surface-hover',
+              ACTIVE_ROW,
+            )}
+          >
+            <Link
+              to="/boards/$boardId"
+              params={{ boardId: board.boardId as BoardId }}
+              search={{ view: 'board', project: board.projectId }}
+              activeOptions={{ includeSearch: false }}
+              className="flex min-w-0 flex-1 items-center gap-2 truncate py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
+              activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
+            >
+              <LayoutList
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-ink-faint"
+                strokeWidth={2}
+              />
+              <span className="truncate">{board.name}</span>
+              {board.projectKey && (
+                <span className="ml-auto shrink-0 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-faint">
+                  {board.projectKey}
+                </span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Pinned boards, resolved against the boards the caller can actually see.
  *
  * Only the projects that HOLD a pin are queried — that is what the project id in
@@ -840,17 +1077,17 @@ function PinnedBoards() {
   if (projectIds.length === 0) return null;
 
   return (
-    <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
-        <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
-        Pinned
+    <div className="mb-2">
+      <p className="flex items-center gap-1.5 px-2.5 pb-1 text-[10px] font-semibold tracking-widest text-ink-faint uppercase">
+        <Star aria-hidden="true" className="size-3" strokeWidth={2} />
+        Favorites
       </p>
       <ul>
         {projectIds.map((projectId) => (
           <PinnedFromProject key={projectId} projectId={projectId as ProjectId} pins={pins} />
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 
@@ -877,6 +1114,50 @@ function PinnedFromProject({
       {matches.map((board) => (
         <BoardLink key={board.boardId} board={board} projectId={projectId} />
       ))}
+    </>
+  );
+}
+
+/**
+ * Icon-only pinned board for the collapsed rail — resolves one project's pinned
+ * boards and renders each as a Star icon link with a title tooltip.
+ */
+function CollapsedPinnedBoard({
+  projectId,
+  pins,
+}: {
+  readonly projectId: ProjectId;
+  readonly pins: readonly string[];
+}) {
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const boards = useQuery(boardsQuery(orgId, projectId));
+
+  return (
+    <>
+      {(boards.data ?? [])
+        .filter(
+          (board) => board.archivedAt === null && pins.includes(pinKey(projectId, board.boardId)),
+        )
+        .slice(0, 3)
+        .map((board) => (
+          <Link
+            key={board.boardId}
+            to="/boards/$boardId"
+            params={{ boardId: board.boardId as BoardId }}
+            search={{ view: 'board', project: projectId }}
+            activeOptions={{ includeSearch: false }}
+            title={board.name}
+            className="relative flex size-8 items-center justify-center rounded-lg text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+            activeProps={{
+              className: cn(
+                'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+                ACTIVE_BAR,
+              ),
+            }}
+          >
+            <Star aria-hidden="true" className="size-4" strokeWidth={2} />
+          </Link>
+        ))}
     </>
   );
 }

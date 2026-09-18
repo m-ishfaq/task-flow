@@ -28,6 +28,8 @@ import {
   type StatusSummary,
   type CustomField,
 } from '../../../src/lib/work.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 
 /**
  * Everything about a project that is not a card — ported from
@@ -103,7 +105,7 @@ function ProjectSettingsContent({
   if (projects.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       </View>
     );
   }
@@ -295,6 +297,7 @@ function ColorSwatchRow({
       {LABEL_PALETTE.map((color) => (
         <Pressable
           key={color}
+
           accessibilityLabel={`Colour ${color}`}
           style={[
             styles.swatch,
@@ -365,7 +368,7 @@ function LabelSettings({ projectId }: { readonly projectId: string }) {
       </Text>
 
       {labels.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       ) : labels.isError ? (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {apiErrorOf(labels.error)?.error.message ?? "Couldn't load labels."}
@@ -518,6 +521,7 @@ function StatusForm({
         {STATUS_CATEGORIES.map((category) => (
           <Pressable
             key={category}
+
             style={[styles.roleChip, draft.category === category && styles.roleChipActive]}
             onPress={() => {
               setDraft({ ...draft, category });
@@ -649,7 +653,7 @@ function StatusSettings({ projectId }: { readonly projectId: string }) {
       )}
 
       {statuses.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       ) : statuses.isError ? (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {apiErrorOf(statuses.error)?.error.message ?? "Couldn't load statuses."}
@@ -761,7 +765,7 @@ function FieldSettings({ projectId }: { readonly projectId: string }) {
       </Text>
 
       {fields.isPending ? (
-        <ActivityIndicator color={colors.accent.hex} />
+        <SkeletonList count={3} />
       ) : fields.isError ? (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {apiErrorOf(fields.error)?.error.message ?? "Couldn't load custom fields."}
@@ -973,6 +977,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: colors.line.hex + '60',
+    ...shadows.sm,
   },
   formActions: {
     flexDirection: 'row',

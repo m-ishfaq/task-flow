@@ -1,5 +1,4 @@
 import { createContext, useContext } from 'react';
-import type { PaletteId } from '@taskflow/contracts';
 
 /**
  * The branding context, separated from the provider that fills it.
@@ -15,7 +14,8 @@ export interface BrandingValue {
   readonly productName: string;
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
-  readonly paletteId: PaletteId;
+  /** One of the six preset palette ids, or `custom:<hue>` (0–360). */
+  readonly paletteId: string;
   /** Migration 0096. Null until an operator sets one in the console. */
   readonly salesEmail: string | null;
 }
@@ -29,7 +29,7 @@ export interface BrandingValue {
  * it always rendered before this feature existed.
  */
 export const DEFAULT_BRANDING: BrandingValue = {
-  productName: 'TaskFlow',
+  productName: 'Rinavai',
   logoUrl: null,
   faviconUrl: null,
   paletteId: 'default',

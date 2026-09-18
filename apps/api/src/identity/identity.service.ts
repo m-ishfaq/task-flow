@@ -143,6 +143,16 @@ export async function register(
   input: { email: string; password: string; name?: string | undefined },
   meta: RequestMeta,
 ): Promise<{ status: 'verification_sent' }> {
+  /* Registration gate — reads the cached system setting. Disabled means the
+     operator has turned off new sign-ups via the Config tab. The check runs
+     before password validation so an attacker cannot probe password strength
+     against a disabled registration. */
+  const { getSystemSettings } = await import('../platform-admin/system-settings-cache.js');
+  const settings = await getSystemSettings();
+  if (!settings.registrationEnabled) {
+    throw errors.forbidden('New registrations are temporarily disabled.');
+  }
+
   await assertPasswordAcceptable(deps, input.password);
 
   const now = clock(deps);

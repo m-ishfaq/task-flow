@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { Building2, Globe, Laptop, Smartphone } from 'lucide-react';
 import { api } from '../../lib/trpc.js';
 import { keys, resetCache } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -16,6 +17,7 @@ import {
   Empty,
   Field,
   Input,
+  PageHeader,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -29,6 +31,21 @@ import { CalendarFeedSection } from './calendar-feed-section.js';
 import { NotificationPreferencesSection } from '../notifications/notification-prefs-section.js';
 import { RingtoneSection } from '../rtc/ringtone-section.js';
 import { profileQuery, updateProfile } from '../people/api.js';
+
+/**
+ * The shape of one session returned by `auth.sessions.list`, after `wire()`.
+ * Timestamps arrive as ISO strings through JSON, not Date objects.
+ */
+interface SessionView {
+  readonly id: string;
+  readonly label: string | null;
+  readonly ip: string | null;
+  readonly authenticatedAt: string;
+  readonly lastSeenAt: string;
+  readonly isCurrent: boolean;
+  readonly country: string | null;
+  readonly flagged: boolean;
+}
 
 /**
  * The personal account page (`ai/account-page.md`).
@@ -49,29 +66,66 @@ import { profileQuery, updateProfile } from '../people/api.js';
  */
 export function AccountPage() {
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Account</h1>
-        <p className="text-xs text-ink-muted">
-          Yours alone — not tied to any organization, and the same wherever you sign in.
-        </p>
-      </div>
+    <div className="h-full min-h-0 overflow-y-auto mx-auto flex max-w-4xl flex-col gap-8 p-6 lg:p-8">
+      <PageHeader
+        title="Account"
+        description="Yours alone — not tied to any organization, and the same wherever you sign in."
+      />
 
-      <AccountSection />
-      <WorkingHoursSection />
-      <NotificationPreferencesSection />
-      {/* Same kind of setting as the one above it — global per user, not per
-          org (ai/phase-13-webrtc.md §7), which is why it sits here rather than
-          in an org's settings page. */}
-      <RingtoneSection />
-      <PasskeySection />
-      <TotpSection />
-      <ConnectedAccountsSection />
-      <CalendarFeedSection />
-      <SessionsSection />
-      <ExportDataSection />
-      <OrganizationsSection />
+      <CardShell>
+        <AccountSection />
+      </CardShell>
+
+      <CardShell>
+        <WorkingHoursSection />
+      </CardShell>
+
+      <CardShell>
+        <NotificationPreferencesSection />
+      </CardShell>
+
+      <CardShell>
+        <RingtoneSection />
+      </CardShell>
+
+      <CardShell>
+        <PasskeySection />
+      </CardShell>
+
+      <CardShell>
+        <TotpSection />
+      </CardShell>
+
+      <CardShell>
+        <ConnectedAccountsSection />
+      </CardShell>
+
+      <CardShell>
+        <CalendarFeedSection />
+      </CardShell>
+
+      <CardShell>
+        <SessionsSection />
+      </CardShell>
+
+      <CardShell>
+        <ExportDataSection />
+      </CardShell>
+
+      <CardShell>
+        <OrganizationsSection />
+      </CardShell>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Card shell — visual grouping
+ * -------------------------------------------------------------------------- */
+
+function CardShell({ children }: { readonly children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-line bg-surface-raised px-6 py-5">{children}</div>
   );
 }
 
@@ -407,8 +461,72 @@ function WorkingHoursSection() {
 }
 
 /* -------------------------------------------------------------------------- *
- * Sessions
+ * Sessions — grouped by device
  * -------------------------------------------------------------------------- */
+
+/**
+ * A parsed session label (e.g. "Chrome on macOS") used as the grouping key.
+ * Sessions from the same browser/OS combination are treated as one device.
+ */
+function sessionDeviceKey(session: SessionView): string {
+  return session.label ?? 'Unknown device';
+}
+
+/** A device group is the primary session plus a count of extras. */
+interface DeviceGroup {
+  readonly primary: SessionView;
+  readonly extras: readonly SessionView[];
+  readonly totalCount: number;
+}
+
+/**
+ * Groups sessions by their user-agent label, keeping the most recently
+ * active session as the primary entry for each device. Multiple logins
+ * from the same browser collapse into one row.
+ */
+function groupSessionsByDevice(sessions: readonly SessionView[]): readonly DeviceGroup[] {
+  const byDevice = new Map<string, SessionView[]>();
+  for (const session of sessions) {
+    const key = sessionDeviceKey(session);
+    const existing = byDevice.get(key);
+    if (existing !== undefined) {
+      existing.push(session);
+    } else {
+      byDevice.set(key, [session]);
+    }
+  }
+
+  const groups: DeviceGroup[] = [];
+  for (const deviceSessions of byDevice.values()) {
+    // Sort by lastSeenAt descending — most recently active first.
+    deviceSessions.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+    const [first, ...rest] = deviceSessions;
+    if (first === undefined) continue;
+    groups.push({ primary: first, extras: rest, totalCount: deviceSessions.length });
+  }
+
+  // Sort groups: "This device" first, then by most-recently-active.
+  groups.sort((a, b) => {
+    if (a.primary.isCurrent) return -1;
+    if (b.primary.isCurrent) return 1;
+    return b.primary.lastSeenAt.localeCompare(a.primary.lastSeenAt);
+  });
+
+  return groups;
+}
+
+/**
+ * Determine the appropriate icon for a device group based on its user-agent.
+ */
+function DeviceIcon({ label }: { readonly label: string | null }) {
+  if (label === null) return <Globe className="h-4 w-4 text-ink-muted" />;
+
+  const lower = label.toLowerCase();
+  if (lower.includes('android') || lower.includes('iphone') || lower.includes('ipad')) {
+    return <Smartphone className="h-4 w-4 text-ink-muted" />;
+  }
+  return <Laptop className="h-4 w-4 text-ink-muted" />;
+}
 
 function SessionsSection() {
   const toast = useToast();
@@ -422,6 +540,11 @@ function SessionsSection() {
     queryKey: keys.sessions(),
     queryFn: async () => wire(await api.auth.sessions.list.query()),
   });
+
+  const deviceGroups = useMemo(
+    () => (sessions.data !== undefined ? groupSessionsByDevice(sessions.data.sessions) : []),
+    [sessions.data],
+  );
 
   const revoke = useMutation({
     mutationFn: (sessionId: string) => api.auth.sessions.revoke.mutate({ sessionId }),
@@ -441,6 +564,28 @@ function SessionsSection() {
         return;
       }
       toast.failure('Could not sign that device out', error);
+    },
+  });
+
+  /**
+   * Revokes all EXTRA sessions for a device group (the extras, not the primary).
+   */
+  const revokeExtras = useMutation({
+    mutationFn: (sessionIds: readonly string[]) =>
+      Promise.all(sessionIds.map((id) => api.auth.sessions.revoke.mutate({ sessionId: id }))),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.sessions() });
+      toast.show('Other sessions on that device signed out');
+    },
+    onError: (error, sessionIds) => {
+      if (
+        guard(error, () => {
+          revokeExtras.mutate(sessionIds);
+        })
+      ) {
+        return;
+      }
+      toast.failure('Could not sign out other sessions', error);
     },
   });
 
@@ -481,47 +626,69 @@ function SessionsSection() {
   return (
     <Section
       title="Sessions"
-      count={sessions.data?.sessions.length}
-      description="Every device currently signed in as you — the device list is the session list."
+      count={sessions.data !== undefined ? deviceGroups.length : undefined}
+      description="Every device currently signed in as you — grouped by browser."
     >
       {sessions.isPending && <SkeletonRows rows={2} className="*:h-10" />}
       {sessions.isError && (
         <ErrorView error={sessions.error} title="Could not load your sessions" />
       )}
 
-      {sessions.data !== undefined && (
+      {sessions.data !== undefined && deviceGroups.length > 0 && (
         <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
-          {sessions.data.sessions.map((session) => (
+          {deviceGroups.map((group) => (
             <li
-              key={session.id}
-              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              key={group.primary.id}
+              className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm"
             >
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 truncate text-ink">
-                  {session.label ?? 'Unknown device'}
-                  {session.isCurrent && <Badge>This device</Badge>}
-                </p>
-                <p className="truncate text-[11px] text-ink-muted">
-                  {session.ip ?? 'No IP recorded'} · signed in {formatDate(session.authenticatedAt)}{' '}
-                  · last seen {formatDate(session.lastSeenAt)}
-                  {session.flagged && (
-                    <span className="text-warning">
-                      {' '}
-                      · unusual sign-in{session.country ? ` from ${session.country}` : ''}
-                    </span>
-                  )}
-                </p>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <DeviceIcon label={group.primary.label} />
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 truncate text-ink">
+                    {group.primary.label ?? 'Unknown device'}
+                    {group.primary.isCurrent && <Badge>This device</Badge>}
+                    {group.totalCount > 1 && (
+                      <Badge className="text-ink-muted">{group.totalCount} sessions</Badge>
+                    )}
+                  </p>
+                  <p className="truncate text-[11px] text-ink-muted">
+                    {group.primary.ip ?? 'No IP recorded'} · last seen{' '}
+                    {formatDate(group.primary.lastSeenAt)}
+                    {group.primary.flagged && (
+                      <span className="text-warning">
+                        {' '}
+                        · unusual sign-in
+                        {group.primary.country ? ` from ${group.primary.country}` : ''}
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={revoke.isPending}
-                onClick={() => {
-                  revoke.mutate(session.id);
-                }}
-              >
-                {session.isCurrent ? 'Sign out' : 'Sign out'}
-              </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                {group.extras.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={revokeExtras.isPending}
+                    onClick={() => {
+                      revokeExtras.mutate(group.extras.map((e) => e.id));
+                    }}
+                  >
+                    Close {group.extras.length} old{' '}
+                    {group.extras.length === 1 ? 'session' : 'sessions'}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={revoke.isPending}
+                  onClick={() => {
+                    revoke.mutate(group.primary.id);
+                  }}
+                >
+                  Sign out
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
@@ -643,9 +810,12 @@ function OrganizationsSection() {
       {orgs.data !== undefined && orgs.data.length > 0 && (
         <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {orgs.data.map((org) => (
-            <li key={org.orgId} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-ink">{org.name}</span>
-              <span className="text-[11px] text-ink-faint">{org.role}</span>
+            <li key={org.orgId} className="flex items-center justify-between px-3 py-2.5 text-sm">
+              <div className="flex items-center gap-2.5">
+                <Building2 className="h-4 w-4 text-ink-muted" />
+                <span className="text-ink">{org.name}</span>
+              </div>
+              <Badge>{org.role}</Badge>
             </li>
           ))}
         </ul>

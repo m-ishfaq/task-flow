@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { resolveUserByFeedToken } from './calendar-feed-tokens.js';
 import { buildCalendarFeed } from '../work/calendar-feed.service.js';
 import { formatIcsFeed } from '../work/ics.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 
 /**
  * `GET /calendar/:tokenFile` — a plain Fastify route, registered BEFORE the
@@ -51,8 +52,11 @@ export function registerCalendarFeedRoute(
     const userId = await resolveUserByFeedToken(rawToken);
     if (userId === undefined) return reply.status(404).send();
 
-    const cards = await buildCalendarFeed(userId, deps.webOrigin);
-    const ics = formatIcsFeed(cards);
+    const [cards, branding] = await Promise.all([
+      buildCalendarFeed(userId, deps.webOrigin),
+      getResolvedBranding(),
+    ]);
+    const ics = formatIcsFeed(cards, new Date(), branding.productName);
 
     return reply.type('text/calendar; charset=utf-8').send(ics);
   });

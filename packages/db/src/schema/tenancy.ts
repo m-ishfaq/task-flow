@@ -185,7 +185,7 @@ export const teamMembers = identity.table(
 
 /**
  * An outstanding invitation to join the org by email (migration 0107) — what
- * `addMember` deliberately does not cover: an address with no TaskFlow
+ * `addMember` deliberately does not cover: an address with no Rinavai
  * account yet. See `apps/api/src/tenancy/invitation.service.ts`.
  */
 export const invitations = identity.table('invitations', {

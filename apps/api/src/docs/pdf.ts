@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { RenderedNode } from './render.js';
+import { DEFAULT_PRODUCT_NAME } from '../platform-admin/branding-cache.js';
 
 /**
  * PDF export, off a specific version's rendered content — never live state
@@ -286,7 +287,7 @@ export function layoutDocument(
 export async function renderPdf(
   title: string,
   document: RenderedNode,
-  productName = 'TaskFlow',
+  productName = DEFAULT_PRODUCT_NAME,
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const fonts: Record<FontVariant, PDFFont> = {

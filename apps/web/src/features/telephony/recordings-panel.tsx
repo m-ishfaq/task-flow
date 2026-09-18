@@ -5,10 +5,10 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, SkeletonRows } from '../../components/primitives.js';
+import { Button, Empty, SearchInput, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
-import { formatRelative } from '../../lib/format.js';
+import { formatCallDuration, formatRelative } from '../../lib/format.js';
 import { CardQuickView } from '../work/card-quick-view.js';
 import { orgRecordingsPage, type OrgRecording } from './api.js';
 
@@ -55,17 +55,12 @@ function StatusPill({ status }: { readonly status: string }) {
   );
 }
 
-function durationLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
-}
-
 export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
   const toast = useToast();
   const { guard, dialog } = useStepUp();
   const queryClient = useQueryClient();
   const [openCardId, setOpenCardId] = useState<CardId | null>(null);
+  const [search, setSearch] = useState('');
 
   const recordings = useInfiniteQuery({
     queryKey: keys.orgRecordings(orgId),
@@ -78,9 +73,6 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
   const download = useMutation({
     mutationFn: (recordingId: string) => api.telephony.recordings.download.mutate({ recordingId }),
     onSuccess: (result) => {
-      /* Single-use, short-lived, and never fetched from here — the same
-         navigate-away pattern `CallRecordings` and `attachment-section.tsx`
-         both already use for a presigned URL. */
       window.location.assign(result.url);
     },
     onError: (error, recordingId) => {
@@ -101,6 +93,15 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
   }
 
   const rows = recordings.data.pages.flatMap((page) => page.recordings);
+  const needle = search.trim().toLowerCase();
+  const visibleRows =
+    needle === ''
+      ? rows
+      : rows.filter(
+          (recording) =>
+            String(recording.counterparty).toLowerCase().includes(needle) ||
+            (STATUS_LABELS[recording.status] ?? recording.status).toLowerCase().includes(needle),
+        );
 
   return (
     <div className="flex flex-col gap-3">
@@ -110,21 +111,33 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
           description="Recorded calls will appear here once stored."
         />
       ) : (
-        <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
-          {rows.map((recording) => (
-            <RecordingRow
-              key={recording.recordingId}
-              recording={recording}
-              downloading={download.isPending}
-              onDownload={() => {
-                download.mutate(recording.recordingId);
-              }}
-              onOpenCard={(cardId) => {
-                setOpenCardId(cardId);
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Filter by number or status…"
+            className="max-w-sm"
+          />
+          {visibleRows.length === 0 ? (
+            <p className="px-1 text-sm text-ink-faint">No recordings match your search.</p>
+          ) : (
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
+              {visibleRows.map((recording) => (
+                <RecordingRow
+                  key={recording.recordingId}
+                  recording={recording}
+                  downloading={download.isPending}
+                  onDownload={() => {
+                    download.mutate(recording.recordingId);
+                  }}
+                  onOpenCard={(cardId) => {
+                    setOpenCardId(cardId);
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {download.isError && <ErrorText error={download.error} />}
@@ -151,9 +164,6 @@ export function RecordingsPanel({ orgId }: { readonly orgId: string }) {
           cardId={openCardId}
           onClose={() => {
             setOpenCardId(null);
-            /* The card panel can attach/detach this very recording (Work's
-               own Recordings section) — refetching is what would show a
-               changed attachment on this list without a reload. */
             void queryClient.invalidateQueries({ queryKey: keys.orgRecordings(orgId) });
           }}
         />
@@ -174,10 +184,12 @@ function RecordingRow({
   readonly onOpenCard: (cardId: CardId) => void;
 }) {
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
+    <li className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-ink">{String(recording.counterparty)}</span>
+          <span className="font-mono text-xs font-medium text-ink">
+            {String(recording.counterparty)}
+          </span>
           <span className="text-[11px] text-ink-muted">
             {recording.direction === 'inbound' ? 'Inbound' : 'Outbound'}
           </span>
@@ -186,12 +198,12 @@ function RecordingRow({
         <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-faint">
           <span>{formatRelative(recording.createdAt)}</span>
           {recording.durationSeconds !== null && (
-            <span>· {durationLabel(recording.durationSeconds)}</span>
+            <span>· {formatCallDuration(recording.durationSeconds)}</span>
           )}
           {recording.attachedCardIds.length > 0 && (
             <button
               type="button"
-              className="text-accent hover:underline"
+              className="min-h-8 rounded px-1 text-accent transition-colors duration-(--motion-fast) hover:underline"
               onClick={() => {
                 const first = recording.attachedCardIds[0];
                 if (first !== undefined) onOpenCard(first as CardId);

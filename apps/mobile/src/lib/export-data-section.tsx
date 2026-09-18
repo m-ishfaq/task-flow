@@ -24,7 +24,7 @@ export function ExportDataSection() {
     mutationFn: async () => wire(await apiClient.people.profile.exportMine.query()),
     onSuccess: (result) => {
       void Share.share({
-        title: `taskflow-data-export-${result.exportedAt.slice(0, 10)}.json`,
+        title: `rinavai-data-export-${result.exportedAt.slice(0, 10)}.json`,
         message: JSON.stringify(result, null, 2),
       });
     },

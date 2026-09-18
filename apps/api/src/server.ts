@@ -37,6 +37,9 @@ import { createMailDelivery } from './identity/deliver.js';
 import type { MailQueue } from '@taskflow/mail';
 import { createLogger } from '@taskflow/observability';
 import { registerRateLimit } from './middleware/rate-limit.js';
+import { getSystemSettings } from './platform-admin/system-settings-cache.js';
+import { isPlatformOperator } from './platform-admin/operator.js';
+import { getResolvedBranding } from './platform-admin/branding-cache.js';
 import type { SlidingWindowLimiter } from './middleware/sliding-window.js';
 import type { Env } from './config/env.js';
 import type { EventBus } from '@taskflow/events';
@@ -104,7 +107,8 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   const jwtPublicKey = await importAccessTokenPublicKey(options.env.JWT_PUBLIC_KEY);
 
   const mail = resolveMail(options);
-  const billingDeps = buildBillingDeps(options.env, mail.queue);
+  const { productName } = await getResolvedBranding();
+  const billingDeps = buildBillingDeps(options.env, mail.queue, productName);
   /* Built AFTER billing so the outbound paths can reach the same mailer the
      billing module uses: the 80%/100% usage alerts are billing email that
      happens to be triggered by a telephony action, and routing them through a
@@ -116,6 +120,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     ...(options.events === undefined ? {} : { events: options.events }),
     deliver: mail.deliver,
     jwtPrivateKey,
+    productName,
   });
   const identityDataKey = await ensureIdentityDataKey(
     new SoftwareKeyProvider({
@@ -142,7 +147,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* `auth.calendarFeed.mint`'s own use — nowhere else in the identity
        router builds a URL. */
     webOrigin: options.env.WEB_ORIGIN,
-    passkeys: buildPasskeyDeps(identityDeps, options.env),
+    passkeys: buildPasskeyDeps(identityDeps, options.env, productName),
     /* §9 decision 3 — whether the cost-bearing telephony actions exist in the
        rule builder. OFF by default; see config/env.ts. The connectors (Wave 4
        slice 2, §7) ride in here too: the connector state is signed with the
@@ -177,11 +182,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        telephony's, shared rather than duplicated, and an instance without one
        answers SERVICE_UNAVAILABLE on the upload routes alone. */
     rtc: buildRtcDeps(options.env),
-    oauth: buildOAuthDeps(options.env),
+    oauth: buildOAuthDeps(options.env, productName),
     /* Always built, like rtc: PAYMENTS_PROVIDER defaults to 'fake' rather
        than to an absent credential, so there is no "billing not configured"
        shape for the router to answer with — every org gets a real trial. */
     billing: billingDeps,
+    productName,
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any
@@ -240,6 +246,73 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   registerRateLimit(app, {
     ...(options.rateLimiter === undefined ? {} : { limiter: options.rateLimiter }),
     ...(options.rateLimitEnabled === undefined ? {} : { enabled: options.rateLimitEnabled }),
+  });
+
+  /* Maintenance mode gate — reads the cached system_settings value and returns
+     503 for every non-operator, non-health-check request when maintenance_mode
+     is true. Registered after rate limiting (so the limiter still counts
+     maintenance-blocked requests) but before the tRPC plugin (so the block
+     happens before any route handling). Operator requests pass through because
+     the platform console must remain reachable during maintenance — an operator
+     needs the console to flip the toggle back off. Health checks also pass
+     through so load balancers can still detect a live process. */
+  app.addHook('onRequest', async (request, reply) => {
+    const url = request.url;
+    if (url === '/health/live' || url === '/health/ready') return;
+
+    let settings: Awaited<ReturnType<typeof getSystemSettings>> | null = null;
+    try {
+      settings = await getSystemSettings();
+    } catch {
+      /* Settings unreadable — fail open (allow the request through) rather
+         than blocking the entire site on a settings-table outage. */
+      return;
+    }
+
+    if (!settings.maintenanceMode) return;
+
+    /* Endpoints that must stay reachable during maintenance:
+
+       1. Auth endpoints — otherwise nobody can sign in (including operators
+          who need to disable maintenance). These are publicRoute in the
+          identity router: login, register, refresh, logout, OAuth callbacks,
+          passkey ceremonies, TOTP verification, and password reset.
+
+       2. Platform admin routes — the operator console must remain fully
+          functional during maintenance so an operator can flip it off. These
+          are already gated by platformRoute (operator + step-up), so letting
+          them through the maintenance gate adds no risk. The web client uses
+          cookie auth (no Authorization header), so the bearer-token bypass
+          below never fires for normal browser requests.
+
+       The tRPC client uses httpBatchLink which sends ALL requests to a single
+       batch URL (/trpc). The URL may be exactly "/trpc" (no trailing slash) or
+       "/trpc/..." depending on the request. We must check for both. */
+    if (url === '/trpc' || url.startsWith('/trpc/')) {
+      const AUTH_PATTERN =
+        /\.(login|register|refresh|logout|verifyEmail|resendVerification|requestPasswordReset|resetPassword|callback|finishAuthentication|verifyLogin|start|providers)/;
+      if (AUTH_PATTERN.test(url)) return;
+
+      if (url.startsWith('/trpc/platformAdmin.')) return;
+    }
+
+    /* Operator requests with a bearer token also bypass maintenance —
+       covers programmatic access (CLI, scripts, mobile) that uses the
+       Authorization header rather than cookies. */
+    const auth = request.headers.authorization;
+    if (typeof auth === 'string' && auth.length > 0) {
+      try {
+        const principal = await authenticateRequest(auth, undefined, { jwtPublicKey });
+        if (principal !== null && (await isPlatformOperator(principal.userId))) return;
+      } catch {
+        /* Invalid token — fall through to the 503 block. */
+      }
+    }
+
+    await reply.status(503).send({
+      status: 'maintenance',
+      message: settings.maintenanceMessage,
+    });
   });
 
   /* Drains queued mail before the process exits. Without this, a deploy during
@@ -378,7 +451,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
  *
  * The org resolution differs between the two paths and that is the point:
  *
- *  - the JWT path resolves the org from the `x-taskflow-org` header, because
+ *  - the JWT path resolves the org from the `x-rinavai-org` header, because
  *    a session carries no org of its own;
  *  - the token path takes the org from the TOKEN and refuses a disagreeing
  *    header (decision 11) — a token is minted FOR an org, so the header is at
@@ -447,7 +520,7 @@ async function withOrgContext(
  * A deployment with only the browser pair configured simply has no native
  * OAuth — `apps/mobile`'s sign-in screen omits that provider's button.
  */
-function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
+function buildOAuthDeps(env: Env, productName?: string): Omit<OAuthDeps, 'identity'> {
   return {
     providers: {
       ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
@@ -479,6 +552,7 @@ function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
       channel === 'native'
         ? 'taskflow://oauth-callback'
         : `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
+    ...(productName != null ? { productName } : {}),
   };
 }
 

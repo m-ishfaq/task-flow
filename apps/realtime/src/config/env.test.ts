@@ -53,7 +53,7 @@ describe('parseEnv', () => {
     ).not.toThrow();
   });
 
-  it('accepts variables belonging to other TaskFlow services', () => {
+  it('accepts variables belonging to other Rinavai services', () => {
     expect(() =>
       parseEnv({
         ...valid,

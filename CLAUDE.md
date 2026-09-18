@@ -1,4 +1,4 @@
-# TaskFlow — working agreement
+# Rinavai — working agreement
 
 Multi-tenant company platform: Work, Chat, Docs, Voice & Messaging, People, Platform.
 Built solo with heavy AI assistance. **Security is the non-negotiable constraint.**
@@ -2500,7 +2500,7 @@ can tell the person their diff was cut off without reasoning about the boolean a
 conversation thread and the Pulls API's inline review comments — tagged `kind: 'general' | 'review'`
 and sorted by time, because "what did reviewers say" needs both and GitHub itself never merges them.
 
-**`tool-results.tsx` gained its first renderer linking OUTSIDE TaskFlow entirely.** Every prior
+**`tool-results.tsx` gained its first renderer linking OUTSIDE Rinavai entirely.** Every prior
 renderer's `<Link>` opens a real `apps/web` route; a GitHub PR has none, so `renderListPrs` is the
 first plain `<a target="_blank" rel="noopener noreferrer">` in this file. `renderGetPrDiff` is
 likewise the first renderer showing preformatted TEXT (a scrollable `<pre>`) rather than a
@@ -2865,7 +2865,7 @@ reporting).
 button that opens a new tab via `window.open`, and each carries its own icon (`GitPullRequest`/
 `GitBranch`) so the two are never confused at a glance the way an undifferentiated list could
 be.** This mirrors `tool-results.tsx`'s own precedent for the first renderer in that file linking
-outside TaskFlow entirely — nothing about a GitHub PR or branch has a real `apps/web` route to
+outside Rinavai entirely — nothing about a GitHub PR or branch has a real `apps/web` route to
 open with `<Link>`.
 
 ### Phase 15 §7.2 — a repo picker for the PR-link and branch-create forms (SHIPPED)
@@ -4585,7 +4585,7 @@ refusing a target whose membership role is not Guest.
 a real question: "do we need to add them in org first as guest and then they can join the
 project? ... can we create a simple flow for guests if possible." The honest answer, before this
 pass, was yes — a genuinely two-step admin flow this section itself never disclosed as two steps,
-and someone with no TaskFlow account at all had no path through it from the project side at all.
+and someone with no Rinavai account at all had no path through it from the project side at all.
 
 **One email box, one button — the server decides which of the two real cases applies, not the
 admin.** `GuestAccessSection`'s "Invite a guest by email" label used to be misleading: it was a

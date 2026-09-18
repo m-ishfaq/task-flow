@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "TaskFlow React (apps/web)",
+  "display": "Rinavai React (apps/web)",
   "extends": "./base.json",
   "compilerOptions": {
     "target": "ES2022",

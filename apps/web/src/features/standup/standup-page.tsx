@@ -6,10 +6,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock,
   Flame,
   Mail,
   PlayCircle,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import type { CardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -140,8 +142,10 @@ export function StandupPage() {
   if (standup.isError)
     return <ErrorView error={standup.error} title="Could not load the standup" />;
 
+  const data = standup.data;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="h-full min-h-0 overflow-y-auto mx-auto max-w-4xl space-y-5 p-6">
       <PageHeader
         title="Standup"
         description={`${project?.name ?? 'This project'} — the last ${String(sinceHours)} hours, plus this sprint's urgent work.`}
@@ -185,42 +189,81 @@ export function StandupPage() {
         }
       />
 
-      {/* A plain count over real data, needing no AI call — `query`'s own
-          `headline` field, shown as soon as the standup loads. */}
-      {standup.data !== undefined && (
-        <p className="text-sm text-ink-muted">{standup.data.headline}</p>
-      )}
-
-      {narrate.isError && (
-        <ErrorView error={narrate.error} title="Could not summarize the standup" />
-      )}
-
-      {toggleSubscription.isError && (
-        <ErrorView error={toggleSubscription.error} title="Could not update your subscription" />
-      )}
-
-      {callout !== null && (
-        <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-accent">
-            <Sparkles aria-hidden="true" className="size-3.5" />
-            Team callout
-          </p>
-          <p className="mt-1.5 text-sm leading-relaxed text-ink">{callout.callout}</p>
-        </div>
-      )}
-
       {standup.isPending ? (
         <SkeletonRows rows={6} />
       ) : (
         <>
-          {standup.data.sprint !== null && standup.data.urgentSprintCards.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-                <AlertTriangle aria-hidden="true" className="size-3.5 text-priority-urgent" />
-                {standup.data.sprint.name} — urgent &amp; high priority
-              </h2>
-              <ul className="space-y-1">
-                {standup.data.urgentSprintCards.map((card) => (
+          {/* ---- Stats summary ---- */}
+          {data !== undefined && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard
+                icon={<Users aria-hidden="true" className="size-4" />}
+                label="Members"
+                value={data.members.length}
+                tone="muted"
+              />
+              <StatCard
+                icon={<CheckCircle2 aria-hidden="true" className="size-4" />}
+                label="Done"
+                value={data.members.reduce((sum, m) => sum + m.yesterday.length, 0)}
+                tone="success"
+              />
+              <StatCard
+                icon={<AlertTriangle aria-hidden="true" className="size-4" />}
+                label="Overdue"
+                value={data.members.reduce((sum, m) => sum + m.overdue.length, 0)}
+                tone="danger"
+              />
+              <StatCard
+                icon={<Flame aria-hidden="true" className="size-4" />}
+                label="Urgent"
+                value={
+                  data.members.reduce((sum, m) => sum + m.urgent.length, 0) +
+                  data.urgentSprintCards.length
+                }
+                tone="urgent"
+              />
+            </div>
+          )}
+
+          {/* ---- Callout / headline ---- */}
+          {data !== undefined && (
+            <div className="space-y-3">
+              {callout !== null && (
+                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-accent">
+                    <Sparkles aria-hidden="true" className="size-3.5" />
+                    Team callout
+                  </p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-ink">{callout.callout}</p>
+                </div>
+              )}
+
+              {narrate.isError && (
+                <ErrorView error={narrate.error} title="Could not summarize the standup" />
+              )}
+
+              {toggleSubscription.isError && (
+                <ErrorView
+                  error={toggleSubscription.error}
+                  title="Could not update your subscription"
+                />
+              )}
+            </div>
+          )}
+
+          {/* ---- Urgent sprint cards ---- */}
+          {data !== undefined && data.sprint !== null && data.urgentSprintCards.length > 0 && (
+            <section className="rounded-2xl border border-line/40 bg-surface-raised p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <AlertTriangle aria-hidden="true" className="size-4 text-priority-urgent" />
+                <h2 className="text-sm font-semibold text-ink">{data.sprint.name}</h2>
+                <span className="rounded-full bg-priority-urgent/15 px-2 py-0.5 text-[11px] font-medium text-priority-urgent">
+                  {data.urgentSprintCards.length} urgent
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {data.urgentSprintCards.map((card) => (
                   <StandupCardRow
                     key={card.cardId}
                     card={card}
@@ -233,24 +276,32 @@ export function StandupPage() {
             </section>
           )}
 
-          {standup.data.members.length === 0 ? (
-            <Empty
-              title="Nothing to report"
-              description="No cards have moved, are open, or are overdue for anyone on this project in the selected window."
-            />
-          ) : (
-            <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-              {standup.data.members.map((member) => (
-                <MemberRow
-                  key={member.userId}
-                  member={member}
-                  onManage={(cardId) => {
-                    setOpenCardId(cardId as CardId);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          {/* ---- Member list ---- */}
+          {data !== undefined &&
+            (data.members.length === 0 ? (
+              <Empty
+                title="Nothing to report"
+                description="No cards have moved, are open, or are overdue for anyone on this project in the selected window."
+              />
+            ) : (
+              <section className="rounded-2xl border border-line/40 bg-surface-raised">
+                <div className="flex items-center justify-between border-b border-line/40 px-5 py-3">
+                  <h2 className="text-sm font-semibold text-ink">Member progress</h2>
+                  <span className="text-[11px] text-ink-faint">Last {String(sinceHours)}h</span>
+                </div>
+                <div className="divide-y divide-line/60">
+                  {data.members.map((member) => (
+                    <MemberRow
+                      key={member.userId}
+                      member={member}
+                      onManage={(cardId) => {
+                        setOpenCardId(cardId as CardId);
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
         </>
       )}
 
@@ -279,10 +330,47 @@ export function StandupPage() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Stats cards                                                        */
+/* ------------------------------------------------------------------ */
+
+const STAT_TONE: Readonly<Record<'muted' | 'success' | 'danger' | 'urgent', string>> = {
+  muted: 'text-ink-muted',
+  success: 'text-success',
+  danger: 'text-danger',
+  urgent: 'text-priority-urgent',
+};
+
+function StatCard({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  readonly icon: React.ReactNode;
+  readonly label: string;
+  readonly value: number;
+  readonly tone: 'muted' | 'success' | 'danger' | 'urgent';
+}) {
+  return (
+    <div className="rounded-xl border border-line/40 bg-surface-raised px-4 py-3">
+      <div className={cn('flex items-center gap-1.5 text-xs font-medium', STAT_TONE[tone])}>
+        {icon}
+        {label}
+      </div>
+      <p className="mt-1.5 text-2xl font-semibold tabular-nums text-ink">{value}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Member row                                                         */
+/* ------------------------------------------------------------------ */
+
 /**
  * One member, collapsed to a single row by default. `CountBadge`s answer
  * "does this person need a look" without opening anything; opening shows
- * the exact three-bucket breakdown the always-expanded version showed, now
+ * the exact four-bucket breakdown the always-expanded version showed, now
  * with the full page width to itself instead of a third of it shared with
  * fourteen other people's sections.
  */
@@ -308,7 +396,10 @@ function MemberRow({
           setExpanded((current) => !current);
         }}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/40"
+        className={cn(
+          'flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors',
+          expanded ? 'bg-surface-sunken/40' : 'hover:bg-surface-hover/40',
+        )}
       >
         {expanded ? (
           <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />
@@ -349,11 +440,11 @@ function MemberRow({
       </button>
 
       {expanded && (
-        <div className="border-t border-line/60 bg-surface-sunken/30 px-4 py-3">
+        <div className="border-t border-line/40 bg-surface-sunken/30 px-5 py-4">
           {nothing ? (
-            <p className="text-xs text-ink-faint">Nothing to report for this window.</p>
+            <p className="pl-7 text-xs text-ink-faint">Nothing to report for this window.</p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 pl-7 sm:grid-cols-2 lg:grid-cols-4">
               <Bucket
                 label="Yesterday"
                 icon={<CheckCircle2 aria-hidden="true" className="size-3.5 text-success" />}
@@ -385,6 +476,10 @@ function MemberRow({
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Count badge                                                        */
+/* ------------------------------------------------------------------ */
 
 const COUNT_BADGE_TONE: Readonly<Record<'success' | 'active' | 'danger' | 'urgent', string>> = {
   success: 'text-success',
@@ -419,6 +514,10 @@ function CountBadge({
     </span>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Bucket (one Yesterday/Today/Overdue/Urgent column)                  */
+/* ------------------------------------------------------------------ */
 
 function Bucket({
   label,
@@ -457,6 +556,17 @@ function Bucket({
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Card row                                                           */
+/* ------------------------------------------------------------------ */
+
+const PRIORITY_ACCENT: Readonly<Record<Priority, string>> = {
+  urgent: 'border-l-priority-urgent',
+  high: 'border-l-warning',
+  normal: 'border-l-priority-medium',
+  low: 'border-l-ink-faint/40',
+};
+
 /**
  * A card's title on its OWN line, metadata (priority dot, reference, due
  * date) on a compact line above it. The previous single-row flex layout
@@ -483,7 +593,10 @@ function StandupCardRow({
       <button
         type="button"
         onClick={onManage}
-        className="flex w-full flex-col gap-1 rounded-lg border border-line/60 bg-surface-sunken px-2 py-1.5 text-left text-xs hover:border-accent"
+        className={cn(
+          'flex w-full flex-col gap-1 rounded-lg border border-line/60 bg-surface px-2.5 py-2 text-left text-xs transition-colors hover:border-line-strong hover:bg-surface-hover',
+          priority !== null && ['border-l-2', PRIORITY_ACCENT[priority]],
+        )}
       >
         <span className="flex items-center gap-1.5">
           {priority !== null && (
@@ -498,12 +611,13 @@ function StandupCardRow({
           )}
           <span className="shrink-0 font-mono text-[10px] text-ink-faint">{card.reference}</span>
           {card.dueDate !== null && (
-            <span className="ml-auto shrink-0 text-[10px] whitespace-nowrap text-ink-faint">
+            <span className="ml-auto shrink-0 flex items-center gap-1 text-[10px] whitespace-nowrap text-ink-faint">
+              <Clock aria-hidden="true" className="size-3" />
               {formatDate(card.dueDate)}
             </span>
           )}
         </span>
-        <span className="break-words text-ink">{card.title}</span>
+        <span className="wrap-break-word text-ink">{card.title}</span>
       </button>
     </li>
   );

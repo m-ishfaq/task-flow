@@ -26,7 +26,7 @@ export function pageDocumentName(pageId: PageId): string {
  * The org id travels as a `?orgId=` query parameter, read server-side as
  * `requestParameters.get('orgId')` (`document-name.ts`'s own header) — it is
  * a lookup key into `authorizeConnect`'s authorization check, never trusted
- * on its own, the identical convention the `x-taskflow-org` HTTP header and
+ * on its own, the identical convention the `x-rinavai-org` HTTP header and
  * Phase 4's join-request board id already use.
  */
 export function collabWebsocketUrl(orgId: OrgId): string {

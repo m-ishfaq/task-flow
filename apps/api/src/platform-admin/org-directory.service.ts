@@ -8,6 +8,7 @@ import {
   lt,
   minCoalesced,
   minText,
+  minUuid,
   or,
   schema,
   withAuditScope,
@@ -115,6 +116,8 @@ export interface OrgDirectoryRow {
    * support ticket, and a name alone is not that.
    */
   readonly ownerName: string | null;
+  /** The owner's user id — for linking to the People console. */
+  readonly ownerUserId: string | null;
 }
 
 /**
@@ -154,6 +157,7 @@ export async function listOrgs(
         ownerEmail: minText(schema.users.email),
         /* Profile first, signup value second — see coalesceColumns. */
         ownerName: minCoalesced(schema.profiles.displayName, schema.users.displayName),
+        ownerUserId: minUuid(ownerMembership.userId),
       })
       .from(schema.orgs)
       .leftJoin(
@@ -224,6 +228,7 @@ export async function listOrgs(
       lastInvoice: invoiceByOrg.get(row.orgId) ?? null,
       ownerEmail: row.ownerEmail,
       ownerName: row.ownerName,
+      ownerUserId: row.ownerUserId,
       memberCount: Number(row.memberCount),
     })),
     nextCursor:

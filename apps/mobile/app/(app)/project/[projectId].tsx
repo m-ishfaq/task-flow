@@ -10,8 +10,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { shadows } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ProjectIdSchema } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
@@ -202,44 +205,44 @@ function ProjectBoardsContent({
           edge — the old single row could not fit Sprints + Insights +
           Settings + New board on a phone. */}
       <View style={styles.titleActions}>
-        <Pressable
+        <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => {
             router.push(`/sprints/${projectId}`);
           }}
         >
           <Text style={styles.secondaryButtonText}>Sprints</Text>
-        </Pressable>
+        </TouchableOpacity>
         {isOrgAdmin && (
-          <Pressable
+          <TouchableOpacity
             style={styles.secondaryButton}
             onPress={() => {
               router.push('/insights');
             }}
           >
             <Text style={styles.secondaryButtonText}>Insights</Text>
-          </Pressable>
+          </TouchableOpacity>
         )}
-        <Pressable
+        <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => {
             router.push(`/project-settings/${projectId}`);
           }}
         >
           <Text style={styles.secondaryButtonText}>Settings</Text>
-        </Pressable>
+        </TouchableOpacity>
         {/* Hidden rather than disabled: a caller without `project:update`
             could not submit this form regardless, so showing it as
             unusable is clutter, not information. */}
         {canCreateBoard && (
-          <Pressable
+          <TouchableOpacity
             style={styles.newButton}
             onPress={() => {
               setCreating(true);
             }}
           >
             <Text style={styles.newButtonText}>+ New board</Text>
-          </Pressable>
+          </TouchableOpacity>
         )}
       </View>
 
@@ -279,33 +282,33 @@ function ProjectBoardsContent({
             </View>
           ) : (
             <View style={styles.row}>
-              <Pressable
+              <TouchableOpacity
                 style={styles.rowMain}
                 onPress={() => {
                   router.push(`/board/${item.boardId}`);
                 }}
               >
                 <Text style={styles.rowTitle}>{item.name}</Text>
-              </Pressable>
+              </TouchableOpacity>
               {item.capabilities.update && (
-                <Pressable
+                <TouchableOpacity
                   onPress={() => {
                     setEditingBoard(item.boardId);
                     setEditBoardName(item.name);
                   }}
                 >
                   <Text style={styles.rowAction}>Rename</Text>
-                </Pressable>
+                </TouchableOpacity>
               )}
               {item.capabilities.delete && (
-                <Pressable
+                <TouchableOpacity
                   disabled={archive.isPending}
                   onPress={() => {
                     archive.mutate(item.boardId);
                   }}
                 >
                   <Text style={styles.rowAction}>Archive</Text>
-                </Pressable>
+                </TouchableOpacity>
               )}
             </View>
           )
@@ -314,7 +317,7 @@ function ProjectBoardsContent({
         style={styles.listContainer}
         ListEmptyComponent={
           boards.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={3} />
           ) : (
             <Text style={styles.label}>This project has no boards yet.</Text>
           )
@@ -387,14 +390,14 @@ function ProjectBoardsContent({
 
 function BackButton() {
   return (
-    <Pressable
+    <TouchableOpacity
       style={styles.backButton}
       onPress={() => {
         router.back();
       }}
     >
       <Text style={styles.backButtonText}>← Back</Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -541,6 +544,7 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
+    ...shadows.sm,
   },
   rowMain: {
     flex: 1,
@@ -564,6 +568,7 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
+    ...shadows.sm,
   },
   cancelButton: {
     paddingVertical: 8,

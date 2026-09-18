@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { connectAsMigrator } from '@taskflow/db/testing';
 import { newId, relyingPartyFrom } from '@taskflow/security';
 import { VirtualAuthenticator } from '@taskflow/security/testing';
@@ -19,7 +19,7 @@ import { TEST_ENV } from '../testing/fixtures.js';
  * whoever the request names, and that a user cannot delete their last way in.
  */
 
-const RP = relyingPartyFrom(TEST_ENV.WEB_ORIGIN, 'TaskFlow');
+const RP = relyingPartyFrom(TEST_ENV.WEB_ORIGIN, 'Rinavai');
 const PASSWORD = 'correct horse battery staple 42';
 
 let app: FastifyInstance;
@@ -45,6 +45,12 @@ beforeAll(async () => {
   await admin.end();
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'passkey-test' });
+  initializePlatformAdminDatabase({
+    url:
+      process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+      'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'passkey-test-admin',
+  });
   app = await buildServer({
     env: TEST_ENV,
     deliver: (message) => {

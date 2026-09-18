@@ -44,13 +44,23 @@ export function DropdownMenuContent({
   );
 }
 
-type DropdownMenuItemTone = 'default' | 'muted';
+type DropdownMenuItemTone = 'default' | 'muted' | 'danger';
 
+/* `danger` added while consolidating platform-admin's own hand-rolled
+   `RowActionsMenu` ("Delete org") onto this component
+   (ai/design-rebuild-warm-dark.md §3) — the one tone this file had no
+   entry for, since `card-tile.tsx`'s "Archive" reaches for `muted` even
+   though archive is itself destructive-adjacent. Its own highlighted
+   background differs from the other two tones' shared
+   `data-[highlighted]:bg-surface-hover`, matching the danger-tinted hover
+   `RowActionsMenu`'s hand-rolled button already had. */
 const ITEM_TONE: Readonly<Record<DropdownMenuItemTone, string>> = {
   /* shell.tsx's own menu items, card-tile.tsx's "Archive" */
-  default: 'text-ink',
+  default: 'text-ink data-[highlighted]:bg-surface-hover',
   /* shell.tsx's "All organizations…" and the signed-in email row */
-  muted: 'text-ink-muted',
+  muted: 'text-ink-muted data-[highlighted]:bg-surface-hover',
+  /* A destructive action — orgs-tab.tsx's "Delete org" */
+  danger: 'text-danger data-[highlighted]:bg-danger/10',
 };
 
 export interface DropdownMenuItemProps extends Omit<
@@ -66,7 +76,6 @@ export function DropdownMenuItem({ tone = 'default', className, ...props }: Drop
     <DropdownMenuPrimitive.Item
       className={cn(
         'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm outline-none',
-        'data-[highlighted]:bg-surface-hover',
         ITEM_TONE[tone],
         className,
       )}

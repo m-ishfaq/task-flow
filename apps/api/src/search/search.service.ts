@@ -1,11 +1,12 @@
 import { errors, unsafeAsId, type OrgId } from '@taskflow/contracts';
 import { parse, validate, type ParseResult } from '@taskflow/filter';
 import { can, type Subject } from '@taskflow/policy';
-import { eq, schema, withOrgScope } from '@taskflow/db';
+import { and, eq, inArray, schema, withOrgScope } from '@taskflow/db';
 import type { SearchProvider, SearchHit } from '@taskflow/contracts';
 import { loadChannel, channelTarget } from '../chat/shared.js';
 import { loadPage, pageTarget } from '../docs/shared.js';
 import { loadCard } from '../work/card.service.js';
+import { channelMemberIds } from '../chat/membership.js';
 
 /**
  * The authorized search pipeline (ai/phase-8-search.md §2.7) — extracted out
@@ -185,5 +186,216 @@ export async function performSearch(
   for (const hit of hits) {
     if (await hitAllowed(subject, subject.orgId, hit)) allowed.push(hit);
   }
+
+  /* ── context-label enrichment ────────────────────────────────────────
+   *
+   * Hits like `message`, `comment`, and `transcript` always have `title:
+   * null` in the search index — they are child rows without a name of
+   * their own.  The UI falls back to the bare type label ("message"),
+   * which is not helpful.
+   *
+   * This pass batch-loads the PARENT name for every hit type that needs
+   * one — channel names for messages, card titles for card comments,
+   * page titles for docs comments, call summaries for transcripts — in a
+   * single `withOrgScope` transaction, and writes the result into each
+   * hit's `contextLabel`.  Cards and pages already carry their own title
+   * in the index, so they get `null` (no enrichment needed).
+   * ─────────────────────────────────────────────────────────────────── */
+  if (allowed.length > 0) {
+    const enriched = await resolveContextLabels(subject.orgId, subject.userId, allowed);
+    return enriched;
+  }
+
   return allowed;
+}
+
+/**
+ * Batch-resolves human-readable context labels for search hits whose
+ * `title` is null (messages, comments, transcripts).
+ *
+ * Runs in a single `withOrgScope` transaction so the per-hit resolution
+ * cost is O(1) round-trips, not O(n) — each table is queried once with
+ * an `IN` clause covering every hit of that type.
+ */
+async function resolveContextLabels(
+  orgId: OrgId,
+  viewerId: string,
+  hits: readonly SearchHit[],
+): Promise<readonly SearchHit[]> {
+  return withOrgScope(orgId, async (tx) => {
+    // ── Collect IDs by type ──────────────────────────────────────────
+    const channelIds = new Set<string>();
+    const cardIds = new Set<string>();
+    const pageIds = new Set<string>();
+    const callIds = new Set<string>();
+
+    for (const hit of hits) {
+      switch (hit.type) {
+        case 'message': {
+          const meta = hit.metadata as { readonly channel_id: string };
+          channelIds.add(meta.channel_id);
+          break;
+        }
+        case 'comment': {
+          const meta = hit.metadata;
+          if ('card_id' in meta) cardIds.add(meta.card_id);
+          if ('page_id' in meta) pageIds.add(meta.page_id);
+          break;
+        }
+        case 'transcript': {
+          const meta = hit.metadata as { readonly call_id: string };
+          if (meta.call_id) callIds.add(meta.call_id);
+          break;
+        }
+        case 'card':
+        case 'page':
+          // Already carry their own title in the index — no enrichment needed.
+          break;
+      }
+    }
+
+    // ── Batch-load channel names + DM member names ───────────────────
+    const channelNameMap = new Map<string, string>();
+    const dmMemberMap = new Map<string, string[]>(); // channelId → [displayName, ...]
+
+    if (channelIds.size > 0) {
+      const ids = [...channelIds];
+      const channels = await tx
+        .select({ id: schema.channels.id, name: schema.channels.name, type: schema.channels.type })
+        .from(schema.channels)
+        .where(inArray(schema.channels.id, ids));
+
+      // Named channels (public, private, named group DMs)
+      for (const ch of channels) {
+        if (ch.name) channelNameMap.set(ch.id, ch.name);
+      }
+
+      // DMs (type = 'dm', name = null) — resolve member display names
+      const dmChannelIds = channels
+        .filter((ch) => ch.type === 'dm' && ch.name === null)
+        .map((ch) => ch.id);
+
+      for (const dmId of dmChannelIds) {
+        const memberIds = await channelMemberIds(tx, unsafeAsId<'ChannelId'>(dmId));
+        if (memberIds.length === 0) continue;
+
+        // Exclude the searching user from the label — "with Alice", not "with you"
+        const otherMemberIds = memberIds.filter((id) => id !== viewerId);
+        const displayIds = otherMemberIds.length > 0 ? otherMemberIds : memberIds;
+
+        const members = await tx
+          .select({
+            userId: schema.memberships.userId,
+            displayName: schema.users.displayName,
+          })
+          .from(schema.memberships)
+          .innerJoin(schema.users, eq(schema.memberships.userId, schema.users.id))
+          .where(
+            and(
+              eq(schema.memberships.orgId, orgId),
+              inArray(schema.memberships.userId, displayIds),
+            ),
+          );
+
+        const names = members.map((m) => m.displayName ?? 'Someone').filter(Boolean);
+        if (names.length > 0) dmMemberMap.set(dmId, names);
+      }
+    }
+
+    // ── Batch-load card titles ───────────────────────────────────────
+    const cardTitleMap = new Map<string, { title: string; number: number }>();
+
+    if (cardIds.size > 0) {
+      const cards = await tx
+        .select({ id: schema.cards.id, title: schema.cards.title, number: schema.cards.number })
+        .from(schema.cards)
+        .where(inArray(schema.cards.id, [...cardIds]));
+
+      for (const card of cards) {
+        cardTitleMap.set(card.id, { title: card.title, number: card.number });
+      }
+    }
+
+    // ── Batch-load page titles ───────────────────────────────────────
+    const pageTitleMap = new Map<string, string>();
+
+    if (pageIds.size > 0) {
+      const pages = await tx
+        .select({ id: schema.pages.id, title: schema.pages.title })
+        .from(schema.pages)
+        .where(inArray(schema.pages.id, [...pageIds]));
+
+      for (const page of pages) {
+        pageTitleMap.set(page.id, page.title);
+      }
+    }
+
+    // ── Batch-load call summaries ────────────────────────────────────
+    const callSummaryMap = new Map<string, string>();
+
+    if (callIds.size > 0) {
+      const calls = await tx
+        .select({
+          id: schema.calls.id,
+          direction: schema.calls.direction,
+          durationSeconds: schema.calls.durationSeconds,
+        })
+        .from(schema.calls)
+        .where(inArray(schema.calls.id, [...callIds]));
+
+      for (const call of calls) {
+        const dir = call.direction === 'inbound' ? 'Inbound' : 'Outbound';
+        if (call.durationSeconds != null) {
+          const mins = Math.floor(call.durationSeconds / 60);
+          const secs = call.durationSeconds % 60;
+          callSummaryMap.set(call.id, `${dir} · ${String(mins)}m ${String(secs)}s`);
+        } else {
+          callSummaryMap.set(call.id, dir);
+        }
+      }
+    }
+
+    // ── Attach labels to hits ────────────────────────────────────────
+    return hits.map((hit) => {
+      let contextLabel: string | null = null;
+
+      switch (hit.type) {
+        case 'message': {
+          const meta = hit.metadata as { readonly channel_id: string };
+          const channelName = channelNameMap.get(meta.channel_id);
+          const dmNames = dmMemberMap.get(meta.channel_id);
+          if (channelName) {
+            contextLabel = `#${channelName}`;
+          } else if (dmNames) {
+            contextLabel = `DM with ${dmNames.join(', ')}`;
+          }
+          break;
+        }
+        case 'comment': {
+          const meta = hit.metadata;
+          if ('card_id' in meta) {
+            const card = cardTitleMap.get(meta.card_id);
+            if (card) contextLabel = `on #${String(card.number)} ${card.title}`;
+          }
+          if ('page_id' in meta) {
+            const pageTitle = pageTitleMap.get(meta.page_id);
+            if (pageTitle) contextLabel = `on ${pageTitle}`;
+          }
+          break;
+        }
+        case 'transcript': {
+          const meta = hit.metadata as { readonly call_id: string };
+          const summary = callSummaryMap.get(meta.call_id);
+          if (summary) contextLabel = summary;
+          break;
+        }
+        case 'card':
+        case 'page':
+          // Already carry their own title — no contextLabel needed.
+          break;
+      }
+
+      return { ...hit, contextLabel };
+    });
+  });
 }
