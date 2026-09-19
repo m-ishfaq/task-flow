@@ -28,7 +28,7 @@ import {
 } from './profiles.js';
 import { resolveModules } from './registry.js';
 import { reset } from './reset.js';
-import { usersModule } from './modules/identity.users.js';
+import { SEED_EMAIL_DOMAIN, usersModule } from './modules/identity.users.js';
 import { orgsModule } from './modules/tenancy.orgs.js';
 // Every other module is reached transitively through `auditModule`'s own
 // `requires` chain (platform.audit -> ... -> identity.users) — importing it
@@ -427,7 +427,34 @@ async function main(): Promise<void> {
      module that silently never runs. */
     const roots = [auditModule, catalogModule, subscriptionsModule];
 
-    if (args.reset) {
+    /* Auto-detect existing seed data: if any users with the seed email domain
+       already exist, the database was seeded before. Without a reset, every
+       INSERT hits a unique constraint and the whole run crashes — so we
+       auto-reset rather than failing with a cryptic Postgres error.
+
+       Both the current domain and the old `taskflow.seed.test` domain are
+       checked — a database seeded before the domain migration in commit
+       75cee7b still has rows under the old suffix, and those block the
+       current INSERT just as surely. */
+    let shouldReset = args.reset;
+    if (!shouldReset) {
+      const { rows } = await connection.query(
+        `SELECT 1 FROM identity.users
+           WHERE email_normalized LIKE '%@' || $1
+              OR email_normalized LIKE '%@taskflow.seed.test'
+           LIMIT 1`,
+        [SEED_EMAIL_DOMAIN],
+      );
+      if (rows.length > 0) {
+        console.warn(
+          'Existing seed data detected — auto-resetting before re-seeding.\n' +
+            '  (Use --reset explicitly to silence this, or --no-reset to skip.)',
+        );
+        shouldReset = true;
+      }
+    }
+
+    if (shouldReset) {
       await reset({
         connection,
         roots,
