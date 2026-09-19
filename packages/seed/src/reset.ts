@@ -242,11 +242,12 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     [userIds],
   );
 
-  /* `platform.ai_org_overrides.set_by` — operator-set config, not in any
-     seed module's `tables`. SET NULL is correct — the override row
-     survives, losing only attribution. */
+  /* `platform.ai_org_overrides.set_by` is NOT NULL (migration 0099), so SET
+     NULL would crash. DELETE the override row — operator-set config that
+     survives a full seed reset is confusing rather than helpful, and the
+     seeded operator who set it is being deleted anyway. */
   await connection.query(
-    'UPDATE platform.ai_org_overrides SET set_by = NULL WHERE set_by = ANY($1::uuid[])',
+    'DELETE FROM platform.ai_org_overrides WHERE set_by = ANY($1::uuid[])',
     [userIds],
   );
 
@@ -262,22 +263,27 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     ]);
   }
 
-  /* `rtc.sessions` — two attribution columns (`initiated_by`,
-     `recording_requested_by`), no cascade. */
+  /* `rtc.sessions` — `initiated_by` is NOT NULL (migration 0041) with no
+     cascade, so SET NULL would crash. DELETE the session row; the
+     cascade from `rtc.participants` and `rtc.recordings` cleans up
+     children. `recording_requested_by` is nullable but deleting the
+     session handles both. */
   if (allTables.includes('rtc.sessions')) {
     await connection.query(
-      `UPDATE rtc.sessions
-         SET initiated_by = NULL, recording_requested_by = NULL
-       WHERE initiated_by = ANY($1::uuid[])
-          OR recording_requested_by = ANY($1::uuid[])`,
+      `DELETE FROM rtc.sessions
+        WHERE initiated_by = ANY($1::uuid[])
+           OR recording_requested_by = ANY($1::uuid[])`,
       [userIds],
     );
   }
 
-  /* `rtc.recordings.created_by` — attribution column, no cascade. */
+  /* `rtc.recordings.created_by` is NOT NULL (migration 0042) with no
+     cascade. Sessions may already be gone via the cascade above, but
+     any recording that survived (e.g. created_by matched but session
+     did not) is deleted here. */
   if (allTables.includes('rtc.recordings')) {
     await connection.query(
-      'UPDATE rtc.recordings SET created_by = NULL WHERE created_by = ANY($1::uuid[])',
+      'DELETE FROM rtc.recordings WHERE created_by = ANY($1::uuid[])',
       [userIds],
     );
   }
