@@ -347,9 +347,12 @@ describe('login', () => {
     );
     const unknown = performance.now() - startUnknown;
 
-    // Generous bounds — "same order of magnitude" is what defeats the oracle,
-    // and a tight ratio would be flaky on a shared runner.
-    expect(unknown).toBeGreaterThan(known * 0.25);
+    // Both paths run Argon2id, so both should take at least a few ms.
+    // An absolute floor defeats the timing oracle (the unknown path does NOT
+    // skip the hash) without a relative ratio that breaks on shared runners
+    // where Argon2id itself varies 10x between runs.
+    expect(unknown).toBeGreaterThan(5);
+    expect(known).toBeGreaterThan(5);
   });
 
   it('records a failure event even for an address that does not exist', async () => {

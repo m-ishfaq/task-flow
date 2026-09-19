@@ -282,6 +282,27 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     );
   }
 
+  /* `docs.comments` has a paired CHECK constraint (`comments_resolved_pair`)
+     requiring `resolved_by` and `resolved_at` to be both NULL or both
+     non-NULL. `ON DELETE SET NULL` on `resolved_by` alone would violate it,
+     so we null both columns together. Not in any seed module's `tables`
+     array, so unconditional. */
+  await connection.query(
+    `UPDATE docs.comments
+       SET resolved_by = NULL, resolved_at = NULL
+     WHERE resolved_by = ANY($1::uuid[])`,
+    [userIds],
+  );
+
+  /* `docs.suggestions` has the identical paired constraint
+     (`suggestions_decided_pair`) on `decided_by`/`decided_at`. Same fix. */
+  await connection.query(
+    `UPDATE docs.suggestions
+       SET decided_by = NULL, decided_at = NULL
+     WHERE decided_by = ANY($1::uuid[])`,
+    [userIds],
+  );
+
   /* Users last, and unscoped — `identity.users` carries no `org_id` (it is
      the one global table, CLAUDE.md). By this point every membership row
      that referenced them is gone, so the foreign key from
@@ -327,6 +348,7 @@ async function findSeededUserIds(
   const result = await connection.query(
     `SELECT id FROM identity.users
       WHERE email_normalized LIKE '%@' || $1
+         OR email_normalized LIKE '%@taskflow.seed.test'
          OR email_normalized = $2`,
     [SEED_EMAIL_DOMAIN, platformOperatorEmail?.toLowerCase() ?? null],
   );
