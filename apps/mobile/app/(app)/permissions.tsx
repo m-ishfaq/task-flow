@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -23,7 +24,7 @@ import { useStepUp } from '../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
 import { CapabilityGate } from '../../src/lib/capability-gate.js';
 import { SkeletonList } from '../../src/lib/skeleton.js';
-import { shadows } from '../../src/lib/premium.js';
+import { shadows, MONO_FONT } from '../../src/lib/premium.js';
 import {
   MEMBERS_QUERY_KEY,
   MEMBER_GRANTS_QUERY_KEY,
@@ -174,7 +175,7 @@ function PermissionsScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Individual permissions</Text>
@@ -195,7 +196,10 @@ function PermissionsScreenContent() {
       {(members.isPending || grants.isPending) && <SkeletonList count={3} />}
 
       {grants.isSuccess && grants.data.length === 0 && (
-        <Text style={styles.emptyHint}>No individual grants yet. Tap + Add to create one.</Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="shield-checkmark-outline" size={32} color={colors.inkFaint.hex} />
+          <Text style={styles.emptyHint}>No individual grants yet. Tap + Add to create one.</Text>
+        </View>
       )}
 
       <ScrollView contentContainerStyle={styles.list}>
@@ -375,6 +379,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 8,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -407,6 +412,11 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
     fontSize: 13,
     fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
   },
   emptyHint: {
     marginTop: 16,
@@ -451,7 +461,7 @@ const styles = StyleSheet.create({
   },
   permissionBadgeText: {
     fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: MONO_FONT,
     color: colors.ink.hex,
   },
   revokeButton: {

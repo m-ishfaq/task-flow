@@ -1050,7 +1050,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           messages.isPending ? (
             <SkeletonList count={3} />
           ) : (
-            <Text style={styles.label}>No messages yet.</Text>
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles-outline" size={32} color={colors.inkFaint.hex} />
+              <Text style={styles.label}>No messages yet.</Text>
+            </View>
           )
         }
       />
@@ -1474,7 +1477,12 @@ function CallTimelineCard({
   return (
     <View style={styles.callCardRow}>
       <View style={[styles.callCardPill, missed && styles.callCardPillMissed]}>
-        <Text style={styles.callCardGlyph}>{entry.kind === 'video' ? '🎥' : '📞'}</Text>
+        <Ionicons
+          name={entry.kind === 'video' ? 'videocam' : 'call'}
+          size={14}
+          color={missed ? colors.danger.hex : colors.accent.hex}
+          style={styles.callCardGlyph}
+        />
         <Text style={[styles.callCardText, missed && styles.callCardTextMissed]}>
           {byViewer ? 'You called' : `${personOf(entry.initiatedBy).label} called`} · {text}
         </Text>
@@ -1688,12 +1696,14 @@ function MessageRow({
               <View style={styles.msgBadgeRow}>
                 {isPinned && (
                   <View style={styles.msgBadge}>
-                    <Text style={styles.msgBadgeText}>📌 Pinned</Text>
+                    <Ionicons name="pin" size={12} color={colors.inkMuted.hex} />
+                    <Text style={styles.msgBadgeText}>Pinned</Text>
                   </View>
                 )}
                 {isSaved && (
                   <View style={[styles.msgBadge, styles.msgBadgeSaved]}>
-                    <Text style={[styles.msgBadgeText, styles.msgBadgeTextSaved]}>🔖 Saved</Text>
+                    <Ionicons name="bookmark" size={12} color={colors.accent.hex} />
+                    <Text style={[styles.msgBadgeText, styles.msgBadgeTextSaved]}>Saved</Text>
                   </View>
                 )}
               </View>
@@ -1900,7 +1910,7 @@ function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
     </Pressable>
   );
 }
@@ -1926,6 +1936,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 4,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -2069,6 +2080,7 @@ const styles = StyleSheet.create({
   msgBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     backgroundColor: colors.accent.hex + '18',
     borderRadius: 4,
     paddingHorizontal: 6,
@@ -2148,6 +2160,11 @@ const styles = StyleSheet.create({
   previewDescription: {
     fontSize: 11,
     color: colors.inkMuted.hex,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
   },
   label: {
     fontSize: 14,
@@ -2303,7 +2320,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger.hex + '1a',
   },
   callCardGlyph: {
-    fontSize: 12,
+    marginRight: 4,
   },
   callCardText: {
     fontSize: 12,

@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { ChannelIdSchema, type ChannelId } from '@taskflow/contracts';
@@ -65,7 +66,7 @@ export default function ChannelDetailsScreen() {
             router.back();
           }}
         >
-          <Text style={styles.navBackText}>‹ Back</Text>
+          <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
         </Pressable>
       </View>
     );
@@ -132,7 +133,7 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
             router.back();
           }}
         >
-          <Text style={styles.navBackText}>‹ Back</Text>
+          <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
         </Pressable>
       </View>
     );
@@ -149,7 +150,7 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
             router.back();
           }}
         >
-          <Text style={styles.navBackText}>‹</Text>
+          <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
         </Pressable>
         <Text style={styles.navTitle} numberOfLines={1}>
           {data !== undefined ? (isDirect ? 'Chat Info' : 'Channel Info') : 'Info'}
@@ -262,7 +263,8 @@ function ChannelHero({
 
   let heroLabel: string;
   let heroInitial: string;
-  let heroMeta: string;
+  let heroMetaText: string;
+  let heroMetaIcon: React.ReactNode = null;
 
   if (isDirect) {
     if (others.length === 1 && others[0] !== undefined) {
@@ -273,12 +275,15 @@ function ChannelHero({
       heroLabel = 'Group conversation';
       heroInitial = 'G';
     }
-    heroMeta = `${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
+    heroMetaText = `${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
   } else {
     heroLabel = channel.name ?? 'Channel';
     heroInitial = (channel.name ?? '#').slice(0, 1).toUpperCase();
-    const typeStr = channel.type === 'public' ? '# Public' : '🔒 Private';
-    heroMeta = `${typeStr} · ${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
+    const isPrivate = channel.type !== 'public';
+    heroMetaText = `${isPrivate ? 'Private' : '# Public'} · ${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
+    if (isPrivate) {
+      heroMetaIcon = <Ionicons name="lock-closed" size={12} color={colors.inkMuted.hex} />;
+    }
   }
 
   return (
@@ -287,7 +292,10 @@ function ChannelHero({
         <Text style={styles.heroAvatarText}>{heroInitial}</Text>
       </View>
       <Text style={styles.heroName}>{heroLabel}</Text>
-      <Text style={styles.heroMeta}>{heroMeta}</Text>
+      <View style={styles.heroMetaRow}>
+        {heroMetaIcon}
+        <Text style={styles.heroMeta}>{heroMetaText}</Text>
+      </View>
       {channel.archivedAt !== null && (
         <View style={styles.heroBadge}>
           <Text style={styles.heroBadgeText}>Archived</Text>
@@ -651,7 +659,10 @@ function CallHistorySection({
         rows.map((row) => (
           <View key={row.sessionId} style={styles.excerptRow}>
             <View style={styles.excerptBody}>
-              <Text style={styles.excerptText}>📞 {personOf(row.initiatedBy).label}</Text>
+              <Text style={styles.excerptText}>
+                <Ionicons name="call" size={12} color={colors.inkMuted.hex} />{' '}
+                {personOf(row.initiatedBy).label}
+              </Text>
               <Text style={styles.excerptMeta}>{callOutcomeLabel(row)}</Text>
             </View>
           </View>
@@ -761,7 +772,7 @@ function SavedSection({ channelId }: { readonly channelId: ChannelId }) {
             key={row.messageId}
             excerpt={row.excerpt}
             meta="Starred"
-            actionLabel="★"
+            actionLabel="unstar"
             actionPending={unsave.isPending}
             onAction={() => {
               unsave.mutate(row.messageId);
@@ -797,9 +808,12 @@ function FilesSection({ channelId }: { readonly channelId: ChannelId }) {
       ) : (
         rows.map((file) => (
           <View key={file.attachmentId} style={styles.rosterRow}>
-            <Text style={styles.fileName} numberOfLines={1}>
-              📎 {file.filename}
-            </Text>
+            <View style={styles.fileNameRow}>
+              <Ionicons name="document-attach" size={14} color={colors.inkMuted.hex} />
+              <Text style={styles.fileName} numberOfLines={1}>
+                {file.filename}
+              </Text>
+            </View>
             {file.status === 'clean' ? (
               <Pressable
                 disabled={download.isPending}
@@ -1169,6 +1183,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.3,
   },
+  heroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    justifyContent: 'center',
+  },
   heroMeta: {
     fontSize: 13,
     color: colors.inkMuted.hex,
@@ -1381,6 +1401,12 @@ const styles = StyleSheet.create({
   },
 
   /* Files */
+  fileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
   fileName: {
     fontSize: 13,
     color: colors.ink.hex,

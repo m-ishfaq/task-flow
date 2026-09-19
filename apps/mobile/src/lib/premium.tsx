@@ -30,6 +30,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -44,7 +45,24 @@ import { Skeleton } from './skeleton.js';
  * Shadow tokens
  * -------------------------------------------------------------------------- */
 
-const SHADOW_COLOR = '#120904';
+export const SHADOW_COLOR = '#120904';
+
+/**
+ * Standard opacity for press feedback across the app. Applied via
+ * `pressed && styles.pressed` on Pressable components. Using a constant
+ * ensures all press interactions feel consistent.
+ */
+export const PRESS_FEEDBACK = 0.7;
+
+/** Shared hit-slop for small pressable targets (back arrows, icons, chips). */
+export const HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
+
+/** Platform-appropriate monospace font. Menlo renders more consistently on iOS. */
+export const MONO_FONT = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  default: 'monospace',
+});
 
 export const shadows = {
   sm: Platform.select({
@@ -275,6 +293,9 @@ export function CardSkeleton({ rows = 3 }: { readonly rows?: number }) {
  * Premium empty state — a centered icon, title, description, and optional
  * action button. Used for "no projects yet", "no cards here", "no results",
  * etc. Matches web's empty state pattern but with a richer visual.
+ *
+ * `icon` accepts a ReactNode (typically an `<Ionicons>` element), NOT a
+ * raw emoji string. This ensures consistent iconography across the app.
  */
 export function EmptyState({
   icon,
@@ -283,7 +304,7 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: {
-  readonly icon?: string;
+  readonly icon?: ReactNode;
   readonly title: string;
   readonly description?: string;
   readonly actionLabel?: string;
@@ -291,7 +312,7 @@ export function EmptyState({
 }) {
   return (
     <View style={emptyStateStyles.container}>
-      {icon ? <Text style={emptyStateStyles.icon}>{icon}</Text> : null}
+      {icon ? <View style={emptyStateStyles.iconContainer}>{icon}</View> : null}
       <Text style={emptyStateStyles.title}>{title}</Text>
       {description ? <Text style={emptyStateStyles.description}>{description}</Text> : null}
       {actionLabel && onAction ? (
@@ -313,8 +334,7 @@ const emptyStateStyles = StyleSheet.create({
     paddingVertical: 48,
     paddingHorizontal: 32,
   },
-  icon: {
-    fontSize: 40,
+  iconContainer: {
     marginBottom: 12,
   },
   title: {
@@ -373,7 +393,7 @@ export function ErrorView({
 }) {
   return (
     <View style={errorViewStyles.container}>
-      <Text style={errorViewStyles.icon}>{'\u26A0\uFE0F'}</Text>
+      <Ionicons name="warning" size={32} color={colors.danger.hex} style={errorViewStyles.icon} />
       <Text style={errorViewStyles.title}>{title}</Text>
       {message ? <Text style={errorViewStyles.message}>{message}</Text> : null}
       {onRetry ? (
@@ -396,7 +416,6 @@ const errorViewStyles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   icon: {
-    fontSize: 32,
     marginBottom: 12,
   },
   title: {

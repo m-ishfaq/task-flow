@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { shadows } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -545,7 +546,7 @@ function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
     </Pressable>
   );
 }
@@ -575,6 +576,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,

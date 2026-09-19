@@ -3,6 +3,7 @@ import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@taskflow/tokens';
+import { SHADOW_COLOR } from './premium.js';
 
 /**
  * The floating action button for a screen's own primary action.
@@ -170,7 +171,7 @@ const styles = StyleSheet.create({
        (`top-bar.tsx` uses zIndex/elevation 20). */
     zIndex: 15,
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: SHADOW_COLOR,
     shadowOpacity: 0.35,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
@@ -192,7 +193,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     zIndex: 25,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: SHADOW_COLOR,
     shadowOpacity: 0.4,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },

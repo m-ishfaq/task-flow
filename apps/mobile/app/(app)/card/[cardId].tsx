@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { shadows } from '../../../src/lib/premium.js';
+import { colors } from '@taskflow/tokens';
 import { useQuery } from '@tanstack/react-query';
 import { CardIdSchema, type CardId, type BoardId, type ProjectId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
@@ -221,7 +223,8 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           )}
           {data.commentCount > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>💬 {data.commentCount}</Text>
+              <Ionicons name="chatbubble" size={12} color={colors.inkMuted.hex} />
+              <Text style={styles.badgeText}>{data.commentCount}</Text>
             </View>
           )}
         </View>

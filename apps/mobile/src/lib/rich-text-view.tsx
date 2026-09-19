@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { colors } from '@taskflow/tokens';
+import { MONO_FONT } from './premium.js';
 import { sanitizeRichText, type SanitizedMark, type SanitizedNode } from './rich-text.js';
 
 /**
@@ -208,7 +209,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   inlineCode: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     backgroundColor: colors.surfaceHover.hex,
   },
   link: {
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   code: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     fontSize: 13,
     color: colors.ink.hex,
   },

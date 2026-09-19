@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -109,7 +110,7 @@ function InsightsScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <Text style={styles.title}>Insights</Text>
       <Text style={styles.subtitle}>Last 30 days</Text>
@@ -196,6 +197,7 @@ function VelocityCard({
   if (points.length === 0) {
     return (
       <View style={styles.card}>
+        <Ionicons name="speedometer-outline" size={32} color={colors.inkFaint.hex} />
         <Text style={styles.emptyText}>No velocity data yet.</Text>
       </View>
     );
@@ -265,6 +267,7 @@ function WorkloadCard({ entries }: { readonly entries: readonly WorkloadEntry[] 
   if (entries.length === 0) {
     return (
       <View style={styles.card}>
+        <Ionicons name="people-outline" size={32} color={colors.inkFaint.hex} />
         <Text style={styles.emptyText}>No assigned cards.</Text>
       </View>
     );
@@ -300,6 +303,7 @@ function VolumeCard({ points }: { readonly points: readonly VolumePoint[] }) {
   if (points.length === 0) {
     return (
       <View style={styles.card}>
+        <Ionicons name="bar-chart-outline" size={32} color={colors.inkFaint.hex} />
         <Text style={styles.emptyText}>No volume data yet.</Text>
       </View>
     );
@@ -350,6 +354,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: -4,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,

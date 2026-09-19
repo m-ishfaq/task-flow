@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { shadows } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -319,7 +320,10 @@ function ProjectBoardsContent({
           boards.isPending ? (
             <SkeletonList count={3} />
           ) : (
-            <Text style={styles.label}>This project has no boards yet.</Text>
+            <View style={styles.emptyState}>
+              <Ionicons name="folder-outline" size={32} color={colors.inkFaint.hex} />
+              <Text style={styles.label}>This project has no boards yet.</Text>
+            </View>
           )
         }
       />
@@ -396,7 +400,7 @@ function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
     </TouchableOpacity>
   );
 }
@@ -424,6 +428,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -583,6 +588,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
   },
   /* Bottom-sheet modal */
   sheetBackdrop: {

@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
+import { MONO_FONT } from './premium.js';
 import { apiErrorOf } from './trpc-client.js';
 import { useStepUp } from './use-step-up.js';
 import { StepUpSheet } from './step-up-sheet.js';
@@ -324,7 +325,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   secretText: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     fontSize: 12,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceHover.hex,
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   codeText: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     fontSize: 12,
     color: colors.ink.hex,
     width: '45%',

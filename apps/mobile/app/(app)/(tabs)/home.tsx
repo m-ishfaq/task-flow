@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
@@ -119,15 +120,24 @@ export default function Home() {
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>My Tasks</Text>
+        {visible.length > 0 && (
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{visible.length}</Text>
+          </View>
+        )}
       </View>
       <Text style={styles.subtitle}>
-        {visible.length} {visible.length === 1 ? 'card' : 'cards'}
-        {scope === 'all'
-          ? ' assigned to you, across every board.'
-          : scope === 'sprint'
-            ? ' assigned to you in a running sprint.'
-            : ' assigned to you and not in any sprint.'}
+        {visible.length === 0
+          ? 'No cards assigned to you yet.'
+          : `${String(visible.length)} ${visible.length === 1 ? 'card' : 'cards'}${
+              scope === 'all'
+                ? ' across every board.'
+                : scope === 'sprint'
+                  ? ' in a running sprint.'
+                  : ' not in any sprint.'
+            }`}
       </Text>
+      <View style={styles.separator} />
 
       {runningSprintIds.size > 0 && (
         <View style={styles.scopeRow} accessibilityRole="tablist">
@@ -181,7 +191,12 @@ export default function Home() {
         keyExtractor={(card: CardSummary) => card.cardId}
         renderItem={({ item }) => <CardRow card={item} />}
         renderSectionHeader={({ section }) => (
-          <Text style={styles.sectionHeader}>{section.title}</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>{section.title}</Text>
+            <View style={styles.sectionCount}>
+              <Text style={styles.sectionCountText}>{section.data.length}</Text>
+            </View>
+          </View>
         )}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
@@ -200,7 +215,9 @@ export default function Home() {
             <SkeletonList count={5} />
           ) : (
             <EmptyState
-              icon={'\u2705'}
+              icon={
+                <Ionicons name="checkmark-circle-outline" size={48} color={colors.inkMuted.hex} />
+              }
               title="All caught up"
               description="Nothing assigned to you right now."
             />
@@ -219,9 +236,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     height: 36,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
     paddingRight: 120,
   },
   title: {
@@ -230,10 +247,29 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     letterSpacing: -0.3,
   },
+  countBadge: {
+    marginLeft: 8,
+    backgroundColor: colors.accent.hex + '18',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.accent.hex,
+  },
   subtitle: {
     fontSize: 13,
     color: colors.inkMuted.hex,
     lineHeight: 18,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginTop: 4,
   },
   scopeRow: {
     flexDirection: 'row',
@@ -298,18 +334,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   list: {
-    gap: 10,
     paddingBottom: 16,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: colors.surface.hex,
+  },
   sectionHeader: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: colors.inkFaint.hex,
+    color: colors.inkMuted.hex,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    paddingTop: 12,
-    paddingBottom: 6,
-    backgroundColor: colors.surface.hex,
+  },
+  sectionCount: {
+    backgroundColor: colors.line.hex + '60',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  sectionCountText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
   },
   label: {
     fontSize: 13,
