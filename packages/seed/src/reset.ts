@@ -246,10 +246,9 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
      NULL would crash. DELETE the override row — operator-set config that
      survives a full seed reset is confusing rather than helpful, and the
      seeded operator who set it is being deleted anyway. */
-  await connection.query(
-    'DELETE FROM platform.ai_org_overrides WHERE set_by = ANY($1::uuid[])',
-    [userIds],
-  );
+  await connection.query('DELETE FROM platform.ai_org_overrides WHERE set_by = ANY($1::uuid[])', [
+    userIds,
+  ]);
 
   /* `platform.operators.granted_by` is NOT NULL with no cascade. The
      operator row is self-referencing (`granted_by = user_id`), so the
@@ -282,10 +281,9 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
      any recording that survived (e.g. created_by matched but session
      did not) is deleted here. */
   if (allTables.includes('rtc.recordings')) {
-    await connection.query(
-      'DELETE FROM rtc.recordings WHERE created_by = ANY($1::uuid[])',
-      [userIds],
-    );
+    await connection.query('DELETE FROM rtc.recordings WHERE created_by = ANY($1::uuid[])', [
+      userIds,
+    ]);
   }
 
   /* `docs.comments` has a paired CHECK constraint (`comments_resolved_pair`)
