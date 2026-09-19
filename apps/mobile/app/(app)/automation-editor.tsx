@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { colors } from '@taskflow/tokens';
@@ -46,7 +47,7 @@ export default function AutomationEditorScreen() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <Text style={styles.title}>
         {params.automationId === undefined ? 'New automation' : 'Edit automation'}
@@ -91,6 +92,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 4,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,

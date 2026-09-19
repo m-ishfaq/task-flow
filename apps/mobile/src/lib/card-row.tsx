@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { colors, radiusCard } from '@taskflow/tokens';
+import { shadows, PRESS_FEEDBACK } from './premium.js';
 import { PRIORITY_COLOR, PRIORITY_LABEL, formatDueDate, type CardSummary } from './work.js';
 
 /**
@@ -47,21 +50,27 @@ export function CardRow({
 
   const isOverdue = due?.overdue === true;
 
+  const handlePress = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (onPress) {
+      onPress();
+    } else {
+      router.push(`/card/${card.cardId}`);
+    }
+  };
+
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-      onPress={
-        onPress ??
-        (() => {
-          router.push(`/card/${card.cardId}`);
-        })
-      }
+      onPress={handlePress}
       onLongPress={onLongPress}
+      accessibilityLabel={`Card: ${card.title}`}
+      accessibilityRole="button"
     >
       {selected !== undefined && (
         <View style={styles.checkboxColumn}>
           <View style={[styles.checkbox, selected && styles.checkboxChecked]}>
-            {selected && <Text style={styles.checkboxMark}>✓</Text>}
+            {selected && <Ionicons name="checkmark" size={14} color={colors.accentInk.hex} />}
           </View>
         </View>
       )}
@@ -109,7 +118,8 @@ export function CardRow({
           )}
           {card.commentCount > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>💬 {card.commentCount}</Text>
+              <Ionicons name="chatbubble-outline" size={11} color={colors.inkMuted.hex} />
+              <Text style={styles.badgeText}>{card.commentCount}</Text>
             </View>
           )}
         </View>
@@ -126,20 +136,10 @@ const styles = StyleSheet.create({
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.12,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    ...shadows.sm,
   },
   cardPressed: {
-    opacity: 0.85,
+    opacity: PRESS_FEEDBACK,
     backgroundColor: colors.surfaceHover.hex,
   },
   priorityBar: {

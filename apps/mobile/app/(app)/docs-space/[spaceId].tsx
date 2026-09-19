@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -203,7 +204,7 @@ export default function DocsSpaceScreen() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <View style={styles.titleRow}>
         <Text style={styles.title} numberOfLines={1}>
@@ -244,7 +245,10 @@ export default function DocsSpaceScreen() {
         </Text>
       )}
       {pages.isSuccess && rows.length === 0 && (
-        <Text style={styles.emptyHint}>No pages yet. Tap "+ New page" above to add one.</Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="document-text-outline" size={32} color={colors.inkFaint.hex} />
+          <Text style={styles.emptyHint}>No pages yet. Tap "+ New page" above to add one.</Text>
+        </View>
       )}
 
       <FlatList<PageTreeRow>
@@ -702,6 +706,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
     marginBottom: 4,
   },
   backButtonText: {
@@ -806,6 +811,11 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: colors.danger.hex,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
   },
   emptyHint: {
     fontSize: 13,

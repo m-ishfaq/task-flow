@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -146,6 +147,10 @@ export default function Chat() {
       <View style={styles.titleRow}>
         <Text style={styles.title}>Chat</Text>
       </View>
+      <Text style={styles.subtitle}>
+        {sorted.length} {sorted.length === 1 ? 'channel' : 'channels'}
+      </Text>
+      <View style={styles.separator} />
 
       <FlatList<Channel>
         data={sorted}
@@ -173,7 +178,10 @@ export default function Chat() {
           channels.isPending || peoplePending ? (
             <SkeletonList count={6} />
           ) : (
-            <Text style={styles.label}>No channels yet.</Text>
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles-outline" size={48} color={colors.inkMuted.hex} />
+              <Text style={styles.label}>No channels yet.</Text>
+            </View>
           )
         }
       />
@@ -402,7 +410,10 @@ function SavedMessagesModal({
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>Saved messages</Text>
+          <View style={styles.modalTitleRow}>
+            <Ionicons name="bookmark-outline" size={18} color={colors.ink.hex} />
+            <Text style={styles.modalTitle}>Saved messages</Text>
+          </View>
           <ScrollView>
             {rows.length === 0 ? (
               <Text style={styles.label}>Save a message from its menu to find it here later.</Text>
@@ -485,7 +496,10 @@ function PinnedMessagesModal({
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
-          <Text style={styles.modalTitle}>Pinned messages</Text>
+          <View style={styles.modalTitleRow}>
+            <Ionicons name="pin-outline" size={18} color={colors.ink.hex} />
+            <Text style={styles.modalTitle}>Pinned messages</Text>
+          </View>
           <ScrollView>
             {rows.length === 0 ? (
               <Text style={styles.label}>No pinned messages yet.</Text>
@@ -729,6 +743,16 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     letterSpacing: -0.3,
   },
+  subtitle: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+    lineHeight: 18,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginTop: 4,
+  },
   listContainer: {
     flex: 1,
   },
@@ -782,6 +806,11 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textAlign: 'center',
   },
+  emptyState: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 32,
+  },
   modalKeyboardAvoider: {
     flex: 1,
   },
@@ -802,6 +831,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.ink.hex,
+    marginBottom: 12,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 12,
   },
   menu: {

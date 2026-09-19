@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -116,6 +117,7 @@ export default function DocsScreen() {
           <Text style={styles.subtitle}>Spaces and pages, organized from here.</Text>
         </View>
       </View>
+      <View style={styles.separator} />
 
       {spaces.isPending && <SkeletonList count={3} />}
       {spaces.isError && (
@@ -129,7 +131,7 @@ export default function DocsScreen() {
       )}
       {spaces.isSuccess && spaces.data.length === 0 && (
         <EmptyState
-          icon={'\uD83D\uDCDA'}
+          icon={<Ionicons name="book-outline" size={48} color={colors.inkMuted.hex} />}
           title="No spaces yet"
           description={
             canCreateSpace
@@ -155,11 +157,13 @@ export default function DocsScreen() {
         renderItem={({ item }) => (
           <Pressable
             style={[styles.row, shadows.sm, item.archivedAt !== null && styles.rowArchived]}
-
             onPress={() => {
               router.push(`/docs-space/${item.spaceId}`);
             }}
           >
+            <View style={styles.rowIcon}>
+              <Ionicons name="book" size={18} color={colors.accent.hex} />
+            </View>
             <Text style={styles.rowName} numberOfLines={1}>
               {item.name}
             </Text>
@@ -175,7 +179,7 @@ export default function DocsScreen() {
                 </Pressable>
               )
             ) : (
-              <Text style={styles.rowChevron}>›</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.inkFaint.hex} />
             )}
           </Pressable>
         )}
@@ -283,6 +287,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkMuted.hex,
   },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginBottom: 8,
+  },
   loading: {
     marginTop: 12,
   },
@@ -307,6 +316,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
+  },
+  rowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.accent.hex + '12',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowArchived: {
     opacity: 0.6,

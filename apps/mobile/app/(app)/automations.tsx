@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -105,7 +106,7 @@ function AutomationsScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <View style={styles.titleRow}>
         <View style={styles.titleColumn}>
@@ -131,9 +132,12 @@ function AutomationsScreenContent() {
         </Text>
       )}
       {rules.isSuccess && rows.length === 0 && (
-        <Text style={styles.emptyHint}>
-          No automation rules yet. Tap "+ New rule" above, or build a more advanced one on web.
-        </Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="flash-outline" size={32} color={colors.inkFaint.hex} />
+          <Text style={styles.emptyHint}>
+            No automation rules yet. Tap "+ New rule" above, or build a more advanced one on web.
+          </Text>
+        </View>
       )}
 
       <FlatList<AutomationSummary>
@@ -268,7 +272,12 @@ function RuleRow({
           </Pressable>
         )}
         <Pressable style={styles.ruleActionButton} onPress={onToggleExpanded}>
-          <Text style={styles.ruleActionText}>Runs {expanded ? '▴' : '▾'}</Text>
+          <Text style={styles.ruleActionText}>Runs </Text>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={colors.inkMuted.hex}
+          />
         </Pressable>
         <Pressable
           style={styles.ruleActionButton}
@@ -378,6 +387,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 4,
     marginLeft: 20,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -425,6 +435,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger.hex,
     paddingHorizontal: 20,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
   emptyHint: {
     fontSize: 13,

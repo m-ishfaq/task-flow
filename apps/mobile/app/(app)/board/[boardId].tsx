@@ -15,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BoardIdSchema, type CardId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
@@ -789,7 +790,12 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
             )}
             contentContainerStyle={styles.cardList}
             style={styles.cardListContainer}
-            ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="layers-outline" size={32} color={colors.inkFaint.hex} />
+                <Text style={styles.emptyList}>No cards in this list.</Text>
+              </View>
+            }
           />
         </>
       )}
@@ -1507,7 +1513,7 @@ function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
     </Pressable>
   );
 }
@@ -1622,6 +1628,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -1708,6 +1715,11 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 40,
     gap: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
   },
   emptyList: {
     fontSize: 13,

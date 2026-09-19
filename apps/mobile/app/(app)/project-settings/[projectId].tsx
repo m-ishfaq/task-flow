@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ProjectIdSchema, type StatusCategory } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
@@ -29,7 +30,7 @@ import {
   type CustomField,
 } from '../../../src/lib/work.js';
 import { SkeletonList } from '../../../src/lib/skeleton.js';
-import { shadows } from '../../../src/lib/premium.js';
+import { shadows, MONO_FONT } from '../../../src/lib/premium.js';
 
 /**
  * Everything about a project that is not a card — ported from
@@ -154,7 +155,7 @@ function BackButton() {
         router.back();
       }}
     >
-      <Text style={styles.backButtonText}>← Back</Text>
+      <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
     </Pressable>
   );
 }
@@ -374,7 +375,10 @@ function LabelSettings({ projectId }: { readonly projectId: string }) {
           {apiErrorOf(labels.error)?.error.message ?? "Couldn't load labels."}
         </Text>
       ) : labels.data.length === 0 ? (
-        <Text style={styles.emptyHint}>No labels yet.</Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="pricetag-outline" size={32} color={colors.inkFaint.hex} />
+          <Text style={styles.emptyHint}>No labels yet.</Text>
+        </View>
       ) : (
         labels.data.map((label) =>
           editing === label.labelId ? (
@@ -659,7 +663,10 @@ function StatusSettings({ projectId }: { readonly projectId: string }) {
           {apiErrorOf(statuses.error)?.error.message ?? "Couldn't load statuses."}
         </Text>
       ) : statuses.data.length === 0 ? (
-        <Text style={styles.emptyHint}>No statuses yet.</Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="flag-outline" size={32} color={colors.inkFaint.hex} />
+          <Text style={styles.emptyHint}>No statuses yet.</Text>
+        </View>
       ) : (
         statuses.data.map((status) =>
           editing === status.statusId ? (
@@ -875,6 +882,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
     marginBottom: 4,
   },
   backButtonText: {
@@ -890,7 +898,7 @@ const styles = StyleSheet.create({
   },
   screenKey: {
     fontSize: 12,
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     color: colors.inkMuted.hex,
     marginBottom: 8,
   },
@@ -920,6 +928,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkFaint.hex,
     paddingVertical: 6,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
   },
   formInput: {
     borderWidth: 1,

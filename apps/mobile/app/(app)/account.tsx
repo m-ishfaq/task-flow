@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -94,7 +95,7 @@ export default function Account() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <Text style={styles.title}>Account</Text>
 
@@ -120,7 +121,9 @@ export default function Account() {
             <Text style={styles.orgName}>{currentOrg?.name ?? '—'}</Text>
             {currentOrg !== undefined && <Text style={styles.orgRole}>{currentOrg.role}</Text>}
           </View>
-          <Text style={styles.orgSwitchAction}>Switch ›</Text>
+          <Text style={styles.orgSwitchAction}>
+            Switch <Ionicons name="chevron-forward" size={14} color={colors.accent.hex} />
+          </Text>
         </Pressable>
         {/* Always shown, not gated on a capability read here — the roster
             itself is `member:read` (every role), and `org-settings.tsx`'s
@@ -134,6 +137,7 @@ export default function Account() {
           }}
         >
           <Text style={styles.secondaryButtonText}>Manage organization</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.inkMuted.hex} />
         </Pressable>
         {/* `member:read` is `ORG_LEVEL_PERMISSIONS` (packages/policy/src/
             permissions.ts) — a Guest's tuples can never satisfy it, so the
@@ -152,6 +156,7 @@ export default function Account() {
             }}
           >
             <Text style={styles.secondaryButtonText}>People</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.inkMuted.hex} />
           </Pressable>
         )}
         {/* `automation:manage` — Admin/Owner by role, or an individual
@@ -166,6 +171,7 @@ export default function Account() {
             }}
           >
             <Text style={styles.secondaryButtonText}>Automations</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.inkMuted.hex} />
           </Pressable>
         )}
         {/* `analytics:read`, same shape as Automations above. Reads the
@@ -178,6 +184,7 @@ export default function Account() {
             }}
           >
             <Text style={styles.secondaryButtonText}>Insights</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.inkMuted.hex} />
           </Pressable>
         )}
       </View>
@@ -300,9 +307,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   secondaryButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderRadius: radiusCard,
     paddingVertical: 10,
-    alignItems: 'center',
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     marginTop: 4,

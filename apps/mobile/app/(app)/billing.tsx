@@ -11,6 +11,7 @@ import {
   View,
   type DimensionValue,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { format } from 'date-fns';
@@ -228,7 +229,7 @@ function BillingScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <Text style={styles.screenTitle}>Billing</Text>
 
@@ -440,10 +441,13 @@ function BillingScreenContent() {
               </Text>
             )}
             {plans.data !== undefined && sellable.length === 0 && (
-              <Text style={styles.sectionHint}>
-                No plans are available for purchase yet. Nothing is wrong with your account — the
-                catalog has not been set up.
-              </Text>
+              <View style={styles.emptyState}>
+                <Ionicons name="card-outline" size={32} color={colors.inkFaint.hex} />
+                <Text style={styles.sectionHint}>
+                  No plans are available for purchase yet. Nothing is wrong with your account — the
+                  catalog has not been set up.
+                </Text>
+              </View>
             )}
 
             {sellable.map((plan) => {
@@ -554,6 +558,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 4,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -731,5 +736,10 @@ const styles = StyleSheet.create({
   },
   plansLoading: {
     paddingVertical: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
   },
 });

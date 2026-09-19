@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -128,6 +129,12 @@ export default function Boards() {
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
       </View>
+      <Text style={styles.subtitle}>
+        {projects.data
+          ? `${String(projects.data.length)} ${projects.data.length === 1 ? 'project' : 'projects'} in this organization.`
+          : 'Loading projects...'}
+      </Text>
+      <View style={styles.separator} />
 
       <FlatList<Project>
         data={projects.data}
@@ -149,7 +156,7 @@ export default function Boards() {
             <SkeletonList count={4} />
           ) : (
             <EmptyState
-              icon={'\uD83D\uDCCB'}
+              icon={<Ionicons name="folder-open-outline" size={48} color={colors.inkMuted.hex} />}
               title="No projects yet"
               description="Create your first project to start organizing work."
             />
@@ -241,19 +248,27 @@ export default function Boards() {
 function ProjectRow({ project }: { readonly project: Project }) {
   return (
     <Pressable
-      style={[styles.row, shadows.sm]}
-
+      style={({ pressed }) => [styles.row, shadows.sm, pressed && { opacity: 0.7 }]}
       onPress={() => {
         router.push(`/project/${project.projectId}`);
       }}
     >
-      <View style={styles.rowMain}>
-        <Text style={styles.rowTitle}>{project.name}</Text>
-        <Text style={styles.rowKey}>{project.key}</Text>
+      <View style={styles.rowIcon}>
+        <Ionicons name="folder" size={20} color={colors.accent.hex} />
       </View>
-      <Text style={styles.rowMeta}>
-        {project.boardCount} {project.boardCount === 1 ? 'board' : 'boards'}
-      </Text>
+      <View style={styles.rowMain}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {project.name}
+        </Text>
+        <View style={styles.rowMetaRow}>
+          <Text style={styles.rowKey}>{project.key}</Text>
+          <Text style={styles.rowDot}>·</Text>
+          <Text style={styles.rowMeta}>
+            {project.boardCount} {project.boardCount === 1 ? 'board' : 'boards'}
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.inkFaint.hex} />
     </Pressable>
   );
 }
@@ -281,6 +296,16 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     letterSpacing: -0.3,
   },
+  subtitle: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+    lineHeight: 18,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginTop: 4,
+  },
   listContainer: {
     flex: 1,
   },
@@ -291,24 +316,41 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
+    gap: 12,
+  },
+  rowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: colors.accent.hex + '12',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowMain: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
     flex: 1,
+    gap: 2,
   },
   rowTitle: {
     fontSize: 15,
+    fontWeight: '600',
     color: colors.ink.hex,
   },
+  rowMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   rowKey: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.accent.hex,
+  },
+  rowDot: {
     fontSize: 12,
     color: colors.inkFaint.hex,
   },

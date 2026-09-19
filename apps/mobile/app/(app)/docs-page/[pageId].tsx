@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
@@ -135,7 +136,7 @@ export default function DocsPageScreen() {
             router.back();
           }}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
         </Pressable>
       </View>
     );
@@ -344,7 +345,7 @@ function DocsPageContent({
             router.back();
           }}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
         </Pressable>
         {/* A second row, below the back button — never beside it. See
             git history / README for the live-found reason: top-bar.tsx's
@@ -497,7 +498,12 @@ function PageContent({ doc }: { readonly doc: Y.Doc }) {
      gets its own explicit, distinguishable message instead of a second
      blank screen. */
   if (document.content.length === 0) {
-    return <Text style={styles.emptyHint}>This page has no content yet.</Text>;
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="document-outline" size={32} color={colors.inkFaint.hex} />
+        <Text style={styles.emptyHint}>This page has no content yet.</Text>
+      </View>
+    );
   }
 
   return <RichTextView document={document} />;
@@ -1447,6 +1453,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    padding: 4,
     marginBottom: 4,
   },
   backButtonText: {
@@ -1514,6 +1521,11 @@ const styles = StyleSheet.create({
   loadingHint: {
     fontSize: 12,
     color: colors.inkFaint.hex,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
   },
   emptyHint: {
     marginTop: 24,

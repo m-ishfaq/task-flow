@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native';
 import { colors, radiusCard } from '@taskflow/tokens';
+import { MONO_FONT } from './premium.js';
 
 export const styles = StyleSheet.create({
   flex: {
@@ -127,7 +128,7 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
-    maxHeight: 100,
+    maxHeight: 120,
   },
   sendButton: {
     backgroundColor: colors.accent.hex,
@@ -471,7 +472,7 @@ export const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
   },
   labelChipTextOn: {
-    color: '#ffffff',
+    color: colors.accentInk.hex,
     fontWeight: '600',
   },
   addCardRow: {
@@ -653,7 +654,7 @@ export const styles = StyleSheet.create({
     color: colors.accent.hex,
   },
   devBranchName: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
   },
   devUnlink: {
     fontSize: 12,

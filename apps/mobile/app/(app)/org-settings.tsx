@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
@@ -20,7 +21,7 @@ import { useSession } from '../../src/lib/use-session.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
 import { useStepUp } from '../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
-import { HeaderSkeleton, CardSkeleton, shadows } from '../../src/lib/premium.js';
+import { HeaderSkeleton, CardSkeleton, shadows, MONO_FONT } from '../../src/lib/premium.js';
 import {
   ORG_DETAIL_QUERY_KEY,
   MEMBERS_QUERY_KEY,
@@ -271,7 +272,7 @@ function OrgSettingsScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <View style={styles.titleRow}>
         <Text style={styles.screenTitle}>Organization settings</Text>
@@ -526,7 +527,10 @@ function OrgSettingsScreenContent() {
                 {apiErrorOf(teams.error)?.error.message ?? "Couldn't load teams."}
               </Text>
             ) : teams.data.length === 0 ? (
-              <Text style={styles.emptyHint}>No teams yet.</Text>
+              <View style={styles.emptyState}>
+                <Ionicons name="people-outline" size={32} color={colors.inkFaint.hex} />
+                <Text style={styles.emptyHint}>No teams yet.</Text>
+              </View>
             ) : (
               teams.data.map((team) => (
                 <TeamCard
@@ -969,6 +973,7 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 4,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -1004,6 +1009,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkFaint.hex,
     paddingVertical: 6,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
   },
   transferLink: {
     alignSelf: 'flex-end',
@@ -1073,7 +1083,7 @@ const styles = StyleSheet.create({
   },
   teamCardSlug: {
     fontSize: 11,
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
     color: colors.inkFaint.hex,
   },
   teamAddButton: {

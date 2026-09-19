@@ -16,8 +16,9 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Skeleton, SkeletonList } from '../../../src/lib/skeleton.js';
-import { shadows, ErrorView } from '../../../src/lib/premium.js';
+import { shadows, ErrorView, EmptyState } from '../../../src/lib/premium.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import { wire } from '@taskflow/client';
@@ -128,11 +129,12 @@ export default function CallsScreen() {
 
   if (capabilities !== undefined && visibleTabs.length === 0) {
     return (
-      <View style={[styles.container, styles.emptyState, { paddingTop }]}>
-        <Text style={styles.emptyStateText}>
-          You don&apos;t have access to any part of Voice &amp; Messaging yet. An admin or owner can
-          grant you access from Settings.
-        </Text>
+      <View style={[styles.container, { paddingTop }]}>
+        <EmptyState
+          icon={<Ionicons name="lock-closed-outline" size={48} color={colors.inkMuted.hex} />}
+          title="No access to Voice & Messaging"
+          description="An admin or owner can grant you access from Settings."
+        />
       </View>
     );
   }
@@ -143,6 +145,7 @@ export default function CallsScreen() {
         <Text style={styles.title}>Calls</Text>
       </View>
       <Text style={styles.subtitle}>Phone numbers, calls, SMS, and spend.</Text>
+      <View style={styles.separator} />
 
       <ScrollView
         horizontal
@@ -358,7 +361,11 @@ function CallRow({
     <View style={[styles.rowCard, expanded && styles.rowCardActive]}>
       <Pressable style={styles.rowHeader} onPress={onToggle}>
         <Text style={call.direction === 'outbound' ? styles.directionOut : styles.directionIn}>
-          {call.direction === 'outbound' ? '→' : '←'}
+          {call.direction === 'outbound' ? (
+            <Ionicons name="arrow-up" size={14} color={colors.accent.hex} />
+          ) : (
+            <Ionicons name="arrow-down" size={14} color={colors.success.hex} />
+          )}
         </Text>
         <Text style={styles.rowMono} numberOfLines={1}>
           {String(call.counterparty)}
@@ -367,7 +374,12 @@ function CallRow({
           <Text style={styles.rowFaint}>{durationLabel(call.durationSeconds)}</Text>
         )}
         <View style={styles.rowTrailing}>
-          {call.recorded && <Text style={styles.recordedTag}>● recorded</Text>}
+          {call.recorded && (
+            <View style={styles.recordedTag}>
+              <Ionicons name="mic" size={12} color={colors.accent.hex} />
+              <Text style={styles.recordedTagText}>rec</Text>
+            </View>
+          )}
           <StatusPill status={call.status} />
         </View>
       </Pressable>
@@ -1042,8 +1054,9 @@ function ThreadView({
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.threadHeader}>
-        <Pressable onPress={onBack}>
-          <Text style={styles.linkText}>‹ Threads</Text>
+        <Pressable style={styles.threadBackButton} onPress={onBack}>
+          <Ionicons name="chevron-back" size={20} color={colors.accent.hex} />
+          <Text style={styles.linkText}>Threads</Text>
         </Pressable>
         <Text style={styles.threadHeaderText} numberOfLines={1}>
           {counterparty ?? '…'}
@@ -1434,6 +1447,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkMuted.hex,
   },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginHorizontal: 24,
+    marginTop: 8,
+  },
   tabStripFrame: {
     flexGrow: 0,
     flexShrink: 0,
@@ -1637,9 +1656,17 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
   },
   recordedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     fontSize: 10,
     fontWeight: '600',
-    color: colors.inkMuted.hex,
+    color: colors.accent.hex,
+  },
+  recordedTagText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   rowBody: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -1785,6 +1812,11 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
+  },
+  threadBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   threadHeaderText: {
     flex: 1,

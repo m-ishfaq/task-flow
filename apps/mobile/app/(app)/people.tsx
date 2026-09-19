@@ -1,4 +1,5 @@
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -90,7 +91,7 @@ function PeopleScreenContent() {
           router.back();
         }}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={colors.accent.hex} />
       </Pressable>
       <Text style={styles.title}>People</Text>
       <Text style={styles.subtitle}>
@@ -104,9 +105,12 @@ function PeopleScreenContent() {
         </Text>
       )}
       {directory.isSuccess && rows.length === 0 && (
-        <Text style={styles.emptyHint}>
-          Members appear here as soon as they join the organization.
-        </Text>
+        <View style={styles.emptyState}>
+          <Ionicons name="people-outline" size={48} color={colors.inkMuted.hex} />
+          <Text style={styles.emptyHint}>
+            Members appear here as soon as they join the organization.
+          </Text>
+        </View>
       )}
 
       <FlatList<DirectoryMember>
@@ -114,6 +118,10 @@ function PeopleScreenContent() {
         keyExtractor={(member) => member.userId}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => <PersonRow member={item} />}
+        onRefresh={() => {
+          void directory.refetch();
+        }}
+        refreshing={directory.isRefetching && !directory.isFetchingNextPage}
         ListFooterComponent={
           directory.hasNextPage ? (
             <Pressable
@@ -177,6 +185,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 4,
     marginLeft: 24,
+    padding: 4,
   },
   backButtonText: {
     color: colors.accent.hex,
@@ -206,6 +215,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkFaint.hex,
     paddingHorizontal: 24,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingTop: 40,
   },
   list: {
     paddingHorizontal: 24,

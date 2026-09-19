@@ -1,6 +1,8 @@
 import { type ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors } from '@taskflow/tokens';
 import { styles } from './card-detail-styles.js';
 
 /**
@@ -58,16 +60,24 @@ export function ChipScroll({ children }: { readonly children: ReactNode }) {
   );
 }
 
-export function BackButton() {
+export function BackButton({ onPress }: { readonly onPress?: () => void } = {}) {
   return (
     <Pressable
       style={styles.backButton}
-      onPress={() => {
-        router.back();
-      }}
+      onPress={
+        onPress ??
+        (() => {
+          router.back();
+        })
+      }
     >
       {({ pressed }) => (
-        <Text style={[styles.backButtonText, pressed && { opacity: 0.6 }]}>← Back</Text>
+        <View
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: pressed ? 0.6 : 1 }}
+        >
+          <Ionicons name="arrow-back" size={18} color={colors.accent.hex} />
+          <Text style={styles.backButtonText}>Back</Text>
+        </View>
       )}
     </Pressable>
   );

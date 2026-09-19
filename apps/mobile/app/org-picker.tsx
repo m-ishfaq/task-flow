@@ -9,10 +9,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../src/lib/app-session.js';
+import { MONO_FONT } from '../src/lib/premium.js';
 import { apiErrorOf } from '../src/lib/trpc-client.js';
 import { useSession } from '../src/lib/use-session.js';
 import { useTopInset } from '../src/lib/use-top-inset.js';
@@ -164,7 +166,7 @@ function OrgPickerContent() {
               <View style={styles.roleBadge}>
                 <Text style={styles.roleBadgeText}>{item.role}</Text>
               </View>
-              <Text style={styles.rowChevron}>›</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.inkFaint.hex} />
             </Pressable>
           ) : (
             // Shown, not omitted — the same fix apps/web's org-picker-page.tsx
@@ -443,7 +445,7 @@ const styles = StyleSheet.create({
   rowSlug: {
     fontSize: 11,
     color: colors.inkFaint.hex,
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
   },
   roleBadge: {
     backgroundColor: colors.surfaceSunken.hex,
@@ -502,7 +504,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised.hex,
   },
   formInputMono: {
-    fontFamily: 'monospace',
+    fontFamily: MONO_FONT,
   },
   fieldHint: {
     fontSize: 11,
